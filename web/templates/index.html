@@ -1439,46 +1439,51 @@
           </div>
         </div>
 
-        <!-- 6-Pillar Composite Scores & Walk-Forward Calibration Strip -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 mt-4 text-xs font-mono">
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+        <!-- Multi-Pillar Composite Scores & Walk-Forward Calibration Strip -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2.5 mt-4 text-xs font-mono">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 sm:p-3">
             <div class="text-[10px] text-slate-400 uppercase">Composite Score</div>
             <div id="pred-score-comp" class="text-base font-bold text-white mt-0.5">--</div>
             <div class="text-[10px] text-slate-500">Range [-100, +100]</div>
           </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
-            <div class="text-[10px] text-slate-400 uppercase">1. Technical (25%)</div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 sm:p-3">
+            <div class="text-[10px] text-slate-400 uppercase">1. Technical (22%)</div>
             <div id="pred-score-tech" class="text-base font-bold text-white mt-0.5">--</div>
-            <div class="text-[10px] text-slate-500">EMA/RSI/MACD/Pivot</div>
+            <div class="text-[10px] text-slate-500">EMA9/20/RSI/MACD</div>
           </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
-            <div class="text-[10px] text-slate-400 uppercase">2. Breadth (20%)</div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 sm:p-3">
+            <div class="text-[10px] text-slate-400 uppercase">2. N50 Breadth (20%)</div>
             <div id="pred-score-breadth" class="text-base font-bold text-white mt-0.5">--</div>
-            <div class="text-[10px] text-slate-500">1,010 NSE Stocks</div>
+            <div class="text-[10px] text-slate-500">50 Constituents + N500</div>
           </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
-            <div class="text-[10px] text-slate-400 uppercase">3. Sectoral (20%)</div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 sm:p-3">
+            <div class="text-[10px] text-slate-400 uppercase">3. Sectoral (18%)</div>
             <div id="pred-score-sectoral" class="text-base font-bold text-white mt-0.5">--</div>
             <div class="text-[10px] text-slate-500">Weighted 8 Sectors</div>
           </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
-            <div class="text-[10px] text-slate-400 uppercase">4. Global/US (15%)</div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 sm:p-3">
+            <div class="text-[10px] text-slate-400 uppercase">4. Global/US (14%)</div>
             <div id="pred-score-global" class="text-base font-bold text-white mt-0.5">--</div>
             <div class="text-[10px] text-slate-500">S&P/Nasdaq/Asia</div>
           </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 sm:p-3">
             <div class="text-[10px] text-slate-400 uppercase">5. Macro/FX (10%)</div>
             <div id="pred-score-macro" class="text-base font-bold text-white mt-0.5">--</div>
             <div class="text-[10px] text-slate-500">INR/US10Y/Gold/Oil</div>
           </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
-            <div class="text-[10px] text-slate-400 uppercase">6. News/RBI/Fed</div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 sm:p-3">
+            <div class="text-[10px] text-slate-400 uppercase">6. News & Options (6%)</div>
             <div id="pred-score-news" class="text-base font-bold text-white mt-0.5">--</div>
             <div class="text-[10px] text-slate-500">RSS + Option PCR</div>
           </div>
-          <div class="bg-slate-950/80 border border-emerald-500/30 rounded-xl p-3">
+          <div class="bg-slate-950/80 border border-cyan-500/35 rounded-xl p-2.5 sm:p-3">
+            <div class="text-[10px] text-cyan-400 uppercase">7. Inst Flows (10%)</div>
+            <div id="pred-score-inst" class="text-base font-bold text-cyan-300 mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">FII/DII Cash & Squeeze</div>
+          </div>
+          <div class="bg-slate-950/80 border border-emerald-500/30 rounded-xl p-2.5 sm:p-3">
             <div class="text-[10px] text-emerald-400 uppercase">180D Walk-Forward</div>
-            <div id="pred-val-hitrate" class="text-sm font-bold text-emerald-300 mt-0.5">T1: --% | T5: --%</div>
+            <div id="pred-val-hitrate" class="text-xs font-bold text-emerald-300 mt-0.5">T1: --% | T5: --%</div>
             <div id="pred-val-brier" class="text-[10px] text-slate-400">Brier: --</div>
           </div>
         </div>
@@ -1505,18 +1510,20 @@
           </div>
         </div>
 
-        <!-- Pillar 2: Internal Market Breadth (All 1,010 Fetched Stocks) -->
+        <!-- Pillar 2: Nifty 50 Advance / Decline & Market Breadth -->
         <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
           <div class="flex items-center justify-between pb-3 border-b border-slate-800">
             <h3 class="font-bold text-white text-sm flex items-center gap-2">
               <i data-lucide="bar-chart-3" class="w-4 h-4 text-emerald-400 shrink-0"></i>
-              <span>Pillar 2: NSE Internal Market Breadth (1,010 Master Universe Stocks)</span>
+              <span>Pillar 2: Nifty 50 Advance / Decline & Market Breadth</span>
             </h3>
             <span id="pred-breadth-regime" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">--</span>
           </div>
           <div id="pred-breadth-metrics" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3 text-xs font-mono">
-            <div class="col-span-full text-slate-500 py-4 text-center">Computing internal market breadth...</div>
+            <div class="col-span-full text-slate-500 py-4 text-center">Computing Nifty 50 constituent market breadth...</div>
           </div>
+          <!-- Top Gainers / Losers Movers in Nifty 50 -->
+          <div id="pred-breadth-movers" class="flex flex-wrap items-center gap-1.5 mt-3 pt-2.5 border-t border-slate-800/70 text-[10px] font-mono"></div>
         </div>
       </div>
 
@@ -1614,6 +1621,90 @@
           <div id="pred-cb-events" class="grid grid-cols-1 sm:grid-cols-2 gap-2 my-2 text-xs font-mono"></div>
           <div id="pred-news-list" class="space-y-2 max-h-56 overflow-y-auto custom-scroll pr-1 text-xs mt-2">
             <div class="text-slate-500 py-3 text-center">Fetching live financial & macro headlines...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 2.8: Institutional Desk: FII & DII Cash Market Flows & 1-Week F&O Participant Open Interest -->
+      <div class="bg-slate-900/80 border border-cyan-500/35 rounded-2xl p-4 sm:p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <div class="flex items-center gap-2">
+              <i data-lucide="landmark" class="w-4 h-4 text-cyan-400 shrink-0"></i>
+              <h3 class="font-bold text-white text-sm sm:text-base">
+                Institutional Desk: FII & DII Cash Market Flows & 1-Week F&O Participant Open Interest
+              </h3>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">
+              Official NSE Cash Turnover & F&O Clearing Corporation Participant Wise Open Interest (Client, DII, FII, Pro). Real contracts & ₹ Crores — Zero synthetic estimates.
+            </p>
+          </div>
+          <div class="flex items-center gap-2" id="pred-inst-regime-pill">
+            <span class="px-2.5 py-1 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold">
+              FII OI: LOADING...
+            </span>
+          </div>
+        </div>
+
+        <!-- KPI Strip: Latest Cash Turnover & FII Positioning -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 my-3 text-xs font-mono" id="pred-inst-kpi-grid">
+          <div class="col-span-full text-slate-500 py-3 text-center">Loading institutional cash & derivative flows...</div>
+        </div>
+
+        <!-- 2 Side-by-Side Tables: 1-Week Cash Turnover & 1-Week F&O Participant Positioning -->
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-3">
+          <!-- Table 1: FII & DII Cash Turnover History -->
+          <div class="bg-slate-950/70 border border-slate-800/90 rounded-xl overflow-hidden">
+            <div class="p-2.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between">
+              <span class="text-[11px] font-bold text-cyan-300 font-mono flex items-center gap-1.5">
+                <span>💰</span> Cash Market Turnover (₹ Crores)
+              </span>
+              <span class="text-[10px] text-slate-400 font-mono">Last 7 Sessions</span>
+            </div>
+            <div class="overflow-x-auto custom-scroll">
+              <table class="w-full text-left text-xs text-slate-300 font-mono">
+                <thead class="bg-slate-950 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th class="p-2">Date</th>
+                    <th class="p-2">FII Buy</th>
+                    <th class="p-2">FII Sell</th>
+                    <th class="p-2">FII Net</th>
+                    <th class="p-2">DII Net</th>
+                    <th class="p-2 text-right">Total Net</th>
+                  </tr>
+                </thead>
+                <tbody id="pred-fii-cash-tbody" class="divide-y divide-slate-800/60">
+                  <tr><td colspan="6" class="p-4 text-center text-slate-500 font-sans">Loading FII/DII cash turnover...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Table 2: 1-Week Rolling F&O Participant Open Interest -->
+          <div class="bg-slate-950/70 border border-slate-800/90 rounded-xl overflow-hidden">
+            <div class="p-2.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between">
+              <span class="text-[11px] font-bold text-purple-300 font-mono flex items-center gap-1.5">
+                <span>📊</span> F&O Participant Open Interest (Contracts)
+              </span>
+              <span class="text-[10px] text-slate-400 font-mono">FII vs Retail Index Futures</span>
+            </div>
+            <div class="overflow-x-auto custom-scroll">
+              <table class="w-full text-left text-xs text-slate-300 font-mono">
+                <thead class="bg-slate-950 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th class="p-2">Date</th>
+                    <th class="p-2">FII Fut Net</th>
+                    <th class="p-2">FII Long %</th>
+                    <th class="p-2">Client Fut Net</th>
+                    <th class="p-2">Client Long %</th>
+                    <th class="p-2 text-right">Pro Fut Net</th>
+                  </tr>
+                </thead>
+                <tbody id="pred-fii-oi-tbody" class="divide-y divide-slate-800/60">
+                  <tr><td colspan="6" class="p-4 text-center text-slate-500 font-sans">Loading participant OI history...</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -2708,6 +2799,7 @@
       setScoreEl('pred-score-global', ps.global_score);
       setScoreEl('pred-score-macro', ps.macro_score);
       setScoreEl('pred-score-news', ps.news_and_deriv_score);
+      setScoreEl('pred-score-inst', ps.institutional_score !== undefined ? ps.institutional_score : (data.fii_dii_and_oi ? data.fii_dii_and_oi.flow_score : 0));
 
       const vc = data.validation_and_calibration || {};
       if (document.getElementById('pred-val-hitrate')) {
@@ -2779,6 +2871,36 @@
             <div class="text-xs font-bold mt-1 ${it.col}">${it.val}</div>
           </div>
         `).join('');
+      }
+
+      const moversEl = document.getElementById('pred-breadth-movers');
+      if (moversEl) {
+        const gList = br.top_gainers || [];
+        const lList = br.top_losers || [];
+        if (gList.length > 0 || lList.length > 0) {
+          moversEl.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs">
+              <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                <div class="text-[10px] text-emerald-400 font-bold uppercase mb-1.5 flex items-center gap-1 font-mono">
+                  <span>📈</span> Top Nifty 50 Gainers
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                  ${gList.map(g => `<span class="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono text-[11px] font-semibold">${g.symbol} <b>+${Number(g.change_pct).toFixed(2)}%</b></span>`).join('')}
+                </div>
+              </div>
+              <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                <div class="text-[10px] text-rose-400 font-bold uppercase mb-1.5 flex items-center gap-1 font-mono">
+                  <span>📉</span> Top Nifty 50 Decliners
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                  ${lList.map(l => `<span class="px-2 py-0.5 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono text-[11px] font-semibold">${l.symbol} <b>${Number(l.change_pct).toFixed(2)}%</b></span>`).join('')}
+                </div>
+              </div>
+            </div>
+          `;
+        } else {
+          moversEl.innerHTML = '';
+        }
       }
 
       // Pillar 3: Sectoral Table
@@ -2897,15 +3019,28 @@
       const cbDiv = document.getElementById('pred-cb-events');
       if (cbDiv) {
         const cbs = news.central_bank_events || [];
-        cbDiv.innerHTML = cbs.map(ev => `
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
-            <div>
-              <div class="text-[10px] text-purple-400 font-bold">${ev.bank} • ${ev.date}</div>
-              <div class="text-[11px] text-slate-200 font-semibold">${ev.title}</div>
+        cbDiv.innerHTML = cbs.map(ev => {
+          const isDone = ev.status_label === 'COMPLETED' || !!ev.outcome_print;
+          const statusBadge = isDone
+            ? `<span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold shrink-0 whitespace-nowrap">✓ ${ev.status_label || 'COMPLETED'}</span>`
+            : `<span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-800 text-amber-300 font-bold shrink-0 whitespace-nowrap">${ev.status_label}</span>`;
+          const outcomeHtml = ev.outcome_print ? `<div class="text-[10px] text-emerald-300 font-mono mt-0.5"><b>Outcome Print:</b> ${ev.outcome_print}</div>` : '';
+          const impactHtml = ev.market_impact ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono border border-slate-700">${ev.market_impact}</span>` : '';
+          const consHtml = ev.consensus ? `<span class="text-[10px] text-slate-400 font-mono">(${ev.consensus})</span>` : '';
+          return `
+            <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <div class="text-[10px] text-purple-400 font-bold flex items-center gap-2">
+                  <span>${ev.bank} • ${ev.date}</span>
+                  ${impactHtml}
+                </div>
+                <div class="text-[11px] text-slate-200 font-semibold">${ev.title} ${consHtml}</div>
+                ${outcomeHtml}
+              </div>
+              ${statusBadge}
             </div>
-            <span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-800 text-amber-300 font-bold shrink-0 whitespace-nowrap">${ev.status_label}</span>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       }
 
       const newsList = document.getElementById('pred-news-list');
@@ -2924,6 +3059,97 @@
                 </div>
                 <div class="text-xs text-slate-200 font-medium leading-snug">${h.title}</div>
               </a>
+            `;
+          }).join('');
+        }
+      }
+
+      // Row 2.8: Institutional Desk (FII / DII Cash Turnover & Participant OI History)
+      const instData = data.fii_dii_and_oi || {};
+      const latestCash = instData.latest_cash || {};
+      const latestOi = instData.latest_oi || {};
+
+      const instRegimeEl = document.getElementById('pred-inst-regime-pill');
+      if (instRegimeEl) {
+        const reg = latestOi.oi_regime || 'NEUTRAL';
+        const isSqueeze = reg.includes('SQUEEZE') || reg.includes('BULL');
+        const isBear = reg.includes('SHORT') || reg.includes('BEAR');
+        const pillCls = isSqueeze ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : (isBear ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40');
+        instRegimeEl.innerHTML = `<span class="px-2.5 py-1 rounded text-[10px] font-mono border font-bold ${pillCls}">FII OI: ${reg}</span>`;
+      }
+
+      const instKpiGrid = document.getElementById('pred-inst-kpi-grid');
+      if (instKpiGrid) {
+        const fiiNet = Number(latestCash.fii_net || 0);
+        const diiNet = Number(latestCash.dii_net || 0);
+        const totNet = Number(latestCash.total_net || (fiiNet + diiNet));
+        const fiiLongPct = Number(latestOi.fii_index_fut_long_pct || 0);
+        const clientLongPct = Number(latestOi.client_index_fut_long_pct || 0);
+        const flowSc = Number(instData.flow_score || 0);
+
+        const kpis = [
+          { lbl: `FII Cash Net (${latestCash.date || 'Today'})`, val: `${fiiNet >= 0 ? '+' : ''}₹${fiiNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`, col: fiiNet >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+          { lbl: `DII Cash Net (${latestCash.date || 'Today'})`, val: `${diiNet >= 0 ? '+' : ''}₹${diiNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`, col: diiNet >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+          { lbl: `Institutional Total Net`, val: `${totNet >= 0 ? '+' : ''}₹${totNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`, col: totNet >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+          { lbl: `FII Fut Long %`, val: `${fiiLongPct.toFixed(1)}% (${Number(latestOi.fii_index_fut_net || 0) >= 0 ? '+' : ''}${Number(latestOi.fii_index_fut_net || 0).toLocaleString()} net)`, col: fiiLongPct <= 15 ? 'text-rose-400' : (fiiLongPct >= 50 ? 'text-emerald-400' : 'text-amber-300') },
+          { lbl: `Retail Client Long %`, val: `${clientLongPct.toFixed(1)}% (${Number(latestOi.client_index_fut_net || 0) >= 0 ? '+' : ''}${Number(latestOi.client_index_fut_net || 0).toLocaleString()} net)`, col: clientLongPct >= 70 ? 'text-rose-400' : 'text-slate-200' },
+          { lbl: `Inst Flow Score`, val: `${flowSc >= 0 ? '+' : ''}${flowSc.toFixed(1)} / 100`, col: flowSc >= 10 ? 'text-emerald-400' : (flowSc <= -10 ? 'text-rose-400' : 'text-amber-300') },
+        ];
+        instKpiGrid.innerHTML = kpis.map(k => `
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase truncate">${k.lbl}</div>
+            <div class="text-xs font-bold mt-1 ${k.col}">${k.val}</div>
+          </div>
+        `).join('');
+      }
+
+      // FII / DII Cash Turnover Table
+      const fiiCashTbody = document.getElementById('pred-fii-cash-tbody');
+      if (fiiCashTbody) {
+        const cashList = instData.one_week_cash_history || [];
+        if (cashList.length === 0) {
+          fiiCashTbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500 font-sans">No cash turnover history recorded.</td></tr>`;
+        } else {
+          fiiCashTbody.innerHTML = cashList.map(r => {
+            const fNet = Number(r.fii_net || 0);
+            const dNet = Number(r.dii_net || 0);
+            const tNet = Number(r.total_net || (fNet + dNet));
+            return `
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="p-2 font-bold text-white">${r.date}</td>
+                <td class="p-2 text-slate-300">₹${Number(r.fii_buy || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
+                <td class="p-2 text-slate-300">₹${Number(r.fii_sell || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
+                <td class="p-2 font-bold ${fNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${fNet >= 0 ? '+' : ''}₹${fNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
+                <td class="p-2 font-bold ${dNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${dNet >= 0 ? '+' : ''}₹${dNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
+                <td class="p-2 text-right font-bold ${tNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${tNet >= 0 ? '+' : ''}₹${tNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+
+      // 1-Week Participant OI Table
+      const fiiOiTbody = document.getElementById('pred-fii-oi-tbody');
+      if (fiiOiTbody) {
+        const oiList = instData.one_week_participant_oi_history || [];
+        if (oiList.length === 0) {
+          fiiOiTbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500 font-sans">No participant OI history recorded.</td></tr>`;
+        } else {
+          fiiOiTbody.innerHTML = oiList.map(r => {
+            const fNet = Number(r.fii_net || 0);
+            const fPct = Number(r.fii_long_pct || 0);
+            const cNet = Number(r.client_net || 0);
+            const cPct = Number(r.client_long_pct || 0);
+            const pNet = Number(r.pro_net || 0);
+            return `
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="p-2 font-bold text-white">${r.date}</td>
+                <td class="p-2 font-bold ${fNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${fNet >= 0 ? '+' : ''}${fNet.toLocaleString()}</td>
+                <td class="p-2 font-bold ${fPct <= 15 ? 'text-rose-400' : (fPct >= 50 ? 'text-emerald-400' : 'text-amber-300')}">${fPct.toFixed(1)}%</td>
+                <td class="p-2 font-bold ${cNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${cNet >= 0 ? '+' : ''}${cNet.toLocaleString()}</td>
+                <td class="p-2 font-bold ${cPct >= 70 ? 'text-rose-400' : 'text-slate-300'}">${cPct.toFixed(1)}%</td>
+                <td class="p-2 text-right font-bold ${pNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${pNet >= 0 ? '+' : ''}${pNet.toLocaleString()}</td>
+              </tr>
             `;
           }).join('');
         }
