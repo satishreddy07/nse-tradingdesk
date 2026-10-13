@@ -2366,7 +2366,7 @@
               <span id="modal-chart-source" class="hidden md:inline-block text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950 border border-cyan-700/50 text-cyan-300">ATR SWING STRUCTURE</span>
             </div>
             <div id="modal-crosshair-hud" class="text-[11px] font-mono text-slate-400 mt-0.5 truncate">
-              Drag chart horizontally to pan • Page scroll works smoothly without chart collision
+              Drag chart horizontally or vertically to pan X/Y • Pinch to zoom • Tap bar for OHLCV
             </div>
           </div>
         </div>
@@ -2448,18 +2448,20 @@
             <span class="text-amber-400">- - 🎯 T1</span>
             <span class="text-emerald-400">- - 🚀 T2</span>
           </div>
-          <div class="flex items-center gap-1.5">
+          <div class="flex items-center gap-1 sm:gap-1.5 flex-wrap">
+            <button onclick="panChartTime(-15)" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold" title="Pan X-Axis Back in Time">◀ Pan X</button>
+            <button onclick="panChartTime(15)" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold" title="Pan X-Axis Forward in Time">Pan X ▶</button>
             <button onclick="zoomChart(0.8)" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px]">🔍+ Zoom In</button>
             <button onclick="zoomChart(1.25)" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px]">🔍- Zoom Out</button>
             <button onclick="resetChartZoom()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[10px]">⟲ Fit All</button>
-            <button id="btn-wheel-zoom" onclick="toggleChartWheelZoom()" class="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-400 text-[10px]" title="Toggle mouse-wheel zoom on chart (OFF by default so page scrolls smoothly)">🖱️ Wheel Zoom: OFF</button>
+            <button id="btn-wheel-zoom" onclick="toggleChartWheelZoom()" class="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-400 text-[10px]" title="Toggle mouse-wheel zoom on chart">🖱️ Wheel Zoom: OFF</button>
           </div>
         </div>
 
         <!-- TradingView Lightweight Chart Container + Visible Bottom X-Axis Date Timeline Strip -->
         <div class="rounded-xl border border-slate-800 bg-[#070a13] overflow-hidden">
-          <div id="tv-chart-container" class="w-full h-[255px] sm:h-[295px] lg:h-[315px] bg-[#070a13] relative"></div>
-          <div id="chart-date-timeline-bar" class="px-3 py-1.5 bg-slate-950/95 border-t border-slate-800 flex items-center justify-between text-[10px] sm:text-[11px] font-mono text-slate-300">
+          <div id="tv-chart-container" class="w-full h-[255px] sm:h-[295px] lg:h-[315px] bg-[#070a13] relative touch-none select-none"></div>
+          <div id="chart-date-timeline-bar" class="px-3 py-1.5 bg-slate-950/95 border-t border-slate-800 flex items-center justify-between text-[10px] sm:text-[11px] font-mono text-slate-300 overflow-x-auto whitespace-nowrap">
             <span class="text-slate-500">📅 X-Axis Timeline: Loading dates...</span>
           </div>
         </div>
@@ -6120,21 +6122,37 @@
         document.body.style.overflow = 'hidden';
       }
 
-      document.getElementById('modal-chart-symbol').innerText = `${symbol} (Loading...)`;
+      // Clean symbol name immediately - NO "(Loading...)" string beside ticker
+      document.getElementById('modal-chart-symbol').innerText = symbol;
+      const hud = document.getElementById('modal-crosshair-hud');
+      if (hud) {
+        hud.innerHTML = `<span class="text-cyan-400 animate-pulse font-mono">⌛ Loading live OHLCV bars & technical indicators for ${symbol}...</span>`;
+      }
+      const priceEl = document.getElementById('modal-chart-price');
+      if (priceEl) priceEl.innerText = '₹...';
+      const chgEl = document.getElementById('modal-chart-chg');
+      if (chgEl) {
+        chgEl.innerText = '--';
+        chgEl.className = 'text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400';
+      }
+
       try {
         const res = await fetch(`/api/stocks/${encodeURIComponent(symbol)}/chart?bars=${bars}`);
         if (!res.ok) {
+          if (hud) hud.innerHTML = `<span class="text-rose-400 font-mono">⚠️ Failed to load chart data for ${symbol} (HTTP ${res.status})</span>`;
           showToast(`Failed to load chart for ${symbol}`, "error");
           return;
         }
         const payload = await res.json();
         if (payload.status !== "OK") {
+          if (hud) hud.innerHTML = `<span class="text-rose-400 font-mono">⚠️ ${payload.message || 'No data found'}</span>`;
           showToast(payload.message || `No data found for ${symbol}`, "error");
           return;
         }
         currentChartPayload = payload;
         renderLightweightChartAndTable(payload);
       } catch (e) {
+        if (hud) hud.innerHTML = `<span class="text-rose-400 font-mono">⚠️ Chart error: ${e.message}</span>`;
         showToast(`Chart error: ${e.message}`, "error");
       }
     }
@@ -6180,6 +6198,17 @@
       }
     }
 
+    function panChartTime(barsOffset) {
+      if (!tvChart) return;
+      const ts = tvChart.timeScale();
+      const range = ts.getVisibleLogicalRange();
+      if (!range) return;
+      ts.setVisibleLogicalRange({
+        from: range.from + barsOffset,
+        to: range.to + barsOffset
+      });
+    }
+
     function zoomChart(factor) {
       if (!tvChart) return;
       const ts = tvChart.timeScale();
@@ -6194,7 +6223,10 @@
     }
 
     function resetChartZoom() {
-      if (tvChart) tvChart.timeScale().fitContent();
+      if (tvChart) {
+        tvChart.timeScale().fitContent();
+        tvChart.priceScale('right').applyOptions({ autoScale: true });
+      }
     }
 
     function toggleChartWheelZoom() {
@@ -6208,8 +6240,18 @@
       }
       if (tvChart) {
         tvChart.applyOptions({
-          handleScroll: { mouseWheel: chartWheelZoomEnabled, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
-          handleScale: { mouseWheel: chartWheelZoomEnabled, pinch: true, axisPressedMouseMove: true }
+          handleScroll: {
+            mouseWheel: chartWheelZoomEnabled,
+            pressedMouseMove: true,
+            horzTouchDrag: true,
+            vertTouchDrag: true
+          },
+          handleScale: {
+            mouseWheel: chartWheelZoomEnabled,
+            pinch: true,
+            axisPressedMouseMove: { time: true, price: true },
+            axisDoubleClickReset: { time: true, price: true }
+          }
         });
       }
     }
@@ -6226,6 +6268,19 @@
       }
     });
 
+    function formatChartTickDate(dStr) {
+      if (!dStr) return '';
+      const parts = dStr.split('-');
+      if (parts.length === 3) {
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const mIdx = parseInt(parts[1], 10) - 1;
+        const day = parts[2];
+        const yr = parts[0].slice(2);
+        return `${day} ${months[mIdx] || parts[1]} '${yr}`;
+      }
+      return dStr;
+    }
+
     function updateChartDateTimelineBar(candles, fromLogical = null, toLogical = null) {
       const bar = document.getElementById('chart-date-timeline-bar');
       if (!bar || !candles || candles.length === 0) return;
@@ -6235,7 +6290,8 @@
       const endIdx = toLogical !== null ? Math.max(startIdx, Math.min(total - 1, Math.ceil(toLogical))) : (total - 1);
       const span = Math.max(1, endIdx - startIdx);
 
-      const tickCount = 6;
+      const isMobile = (window.innerWidth < 640);
+      const tickCount = isMobile ? 3 : 5;
       const ticks = [];
       for (let i = 0; i < tickCount; i++) {
         const idx = Math.min(total - 1, Math.round(startIdx + (span * i) / (tickCount - 1)));
@@ -6246,11 +6302,12 @@
       bar.innerHTML = ticks.map((dt, idx) => {
         const isFirst = idx === 0;
         const isLast = idx === ticks.length - 1;
+        const formatted = formatChartTickDate(dt);
         const badgeCls = isLast
-          ? 'text-emerald-300 font-bold bg-emerald-950/60 border border-emerald-700/40 px-2 py-0.5 rounded'
-          : (isFirst ? 'text-cyan-300 font-semibold' : 'text-slate-300');
-        return `<span class="${badgeCls}">${isFirst ? '📅 ' : ''}${dt}${isLast ? ' (Latest)' : ''}</span>`;
-      }).join('<span class="text-slate-600 hidden sm:inline">───</span>');
+          ? 'text-emerald-300 font-bold bg-emerald-950/60 border border-emerald-700/40 px-1.5 py-0.5 rounded whitespace-nowrap'
+          : (isFirst ? 'text-cyan-300 font-semibold whitespace-nowrap' : 'text-slate-300 whitespace-nowrap');
+        return `<span class="${badgeCls}">${isFirst ? '📅 ' : ''}${formatted}${isLast ? ' (Latest)' : ''}</span>`;
+      }).join('<span class="text-slate-600 hidden sm:inline px-1">───</span>');
     }
 
     function renderLightweightChartAndTable(payload) {
@@ -6302,12 +6359,13 @@
             mouseWheel: chartWheelZoomEnabled,
             pressedMouseMove: true,
             horzTouchDrag: true,
-            vertTouchDrag: false
+            vertTouchDrag: true
           },
           handleScale: {
             mouseWheel: chartWheelZoomEnabled,
             pinch: true,
-            axisPressedMouseMove: true
+            axisPressedMouseMove: { time: true, price: true },
+            axisDoubleClickReset: { time: true, price: true }
           },
           layout: {
             background: { type: 'solid', color: '#070a13' },
@@ -6324,7 +6382,9 @@
           },
           rightPriceScale: {
             borderColor: '#334155',
-            scaleMargins: { top: 0.08, bottom: 0.22 }
+            scaleMargins: { top: 0.08, bottom: 0.22 },
+            autoScale: true,
+            alignLabels: true
           },
           timeScale: {
             visible: true,
@@ -6439,6 +6499,19 @@
         });
 
         tvChart.timeScale().fitContent();
+
+        // Responsive auto-resizer for mobile orientation change & desktop resizing
+        if (window.ResizeObserver) {
+          if (window._tvChartResizeObserver) window._tvChartResizeObserver.disconnect();
+          window._tvChartResizeObserver = new ResizeObserver(entries => {
+            if (!tvChart || !container) return;
+            const rect = entries[0]?.contentRect;
+            if (rect && rect.width > 0) {
+              tvChart.applyOptions({ width: rect.width });
+            }
+          });
+          window._tvChartResizeObserver.observe(container);
+        }
       }
 
       // Render OHLCV Table (Most recent first)

@@ -15,6 +15,7 @@ import zlib
 import pickle
 import logging
 import datetime
+import math
 import concurrent.futures
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
@@ -559,35 +560,45 @@ class StateEngine:
         opens = df["Open"].astype(float)
         vols = df["Volume"].fillna(0).astype(np.int64)
 
-        ema20_s = closes.ewm(span=20, adjust=False).mean()
-        ema50_s = closes.ewm(span=50, adjust=False).mean()
-        ema200_s = closes.ewm(span=200, adjust=False).mean()
+        ema20_s = closes.ewm(span=20, adjust=False).mean().fillna(closes)
+        ema50_s = closes.ewm(span=50, adjust=False).mean().fillna(closes)
+        ema200_s = closes.ewm(span=200, adjust=False).mean().fillna(closes)
 
-        delta = closes.diff()
+        delta = closes.diff().fillna(0.0)
         gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
         loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
         rs = gain / (loss + 1e-9)
-        rsi14_s = 100 - (100 / (1 + rs))
+        rsi14_s = (100 - (100 / (1 + rs))).fillna(50.0).replace([np.inf, -np.inf], 50.0)
 
+        prev_closes = closes.shift(1).fillna(closes)
         tr = pd.concat([
             (highs - lows),
-            (highs - closes.shift(1)).abs(),
-            (lows - closes.shift(1)).abs()
+            (highs - prev_closes).abs(),
+            (lows - prev_closes).abs()
         ], axis=1).max(axis=1)
-        atr14_s = tr.rolling(14, min_periods=1).mean()
-        pct_chg_s = closes.pct_change().fillna(0.0) * 100.0
+        atr14_s = tr.rolling(14, min_periods=1).mean().fillna(closes * 0.01).replace([np.inf, -np.inf], 1.0)
+        pct_chg_s = (closes.pct_change().fillna(0.0) * 100.0).replace([np.inf, -np.inf], 0.0)
 
         tail_n = min(len(df), max(60, int(limit_bars)))
         df_slice = df.iloc[-tail_n:]
 
+        def _clean_flt(v, default=0.0):
+            try:
+                f = float(v)
+                if math.isnan(f) or math.isinf(f):
+                    return default
+                return f
+            except Exception:
+                return default
+
         candles = []
         for idx in df_slice.index:
             d_str = str(idx)[:10]
-            o_val = round(float(opens.loc[idx]), 2)
-            h_val = round(float(highs.loc[idx]), 2)
-            l_val = round(float(lows.loc[idx]), 2)
-            c_val = round(float(closes.loc[idx]), 2)
-            v_val = int(vols.loc[idx])
+            o_val = round(_clean_flt(opens.loc[idx]), 2)
+            h_val = round(_clean_flt(highs.loc[idx], o_val), 2)
+            l_val = round(_clean_flt(lows.loc[idx], o_val), 2)
+            c_val = round(_clean_flt(closes.loc[idx], o_val), 2)
+            v_val = int(vols.loc[idx]) if idx in vols.index and not math.isnan(float(vols.loc[idx])) else 0
             candles.append({
                 "time": d_str,
                 "open": o_val,
@@ -595,12 +606,12 @@ class StateEngine:
                 "low": l_val,
                 "close": c_val,
                 "volume": v_val,
-                "change_pct": round(float(pct_chg_s.loc[idx]), 2),
-                "ema20": round(float(ema20_s.loc[idx]), 2),
-                "ema50": round(float(ema50_s.loc[idx]), 2),
-                "ema200": round(float(ema200_s.loc[idx]), 2),
-                "rsi14": round(float(rsi14_s.loc[idx]), 1),
-                "atr14": round(float(atr14_s.loc[idx]), 2)
+                "change_pct": round(_clean_flt(pct_chg_s.loc[idx], 0.0), 2),
+                "ema20": round(_clean_flt(ema20_s.loc[idx], c_val), 2),
+                "ema50": round(_clean_flt(ema50_s.loc[idx], c_val), 2),
+                "ema200": round(_clean_flt(ema200_s.loc[idx], c_val), 2),
+                "rsi14": round(_clean_flt(rsi14_s.loc[idx], 50.0), 1),
+                "atr14": round(_clean_flt(atr14_s.loc[idx], max(0.5, c_val * 0.01)), 2)
             })
 
         # Check if stock is an Active Position or Signal or Historical Trade
@@ -704,7 +715,7 @@ class StateEngine:
             rr_t1 = round((t1 - ep) / risk_per_share, 2)
             rr_t2 = round((t2 - ep) / risk_per_share, 2)
 
-        return {
+        payload = {
             "status": "OK",
             "symbol": sym,
             "bars_total": len(df),
@@ -730,6 +741,19 @@ class StateEngine:
             "recent_trades": recent_trades,
             "candles": candles
         }
+
+        def _sanitize_json(obj):
+            if isinstance(obj, float):
+                if math.isnan(obj) or math.isinf(obj):
+                    return 0.0
+                return obj
+            elif isinstance(obj, dict):
+                return {k: _sanitize_json(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [_sanitize_json(x) for x in obj]
+            return obj
+
+        return _sanitize_json(payload)
 
     # --------------------------------------------------------------------------
     # ACTIVE POSITIONS OPERATIONS (IMMEDIATE MASTER DB SAVE + IMMEDIATE CLOUD SYNC)
