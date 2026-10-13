@@ -3770,9 +3770,10 @@ class NiftyAnalyticsEngine:
             "est_margin": est_margin
         }
 
-    def evaluate_and_deploy_auto_options_strategies(self, modes: Optional[List[str]] = None) -> Dict[str, Any]:
+    def evaluate_and_deploy_auto_options_strategies(self, modes: Optional[List[str]] = None, force_refresh: bool = True) -> Dict[str, Any]:
         """
         Automated Options Execution Engine based on ML Forecasts & Real-Time Intraday Telemetry:
+        - Regenerates complete analysis (fresh live Option Chain + fresh 6-Pillar ML Predictions + AI Synthesis) before evaluating & deploying.
         - Weekly & Monthly Strategy Matrix (Image 1):
           * Strong Bullish -> Bull Call Spread, Bull Put Spread (or Long Call)
           * Mild Bullish   -> Bull Put Spread, Bull Call Spread
@@ -3796,7 +3797,8 @@ class NiftyAnalyticsEngine:
         if modes is None:
             modes = ["WEEKLY", "MONTHLY", "INTRADAY"]
 
-        opt_chain_data = self.fetch_and_analyze_option_chain(force_refresh=False)
+        logger.info(f"🔄 [Auto Options Engine] Regenerating complete live analysis before evaluating trades (force_refresh={force_refresh})...")
+        opt_chain_data = self.fetch_and_analyze_option_chain(force_refresh=force_refresh)
         if opt_chain_data.get("status") != "OK":
             return {"status": "UNAVAILABLE", "message": "Option chain unavailable for auto-deploy."}
 
@@ -3811,7 +3813,8 @@ class NiftyAnalyticsEngine:
         weekly_expiry = weekly_chain.get("expiry", "")
         monthly_expiry = monthly_chain.get("expiry", "")
 
-        preds = self.compute_nifty_predictions(force_refresh=False)
+        # Regenerate complete 6-pillar ML predictions & automated AI interpretation
+        preds = self.compute_nifty_predictions(force_refresh=force_refresh)
         composite_score = float(preds.get("composite_score") or 0.0)
         t5_verdict = str(preds.get("t5_forecast", {}).get("verdict") or "").upper()
         w_iv = float(weekly_chain.get("volatility_and_gex", {}).get("atm_iv") or 12.0)

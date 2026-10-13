@@ -649,6 +649,7 @@ class ExitStrategyRequest(BaseModel):
 
 class AutoDeployOptionsRequest(BaseModel):
     modes: Optional[list] = ["WEEKLY", "MONTHLY", "INTRADAY"]
+    force_refresh: Optional[bool] = True
 
 
 @app.get("/api/options/portfolio")
@@ -674,10 +675,11 @@ def exit_options_strategy_endpoint(req: ExitStrategyRequest):
 
 @app.post("/api/options/auto-deploy")
 def auto_deploy_options_endpoint(req: Optional[AutoDeployOptionsRequest] = None):
-    """Evaluates ML predictions & intraday progression to auto-deploy weekly, monthly, and intraday strategies according to the matrix."""
+    """Regenerates complete analysis (fresh live option chain, 6-pillar ML predictions & AI interpretation) then evaluates and auto-deploys strategies."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     modes = req.modes if req and req.modes else ["WEEKLY", "MONTHLY", "INTRADAY"]
-    return nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=modes)
+    force_refresh = req.force_refresh if (req and req.force_refresh is not None) else True
+    return nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=modes, force_refresh=force_refresh)
 
 
 @app.get("/api/options/chain-compact")

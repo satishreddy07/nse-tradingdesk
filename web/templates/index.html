@@ -162,10 +162,6 @@
           <span id="market-status-text" class="font-medium">Checking...</span>
         </div>
 
-        <div id="trading-gate-pill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/60 border border-rose-800/60 text-rose-300 font-mono text-xs whitespace-nowrap" title="Orders can only execute during NSE Regular Trading Hours (09:15 AM - 03:30 PM IST, Mon-Fri)">
-          <span id="trading-gate-text">🔒 GATE LOCKED</span>
-        </div>
-
         <div id="vault-status-pill" onclick="switchModule('module-swing'); switchTab('tab-scheduler');" class="cursor-pointer hidden 2xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/40 border border-cyan-800/60 text-cyan-300 font-mono whitespace-nowrap hover:bg-cyan-900/40 transition" title="Telegram Cloud Master Vault: Click to view backup history">
           <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
           <span>☁️ Backup: <b id="header-vault-time" class="text-white font-bold">--</b></span>
@@ -6587,28 +6583,30 @@
       const origHtml = btn ? btn.innerHTML : '';
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Evaluating ML Desk...`;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Regenerating Analysis & Taking Trades...`;
       }
 
       try {
         const res = await fetch('/api/options/auto-deploy', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ run_category: 'ALL' })
+          body: JSON.stringify({ modes: ['WEEKLY', 'MONTHLY', 'INTRADAY'], force_refresh: true })
         });
-        const data = await res.json();
+        const isJson = res.headers.get("content-type")?.includes("application/json");
+        const data = isJson ? await res.json() : { detail: await res.text() };
         if (res.ok && data.status === 'OK') {
           const depCount = data.deployed_count || 0;
           if (depCount > 0) {
-            const names = (data.deployed_strategies || []).map(s => `${s.name} [${s.category}]`).join(', ');
-            showToast(`🤖 Auto-Trader: Successfully deployed ${depCount} strategy(s) with Stop Loss & Target: ${names}`, 'success');
+            const names = (data.deployed || []).map(s => `${s.strategy_name} [${s.mode}]`).join(', ');
+            showToast(`🤖 Auto-Trader: Analysis regenerated & deployed ${depCount} strategy(s): ${names}`, 'success');
           } else {
-            showToast(`🤖 Auto-Trader: Limit reached (Max 2 strategies per category active). Active strategies monitored live.`, 'info');
+            showToast(`🤖 Auto-Trader: Analysis regenerated. Active limit (max 2 per category) reached or diverse strategies already active.`, 'info');
           }
+          await loadPredictionsDesk(false);
           await loadOptionsPortfolioDesk();
           await loadAllEquityCurves();
         } else {
-          showToast(`Auto-Trader failed: ${data.detail || data.message || 'Server error'}`, 'error');
+          showToast(`Auto-Trader notice: ${data.detail || data.message || 'Server error'}`, 'error');
         }
       } catch (err) {
         console.error("Auto deploy error:", err);
@@ -6617,6 +6615,7 @@
         if (btn) {
           btn.disabled = false;
           btn.innerHTML = origHtml;
+          lucide.createIcons();
         }
       }
     }
@@ -7002,18 +7001,7 @@
       if (p1StreamBadge) p1StreamBadge.innerText = streamText;
       if (p2StreamBadge) p2StreamBadge.innerText = streamText;
 
-      // Strict Market-Hours Trading Gate Pill
-      const gatePill = document.getElementById('trading-gate-pill');
-      const gateText = document.getElementById('trading-gate-text');
-      if (gateText) {
-        if (data.trading_gate_open || mStatus.can_trade) {
-          gateText.innerHTML = `<span>🔓</span> <b class="tracking-wide">GATE OPEN</b><span class="hidden 2xl:inline text-emerald-400/80 font-normal"> (09:15-15:30)</span>`;
-          if (gatePill) gatePill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-xs font-mono text-emerald-300 whitespace-nowrap";
-        } else {
-          gateText.innerHTML = `<span>🔒</span> <b class="tracking-wide">GATE LOCKED</b><span class="hidden 2xl:inline text-rose-400/80 font-normal"> (09:15-15:30)</span>`;
-          if (gatePill) gatePill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/60 border border-rose-500/40 text-xs font-mono text-rose-300 whitespace-nowrap";
-        }
-      }
+
 
       // Next Scan
       const nextScan = data.next_scan || {};

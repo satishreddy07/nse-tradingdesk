@@ -176,8 +176,8 @@ def scheduled_live_price_stream_job():
         nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=True)
         # 2. Reconcile stops and targets for all active options strategies
         nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
-        # 3. Evaluate and deploy intraday auto-strategies if active < 2
-        nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["INTRADAY"])
+        # 3. Regenerate complete analysis & evaluate/deploy intraday auto-strategies if active < 2
+        nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["INTRADAY"], force_refresh=True)
         # 4. Periodically evaluate AI intelligence analysis (respecting cache TTL)
         if config.AI_ENABLED:
             try:
@@ -192,7 +192,7 @@ def scheduled_live_price_stream_job():
 def scheduled_options_premarket_job():
     """
     09:00 AM IST Weekday Job:
-    Evaluates ML predictions and deploys weekly & monthly automated strategies
+    Regenerates complete analysis and deploys weekly & monthly automated strategies
     before market open if new expiry cycle has begun.
     """
     current_dt = now_ist()
@@ -202,7 +202,7 @@ def scheduled_options_premarket_job():
         return
     try:
         from engines.nifty_analytics_engine import nifty_analytics_engine
-        res = nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["WEEKLY", "MONTHLY"])
+        res = nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["WEEKLY", "MONTHLY"], force_refresh=True)
         logger.info(f"🤖 [09:00 AM Options Pre-Market Job] Deployed: {res.get('deployed_count', 0)} strategies")
     except Exception as e:
         logger.warning(f"09:00 AM Options Pre-Market Job error: {e}")
