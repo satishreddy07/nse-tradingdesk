@@ -1,18 +1,20 @@
 services:
   - type: web
-    name: quant-trading-desk
+    name: nse-tradingdesk
     env: python
-    region: singapore # Closest region to India / NSE for low-latency
-    plan: starter
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn web.api:app --host 0.0.0.0 --port $PORT
+    region: singapore
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "./start.sh"
     healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.8
+        value: 3.11.9
       - key: TZ
         value: Asia/Kolkata
+      - key: RENDER_EXTERNAL_URL
+        value: "https://nse-tradingdesk.onrender.com"
       - key: P1_BASE_CAPITAL
         value: "500000.0"
       - key: P2_BASE_CAPITAL
