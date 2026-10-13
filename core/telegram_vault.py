@@ -529,6 +529,7 @@ class TelegramVaultManager:
             "master_file_size_mb": db_size_mb,
             "token_masked": creds["token_masked"],
             "chat_id": creds["chat_id_masked"],
+            "master_file_message_id": manifest.get("master_file_message_id") or last_m.get("message_id"),
             "local_ohlcv_stocks": stocks_cnt,
             "local_ohlcv_files": stocks_cnt,
             "latest_local_ohlcv_date": latest_date,
