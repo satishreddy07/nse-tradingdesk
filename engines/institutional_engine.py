@@ -547,17 +547,14 @@ class DirectYahooFinanceFetcher:
 # ==============================================================================
 # C-VECTORIZED & MULTI-THREADED PARALLEL FEATURE ENGINE
 # ==============================================================================
-from scipy.signal import lfilter
 from numpy.lib.stride_tricks import sliding_window_view
 
 
 def _fast_ewm_array(arr: np.ndarray, span: float) -> np.ndarray:
-    """C-vectorized EWM matching pd.Series(arr).ewm(span=span, adjust=False).mean()."""
+    """Cython-vectorized EWM matching pd.Series(arr).ewm(span=span, adjust=False).mean()."""
     if len(arr) == 0:
         return arr
-    alpha = 2.0 / (span + 1.0)
-    out, _ = lfilter([alpha], [1.0, -(1.0 - alpha)], arr, zi=[arr[0] * (1.0 - alpha)])
-    return out
+    return pd.Series(arr, copy=False).ewm(span=span, adjust=False).mean().to_numpy()
 
 
 class FeatureEngine:

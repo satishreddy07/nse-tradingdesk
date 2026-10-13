@@ -21,7 +21,6 @@ from typing import Dict, List, Any, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.signal import lfilter
 
 from core.config import DB_PATH
 from core.data_quality import IST, now_ist, format_ist
@@ -30,11 +29,10 @@ logger = logging.getLogger("StateEngine")
 
 
 def _fast_ewm_last(arr: np.ndarray, alpha: float) -> float:
-    """Fast C-level EWM last value matching pd.Series.ewm(alpha=alpha, adjust=False).mean().iloc[-1]."""
+    """Fast Cython EWM last value matching pd.Series.ewm(alpha=alpha, adjust=False).mean().iloc[-1]."""
     if len(arr) == 0:
         return 0.0
-    out, _ = lfilter([alpha], [1.0, -(1.0 - alpha)], arr, zi=[arr[0] * (1.0 - alpha)])
-    return float(out[-1])
+    return float(pd.Series(arr, copy=False).ewm(alpha=alpha, adjust=False).mean().iloc[-1])
 
 
 class StateEngine:
