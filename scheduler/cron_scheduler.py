@@ -291,19 +291,26 @@ def start_scheduler():
             misfire_grace_time=180
         )
 
-        # Job 0D: 50-Minute Nifty Weekly Option Expiry Telemetry Collector (09:30 AM to 03:30 PM IST)
-        intraday_50m_schedule = [
-            (9, 30, "09:30"),
+        # Job 0D: Multi-Interval (15m / 30m / 50m) Nifty Weekly Option Expiry Telemetry Collector (09:30 AM to 03:30 PM IST)
+        # Runs every 15 minutes (:00, :15, :30, :45) between 09:30 and 15:30 IST, plus specific 50m slots
+        _scheduler.add_job(
+            scheduled_nifty_intraday_50min_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour="9-15", minute="0,15,30,45", timezone=IST),
+            id="job_nifty_intraday_15m_stream",
+            name="09:30 AM – 03:30 PM Nifty Weekly Option Multi-Interval Collector (Every 15m)",
+            replace_existing=True,
+            misfire_grace_time=180
+        )
+
+        # Explicit 50-minute slot triggers to guarantee exact 50m cadence captures
+        intraday_50m_extra_slots = [
             (10, 20, "10:20"),
             (11, 10, "11:10"),
-            (12, 0, "12:00"),
             (12, 50, "12:50"),
             (13, 40, "13:40"),
-            (14, 30, "14:30"),
             (15, 20, "15:20"),
-            (15, 30, "15:20"),
         ]
-        for hr, mn, slot_lbl in intraday_50m_schedule:
+        for hr, mn, slot_lbl in intraday_50m_extra_slots:
             _scheduler.add_job(
                 scheduled_nifty_intraday_50min_job,
                 kwargs={"slot_label": slot_lbl},

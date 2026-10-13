@@ -534,22 +534,22 @@ def get_nifty_options_chain(force_refresh: bool = False):
 
 
 @app.get("/api/nifty/intraday-expiry")
-def get_nifty_intraday_expiry(session_date: Optional[str] = None):
-    """Returns the 50-minute Intraday Weekly Option Expiry progression (09:30 to 15:30 IST)."""
+def get_nifty_intraday_expiry(session_date: Optional[str] = None, interval_mode: str = "30m"):
+    """Returns the Intraday Weekly Option Expiry progression (15m / 30m Institutional Standard / 50m)."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
-    return nifty_analytics_engine.get_intraday_expiry_dashboard(session_date=session_date)
+    return nifty_analytics_engine.get_intraday_expiry_dashboard(session_date=session_date, interval_mode=interval_mode)
 
 
 @app.post("/api/nifty/intraday-expiry/capture")
-def capture_nifty_intraday_snapshot(slot_override: Optional[str] = None):
-    """Manually or automatically captures a live 50-minute Weekly Option Expiry snapshot and syncs to Cloud Vault."""
+def capture_nifty_intraday_snapshot(slot_override: Optional[str] = None, interval_mode: str = "30m"):
+    """Manually or automatically captures a live Weekly Option Expiry snapshot and syncs to Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
-    return nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override=slot_override, sync_cloud=True)
+    return nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override=slot_override, sync_cloud=True, interval_mode=interval_mode)
 
 
 @app.get("/api/nifty/predictions")
 def get_nifty_predictions(force_refresh: bool = False):
-    """Computes live 6-pillar Nifty 50 T+1 & T+5 predictions with 180-day walk-forward validation & calibration."""
+    """Computes live 6-pillar Nifty 50 T+1 & T+5 predictions with forward-testing attribution & self-learning weights."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     return nifty_analytics_engine.compute_nifty_predictions(force_refresh=force_refresh)
 

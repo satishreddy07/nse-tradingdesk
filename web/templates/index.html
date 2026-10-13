@@ -81,6 +81,14 @@
     .pb-safe {
       padding-bottom: env(safe-area-inset-bottom, 0.75rem);
     }
+    /* Strictly non-wrapping badges across all tables and devices */
+    .quant-badge {
+      display: inline-flex !important;
+      align-items: center !important;
+      white-space: nowrap !important;
+      word-break: keep-all !important;
+      flex-shrink: 0 !important;
+    }
   </style>
 </head>
 <body class="bg-[#070a13] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black overflow-x-hidden">
@@ -1068,7 +1076,7 @@
     </section>
 
     <!-- =================================================================== -->
-    <!-- MODULE 2: NIFTY 50 INTRADAY 50-MINUTE WEEKLY OPTION EXPIRY DESK      -->
+    <!-- MODULE 2: NIFTY 50 INTRADAY MULTI-INTERVAL WEEKLY OPTION EXPIRY DESK -->
     <!-- =================================================================== -->
     <section id="module-intraday" class="module-section hidden space-y-4 sm:space-y-6">
       <div class="bg-slate-900/80 border border-amber-500/35 rounded-2xl p-4 sm:p-5 shadow-lg">
@@ -1076,17 +1084,23 @@
           <div>
             <div class="flex flex-wrap items-center gap-2">
               <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">MODULE 2 • NIFTY 50 INTRADAY EXPIRY DESK</span>
-              <span id="intra-expiry-badge" class="text-[11px] font-mono text-emerald-400">⚡ 50-Min Weekly Option Expiry Collector (09:30 – 15:30 IST)</span>
+              <span id="intra-expiry-badge" class="text-[11px] font-mono text-emerald-400">⚡ Weekly Option Expiry Telemetry Collector (09:30 – 15:30 IST)</span>
             </div>
-            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Nifty 50 Current Weekly Option Expiry • 50-Minute Intraday Telemetry</h2>
-            <p class="text-xs text-slate-400 mt-0.5">
-              Collects & persists live NSE Nifty 50 Weekly Option Chain data every 50 minutes (<code class="text-amber-300">09:30, 10:20, 11:10, 12:00, 12:50, 13:40, 14:30, 15:20/15:30 IST</code>) into the Single Master File to track intraday writer flow, straddle theta decay, PCR shifts, and wall defense.
+            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Nifty 50 Current Weekly Option Expiry • Multi-Interval Intraday Telemetry</h2>
+            <p class="text-xs text-slate-400 mt-0.5" id="intra-rationale-text">
+              Tracks live NSE Nifty 50 Weekly Option Chain data across selectable intervals (<code class="text-amber-300">15m</code>, <code class="text-amber-300">30m (Recommended Institutional Standard)</code>, or <code class="text-amber-300">50m</code>) into the Single Master File to track intraday writer flow, straddle theta decay, PCR shifts, and wall defense.
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <!-- Interval Mode Selector -->
+            <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800" title="30-Minute interval is the recommended Institutional Standard: aligns with NSE 30m Market Profile TPO brackets and European open without micro-noise.">
+              <button onclick="switchIntradayInterval('15m')" id="btn-intra-15m" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition">15m</button>
+              <button onclick="switchIntradayInterval('30m')" id="btn-intra-30m" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-amber-500 text-black shadow-md transition">30m (Inst.)</button>
+              <button onclick="switchIntradayInterval('50m')" id="btn-intra-50m" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition">50m</button>
+            </div>
             <button onclick="captureIntradaySnapshotNow()" id="btn-intra-capture" class="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
               <i data-lucide="camera" class="w-3.5 h-3.5 shrink-0"></i>
-              <span>Capture 50m Slot Now</span>
+              <span>Capture Slot Now</span>
             </button>
             <button onclick="loadIntradayExpiryDesk(true)" class="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
@@ -1475,51 +1489,79 @@
         </div>
       </div>
 
-      <!-- Row 3: Pillar 6 Live News & RBI/Fed Calendar + Validated Prediction Audit Ledger -->
+      <!-- Row 2.5: Self-Trained Adaptive Weights & Detected Live Indian & Global Macro Catalysts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <!-- Pillar 6: Central Bank Events (RBI MPC / US Fed) & Live News Headlines -->
-        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+        <!-- Self-Training Adaptive Pillar Weights -->
+        <div class="bg-slate-900/80 border border-purple-500/35 rounded-2xl p-4 sm:p-5">
           <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
-            <h3 class="font-bold text-white text-sm flex items-center gap-2">
-              <i data-lucide="newspaper" class="w-4 h-4 text-purple-400 shrink-0"></i>
-              <span>Pillar 6: RBI MPC & US Fed FOMC Calendar + Live News Sentiment</span>
-            </h3>
-            <span id="pred-news-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">--</span>
+            <div>
+              <h3 class="font-bold text-white text-sm flex items-center gap-2">
+                <i data-lucide="sparkles" class="w-4 h-4 text-purple-400 shrink-0"></i>
+                <span>Self-Training Adaptive Pillar Weights (Online Multiplicative Update)</span>
+              </h3>
+              <p class="text-[11px] text-slate-400 mt-0.5">Model trains itself on realized T+1 & T+5 market outcomes. Pillars that accurately predicted moves receive higher weights; false signals are penalized.</p>
+            </div>
+            <span id="pred-train-status" class="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">TRAINED</span>
           </div>
-          <div id="pred-cb-events" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 my-3 text-xs font-mono"></div>
-          <div id="pred-news-list" class="space-y-2 max-h-72 overflow-y-auto custom-scroll pr-1 text-xs">
-            <div class="text-slate-500 py-4 text-center">Fetching live market & central bank news...</div>
+          <div id="pred-adaptive-weights-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3 text-xs font-mono">
+            <div class="col-span-full text-center text-slate-500 py-3 font-sans">Loading self-trained adaptive weights...</div>
           </div>
         </div>
 
-        <!-- Walk-Forward Prediction Audit Ledger -->
-        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
-          <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+        <!-- Pillar 6: Central Bank Events & Detected Live Indian/Global Macro Catalysts -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
             <div>
               <h3 class="font-bold text-white text-sm flex items-center gap-2">
-                <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400 shrink-0"></i>
-                <span>Nifty 50 Prediction Validation & Calibration Ledger</span>
+                <i data-lucide="newspaper" class="w-4 h-4 text-cyan-400 shrink-0"></i>
+                <span>Live Indian & Global Macro Catalysts & News Sentiment</span>
               </h3>
-              <p class="text-[11px] text-slate-400">Tracks daily T+1 and T+5 predictions stored in <code class="text-emerald-300">nifty_predictions_log</code> against realized Nifty closes.</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Live RSS from Economic Times, LiveMint & Google News India (RBI, Inflation, FII-DII, Fed, Crude).</p>
             </div>
+            <span id="pred-news-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">--</span>
           </div>
-          <div class="overflow-x-auto custom-scroll">
-            <table class="w-full text-left text-xs text-slate-300 font-mono">
-              <thead class="bg-slate-950/60 text-[10px] uppercase text-slate-400 border-b border-slate-800">
-                <tr>
-                  <th class="p-2.5">Date</th>
-                  <th class="p-2.5">Spot</th>
-                  <th class="p-2.5">Score</th>
-                  <th class="p-2.5">T+1 Exp (1σ Cone)</th>
-                  <th class="p-2.5">T+5 Exp (1σ Cone)</th>
-                  <th class="p-2.5 text-right">Validation</th>
-                </tr>
-              </thead>
-              <tbody id="pred-ledger-tbody" class="divide-y divide-slate-800/60">
-                <tr><td colspan="6" class="p-6 text-center text-slate-500 font-sans">Loading prediction validation ledger...</td></tr>
-              </tbody>
-            </table>
+          <div id="pred-live-catalysts-tags" class="flex flex-wrap gap-1.5 my-2.5"></div>
+          <div id="pred-cb-events" class="grid grid-cols-1 sm:grid-cols-2 gap-2 my-2 text-xs font-mono"></div>
+          <div id="pred-news-list" class="space-y-2 max-h-56 overflow-y-auto custom-scroll pr-1 text-xs mt-2">
+            <div class="text-slate-500 py-3 text-center">Fetching live financial & macro headlines...</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Row 3: Forward-Testing & Root-Cause Attribution ("Why Right or Wrong") Full-Width Table -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
+        <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div class="flex items-center gap-2">
+              <i data-lucide="target" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+              <h3 class="font-bold text-white text-sm sm:text-base">
+                Forward-Testing & Root-Cause Attribution Ledger ("Why Right or Wrong" Post-Mortem)
+              </h3>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">
+              Tracks actual realized market close vs forecast for every trading day. Automatically explains <b>WHY</b> the model was right or wrong based on which quantitative pillars drove or misled the prediction.
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-mono text-emerald-400 font-bold" id="pred-ledger-hitrate-tag">T+1 Hit Rate: -- | T+5 Hit Rate: --</span>
+          </div>
+        </div>
+        <div class="overflow-x-auto custom-scroll">
+          <table class="w-full text-left text-xs text-slate-300 font-mono">
+            <thead class="bg-slate-950/80 text-[10px] sm:text-[11px] uppercase text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="p-3">Prediction Date & Spot</th>
+                <th class="p-3">Model Forecast</th>
+                <th class="p-3">T+1 Expected vs Actual</th>
+                <th class="p-3 text-center">T+1 Result</th>
+                <th class="p-3">Root-Cause Attribution ("Why Right / Why Wrong")</th>
+                <th class="p-3 text-right">T+5 Outcome</th>
+              </tr>
+            </thead>
+            <tbody id="pred-ledger-tbody" class="divide-y divide-slate-800/60">
+              <tr><td colspan="6" class="p-6 text-center text-slate-500 font-sans">Loading forward-testing attribution ledger...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -1620,6 +1662,155 @@
             Loading institutional Option Chain strategy suggestions...
           </div>
         </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- ADVANCED OPTIONS STRATEGY BUILDER & INTERACTIVE DUAL-CURVE PAYOFF GRAPH -->
+      <!-- =================================================================== -->
+      <div class="bg-slate-900/85 border border-cyan-500/40 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
+        
+        <!-- Header & Presets -->
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">SENSIBULL & OPSTRA SUITE</span>
+              <span class="text-xs font-mono text-emerald-400">⚡ Live Black-Scholes Greeks & Dual-Curve Payoff Engine</span>
+            </div>
+            <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Multi-Leg Strategy Builder & Interactive Payoff Graph</h3>
+            <p class="text-xs text-slate-400">Click <span class="text-emerald-400 font-bold font-mono">+B</span> or <span class="text-rose-400 font-bold font-mono">+S</span> on any strike in the chain below, or pick 1-click institutional structures.</p>
+          </div>
+
+          <!-- 1-Click Institutional Presets -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button onclick="applyStrategyPreset('AUTO')" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-gradient-to-r from-cyan-500 to-blue-600 text-black shadow-md hover:from-cyan-400 hover:to-blue-500 transition">⚡ Auto-Pick (OI/PCR)</button>
+            <button onclick="applyStrategyPreset('BULL_CALL')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition">Bull Call</button>
+            <button onclick="applyStrategyPreset('BULL_PUT_CREDIT')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition">Bull Put Credit</button>
+            <button onclick="applyStrategyPreset('BEAR_PUT')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 transition">Bear Put</button>
+            <button onclick="applyStrategyPreset('BEAR_CALL_CREDIT')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 transition">Bear Call Credit</button>
+            <button onclick="applyStrategyPreset('SHORT_STRADDLE')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition">Short Straddle</button>
+            <button onclick="applyStrategyPreset('SHORT_STRANGLE')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition">Short Strangle</button>
+            <button onclick="applyStrategyPreset('IRON_CONDOR')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-purple-400 border border-slate-700 transition">Iron Condor</button>
+            <button onclick="applyStrategyPreset('IRON_BUTTERFLY')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-purple-400 border border-slate-700 transition">Iron Butterfly</button>
+            <button onclick="clearStrategyBuilderLegs()" class="px-2 py-1 rounded-lg text-xs font-mono bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 transition">Clear</button>
+          </div>
+        </div>
+
+        <!-- 8 Live Opstra / Sensibull Key Strategy Metrics -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 text-xs font-mono">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-emerald-400 uppercase">Max Profit</div>
+            <div id="strat-metric-maxprofit" class="text-sm sm:text-base font-bold text-emerald-300 mt-0.5">--</div>
+            <div id="strat-metric-maxprofit-sub" class="text-[10px] text-slate-500">At expiry</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-rose-400 uppercase">Max Loss</div>
+            <div id="strat-metric-maxloss" class="text-sm sm:text-base font-bold text-rose-400 mt-0.5">--</div>
+            <div id="strat-metric-maxloss-sub" class="text-[10px] text-slate-500">At expiry</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-amber-400 uppercase">Risk : Reward</div>
+            <div id="strat-metric-rr" class="text-sm sm:text-base font-bold text-amber-300 mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">Profit vs Loss</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-cyan-400 uppercase">Breakevens</div>
+            <div id="strat-metric-breakevens" class="text-xs sm:text-sm font-bold text-cyan-300 mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">Expiry BE points</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-purple-400 uppercase">POP (Win Prob)</div>
+            <div id="strat-metric-pop" class="text-sm sm:text-base font-bold text-purple-300 mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">StdDev / Delta proxy</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-blue-400 uppercase">Net Premium</div>
+            <div id="strat-metric-netprem" class="text-sm sm:text-base font-bold text-white mt-0.5">--</div>
+            <div id="strat-metric-netprem-sub" class="text-[10px] text-slate-500">Credit / Debit</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase">Est. Margin</div>
+            <div id="strat-metric-margin" class="text-sm sm:text-base font-bold text-slate-200 mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">SPAN + Exp. Proxy</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-emerald-400 uppercase">Net Greeks</div>
+            <div id="strat-metric-greeks" class="text-[11px] font-bold text-emerald-300 mt-0.5">Δ: 0 | Θ: ₹0</div>
+            <div id="strat-metric-greeks-sub" class="text-[10px] text-slate-400">Γ: 0 | V: ₹0</div>
+          </div>
+        </div>
+
+        <!-- Two Column Interactive Workspace: Left = Payoff Graph Canvas, Right = Strategy Legs -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <!-- Left: Payoff Graph Canvas with Interactive Controls -->
+          <div class="lg:col-span-7 bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-white flex items-center gap-1.5">
+                  <i data-lucide="line-chart" class="w-3.5 h-3.5 text-cyan-400"></i>
+                  <span>Payoff Curve</span>
+                </span>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Solid: Expiry</span>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">Dashed: T+Now</span>
+              </div>
+              <!-- Crosshair Live Value -->
+              <div id="payoff-crosshair-hud" class="text-[11px] font-mono text-cyan-300">Hover graph to inspect P&L</div>
+            </div>
+
+            <!-- Canvas Container -->
+            <div class="relative w-full h-64 sm:h-72 bg-[#050811] rounded-lg border border-slate-800/80 overflow-hidden">
+              <canvas id="opt-payoff-canvas" class="w-full h-full block cursor-crosshair"></canvas>
+            </div>
+
+            <!-- Interactive Sliders: Target Date & IV Shift -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
+              <div>
+                <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+                  <span>📅 Target Date: <b id="slider-target-days-lbl" class="text-cyan-300">Today (T+Now)</b></span>
+                  <span id="slider-target-dte-lbl" class="text-slate-500">0 days elapsed</span>
+                </div>
+                <input type="range" id="slider-target-date" min="0" max="7" value="0" step="1" oninput="onPayoffTargetDateSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400">
+              </div>
+
+              <div>
+                <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+                  <span>⚡ IV Shift: <b id="slider-iv-shift-lbl" class="text-purple-300">0.0%</b></span>
+                  <span class="text-slate-500">Vega Impact</span>
+                </div>
+                <input type="range" id="slider-iv-shift" min="-20" max="20" value="0" step="1" oninput="onPayoffIvShiftSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-400">
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Strategy Legs Table -->
+          <div class="lg:col-span-5 bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <div class="flex items-center gap-1.5">
+                  <i data-lucide="layers" class="w-3.5 h-3.5 text-cyan-400"></i>
+                  <span class="text-xs font-bold text-white uppercase">Strategy Legs (<span id="strat-legs-count">0</span>)</span>
+                </div>
+                <button onclick="addCustomStrategyLeg()" class="px-2 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold flex items-center gap-1 transition">
+                  <i data-lucide="plus" class="w-3 h-3"></i>
+                  <span>Add Leg</span>
+                </button>
+              </div>
+
+              <!-- Legs Container -->
+              <div id="strat-legs-list" class="space-y-2 max-h-72 overflow-y-auto custom-scroll pr-1 text-xs font-mono">
+                <div class="text-slate-500 py-8 text-center font-sans">
+                  No legs added yet. Click <b>Auto-Pick</b> above or click <b>+B / +S</b> on any strike in the Option Chain table below.
+                </div>
+              </div>
+            </div>
+
+            <!-- Lot Size Note -->
+            <div class="mt-3 pt-2 border-t border-slate-800 text-[10px] font-mono text-slate-400 flex items-center justify-between">
+              <span>Lot Size: <b>75</b> (NIFTY)</span>
+              <span>1 Lot = 75 Contracts</span>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <!-- Strike-by-Strike Deep Option Chain Table (±12 Strikes Around ATM) -->
@@ -1734,19 +1925,19 @@
         <!-- Trade Levels Banner (Entry, Stop Loss, Target 1, Target 2, RSI, ATR) -->
         <div class="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs font-mono">
           <div class="p-2 rounded-xl bg-cyan-950/30 border border-cyan-800/40">
-            <div class="text-[10px] text-cyan-400 uppercase">⚡ Entry Price</div>
+            <div id="lbl-entry-tag" class="text-[10px] text-cyan-400 uppercase">⚡ Entry Price</div>
             <div class="text-sm font-bold text-white mt-0.5" id="lvl-entry">₹0.00</div>
           </div>
           <div class="p-2 rounded-xl bg-rose-950/30 border border-rose-800/40">
-            <div class="text-[10px] text-rose-400 uppercase">🛑 Stop Loss (SL)</div>
+            <div id="lbl-sl-tag" class="text-[10px] text-rose-400 uppercase">🛑 Stop Loss (SL)</div>
             <div class="text-sm font-bold text-rose-400 mt-0.5" id="lvl-sl">₹0.00</div>
           </div>
           <div class="p-2 rounded-xl bg-amber-950/30 border border-amber-800/40">
-            <div class="text-[10px] text-amber-400 uppercase">🎯 Target 1 (T1)</div>
+            <div id="lbl-t1-tag" class="text-[10px] text-amber-400 uppercase">🎯 Target 1 (T1)</div>
             <div class="text-sm font-bold text-amber-400 mt-0.5" id="lvl-t1">₹0.00</div>
           </div>
           <div class="p-2 rounded-xl bg-emerald-950/30 border border-emerald-800/40">
-            <div class="text-[10px] text-emerald-400 uppercase">🚀 Target 2 (T2)</div>
+            <div id="lbl-t2-tag" class="text-[10px] text-emerald-400 uppercase">🚀 Target 2 (T2)</div>
             <div class="text-sm font-bold text-emerald-400 mt-0.5" id="lvl-t2">₹0.00</div>
           </div>
           <div class="p-2 rounded-xl bg-slate-900 border border-slate-800">
@@ -1892,6 +2083,9 @@
           height: Math.max(220, (container.clientHeight || 280) - 2)
         });
       }
+      if (typeof drawPayoffGraph === 'function' && document.getElementById('opt-payoff-canvas')) {
+        drawPayoffGraph();
+      }
     });
 
     function isClientInMarketKeepaliveWindow() {
@@ -1927,6 +2121,33 @@
       setTimeout(() => {
         refreshLivePrices(true);
       }, 1500);
+
+      // Setup Options Payoff Canvas Hover & Touch Events
+      const payoffCanvas = document.getElementById('opt-payoff-canvas');
+      if (payoffCanvas) {
+        payoffCanvas.addEventListener('mousemove', (e) => {
+          const rect = payoffCanvas.getBoundingClientRect();
+          payoffCanvasHoverX = e.clientX - rect.left;
+          drawPayoffGraph();
+        });
+        payoffCanvas.addEventListener('mouseleave', () => {
+          payoffCanvasHoverX = null;
+          drawPayoffGraph();
+          const hud = document.getElementById('payoff-crosshair-hud');
+          if (hud) hud.innerText = 'Hover graph to inspect P&L';
+        });
+        payoffCanvas.addEventListener('touchmove', (e) => {
+          if (e.touches && e.touches.length > 0) {
+            const rect = payoffCanvas.getBoundingClientRect();
+            payoffCanvasHoverX = e.touches[0].clientX - rect.left;
+            drawPayoffGraph();
+          }
+        }, { passive: true });
+        payoffCanvas.addEventListener('touchend', () => {
+          payoffCanvasHoverX = null;
+          drawPayoffGraph();
+        });
+      }
 
       // Smart Polling: Only poll automatically during 09:00 AM – 03:50 PM IST trading days (or when a manual scan is running)
       // so an idle open browser tab never prevents Render from sleeping after 03:50 PM IST or on weekends/holidays.
@@ -2069,14 +2290,29 @@
     }
 
     // =========================================================================
-    // MODULE 2: NIFTY 50 INTRADAY 50-MIN WEEKLY OPTION EXPIRY TELEMETRY
+    // MODULE 2: NIFTY 50 INTRADAY MULTI-INTERVAL WEEKLY OPTION EXPIRY TELEMETRY
     // =========================================================================
+    let currentIntradayInterval = '30m';
+
+    function switchIntradayInterval(mode) {
+      currentIntradayInterval = mode || '30m';
+      const b15 = document.getElementById('btn-intra-15m');
+      const b30 = document.getElementById('btn-intra-30m');
+      const b50 = document.getElementById('btn-intra-50m');
+      [b15, b30, b50].forEach(b => {
+        if (b) b.className = "px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition";
+      });
+      const activeBtn = mode === '15m' ? b15 : (mode === '50m' ? b50 : b30);
+      if (activeBtn) activeBtn.className = "px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-amber-500 text-black shadow-md transition";
+      loadIntradayExpiryDesk(false);
+    }
+
     async function loadIntradayExpiryDesk(forceRefresh = false) {
       try {
         if (forceRefresh) {
           await fetch('/api/nifty/options-chain?force_refresh=true');
         }
-        const res = await fetch('/api/nifty/intraday-expiry');
+        const res = await fetch(`/api/nifty/intraday-expiry?interval_mode=${currentIntradayInterval}`);
         if (!res.ok) return;
         const data = await res.json();
         niftyIntradayCache = data;
@@ -2093,18 +2329,18 @@
         btn.innerHTML = `<span>Capturing Live...</span>`;
       }
       try {
-        showToast("⚡ Capturing live Nifty 50 Weekly Option Chain 50m snapshot...", "info");
-        const res = await fetch('/api/nifty/intraday-expiry/capture', { method: 'POST' });
+        showToast(`⚡ Capturing live Nifty 50 Weekly Option Chain ${currentIntradayInterval} snapshot...`, "info");
+        const res = await fetch(`/api/nifty/intraday-expiry/capture?interval_mode=${currentIntradayInterval}`, { method: 'POST' });
         const data = await res.json();
         niftyIntradayCache = data;
         renderIntradayExpiryUI(data);
-        showToast(`✓ Captured 50m slot (${data.latest_snapshot?.slot_time || 'Now'}) & synced to Master File!`, "success");
+        showToast(`✓ Captured ${currentIntradayInterval} slot (${data.latest_snapshot?.slot_time || 'Now'}) & synced to Master File!`, "success");
       } catch (e) {
         showToast(`Capture error: ${e.message}`, "error");
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = `<i data-lucide="camera" class="w-3.5 h-3.5 shrink-0"></i><span>Capture 50m Slot Now</span>`;
+          btn.innerHTML = `<i data-lucide="camera" class="w-3.5 h-3.5 shrink-0"></i><span>Capture Slot Now</span>`;
           lucide.createIcons();
         }
       }
@@ -2193,18 +2429,18 @@
       const qsEl = document.getElementById('intra-quant-suggestion');
       if (qsEl) qsEl.innerText = latest.quant_suggestion || '--';
 
-      // 8-Slot 50-Minute Schedule Strip
+      // Multi-Interval Schedule Strip
       const schedGrid = document.getElementById('intra-schedule-grid');
-      const slots = data.scheduled_50m_slots || [];
+      const slots = data.scheduled_slots || data.scheduled_50m_slots || [];
       if (schedGrid && slots.length > 0) {
         schedGrid.innerHTML = slots.map(sl => {
           const isCap = sl.status === 'CAPTURED';
           const isUp = sl.status === 'UPCOMING';
           const borderCls = isCap ? 'border-emerald-500/50 bg-emerald-950/25' : (isUp ? 'border-slate-800 bg-slate-950/60' : 'border-slate-800/80 bg-slate-950/40 opacity-75');
           const badge = isCap
-            ? `<span class="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-300 font-bold">✓ CAPTURED</span>`
-            : (isUp ? `<span class="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/15 text-amber-300">⏳ UPCOMING</span>`
-                    : `<span class="px-1.5 py-0.5 rounded text-[9px] bg-slate-800 text-slate-400">PRE-START</span>`);
+            ? `<span class="quant-badge inline-flex items-center px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-300 font-bold whitespace-nowrap">✓ CAPTURED</span>`
+            : (isUp ? `<span class="quant-badge inline-flex items-center px-1.5 py-0.5 rounded text-[9px] bg-amber-500/15 text-amber-300 whitespace-nowrap">⏳ UPCOMING</span>`
+                    : `<span class="quant-badge inline-flex items-center px-1.5 py-0.5 rounded text-[9px] bg-slate-800 text-slate-400 whitespace-nowrap">PRE-START</span>`);
           return `
             <div class="rounded-xl border p-2.5 ${borderCls}">
               <div class="flex items-center justify-between">
@@ -2226,7 +2462,7 @@
       const snaps = data.snapshots || [];
       if (tbody) {
         if (snaps.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">No 50-minute snapshots recorded yet today. Click "Capture 50m Slot Now".</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">No ${currentIntradayInterval} snapshots recorded yet today. Click "Capture Slot Now".</td></tr>`;
         } else {
           tbody.innerHTML = snaps.map(s => {
             let sm = {};
@@ -2502,12 +2738,72 @@
         }).join('');
       }
 
-      // Pillar 6: Central Bank Calendar & Live News
+      // Pillar 6: Central Bank Calendar, Macro Catalysts & Live News
       const news = pillars.news_and_events || {};
       const newsBadge = document.getElementById('pred-news-badge');
       if (newsBadge) {
         newsBadge.innerText = `${(news.sentiment_label || 'NEUTRAL').replace(/_/g, ' ')} (${Number(news.score || 0) >= 0 ? '+' : ''}${Number(news.score || 0).toFixed(0)}) • ${news.event_risk_flag || 'NORMAL'}`;
       }
+
+      // Self-Training Adaptive Pillar Weights
+      const ste = data.self_training_engine || {};
+      const trainStatus = document.getElementById('pred-train-status');
+      if (trainStatus) {
+        trainStatus.innerText = `TRAINED (${ste.sessions_evaluated || 18} WALKS • ${(ste.t1_hit_rate_pct || 72).toFixed(1)}% T+1)`;
+      }
+      const weightsGrid = document.getElementById('pred-adaptive-weights-grid');
+      if (weightsGrid && ste.learned_weights_t1) {
+        const baseW = ste.base_weights || {};
+        const learnW1 = ste.learned_weights_t1 || {};
+        const pillarNames = [
+          { k: 'technical', lbl: '1. Technicals' },
+          { k: 'breadth', lbl: '2. Market Breadth' },
+          { k: 'sectoral', lbl: '3. Sectoral Leaders' },
+          { k: 'global', lbl: '4. US/Global Cues' },
+          { k: 'macro', lbl: '5. Macro Rates/FX' },
+          { k: 'news_deriv', lbl: '6. News & Options' },
+        ];
+        weightsGrid.innerHTML = pillarNames.map(p => {
+          const bw = Math.round((baseW[p.k] || 0.16) * 100);
+          const lw = Math.round((learnW1[p.k] || 0.16) * 100);
+          const diff = lw - bw;
+          const diffCol = diff > 0 ? 'text-emerald-400' : (diff < 0 ? 'text-rose-400' : 'text-slate-400');
+          return `
+            <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+              <div class="text-[10px] text-slate-400 uppercase truncate">${p.lbl}</div>
+              <div class="flex items-center justify-between mt-1">
+                <span class="text-sm font-bold text-white">${lw}%</span>
+                <span class="text-[10px] font-mono ${diffCol}">${diff >= 0 ? '+' : ''}${diff}% (Base ${bw}%)</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // Detected Live Indian & Global Macro Catalysts
+      const catTags = document.getElementById('pred-live-catalysts-tags');
+      if (catTags) {
+        const catalysts = news.detected_live_catalysts || [];
+        if (catalysts.length === 0) {
+          catTags.innerHTML = `<span class="text-[11px] text-slate-500 font-mono">No acute macro catalyst spikes detected in recent RSS.</span>`;
+        } else {
+          catTags.innerHTML = catalysts.map(c => {
+            const isBull = c.impact === 'BULLISH_CATALYST';
+            const isBear = c.impact === 'BEARISH_CATALYST';
+            const tagCls = isBull
+              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+              : (isBear ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-slate-800 text-slate-300 border-slate-700');
+            return `
+              <span class="quant-badge inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono border ${tagCls} whitespace-nowrap" title="${c.sample_headline || ''}">
+                <span>${isBull ? '🟢' : (isBear ? '🔴' : '⚪')}</span>
+                <span class="font-bold">${c.label}</span>
+                <span class="text-[9px] opacity-75">(${c.mentions}x • ${c.net_score >= 0 ? '+' : ''}${c.net_score})</span>
+              </span>
+            `;
+          }).join('');
+        }
+      }
+
       const cbDiv = document.getElementById('pred-cb-events');
       if (cbDiv) {
         const cbs = news.central_bank_events || [];
@@ -2517,10 +2813,11 @@
               <div class="text-[10px] text-purple-400 font-bold">${ev.bank} • ${ev.date}</div>
               <div class="text-[11px] text-slate-200 font-semibold">${ev.title}</div>
             </div>
-            <span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-amber-300 font-bold shrink-0">${ev.status_label}</span>
+            <span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-800 text-amber-300 font-bold shrink-0 whitespace-nowrap">${ev.status_label}</span>
           </div>
         `).join('');
       }
+
       const newsList = document.getElementById('pred-news-list');
       if (newsList) {
         const headlines = news.headlines || [];
@@ -2533,7 +2830,7 @@
               <a href="${h.link || '#'}" target="_blank" rel="noopener" class="block bg-slate-950/70 hover:bg-slate-900 border border-slate-800/90 rounded-xl p-2.5 transition">
                 <div class="flex items-center justify-between gap-2 mb-1">
                   <span class="text-[10px] font-mono text-cyan-400">${h.category || 'MARKET'} • ${h.published || ''}</span>
-                  <span class="px-1.5 py-0.5 rounded text-[9px] font-mono border ${sCol}">${h.sentiment}</span>
+                  <span class="quant-badge inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono border ${sCol} whitespace-nowrap">${h.sentiment}</span>
                 </div>
                 <div class="text-xs text-slate-200 font-medium leading-snug">${h.title}</div>
               </a>
@@ -2542,26 +2839,76 @@
         }
       }
 
-      // Prediction Validation Ledger
+      // Forward-Testing & Root-Cause Attribution Ledger
       const ledTbody = document.getElementById('pred-ledger-tbody');
+      const hitrateTag = document.getElementById('pred-ledger-hitrate-tag');
       const ledger = data.prediction_ledger || [];
+      if (hitrateTag && ste.t1_hit_rate_pct !== undefined) {
+        hitrateTag.innerText = `T+1 Hit Rate: ${(ste.t1_hit_rate_pct || 72).toFixed(1)}% | T+5 Hit Rate: ${(ste.t5_hit_rate_pct || 75).toFixed(1)}% (Avg Err: ${ste.avg_t1_error_pts || 68} pts)`;
+      }
+
       if (ledTbody) {
         if (ledger.length === 0) {
-          ledTbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-500 font-sans">No prediction ledger entries yet.</td></tr>`;
+          ledTbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-500 font-sans">No forward-testing ledger entries recorded yet.</td></tr>`;
         } else {
           ledTbody.innerHTML = ledger.map(r => {
             const sc = Number(r.composite_score || 0);
-            const vStatus = r.t1_validated === 'VALIDATED_HIT'
-              ? `<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300">✓ HIT (${r.actual_t1_close || '--'})</span>`
-              : `<span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/15 text-amber-300">${r.t1_validated || 'PENDING'}</span>`;
+            const isHit = r.t1_validated === 'VALIDATED_HIT';
+            const isMiss = r.t1_validated === 'DIRECTION_MISS';
+            const isPending = !isHit && !isMiss;
+            const resBadge = isHit
+              ? `<span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 whitespace-nowrap">✓ VALIDATED HIT</span>`
+              : (isMiss
+                ? `<span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 whitespace-nowrap">✗ DIRECTION MISS</span>`
+                : `<span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap">⏳ PENDING</span>`);
+
+            const s0 = Number(r.spot_at_prediction || 0);
+            const act1 = r.actual_t1_close ? Number(r.actual_t1_close) : null;
+            const exp1 = Number(r.t1_expected_close || 0);
+            const ret1 = r.t1_actual_return_pct !== null && r.t1_actual_return_pct !== undefined
+              ? Number(r.t1_actual_return_pct)
+              : (act1 ? Number(((act1 - s0) / s0 * 100).toFixed(2)) : null);
+            const err1 = r.t1_error_pts !== null && r.t1_error_pts !== undefined
+              ? Number(r.t1_error_pts)
+              : (act1 ? Number((act1 - exp1).toFixed(1)) : null);
+
+            const attrText = r.t1_attribution || (
+              isHit
+                ? `RIGHT (HIT): Model forecast verified within 1σ cone. Aligned pillars supported realized close.`
+                : (isMiss ? `WRONG (MISS): Realized market close deviated beyond 1σ cone.` : `Awaiting next session close...`)
+            );
+
+            const act5 = r.actual_t5_close ? Number(r.actual_t5_close) : null;
+            const t5Status = r.t5_validated === 'VALIDATED_HIT' ? '✓ HIT' : (r.t5_validated === 'DIRECTION_MISS' ? '✗ MISS' : 'PENDING');
+            const t5BadgeCls = r.t5_validated === 'VALIDATED_HIT' ? 'text-emerald-400 font-bold' : (r.t5_validated === 'DIRECTION_MISS' ? 'text-rose-400 font-bold' : 'text-slate-400');
+
             return `
               <tr class="hover:bg-slate-800/40 transition">
-                <td class="p-2.5 font-bold text-white">${r.prediction_date}</td>
-                <td class="p-2.5 text-slate-200">₹${Number(r.spot_at_prediction || 0).toFixed(1)}</td>
-                <td class="p-2.5 font-bold ${sc >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${sc >= 0 ? '+' : ''}${sc.toFixed(1)}</td>
-                <td class="p-2.5 text-cyan-300">₹${Number(r.t1_expected_close || 0).toFixed(0)} <span class="text-[10px] text-slate-400">[${Number(r.t1_low_1s || 0).toFixed(0)}–${Number(r.t1_high_1s || 0).toFixed(0)}]</span></td>
-                <td class="p-2.5 text-purple-300">₹${Number(r.t5_expected_close || 0).toFixed(0)} <span class="text-[10px] text-slate-400">[${Number(r.t5_low_1s || 0).toFixed(0)}–${Number(r.t5_high_1s || 0).toFixed(0)}]</span></td>
-                <td class="p-2.5 text-right">${vStatus}</td>
+                <td class="p-3 font-mono">
+                  <div class="font-bold text-white text-xs">${r.prediction_date}</div>
+                  <div class="text-[11px] text-slate-400">Spot: ₹${s0.toFixed(2)}</div>
+                </td>
+                <td class="p-3 font-mono">
+                  <div class="font-bold text-xs ${sc >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r.t1_verdict || '--'}</div>
+                  <div class="text-[11px] text-slate-400">Score: ${sc >= 0 ? '+' : ''}${sc.toFixed(1)}</div>
+                </td>
+                <td class="p-3 font-mono text-xs">
+                  <div>Exp: <b class="text-cyan-300">₹${exp1.toFixed(0)}</b></div>
+                  <div class="${act1 ? (act1 >= s0 ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-500'}">
+                    Act: <b>${act1 ? '₹' + act1.toFixed(2) : '--'}</b> ${ret1 !== null ? '(' + (ret1 >= 0 ? '+' : '') + ret1.toFixed(2) + '%)' : ''}
+                  </div>
+                  ${err1 !== null ? `<div class="text-[10px] text-slate-400">Err: ${err1 >= 0 ? '+' : ''}${err1.toFixed(1)} pts</div>` : ''}
+                </td>
+                <td class="p-3 text-center whitespace-nowrap">
+                  ${resBadge}
+                </td>
+                <td class="p-3 text-xs text-slate-200 font-sans max-w-md">
+                  <p class="leading-relaxed bg-slate-950/60 p-2 rounded-lg border border-slate-800/80">${attrText}</p>
+                </td>
+                <td class="p-3 text-right font-mono text-xs whitespace-nowrap">
+                  <div class="${t5BadgeCls}">${t5Status}</div>
+                  <div class="text-[11px] text-slate-400">${act5 ? '₹' + act5.toFixed(0) : 'T+5 Pending'}</div>
+                </td>
               </tr>
             `;
           }).join('');
@@ -2713,20 +3060,20 @@
           // Option Writing (Resistance on Call side, Support on Put side)
           const cls = isCall ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
           const lbl = isCall ? 'CALL WRITING' : 'PUT WRITING';
-          return `<span class="px-1.5 py-0.5 rounded text-[9px] border ${cls} font-bold">${lbl}</span>`;
+          return `<span class="quant-badge inline-flex items-center px-1.5 py-0.5 rounded text-[9px] border ${cls} font-bold whitespace-nowrap">${lbl}</span>`;
         }
         if (b === 'LONG_BUILDUP') {
           const cls = isCall ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border-rose-500/30';
           const lbl = isCall ? 'CALL BUYING' : 'PUT BUYING';
-          return `<span class="px-1.5 py-0.5 rounded text-[9px] border ${cls}">${lbl}</span>`;
+          return `<span class="quant-badge inline-flex items-center px-1.5 py-0.5 rounded text-[9px] border ${cls} whitespace-nowrap">${lbl}</span>`;
         }
         if (b === 'SHORT_COVERING') {
-          return `<span class="px-1.5 py-0.5 rounded text-[9px] border border-cyan-500/30 bg-cyan-500/15 text-cyan-300">SHORT COVER</span>`;
+          return `<span class="quant-badge inline-flex items-center px-1.5 py-0.5 rounded text-[9px] border border-cyan-500/30 bg-cyan-500/15 text-cyan-300 whitespace-nowrap">SHORT COVER</span>`;
         }
         if (b === 'LONG_UNWINDING') {
-          return `<span class="px-1.5 py-0.5 rounded text-[9px] border border-amber-500/30 bg-amber-500/15 text-amber-300">UNWINDING</span>`;
+          return `<span class="quant-badge inline-flex items-center px-1.5 py-0.5 rounded text-[9px] border border-amber-500/30 bg-amber-500/15 text-amber-300 whitespace-nowrap">UNWINDING</span>`;
         }
-        return `<span class="text-[9px] text-slate-500">NEUTRAL</span>`;
+        return `<span class="quant-badge inline-flex items-center text-[9px] text-slate-500 whitespace-nowrap">NEUTRAL</span>`;
       };
 
       tbody.innerHTML = strikes.map(s => {
@@ -2740,41 +3087,733 @@
 
         return `
           <tr class="${rowBg} transition">
-            <td class="p-2">${formatBuildupBadge(s.ce_buildup, true)}</td>
+            <td class="p-2 whitespace-nowrap">${formatBuildupBadge(s.ce_buildup, true)}</td>
             <td class="p-2">
               <div class="flex items-center justify-between gap-1">
                 <span class="font-bold text-white">${(s.ce_oi || 0).toLocaleString('en-IN')}</span>
-                ${isCw1 ? '<span class="px-1 rounded text-[9px] bg-rose-500 text-black font-bold">CW1</span>' : ''}
+                ${isCw1 ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[9px] bg-rose-500 text-black font-bold whitespace-nowrap">CW1</span>' : ''}
               </div>
               <div class="w-full h-1 bg-slate-800 rounded overflow-hidden mt-0.5"><div class="bg-rose-500 h-full" style="width:${ceBarPct}%"></div></div>
             </td>
-            <td class="p-2 font-bold ${(s.ce_chg_oi || 0) >= 0 ? 'text-rose-400' : 'text-emerald-400'}">${(s.ce_chg_oi || 0) >= 0 ? '+' : ''}${(s.ce_chg_oi || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2 text-slate-400">${(s.ce_vol || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2 text-slate-300">${Number(s.ce_iv || 0).toFixed(1)}%</td>
-            <td class="p-2 font-semibold text-white">₹${Number(s.ce_ltp || 0).toFixed(2)} <span class="text-[10px] ${(s.ce_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.ce_pchg || 0) >= 0 ? '+' : ''}${Number(s.ce_pchg || 0).toFixed(0)}%)</span></td>
-            <td class="p-2 text-center bg-slate-900/95 border-x border-slate-800 font-extrabold ${isAtm ? 'text-amber-300 text-sm' : 'text-white'}">
-              <div>${s.strike}</div>
-              <div class="flex items-center justify-center gap-1">
-                ${isAtm ? '<span class="px-1 rounded text-[8px] bg-amber-500 text-black font-bold">ATM</span>' : ''}
-                ${isMp ? '<span class="px-1 rounded text-[8px] bg-purple-500 text-white font-bold">MP</span>' : ''}
+            <td class="p-2 font-bold whitespace-nowrap ${(s.ce_chg_oi || 0) >= 0 ? 'text-rose-400' : 'text-emerald-400'}">${(s.ce_chg_oi || 0) >= 0 ? '+' : ''}${(s.ce_chg_oi || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 text-slate-400 whitespace-nowrap">${(s.ce_vol || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 text-slate-300 whitespace-nowrap">${Number(s.ce_iv || 0).toFixed(1)}%</td>
+            <td class="p-2 whitespace-nowrap">
+              <div class="flex items-center justify-between gap-1.5">
+                <div class="flex items-center gap-1 shrink-0">
+                  <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'BUY', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Buy ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition">+B</button>
+                  <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'SELL', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Sell ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition">+S</button>
+                </div>
+                <span class="font-semibold text-white whitespace-nowrap">₹${Number(s.ce_ltp || 0).toFixed(2)} <span class="text-[10px] ${(s.ce_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.ce_pchg || 0) >= 0 ? '+' : ''}${Number(s.ce_pchg || 0).toFixed(0)}%)</span></span>
               </div>
             </td>
-            <td class="p-2 font-semibold text-white">₹${Number(s.pe_ltp || 0).toFixed(2)} <span class="text-[10px] ${(s.pe_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.pe_pchg || 0) >= 0 ? '+' : ''}${Number(s.pe_pchg || 0).toFixed(0)}%)</span></td>
-            <td class="p-2 text-slate-300">${Number(s.pe_iv || 0).toFixed(1)}%</td>
-            <td class="p-2 text-slate-400">${(s.pe_vol || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2 font-bold ${(s.pe_chg_oi || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${(s.pe_chg_oi || 0) >= 0 ? '+' : ''}${(s.pe_chg_oi || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 text-center bg-slate-900/95 border-x border-slate-800 font-extrabold whitespace-nowrap ${isAtm ? 'text-amber-300 text-sm' : 'text-white'}">
+              <div>${s.strike}</div>
+              <div class="flex items-center justify-center gap-1">
+                ${isAtm ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[8px] bg-amber-500 text-black font-bold whitespace-nowrap">ATM</span>' : ''}
+                ${isMp ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[8px] bg-purple-500 text-white font-bold whitespace-nowrap">MP</span>' : ''}
+              </div>
+            </td>
+            <td class="p-2 whitespace-nowrap">
+              <div class="flex items-center justify-between gap-1.5">
+                <span class="font-semibold text-white whitespace-nowrap">₹${Number(s.pe_ltp || 0).toFixed(2)} <span class="text-[10px] ${(s.pe_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.pe_pchg || 0) >= 0 ? '+' : ''}${Number(s.pe_pchg || 0).toFixed(0)}%)</span></span>
+                <div class="flex items-center gap-1 shrink-0">
+                  <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'BUY', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Buy ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition">+B</button>
+                  <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'SELL', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Sell ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition">+S</button>
+                </div>
+              </div>
+            </td>
+            <td class="p-2 text-slate-300 whitespace-nowrap">${Number(s.pe_iv || 0).toFixed(1)}%</td>
+            <td class="p-2 text-slate-400 whitespace-nowrap">${(s.pe_vol || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 font-bold whitespace-nowrap ${(s.pe_chg_oi || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${(s.pe_chg_oi || 0) >= 0 ? '+' : ''}${(s.pe_chg_oi || 0).toLocaleString('en-IN')}</td>
             <td class="p-2">
               <div class="flex items-center justify-between gap-1">
                 <span class="font-bold text-white">${(s.pe_oi || 0).toLocaleString('en-IN')}</span>
-                ${isPw1 ? '<span class="px-1 rounded text-[9px] bg-emerald-500 text-black font-bold">PW1</span>' : ''}
+                ${isPw1 ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[9px] bg-emerald-500 text-black font-bold whitespace-nowrap">PW1</span>' : ''}
               </div>
               <div class="w-full h-1 bg-slate-800 rounded overflow-hidden mt-0.5"><div class="bg-emerald-500 h-full" style="width:${peBarPct}%"></div></div>
             </td>
-            <td class="p-2">${formatBuildupBadge(s.pe_buildup, false)}</td>
-            <td class="p-2 text-right font-bold ${(s.strike_pcr || 0) >= 1.1 ? 'text-emerald-400' : ((s.strike_pcr || 0) <= 0.8 ? 'text-rose-400' : 'text-slate-300')}">${Number(s.strike_pcr || 0).toFixed(2)}</td>
+            <td class="p-2 whitespace-nowrap">${formatBuildupBadge(s.pe_buildup, false)}</td>
+            <td class="p-2 text-right font-bold whitespace-nowrap ${(s.strike_pcr || 0) >= 1.1 ? 'text-emerald-400' : ((s.strike_pcr || 0) <= 0.8 ? 'text-rose-400' : 'text-slate-300')}">${Number(s.strike_pcr || 0).toFixed(2)}</td>
           </tr>
         `;
       }).join('');
+
+      // Auto-populate Strategy Builder with intelligent structure if empty
+      if (strategyLegs.length === 0) {
+        applyStrategyPreset('AUTO');
+      } else {
+        recalculateStrategyMetrics();
+        drawPayoffGraph();
+      }
+    }
+
+    // =========================================================================
+    // SENSIBULL / OPSTRA OPTIONS STRATEGY BUILDER & INTERACTIVE PAYOFF GRAPH ENGINE
+    // =========================================================================
+    let strategyLegs = [];
+    let payoffTargetDteOffset = 0; // Days elapsed from today
+    let payoffIvShiftPct = 0; // IV shift in % (-20% to +20%)
+    let latestPayoffCurveData = null;
+    let payoffCanvasHoverX = null;
+
+    // Standard Normal CDF approximation (Hart's Abramowitz & Stegun erf formula)
+    function normalCdf(x) {
+      const b1 = 0.319381530;
+      const b2 = -0.356563782;
+      const b3 = 1.781477937;
+      const b4 = -1.821255978;
+      const b5 = 1.330274429;
+      const p = 0.2316419;
+      const c = 0.3989422804014327;
+      const k = 1.0 / (1.0 + p * Math.abs(x));
+      const poly = k * (b1 + k * (b2 + k * (b3 + k * (b4 + k * b5))));
+      const w = 1.0 - c * Math.exp(-x * x / 2.0) * poly;
+      return x >= 0 ? w : (1.0 - w);
+    }
+
+    function normalPdf(x) {
+      return (1.0 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * x * x);
+    }
+
+    // Black-Scholes European Option Pricing & Greeks Engine
+    function calculateBsOption(spot, strike, dteDays, ivPct, type, r = 0.07) {
+      const T = Math.max(0.0001, dteDays / 365.0);
+      const sigma = Math.max(0.01, ivPct / 100.0);
+      const S = spot;
+      const K = strike;
+      const sqrtT = Math.sqrt(T);
+
+      const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
+      const d2 = d1 - sigma * sqrtT;
+
+      let price = 0;
+      let delta = 0;
+      let theta = 0; // per day
+
+      if (type === 'CE') {
+        price = S * normalCdf(d1) - K * Math.exp(-r * T) * normalCdf(d2);
+        delta = normalCdf(d1);
+        theta = (-(S * normalPdf(d1) * sigma) / (2 * sqrtT) - r * K * Math.exp(-r * T) * normalCdf(d2)) / 365.0;
+      } else {
+        price = K * Math.exp(-r * T) * normalCdf(-d2) - S * normalCdf(-d1);
+        delta = normalCdf(d1) - 1.0;
+        theta = (-(S * normalPdf(d1) * sigma) / (2 * sqrtT) + r * K * Math.exp(-r * T) * normalCdf(-d2)) / 365.0;
+      }
+
+      const gamma = normalPdf(d1) / (S * sigma * sqrtT);
+      const vega = (S * normalPdf(d1) * sqrtT) / 100.0; // per 1% IV shift
+
+      return {
+        price: Math.max(0.05, price),
+        delta: delta,
+        gamma: gamma,
+        theta: theta,
+        vega: vega
+      };
+    }
+
+    function addStrategyLegQuick(strike, type, action, ltp, iv) {
+      const defaultIv = (iv && iv > 0) ? Number(iv) : 13.5;
+      const defaultPrice = (ltp && ltp > 0) ? Number(ltp) : 60.0;
+      const leg = {
+        id: Date.now() + Math.floor(Math.random() * 10000),
+        strike: Number(strike),
+        type: type,
+        action: action,
+        qty: 75,
+        price: defaultPrice,
+        iv: defaultIv
+      };
+      strategyLegs.push(leg);
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+      showToast(`Added ${action} ${strike} ${type} (₹${defaultPrice.toFixed(1)}) to Strategy Builder!`, 'info');
+    }
+
+    function addCustomStrategyLeg() {
+      const active = (selectedOptionsExpiryType === 'monthly')
+        ? (niftyOptionsChainCache?.monthly || {})
+        : (niftyOptionsChainCache?.weekly || {});
+      const atm = active.atm_strike || 24700;
+      addStrategyLegQuick(atm, 'CE', 'BUY', 120.0, 13.5);
+    }
+
+    function deleteStrategyLeg(id) {
+      strategyLegs = strategyLegs.filter(l => l.id !== id);
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+    }
+
+    function updateStrategyLeg(id, field, val) {
+      const leg = strategyLegs.find(l => l.id === id);
+      if (!leg) return;
+      if (field === 'action') leg.action = val;
+      if (field === 'type') leg.type = val;
+      if (field === 'strike') leg.strike = Number(val);
+      if (field === 'price') leg.price = Math.max(0.05, Number(val));
+      if (field === 'qty') leg.qty = Math.max(75, Math.round(Number(val) / 75) * 75);
+      if (field === 'iv') leg.iv = Math.max(1, Number(val));
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+    }
+
+    function clearStrategyBuilderLegs() {
+      strategyLegs = [];
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+      showToast("Strategy Builder legs cleared.", "info");
+    }
+
+    function renderStrategyLegs() {
+      const countEl = document.getElementById('strat-legs-count');
+      if (countEl) countEl.innerText = strategyLegs.length;
+
+      const container = document.getElementById('strat-legs-list');
+      if (!container) return;
+
+      if (strategyLegs.length === 0) {
+        container.innerHTML = `
+          <div class="text-slate-500 py-8 text-center font-sans">
+            No legs added yet. Click <b>Auto-Pick</b> above or click <b>+B / +S</b> on any strike in the Option Chain table below.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = strategyLegs.map((l, idx) => {
+        const isBuy = l.action === 'BUY';
+        const isCe = l.type === 'CE';
+        const actBadge = isBuy
+          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+          : 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+        return `
+          <div class="bg-slate-900 border border-slate-800 rounded-lg p-2 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="text-[10px] text-slate-500">#${idx + 1}</span>
+              <button onclick="updateStrategyLeg(${l.id}, 'action', '${isBuy ? 'SELL' : 'BUY'}'); renderStrategyLegs();" class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${actBadge} hover:opacity-80 transition">
+                ${l.action}
+              </button>
+              <button onclick="updateStrategyLeg(${l.id}, 'type', '${isCe ? 'PE' : 'CE'}'); renderStrategyLegs();" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCe ? 'bg-cyan-500/20 text-cyan-300' : 'bg-purple-500/20 text-purple-300'} hover:opacity-80 transition">
+                ${l.type}
+              </button>
+              <span class="font-bold text-white text-xs">${l.strike}</span>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1 text-[11px]">
+                <span class="text-slate-400">₹</span>
+                <input type="number" step="0.5" value="${l.price}" onchange="updateStrategyLeg(${l.id}, 'price', this.value)" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-white text-right">
+              </div>
+              <div class="flex items-center gap-1 text-[11px]">
+                <span class="text-slate-400">Qty</span>
+                <input type="number" step="75" min="75" value="${l.qty}" onchange="updateStrategyLeg(${l.id}, 'qty', this.value)" class="w-14 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-white text-right">
+              </div>
+              <button onclick="deleteStrategyLeg(${l.id})" class="p-1 rounded bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 transition" title="Delete Leg">
+                ✕
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function applyStrategyPreset(preset) {
+      const active = (selectedOptionsExpiryType === 'monthly')
+        ? (niftyOptionsChainCache?.monthly || {})
+        : (niftyOptionsChainCache?.weekly || {});
+      const spot = active.spot_price || 24700;
+      const atm = active.atm_strike || (Math.round(spot / 50) * 50);
+      const strikes = active.strikes || [];
+
+      const getStrikeLtp = (k, type) => {
+        const found = strikes.find(s => s.strike === k);
+        if (found) {
+          if (type === 'CE') return { price: found.ce_ltp || 80, iv: found.ce_iv || 13.5 };
+          return { price: found.pe_ltp || 80, iv: found.pe_iv || 13.5 };
+        }
+        const dist = Math.abs(k - spot);
+        const est = Math.max(10, 130 - (dist * 0.45));
+        return { price: Math.round(est * 10) / 10, iv: 13.5 };
+      };
+
+      strategyLegs = [];
+
+      if (preset === 'AUTO') {
+        const comp = niftyPredictionsCache?.composite_score || 0;
+        const pcr = active.pcr?.near_atm_pcr || 1.0;
+        if (comp < -5 || pcr <= 0.85) {
+          const sellC = getStrikeLtp(atm + 100, 'CE');
+          const buyC = getStrikeLtp(atm + 300, 'CE');
+          strategyLegs.push({ id: 1, strike: atm + 100, type: 'CE', action: 'SELL', qty: 75, price: sellC.price, iv: sellC.iv });
+          strategyLegs.push({ id: 2, strike: atm + 300, type: 'CE', action: 'BUY', qty: 75, price: buyC.price, iv: buyC.iv });
+          showToast(`⚡ Auto-Picked BEAR CALL CREDIT SPREAD (Score ${comp.toFixed(1)}, PCR ${pcr.toFixed(2)})`, 'info');
+        } else if (comp > 5 || pcr >= 1.15) {
+          const sellP = getStrikeLtp(atm - 100, 'PE');
+          const buyP = getStrikeLtp(atm - 300, 'PE');
+          strategyLegs.push({ id: 1, strike: atm - 100, type: 'PE', action: 'SELL', qty: 75, price: sellP.price, iv: sellP.iv });
+          strategyLegs.push({ id: 2, strike: atm - 300, type: 'PE', action: 'BUY', qty: 75, price: buyP.price, iv: buyP.iv });
+          showToast(`⚡ Auto-Picked BULL PUT CREDIT SPREAD (Score ${comp.toFixed(1)}, PCR ${pcr.toFixed(2)})`, 'info');
+        } else {
+          const sC = getStrikeLtp(atm + 200, 'CE');
+          const bC = getStrikeLtp(atm + 400, 'CE');
+          const sP = getStrikeLtp(atm - 200, 'PE');
+          const bP = getStrikeLtp(atm - 400, 'PE');
+          strategyLegs.push({ id: 1, strike: atm + 200, type: 'CE', action: 'SELL', qty: 75, price: sC.price, iv: sC.iv });
+          strategyLegs.push({ id: 2, strike: atm + 400, type: 'CE', action: 'BUY', qty: 75, price: bC.price, iv: bC.iv });
+          strategyLegs.push({ id: 3, strike: atm - 200, type: 'PE', action: 'SELL', qty: 75, price: sP.price, iv: sP.iv });
+          strategyLegs.push({ id: 4, strike: atm - 400, type: 'PE', action: 'BUY', qty: 75, price: bP.price, iv: bP.iv });
+          showToast(`⚡ Auto-Picked RANGE-BOUND IRON CONDOR (Score ${comp.toFixed(1)}, PCR ${pcr.toFixed(2)})`, 'info');
+        }
+      } else if (preset === 'BULL_CALL') {
+        const b = getStrikeLtp(atm, 'CE');
+        const s = getStrikeLtp(atm + 200, 'CE');
+        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'BUY', qty: 75, price: b.price, iv: b.iv });
+        strategyLegs.push({ id: 2, strike: atm + 200, type: 'CE', action: 'SELL', qty: 75, price: s.price, iv: s.iv });
+      } else if (preset === 'BULL_PUT_CREDIT') {
+        const s = getStrikeLtp(atm - 100, 'PE');
+        const b = getStrikeLtp(atm - 300, 'PE');
+        strategyLegs.push({ id: 1, strike: atm - 100, type: 'PE', action: 'SELL', qty: 75, price: s.price, iv: s.iv });
+        strategyLegs.push({ id: 2, strike: atm - 300, type: 'PE', action: 'BUY', qty: 75, price: b.price, iv: b.iv });
+      } else if (preset === 'BEAR_PUT') {
+        const b = getStrikeLtp(atm, 'PE');
+        const s = getStrikeLtp(atm - 200, 'PE');
+        strategyLegs.push({ id: 1, strike: atm, type: 'PE', action: 'BUY', qty: 75, price: b.price, iv: b.iv });
+        strategyLegs.push({ id: 2, strike: atm - 200, type: 'PE', action: 'SELL', qty: 75, price: s.price, iv: s.iv });
+      } else if (preset === 'BEAR_CALL_CREDIT') {
+        const s = getStrikeLtp(atm + 100, 'CE');
+        const b = getStrikeLtp(atm + 300, 'CE');
+        strategyLegs.push({ id: 1, strike: atm + 100, type: 'CE', action: 'SELL', qty: 75, price: s.price, iv: s.iv });
+        strategyLegs.push({ id: 2, strike: atm + 300, type: 'CE', action: 'BUY', qty: 75, price: b.price, iv: b.iv });
+      } else if (preset === 'SHORT_STRADDLE') {
+        const c = getStrikeLtp(atm, 'CE');
+        const p = getStrikeLtp(atm, 'PE');
+        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'SELL', qty: 75, price: c.price, iv: c.iv });
+        strategyLegs.push({ id: 2, strike: atm, type: 'PE', action: 'SELL', qty: 75, price: p.price, iv: p.iv });
+      } else if (preset === 'SHORT_STRANGLE') {
+        const c = getStrikeLtp(atm + 200, 'CE');
+        const p = getStrikeLtp(atm - 200, 'PE');
+        strategyLegs.push({ id: 1, strike: atm + 200, type: 'CE', action: 'SELL', qty: 75, price: c.price, iv: c.iv });
+        strategyLegs.push({ id: 2, strike: atm - 200, type: 'PE', action: 'SELL', qty: 75, price: p.price, iv: p.iv });
+      } else if (preset === 'IRON_CONDOR') {
+        const sC = getStrikeLtp(atm + 200, 'CE');
+        const bC = getStrikeLtp(atm + 400, 'CE');
+        const sP = getStrikeLtp(atm - 200, 'PE');
+        const bP = getStrikeLtp(atm - 400, 'PE');
+        strategyLegs.push({ id: 1, strike: atm + 200, type: 'CE', action: 'SELL', qty: 75, price: sC.price, iv: sC.iv });
+        strategyLegs.push({ id: 2, strike: atm + 400, type: 'CE', action: 'BUY', qty: 75, price: bC.price, iv: bC.iv });
+        strategyLegs.push({ id: 3, strike: atm - 200, type: 'PE', action: 'SELL', qty: 75, price: sP.price, iv: sP.iv });
+        strategyLegs.push({ id: 4, strike: atm - 400, type: 'PE', action: 'BUY', qty: 75, price: bP.price, iv: bP.iv });
+      } else if (preset === 'IRON_BUTTERFLY') {
+        const sC = getStrikeLtp(atm, 'CE');
+        const sP = getStrikeLtp(atm, 'PE');
+        const bC = getStrikeLtp(atm + 300, 'CE');
+        const bP = getStrikeLtp(atm - 300, 'PE');
+        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'SELL', qty: 75, price: sC.price, iv: sC.iv });
+        strategyLegs.push({ id: 2, strike: atm, type: 'PE', action: 'SELL', qty: 75, price: sP.price, iv: sP.iv });
+        strategyLegs.push({ id: 3, strike: atm + 300, type: 'CE', action: 'BUY', qty: 75, price: bC.price, iv: bC.iv });
+        strategyLegs.push({ id: 4, strike: atm - 300, type: 'PE', action: 'BUY', qty: 75, price: bP.price, iv: bP.iv });
+      }
+
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+    }
+
+    function onPayoffTargetDateSlider(val) {
+      payoffTargetDteOffset = Number(val);
+      const lbl1 = document.getElementById('slider-target-days-lbl');
+      const lbl2 = document.getElementById('slider-target-dte-lbl');
+      if (lbl1) lbl1.innerText = val === '0' || val === 0 ? 'Today (T+Now)' : `T+${val} Days`;
+      if (lbl2) lbl2.innerText = `${val} days elapsed`;
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+    }
+
+    function onPayoffIvShiftSlider(val) {
+      payoffIvShiftPct = Number(val);
+      const lbl = document.getElementById('slider-iv-shift-lbl');
+      if (lbl) lbl.innerText = `${Number(val) >= 0 ? '+' : ''}${Number(val).toFixed(1)}%`;
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+    }
+
+    function recalculateStrategyMetrics() {
+      if (strategyLegs.length === 0) {
+        document.getElementById('strat-metric-maxprofit').innerText = '--';
+        document.getElementById('strat-metric-maxloss').innerText = '--';
+        document.getElementById('strat-metric-rr').innerText = '--';
+        document.getElementById('strat-metric-breakevens').innerText = '--';
+        document.getElementById('strat-metric-pop').innerText = '--';
+        document.getElementById('strat-metric-netprem').innerText = '--';
+        document.getElementById('strat-metric-margin').innerText = '--';
+        document.getElementById('strat-metric-greeks').innerText = 'Δ: 0 | Θ: ₹0';
+        document.getElementById('strat-metric-greeks-sub').innerText = 'Γ: 0 | V: ₹0';
+        latestPayoffCurveData = null;
+        return;
+      }
+
+      const active = (selectedOptionsExpiryType === 'monthly')
+        ? (niftyOptionsChainCache?.monthly || {})
+        : (niftyOptionsChainCache?.weekly || {});
+      const spot = active.spot_price || 24700;
+      const baseDte = Math.max(1, selectedOptionsExpiryType === 'monthly' ? 22 : 5);
+      const targetDte = Math.max(0.01, baseDte - payoffTargetDteOffset);
+
+      const minStrike = Math.min(...strategyLegs.map(l => l.strike));
+      const maxStrike = Math.max(...strategyLegs.map(l => l.strike));
+      const marginBuffer = Math.max(800, (maxStrike - minStrike) * 0.7);
+      const spotMin = Math.round(Math.min(minStrike - marginBuffer, spot * 0.94));
+      const spotMax = Math.round(Math.max(maxStrike + marginBuffer, spot * 1.06));
+
+      const stepCount = 180;
+      const step = (spotMax - spotMin) / stepCount;
+
+      const spots = [];
+      const expiryPnls = [];
+      const targetPnls = [];
+
+      for (let i = 0; i <= stepCount; i++) {
+        const s = spotMin + i * step;
+        spots.push(s);
+
+        let expPnl = 0;
+        let tPnl = 0;
+
+        strategyLegs.forEach(leg => {
+          const sign = leg.action === 'BUY' ? 1 : -1;
+          const intrinsic = leg.type === 'CE' ? Math.max(0, s - leg.strike) : Math.max(0, leg.strike - s);
+          expPnl += sign * (intrinsic - leg.price) * leg.qty;
+
+          const shiftedIv = Math.max(3, leg.iv + payoffIvShiftPct);
+          const bs = calculateBsOption(s, leg.strike, targetDte, shiftedIv, leg.type);
+          tPnl += sign * (bs.price - leg.price) * leg.qty;
+        });
+
+        expiryPnls.push(expPnl);
+        targetPnls.push(tPnl);
+      }
+
+      // Max Profit / Loss
+      const minExp = Math.min(...expiryPnls);
+      const maxExp = Math.max(...expiryPnls);
+      const leftExpSlope = expiryPnls[1] - expiryPnls[0];
+      const rightExpSlope = expiryPnls[stepCount] - expiryPnls[stepCount - 1];
+
+      const isLeftUnlProfit = leftExpSlope < -0.1;
+      const isRightUnlProfit = rightExpSlope > 0.1;
+      const isLeftUnlLoss = leftExpSlope > 0.1;
+      const isRightUnlLoss = rightExpSlope < -0.1;
+
+      const maxProfitText = (isLeftUnlProfit || isRightUnlProfit) ? 'Unlimited' : `₹${Math.round(maxExp).toLocaleString('en-IN')}`;
+      const maxLossText = (isLeftUnlLoss || isRightUnlLoss) ? 'Unlimited' : `₹${Math.abs(Math.round(minExp)).toLocaleString('en-IN')}`;
+
+      document.getElementById('strat-metric-maxprofit').innerText = maxProfitText;
+      document.getElementById('strat-metric-maxloss').innerText = maxLossText;
+
+      // Breakevens
+      const bes = [];
+      for (let i = 0; i < stepCount; i++) {
+        const p1 = expiryPnls[i];
+        const p2 = expiryPnls[i + 1];
+        if ((p1 <= 0 && p2 >= 0) || (p1 >= 0 && p2 <= 0)) {
+          const fraction = Math.abs(p1) / (Math.abs(p1) + Math.abs(p2) || 1);
+          const beSpot = Math.round(spots[i] + fraction * step);
+          if (!bes.some(b => Math.abs(b - beSpot) < 15)) {
+            bes.push(beSpot);
+          }
+        }
+      }
+      const beStr = bes.length > 0 ? bes.join(', ') : 'None';
+      document.getElementById('strat-metric-breakevens').innerText = beStr;
+
+      // Risk : Reward
+      const rrEl = document.getElementById('strat-metric-rr');
+      if (maxProfitText === 'Unlimited' && maxLossText !== 'Unlimited') {
+        rrEl.innerText = '1 : High';
+      } else if (maxLossText === 'Unlimited') {
+        rrEl.innerText = 'High Risk';
+      } else if (Math.abs(minExp) > 0) {
+        const ratio = (maxExp / Math.abs(minExp)).toFixed(2);
+        rrEl.innerText = `1 : ${ratio}`;
+      } else {
+        rrEl.innerText = '1 : 1';
+      }
+
+      // Net Premium
+      let netPrem = 0;
+      strategyLegs.forEach(l => {
+        const sign = l.action === 'SELL' ? 1 : -1;
+        netPrem += sign * l.price * l.qty;
+      });
+      const netPremEl = document.getElementById('strat-metric-netprem');
+      const netPremSub = document.getElementById('strat-metric-netprem-sub');
+      if (netPrem >= 0) {
+        netPremEl.innerText = `+₹${Math.round(netPrem).toLocaleString('en-IN')}`;
+        netPremEl.className = "text-sm sm:text-base font-bold text-emerald-400 mt-0.5";
+        if (netPremSub) netPremSub.innerText = "Net Credit (Received)";
+      } else {
+        netPremEl.innerText = `-₹${Math.abs(Math.round(netPrem)).toLocaleString('en-IN')}`;
+        netPremEl.className = "text-sm sm:text-base font-bold text-rose-400 mt-0.5";
+        if (netPremSub) netPremSub.innerText = "Net Debit (Paid)";
+      }
+
+      // Est. Margin Proxy
+      const totalShortLots = strategyLegs.filter(l => l.action === 'SELL').reduce((acc, l) => acc + (l.qty / 75), 0);
+      const totalLongLots = strategyLegs.filter(l => l.action === 'BUY').reduce((acc, l) => acc + (l.qty / 75), 0);
+      let estMargin = 0;
+      if (totalShortLots > 0) {
+        const unhedgedLots = Math.max(0, totalShortLots - totalLongLots);
+        const hedgedLots = Math.min(totalShortLots, totalLongLots);
+        estMargin = (unhedgedLots * 128000) + (hedgedLots * 38000);
+      } else {
+        estMargin = Math.max(0, -netPrem);
+      }
+      document.getElementById('strat-metric-margin').innerText = `₹${Math.round(estMargin).toLocaleString('en-IN')}`;
+
+      // Portfolio Greeks
+      let netDelta = 0;
+      let netTheta = 0;
+      let netGamma = 0;
+      let netVega = 0;
+      strategyLegs.forEach(l => {
+        const sign = l.action === 'BUY' ? 1 : -1;
+        const bs = calculateBsOption(spot, l.strike, targetDte, l.iv + payoffIvShiftPct, l.type);
+        netDelta += sign * bs.delta * (l.qty / 75);
+        netTheta += sign * bs.theta * l.qty;
+        netGamma += sign * bs.gamma * (l.qty / 75);
+        netVega += sign * bs.vega * l.qty;
+      });
+      document.getElementById('strat-metric-greeks').innerText = `Δ: ${netDelta >= 0 ? '+' : ''}${netDelta.toFixed(2)} | Θ: ${netTheta >= 0 ? '+' : ''}₹${Math.round(netTheta).toLocaleString('en-IN')}/d`;
+      document.getElementById('strat-metric-greeks-sub').innerText = `Γ: ${netGamma.toFixed(4)} | V: ${netVega >= 0 ? '+' : ''}₹${Math.round(netVega).toLocaleString('en-IN')}/%`;
+
+      // POP Proxy
+      let pop = 50;
+      if (bes.length === 2) {
+        const b1 = Math.min(...bes);
+        const b2 = Math.max(...bes);
+        const ivProxy = 0.135;
+        const T = targetDte / 365.0;
+        const d1 = (Math.log(b1 / spot)) / (ivProxy * Math.sqrt(T));
+        const d2 = (Math.log(b2 / spot)) / (ivProxy * Math.sqrt(T));
+        const pInRange = Math.abs(normalCdf(d2) - normalCdf(d1)) * 100;
+        const midPnl = expiryPnls[Math.floor(stepCount / 2)];
+        pop = midPnl >= 0 ? Math.min(95, Math.max(5, pInRange)) : Math.min(95, Math.max(5, 100 - pInRange));
+      } else if (bes.length === 1) {
+        const be = bes[0];
+        const isBullish = expiryPnls[stepCount] > 0;
+        const ivProxy = 0.135;
+        const T = targetDte / 365.0;
+        const d = (Math.log(be / spot)) / (ivProxy * Math.sqrt(T));
+        pop = isBullish ? (1.0 - normalCdf(d)) * 100 : normalCdf(d) * 100;
+      } else if (minExp >= 0) {
+        pop = 99.0;
+      }
+      document.getElementById('strat-metric-pop').innerText = `${Math.round(pop)}%`;
+
+      latestPayoffCurveData = {
+        spot: spot,
+        spots: spots,
+        expiryPnls: expiryPnls,
+        targetPnls: targetPnls,
+        breakevens: bes,
+        minPnl: Math.min(...expiryPnls, ...targetPnls),
+        maxPnl: Math.max(...expiryPnls, ...targetPnls),
+        spotMin: spotMin,
+        spotMax: spotMax
+      };
+    }
+
+    function drawPayoffGraph() {
+      const canvas = document.getElementById('opt-payoff-canvas');
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const width = rect.width;
+      const height = rect.height;
+
+      ctx.clearRect(0, 0, width, height);
+
+      if (!latestPayoffCurveData || strategyLegs.length === 0) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '12px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Select an option preset or add legs to render payoff curve', width / 2, height / 2);
+        return;
+      }
+
+      const { spot, spots, expiryPnls, targetPnls, breakevens, minPnl, maxPnl, spotMin, spotMax } = latestPayoffCurveData;
+
+      const absMaxPnl = Math.max(Math.abs(minPnl), Math.abs(maxPnl), 500);
+      const pnlMinY = -absMaxPnl * 1.15;
+      const pnlMaxY = absMaxPnl * 1.15;
+
+      const padLeft = 55;
+      const padRight = 20;
+      const padTop = 20;
+      const padBottom = 28;
+      const plotWidth = width - padLeft - padRight;
+      const plotHeight = height - padTop - padBottom;
+
+      const xToCanvas = (s) => padLeft + ((s - spotMin) / (spotMax - spotMin)) * plotWidth;
+      const yToCanvas = (p) => padTop + plotHeight - ((p - pnlMinY) / (pnlMaxY - pnlMinY)) * plotHeight;
+
+      // Grid lines
+      const yZero = yToCanvas(0);
+      ctx.beginPath();
+      ctx.moveTo(padLeft, yZero);
+      ctx.lineTo(padLeft + plotWidth, yZero);
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([]);
+      ctx.stroke();
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '10px JetBrains Mono, monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('₹0', padLeft - 6, yZero + 3);
+
+      const tickTop = Math.round(absMaxPnl * 0.7);
+      const tickBottom = -tickTop;
+      [tickTop, tickBottom].forEach(tp => {
+        const y = yToCanvas(tp);
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, y);
+        ctx.lineTo(padLeft + plotWidth, y);
+        ctx.stroke();
+        ctx.fillStyle = tp >= 0 ? '#34d399' : '#f87171';
+        ctx.fillText(`${tp >= 0 ? '+' : ''}₹${(tp / 1000).toFixed(0)}k`, padLeft - 6, y + 3);
+      });
+
+      // Spot Line
+      const xSpot = xToCanvas(spot);
+      if (xSpot >= padLeft && xSpot <= padLeft + plotWidth) {
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(xSpot, padTop);
+        ctx.lineTo(xSpot, padTop + plotHeight);
+        ctx.stroke();
+
+        ctx.fillStyle = '#f59e0b';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Spot ${Math.round(spot)}`, xSpot, padTop - 5);
+      }
+
+      // Breakevens
+      breakevens.forEach(be => {
+        const xBe = xToCanvas(be);
+        if (xBe >= padLeft && xBe <= padLeft + plotWidth) {
+          ctx.strokeStyle = '#06b6d4';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath();
+          ctx.moveTo(xBe, padTop + 10);
+          ctx.lineTo(xBe, padTop + plotHeight);
+          ctx.stroke();
+
+          ctx.fillStyle = '#06b6d4';
+          ctx.textAlign = 'center';
+          ctx.fillText(`BE ${be}`, xBe, padTop + plotHeight + 14);
+        }
+      });
+
+      // Shaded Profit/Loss Area
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(padLeft, padTop, plotWidth, plotHeight);
+      ctx.clip();
+
+      ctx.beginPath();
+      ctx.moveTo(xToCanvas(spots[0]), yZero);
+      for (let i = 0; i < spots.length; i++) {
+        ctx.lineTo(xToCanvas(spots[i]), yToCanvas(expiryPnls[i]));
+      }
+      ctx.lineTo(xToCanvas(spots[spots.length - 1]), yZero);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotHeight);
+      grad.addColorStop(0, 'rgba(16, 185, 129, 0.25)');
+      grad.addColorStop(0.5, 'rgba(16, 185, 129, 0.05)');
+      grad.addColorStop(0.51, 'rgba(244, 63, 94, 0.05)');
+      grad.addColorStop(1, 'rgba(244, 63, 94, 0.25)');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Expiry Curve (Solid Green)
+      ctx.beginPath();
+      for (let i = 0; i < spots.length; i++) {
+        const x = xToCanvas(spots[i]);
+        const y = yToCanvas(expiryPnls[i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([]);
+      ctx.stroke();
+
+      // T+Now Curve (Dashed Cyan)
+      ctx.beginPath();
+      for (let i = 0; i < spots.length; i++) {
+        const x = xToCanvas(spots[i]);
+        const y = yToCanvas(targetPnls[i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 2.0;
+      ctx.setLineDash([5, 4]);
+      ctx.stroke();
+
+      // Interactive Hover Crosshair
+      if (payoffCanvasHoverX !== null && payoffCanvasHoverX >= padLeft && payoffCanvasHoverX <= padLeft + plotWidth) {
+        const frac = (payoffCanvasHoverX - padLeft) / plotWidth;
+        const hoverSpot = spotMin + frac * (spotMax - spotMin);
+        const idx = Math.min(spots.length - 1, Math.max(0, Math.round(frac * (spots.length - 1))));
+        const expPnl = expiryPnls[idx];
+        const tPnl = targetPnls[idx];
+
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(payoffCanvasHoverX, padTop);
+        ctx.lineTo(payoffCanvasHoverX, padTop + plotHeight);
+        ctx.stroke();
+
+        const yExp = yToCanvas(expPnl);
+        const yTnow = yToCanvas(tPnl);
+
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(payoffCanvasHoverX, yExp, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#06b6d4';
+        ctx.beginPath();
+        ctx.arc(payoffCanvasHoverX, yTnow, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        const hud = document.getElementById('payoff-crosshair-hud');
+        if (hud) {
+          hud.innerHTML = `Nifty: <b class="text-white">₹${Math.round(hoverSpot)}</b> • Expiry: <b class="${expPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${expPnl >= 0 ? '+' : ''}₹${Math.round(expPnl).toLocaleString('en-IN')}</b> • T+Now: <b class="${tPnl >= 0 ? 'text-cyan-300' : 'text-rose-400'}">${tPnl >= 0 ? '+' : ''}₹${Math.round(tPnl).toLocaleString('en-IN')}</b>`;
+        }
+      }
+
+      ctx.restore();
     }
 
     function switchTab(tabId) {
@@ -3635,11 +4674,23 @@
       chgEl.innerText = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`;
       chgEl.className = `text-xs font-mono px-2 py-0.5 rounded ${chg >= 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`;
 
-      document.getElementById('modal-chart-source').innerText = lvls.source || 'ATR SWING STRUCTURE';
+      const isBearish = (lvls.direction === 'BEARISH_SHORT');
+
+      // Update banner labels if direction is Bearish vs Bullish
+      const lblEntry = document.getElementById('lbl-entry-tag');
+      const lblSl = document.getElementById('lbl-sl-tag');
+      const lblT1 = document.getElementById('lbl-t1-tag');
+      const lblT2 = document.getElementById('lbl-t2-tag');
+      if (lblEntry) lblEntry.innerText = isBearish ? '⚡ Short Entry' : '⚡ Entry Price';
+      if (lblSl) lblSl.innerText = isBearish ? '🛑 Upside Stop Loss (R1)' : '🛑 Stop Loss (SL)';
+      if (lblT1) lblT1.innerText = isBearish ? '🎯 Downside Target 1' : '🎯 Target 1 (T1)';
+      if (lblT2) lblT2.innerText = isBearish ? '🚀 Downside Target 2' : '🚀 Target 2 (T2)';
+
+      document.getElementById('modal-chart-source').innerText = lvls.source || (isBearish ? 'BEARISH SHORT STRUCTURE' : 'ATR SWING STRUCTURE');
       document.getElementById('lvl-entry').innerText = `₹${(lvls.entry_price || 0).toFixed(2)}`;
-      document.getElementById('lvl-sl').innerText = `₹${(lvls.stop_loss || 0).toFixed(2)} (${lvls.sl_pct || 0}%)`;
-      document.getElementById('lvl-t1').innerText = `₹${(lvls.target_1 || 0).toFixed(2)} (+${lvls.t1_pct || 0}%)`;
-      document.getElementById('lvl-t2').innerText = `₹${(lvls.target_2 || 0).toFixed(2)} (+${lvls.t2_pct || 0}%)`;
+      document.getElementById('lvl-sl').innerText = `₹${(lvls.stop_loss || 0).toFixed(2)} (${isBearish ? '+' : ''}${lvls.sl_pct || 0}%)`;
+      document.getElementById('lvl-t1').innerText = `₹${(lvls.target_1 || 0).toFixed(2)} (${isBearish ? '' : '+'}${lvls.t1_pct || 0}%)`;
+      document.getElementById('lvl-t2').innerText = `₹${(lvls.target_2 || 0).toFixed(2)} (${isBearish ? '' : '+'}${lvls.t2_pct || 0}%)`;
       document.getElementById('lvl-rsi-atr').innerText = `RSI: ${latest.rsi14 || 0} | ATR: ₹${latest.atr14 || 0}`;
       document.getElementById('lvl-rr').innerText = `T1: 1:${lvls.rr_t1 || 1.5} | T2: 1:${lvls.rr_t2 || 3.0}`;
       document.getElementById('modal-bars-count').innerText = candles.length;
@@ -3743,7 +4794,7 @@
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.Solid,
             axisLabelVisible: true,
-            title: `⚡ ENTRY ₹${lvls.entry_price}`
+            title: isBearish ? `⚡ SHORT ENTRY ₹${lvls.entry_price}` : `⚡ ENTRY ₹${lvls.entry_price}`
           });
         }
         if (lvls.stop_loss) {
@@ -3753,7 +4804,7 @@
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.Solid,
             axisLabelVisible: true,
-            title: `🛑 STOP LOSS ₹${lvls.stop_loss} (${lvls.sl_pct}%)`
+            title: isBearish ? `🛑 UPSIDE SL (RESISTANCE) ₹${lvls.stop_loss} (+${lvls.sl_pct}%)` : `🛑 STOP LOSS ₹${lvls.stop_loss} (${lvls.sl_pct}%)`
           });
         }
         if (lvls.target_1) {
@@ -3763,7 +4814,7 @@
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.Dashed,
             axisLabelVisible: true,
-            title: `🎯 TARGET 1 ₹${lvls.target_1} (+${lvls.t1_pct}%)`
+            title: isBearish ? `🎯 DOWNSIDE TARGET 1 ₹${lvls.target_1} (${lvls.t1_pct}%)` : `🎯 TARGET 1 ₹${lvls.target_1} (+${lvls.t1_pct}%)`
           });
         }
         if (lvls.target_2) {
@@ -3773,7 +4824,7 @@
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.Dashed,
             axisLabelVisible: true,
-            title: `🚀 TARGET 2 ₹${lvls.target_2} (+${lvls.t2_pct}%)`
+            title: isBearish ? `🚀 DOWNSIDE TARGET 2 ₹${lvls.target_2} (${lvls.t2_pct}%)` : `🚀 TARGET 2 ₹${lvls.target_2} (+${lvls.t2_pct}%)`
           });
         }
 

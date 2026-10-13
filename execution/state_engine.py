@@ -621,32 +621,88 @@ class StateEngine:
         last_c = candles[-1]["close"]
         last_atr = max(0.5, candles[-1]["atr14"])
 
+        # Check for Nifty 50 Index Prediction Integration
+        nifty_pred = None
+        if sym in ("^NSEI", "NIFTY", "NIFTY50"):
+            nifty_pred = self.get_kv("latest_nifty_predictions")
+            if not nifty_pred:
+                try:
+                    from engines.nifty_analytics_engine import nifty_analytics_engine
+                    nifty_pred = nifty_analytics_engine.compute_nifty_predictions(force_refresh=False)
+                except Exception:
+                    nifty_pred = None
+
         if active_pos:
             ep = round(float(active_pos["entry_price"]), 2)
             sl = round(float(active_pos["stop_loss"]), 2)
             t1 = round(float(active_pos["target"]), 2)
             t2 = round(float(active_pos.get("target_2") or (ep + 2.0 * max(1.0, t1 - ep))), 2)
+            direction = "BULLISH_LONG"
             level_source = f"ACTIVE POSITION ({active_pos['portfolio_type']})"
             entry_ts = active_pos.get("entry_date", "")
+            risk_per_share = max(0.01, round(ep - sl, 2))
+            rr_t1 = round((t1 - ep) / risk_per_share, 2)
+            rr_t2 = round((t2 - ep) / risk_per_share, 2)
+        elif nifty_pred and isinstance(nifty_pred, dict) and nifty_pred.get("status") == "OK":
+            t1_f = nifty_pred.get("t1_forecast") or {}
+            t5_f = nifty_pred.get("t5_forecast") or {}
+            comp_score = float(nifty_pred.get("composite_score") or 0.0)
+            t1_verd = t1_f.get("verdict") or "NEUTRAL"
+            t5_verd = t5_f.get("verdict") or "NEUTRAL"
+            is_bearish = ("BEARISH" in t1_verd or "BEARISH" in t5_verd or comp_score < -8.0)
+            tech = (nifty_pred.get("pillars") or {}).get("nifty_technicals") or {}
+
+            ep = round(last_c, 2)
+            if is_bearish:
+                direction = "BEARISH_SHORT"
+                r1_val = float(tech.get("r1") or (ep + 1.2 * last_atr))
+                t1_exp = float(t1_f.get("expected_close") or (ep - 0.8 * last_atr))
+                t5_exp = float(t5_f.get("expected_close") or (ep - 1.8 * last_atr))
+                t1_cone_low = float((t1_f.get("range_1sigma") or [ep - 1.5 * last_atr])[0])
+                sl = round(max(r1_val, ep + 0.8 * last_atr), 2)
+                t1 = round(min(t1_exp, ep - 0.3 * last_atr), 2)
+                t2 = round(min(t5_exp, t1_cone_low, ep - 0.9 * last_atr), 2)
+                level_source = f"NIFTY QUANT FORECAST: {t1_verd} (T+1) & {t5_verd} (T+5) • BEARISH SHORT CONE"
+                risk_per_share = max(0.01, round(sl - ep, 2))
+                rr_t1 = round(abs(ep - t1) / risk_per_share, 2)
+                rr_t2 = round(abs(ep - t2) / risk_per_share, 2)
+            else:
+                direction = "BULLISH_LONG"
+                s1_val = float(tech.get("s1") or (ep - 1.2 * last_atr))
+                t1_exp = float(t1_f.get("expected_close") or (ep + 0.8 * last_atr))
+                t5_exp = float(t5_f.get("expected_close") or (ep + 1.8 * last_atr))
+                t1_cone_high = float((t1_f.get("range_1sigma") or [ep - last_atr, ep + 1.5 * last_atr])[1])
+                sl = round(min(s1_val, ep - 0.8 * last_atr), 2)
+                t1 = round(max(t1_exp, ep + 0.3 * last_atr), 2)
+                t2 = round(max(t5_exp, t1_cone_high, ep + 0.9 * last_atr), 2)
+                level_source = f"NIFTY QUANT FORECAST: {t1_verd} (T+1) & {t5_verd} (T+5) • BULLISH LONG CONE"
+                risk_per_share = max(0.01, round(ep - sl, 2))
+                rr_t1 = round((t1 - ep) / risk_per_share, 2)
+                rr_t2 = round((t2 - ep) / risk_per_share, 2)
+            entry_ts = nifty_pred.get("timestamp_ist") or candles[-1]["time"]
         elif signal_row and float(signal_row.get("sl") or 0) > 0:
             ep = round(float(signal_row.get("entry") or signal_row.get("close") or last_c), 2)
             sl = round(float(signal_row["sl"]), 2)
             t1 = round(float(signal_row.get("t1") or (ep + 1.5 * max(1.0, ep - sl))), 2)
             t2 = round(float(signal_row.get("t2") or (ep + 3.0 * max(1.0, ep - sl))), 2)
+            direction = "BULLISH_LONG"
             level_source = f"SIGNAL SETUP ({signal_row.get('bucket', 'WATCH')} - {signal_row.get('portfolio_type', '')})"
             entry_ts = signal_row.get("updated_at", "")
+            risk_per_share = max(0.01, round(ep - sl, 2))
+            rr_t1 = round((t1 - ep) / risk_per_share, 2)
+            rr_t2 = round((t2 - ep) / risk_per_share, 2)
         else:
             ep = last_c
             risk_dist = round(2.0 * last_atr, 2)
             sl = round(ep - risk_dist, 2)
             t1 = round(ep + 1.5 * risk_dist, 2)
             t2 = round(ep + 3.0 * risk_dist, 2)
+            direction = "BULLISH_LONG"
             level_source = "ATR(14) SWING STRUCTURE (-2.0 ATR SL / +1.5R T1 / +3.0R T2)"
             entry_ts = candles[-1]["time"]
-
-        risk_per_share = max(0.01, round(ep - sl, 2))
-        rr_t1 = round((t1 - ep) / risk_per_share, 2)
-        rr_t2 = round((t2 - ep) / risk_per_share, 2)
+            risk_per_share = max(0.01, round(ep - sl, 2))
+            rr_t1 = round((t1 - ep) / risk_per_share, 2)
+            rr_t2 = round((t2 - ep) / risk_per_share, 2)
 
         return {
             "status": "OK",
@@ -656,6 +712,7 @@ class StateEngine:
             "latest": candles[-1],
             "trade_levels": {
                 "source": level_source,
+                "direction": direction,
                 "entry_price": ep,
                 "stop_loss": sl,
                 "target_1": t1,
