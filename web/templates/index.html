@@ -70,63 +70,84 @@
     .glow-violet {
       box-shadow: 0 0 20px -5px rgba(139, 92, 246, 0.25);
     }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
     /* Mobile safe area padding */
     .pb-safe {
-      padding-bottom: env(safe-area-inset-bottom, 1rem);
+      padding-bottom: env(safe-area-inset-bottom, 0.75rem);
     }
   </style>
 </head>
-<body class="bg-[#070a13] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black">
+<body class="bg-[#070a13] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black overflow-x-hidden">
 
   <!-- TOP HEADER -->
-  <header class="sticky top-0 z-40 bg-[#0b0f19]/90 backdrop-blur-md border-b border-slate-800">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+  <header class="sticky top-0 z-40 bg-[#0b0f19]/95 backdrop-blur-md border-b border-slate-800/90">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-2">
       
-      <!-- Logo / Title -->
-      <div class="flex items-center gap-3">
-        <img src="/static/bull-logo.jpg" alt="QuantDesk Bull" class="w-10 h-10 rounded-xl object-cover border border-cyan-500/50 shadow-lg shadow-cyan-500/25">
-        <div>
-          <div class="flex items-center gap-2">
-            <span class="font-extrabold tracking-tight text-white text-lg">QUANT<span class="text-cyan-400">DESK</span></span>
-            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">v2.5 PRO</span>
+      <!-- Brand Logo & Title (Shrink-proof & Non-overlapping on Mobile) -->
+      <div class="flex items-center gap-2.5 min-w-0 shrink-0">
+        <img src="/static/bull-logo.jpg" alt="QuantDesk Bull" class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-cyan-500/50 shadow-lg shadow-cyan-500/20 shrink-0">
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5">
+            <span class="font-extrabold tracking-tight text-white text-base sm:text-lg leading-none">QUANT<span class="text-cyan-400">DESK</span></span>
+            <span class="hidden sm:inline-flex text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-semibold whitespace-nowrap">v3.0 MULTI-ASSET</span>
           </div>
-          <p class="text-[11px] text-slate-400 font-medium hidden sm:block">Single Master File • 5m Live Price Stream • Dual Swing Engines</p>
+          <p class="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate mt-0.5 hidden xs:block sm:block">Swing • Intraday • AI Predictions • Options</p>
         </div>
       </div>
 
-      <!-- Center Status Bar (Desktop) -->
-      <div class="hidden md:flex items-center gap-3 text-xs">
-        <!-- Market Status Badge -->
-        <div id="market-status-pill" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300">
+      <!-- Desktop Primary Module Switcher (Swing | Intraday | Predictions | Options) -->
+      <div class="hidden lg:flex items-center bg-slate-900/90 p-1 rounded-xl border border-slate-800 gap-1 shrink-0">
+        <button onclick="switchModule('module-swing')" id="desk-mod-swing" class="mod-btn px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all bg-cyan-500 text-black shadow-md shadow-cyan-500/20 whitespace-nowrap">
+          <i data-lucide="trending-up" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+          <span>Swing Trading</span>
+        </button>
+        <button onclick="switchModule('module-intraday')" id="desk-mod-intraday" class="mod-btn px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+          <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
+          <span>Intraday</span>
+          <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">LIVE</span>
+        </button>
+        <button onclick="switchModule('module-predictions')" id="desk-mod-predictions" class="mod-btn px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+          <i data-lucide="brain-circuit" class="w-3.5 h-3.5 text-purple-400"></i>
+          <span>Predictions</span>
+          <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">ML</span>
+        </button>
+        <button onclick="switchModule('module-options')" id="desk-mod-options" class="mod-btn px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+          <i data-lucide="flame" class="w-3.5 h-3.5 text-emerald-400"></i>
+          <span>Options Desk</span>
+          <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">VIX/F&O</span>
+        </button>
+      </div>
+
+      <!-- Desktop Telemetry Pills -->
+      <div class="hidden xl:flex items-center gap-2 text-[11px] shrink-0">
+        <div id="market-status-pill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 whitespace-nowrap">
           <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-          <span id="market-status-text" class="font-medium">Checking Market...</span>
+          <span id="market-status-text" class="font-medium">Checking...</span>
         </div>
 
-        <!-- Strict Trading Gate Badge -->
-        <div id="trading-gate-pill" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-950/50 border border-rose-800/60 text-rose-300 font-mono" title="Orders can only execute during NSE Regular Trading Hours (09:15 AM - 03:30 PM IST, Mon-Fri)">
-          <span id="trading-gate-text">🔒 Gate: Checking...</span>
+        <div id="trading-gate-pill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/50 border border-rose-800/60 text-rose-300 font-mono whitespace-nowrap" title="Orders can only execute during NSE Regular Trading Hours (09:15 AM - 03:30 PM IST, Mon-Fri)">
+          <span id="trading-gate-text">🔒 Gate</span>
         </div>
 
-        <!-- Next Scan Countdown -->
-        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-950/40 border border-cyan-800/50 text-cyan-300">
-          <i data-lucide="timer" class="w-3.5 h-3.5 text-cyan-400"></i>
-          <span id="next-scan-text" class="font-mono">Next: Loading...</span>
-        </div>
-
-        <!-- Live Clock -->
-        <div class="px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 font-mono text-slate-400">
+        <div class="px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 font-mono text-slate-400 whitespace-nowrap">
           <span id="live-ist-clock">--:--:-- IST</span>
         </div>
       </div>
 
-      <!-- Action Buttons -->
-      <div class="flex items-center gap-2">
+      <!-- Right Action Buttons (Never Wrap or Overlap on Mobile) -->
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <!-- Quick Scan Trigger Dropdown -->
         <div class="relative">
-          <button id="btn-scan-menu" onclick="toggleScanMenu()" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-black font-semibold text-xs transition-all shadow-md shadow-cyan-500/20 active:scale-95">
-            <i data-lucide="zap" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+          <button id="btn-scan-menu" onclick="toggleScanMenu()" class="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-black font-bold text-xs transition-all shadow-md shadow-cyan-500/20 active:scale-95 whitespace-nowrap">
+            <i data-lucide="zap" class="w-3.5 h-3.5 stroke-[2.5] shrink-0"></i>
             <span>Run Scan</span>
-            <i data-lucide="chevron-down" class="w-3 h-3"></i>
+            <i data-lucide="chevron-down" class="w-3 h-3 shrink-0"></i>
           </button>
           
           <div id="scan-dropdown" class="hidden absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-2 z-50 text-xs">
@@ -156,124 +177,134 @@
           </div>
         </div>
 
-        <!-- Refresh Live Prices Button (Active Holdings + Screened Stocks) -->
-        <button id="btn-header-refresh-prices" onclick="refreshLivePrices(false)" class="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-semibold text-xs transition" title="Fetch Live Market Prices from Yahoo Finance for all stocks on page">
-          <i data-lucide="refresh-cw" class="w-3.5 h-3.5" id="refresh-icon"></i>
+        <!-- Refresh Live Prices Button -->
+        <button id="btn-header-refresh-prices" onclick="refreshLivePrices(false)" class="flex items-center gap-1.5 px-2.5 py-1.5 sm:py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-semibold text-xs transition whitespace-nowrap shrink-0" title="Fetch Live Market Prices from Yahoo Finance for all stocks on page">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5 shrink-0" id="refresh-icon"></i>
           <span class="hidden sm:inline" id="btn-refresh-prices-text">Refresh Prices</span>
         </button>
       </div>
 
     </div>
 
-    <!-- Mobile Mini Status Bar -->
-    <div class="md:hidden flex items-center justify-between px-4 py-1.5 bg-slate-900 border-t border-slate-800 text-[11px]">
-      <div id="mobile-market-status" class="flex items-center gap-1.5 text-slate-300">
+    <!-- Compact Telemetry Strip (Shown on Mobile & Tablet < xl) -->
+    <div class="xl:hidden flex items-center justify-between gap-2 px-3 sm:px-6 py-1.5 bg-slate-900/95 border-t border-slate-800/80 text-[10px] sm:text-[11px] overflow-x-auto no-scrollbar whitespace-nowrap">
+      <div id="mobile-market-status" class="flex items-center gap-1.5 text-slate-300 shrink-0">
         <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
         <span>Checking Market...</span>
       </div>
-      <div class="text-cyan-400 font-mono" id="mobile-next-scan">
+      <div class="text-cyan-400 font-mono shrink-0" id="mobile-next-scan">
         Next: Syncing...
+      </div>
+      <div class="hidden sm:inline-flex text-slate-400 font-mono shrink-0" id="next-scan-text">
+        Next: Loading...
       </div>
     </div>
   </header>
 
-  <!-- NAVIGATION TABS (PC & MOBILE) -->
-  <div class="bg-[#0b0f19] border-b border-slate-800 sticky top-16 md:top-16 z-30">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <nav class="flex space-x-1 sm:space-x-2.5 overflow-x-auto custom-scroll py-2.5 text-xs font-semibold">
-        
-        <button onclick="switchTab('tab-p1')" id="nav-tab-p1" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-          <i data-lucide="layers" class="w-4 h-4"></i>
-          <span>Portfolio 1: Institutional 6-Pillar</span>
-          <span id="badge-p1-count" class="px-1.5 py-0.2 rounded text-[10px] bg-cyan-900/60 font-mono text-cyan-300">0</span>
-        </button>
-
-        <button onclick="switchTab('tab-p2')" id="nav-tab-p2" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
-          <i data-lucide="trending-up" class="w-4 h-4 text-violet-400"></i>
-          <span>Portfolio 2: Nifty 500 Momentum</span>
-          <span id="badge-p2-slots" class="px-1.5 py-0.2 rounded text-[10px] bg-violet-900/60 font-mono text-violet-300">0/10</span>
-        </button>
-
-        <button onclick="switchTab('tab-charts')" id="nav-tab-charts" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
-          <i data-lucide="candlestick-chart" class="w-4 h-4 text-emerald-400"></i>
-          <span>Charts & Master OHLCV</span>
-          <span id="badge-master-stocks" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-900/60 font-mono text-emerald-300">--</span>
-        </button>
-
-        <button onclick="switchTab('tab-signals')" id="nav-tab-signals" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
-          <i data-lucide="crosshair" class="w-4 h-4 text-cyan-400"></i>
-          <span>Live Signals Screener</span>
-        </button>
-
-        <button onclick="switchTab('tab-history')" id="nav-tab-history" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
-          <i data-lucide="history" class="w-4 h-4 text-amber-400"></i>
-          <span>Trade History</span>
-        </button>
-
-        <button onclick="switchTab('tab-scheduler')" id="nav-tab-scheduler" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
-          <i data-lucide="cloud" class="w-4 h-4 text-blue-400"></i>
-          <span>Master Vault & Scheduler</span>
-        </button>
-
-      </nav>
-    </div>
-  </div>
-
   <!-- MAIN VIEWPORT CONTAINER -->
-  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-8 space-y-6">
+  <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 lg:pb-10 space-y-4 sm:space-y-6">
 
-    <!-- LIVE SCAN PROGRESS & NOTIFICATION PANEL -->
-    <div id="live-scan-banner" class="hidden bg-slate-900/95 border border-cyan-500/50 rounded-2xl p-4 sm:p-5 shadow-2xl shadow-cyan-500/10 transition-all">
-      <div class="flex items-center justify-between gap-3 mb-2.5">
-        <div class="flex items-center gap-2.5">
-          <span id="scan-pulse-dot" class="w-3 h-3 rounded-full bg-cyan-400 animate-ping"></span>
-          <span id="scan-banner-title" class="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">LIVE SCAN IN PROGRESS</span>
-          <span id="scan-stock-counter" class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">Connecting...</span>
+    <!-- LIVE SCAN PROGRESS & NOTIFICATION PANEL (GLOBAL ACROSS ALL MODULES) -->
+    <div id="live-scan-banner" class="hidden bg-slate-900/95 border border-cyan-500/50 rounded-2xl p-3.5 sm:p-5 shadow-2xl shadow-cyan-500/10 transition-all">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <span id="scan-pulse-dot" class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping"></span>
+          <span id="scan-banner-title" class="text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">LIVE SCAN IN PROGRESS</span>
+          <span id="scan-stock-counter" class="text-[10px] sm:text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">Connecting...</span>
         </div>
-        <div class="flex items-center gap-3">
-          <span id="scan-pct-text" class="text-sm font-mono font-extrabold text-white">0%</span>
+        <div class="flex items-center gap-2">
+          <span id="scan-pct-text" class="text-xs sm:text-sm font-mono font-extrabold text-white">0%</span>
           <button onclick="document.getElementById('live-scan-banner').classList.add('hidden')" class="text-slate-400 hover:text-white text-xs px-1.5 py-0.5 rounded hover:bg-slate-800" title="Hide Panel">✕</button>
         </div>
       </div>
 
       <!-- Current Stage Text -->
-      <div id="scan-stage-text" class="text-xs sm:text-sm font-semibold text-slate-100 mb-2.5">
+      <div id="scan-stage-text" class="text-xs sm:text-sm font-semibold text-slate-100 mb-2">
         Connecting live to Chartink Screener...
       </div>
 
       <!-- Progress Bar -->
-      <div class="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800 mb-3">
+      <div class="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800 mb-2.5">
         <div id="scan-progress-bar" class="h-full bg-gradient-to-r from-cyan-500 via-emerald-400 to-violet-500 transition-all duration-300" style="width: 5%"></div>
       </div>
 
       <!-- Live Step-by-Step Notification Log Feed -->
-      <div id="scan-log-feed" class="bg-slate-950/90 border border-slate-800/80 rounded-xl p-2.5 max-h-28 overflow-y-auto custom-scroll font-mono text-[11px] text-slate-300 space-y-1">
+      <div id="scan-log-feed" class="bg-slate-950/90 border border-slate-800/80 rounded-xl p-2.5 max-h-28 overflow-y-auto custom-scroll font-mono text-[10px] sm:text-[11px] text-slate-300 space-y-1">
       </div>
     </div>
 
-    <!-- ================================================================= -->
-    <!-- TAB 1: PORTFOLIO 1 — INSTITUTIONAL 6-PILLAR ENGINE                -->
-    <!-- ================================================================= -->
-    <div id="tab-p1" class="tab-content space-y-6">
-      
-      <!-- Engine Header & Subtitle -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/60 border border-slate-800 p-5 rounded-2xl glow-cyan">
-        <div>
-          <div class="flex items-center gap-2.5">
-            <span class="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">PORTFOLIO 1</span>
-            <h2 class="text-xl font-extrabold text-white">Institutional 6-Pillar Percentile Engine</h2>
-          </div>
-          <p class="text-xs text-slate-400 mt-1">
-            Dynamic Chartink Screener Universe • 24-Thread Incremental Gap-Fill OHLCV Sync • Telegram Cloud Vault • Strict Market-Hours Trading Gate (09:15–15:30 IST)
-          </p>
+    <!-- =================================================================== -->
+    <!-- MODULE 1: SWING TRADING DESK (HOUSES ALL 6 SWING SUB-TABS)          -->
+    <!-- =================================================================== -->
+    <section id="module-swing" class="module-section space-y-4 sm:space-y-6">
+
+      <!-- SWING TRADING SUB-NAVIGATION BAR (Single Non-Duplicated Segmented Strip) -->
+      <div class="bg-[#0b0f19]/90 border border-slate-800/90 rounded-2xl p-1.5 sm:p-2 shadow-lg">
+        <div class="flex items-center justify-between gap-2 mb-1.5 px-2 pt-0.5 sm:hidden">
+          <span class="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-bold flex items-center gap-1">
+            <i data-lucide="trending-up" class="w-3 h-3"></i> Swing Trading Desk
+          </span>
+          <span class="text-[10px] font-mono text-slate-500">Swipe Sub-Desks ➔</span>
         </div>
-        <div class="flex items-center gap-2 self-start sm:self-center">
-          <button id="btn-p1-scan" onclick="triggerScan('INSTITUTIONAL')" class="px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-black font-semibold text-xs flex items-center gap-1.5 transition">
-            <i data-lucide="play" class="w-3.5 h-3.5 stroke-[2.5]"></i>
-            <span id="btn-p1-scan-text">Scan P1 Universe (Chartink Live)</span>
+        <nav class="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs font-semibold">
+          <button onclick="switchTab('tab-p1')" id="nav-tab-p1" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shrink-0">
+            <i data-lucide="layers" class="w-3.5 h-3.5 shrink-0"></i>
+            <span>P1: 6-Pillar</span>
+            <span id="badge-p1-count" class="px-1.5 py-0.2 rounded text-[10px] bg-cyan-900/70 font-mono text-cyan-200">0</span>
           </button>
-        </div>
+
+          <button onclick="switchTab('tab-p2')" id="nav-tab-p2" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
+            <i data-lucide="trending-up" class="w-3.5 h-3.5 text-violet-400 shrink-0"></i>
+            <span>P2: Nifty 500</span>
+            <span id="badge-p2-slots" class="px-1.5 py-0.2 rounded text-[10px] bg-violet-900/70 font-mono text-violet-200">0/10</span>
+          </button>
+
+          <button onclick="switchTab('tab-charts')" id="nav-tab-charts" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
+            <i data-lucide="candlestick-chart" class="w-3.5 h-3.5 text-emerald-400 shrink-0"></i>
+            <span>Charts & OHLCV</span>
+            <span id="badge-master-stocks" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-900/70 font-mono text-emerald-200">--</span>
+          </button>
+
+          <button onclick="switchTab('tab-signals')" id="nav-tab-signals" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
+            <i data-lucide="crosshair" class="w-3.5 h-3.5 text-cyan-400 shrink-0"></i>
+            <span>Signals Screener</span>
+          </button>
+
+          <button onclick="switchTab('tab-history')" id="nav-tab-history" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
+            <i data-lucide="history" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
+            <span>Trade History</span>
+          </button>
+
+          <button onclick="switchTab('tab-scheduler')" id="nav-tab-scheduler" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
+            <i data-lucide="cloud" class="w-3.5 h-3.5 text-blue-400 shrink-0"></i>
+            <span>Vault & Cron</span>
+          </button>
+        </nav>
       </div>
+
+      <!-- ================================================================= -->
+      <!-- TAB 1: PORTFOLIO 1 — INSTITUTIONAL 6-PILLAR ENGINE                -->
+      <!-- ================================================================= -->
+      <div id="tab-p1" class="tab-content space-y-4 sm:space-y-6">
+      
+        <!-- Engine Header & Subtitle -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-slate-900/60 border border-slate-800 p-4 sm:p-5 rounded-2xl glow-cyan">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">PORTFOLIO 1</span>
+              <h2 class="text-base sm:text-xl font-extrabold text-white leading-tight">Institutional 6-Pillar Percentile Engine</h2>
+            </div>
+            <p class="text-[11px] sm:text-xs text-slate-400 mt-1 leading-relaxed">
+              Dynamic Chartink Screener Universe • 16-Thread C-Vectorized Indicator Engine • Telegram Cloud Vault • Strict Market-Hours Gate (09:15–15:30 IST)
+            </p>
+          </div>
+          <div class="flex items-center gap-2 w-full sm:w-auto shrink-0">
+            <button id="btn-p1-scan" onclick="triggerScan('INSTITUTIONAL')" class="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center gap-1.5 transition shadow-md shadow-cyan-500/15 whitespace-nowrap">
+              <i data-lucide="play" class="w-3.5 h-3.5 stroke-[2.5] shrink-0"></i>
+              <span id="btn-p1-scan-text">Scan P1 Universe (Chartink Live)</span>
+            </button>
+          </div>
+        </div>
 
 
       <!-- KPI Metric Cards Grid (6 Cards including Chartink Live Universe Counter) -->
@@ -581,458 +612,726 @@
 
     </div>
 
-    <!-- ================================================================= -->
-    <!-- TAB 3: LIVE SIGNALS & SCREENER DESK                               -->
-    <!-- ================================================================= -->
-    <div id="tab-signals" class="tab-content hidden space-y-6">
-      
-      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-          <div>
-            <h2 class="text-lg font-bold text-white flex items-center gap-2">
-              <i data-lucide="crosshair" class="w-5 h-5 text-emerald-400"></i>
-              <span>Live Quantitative Screener Desk</span>
-            </h2>
-            <p class="text-xs text-slate-400">Real-time scan results across all pillars, RVOL volume expansion, and sector benchmarks.</p>
-          </div>
-          
-          <!-- Search & Filter Controls -->
-          <div class="flex items-center gap-2.5">
-            <div class="relative">
-              <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500"></i>
-              <input type="text" id="signals-search-input" onkeyup="renderGlobalSignals()" placeholder="Search symbol or sector..." class="bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 w-48 sm:w-64">
+      <!-- ================================================================= -->
+      <!-- TAB 3: LIVE SIGNALS & SCREENER DESK                               -->
+      <!-- ================================================================= -->
+      <div id="tab-signals" class="tab-content hidden space-y-4 sm:space-y-6">
+        
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-slate-800">
+            <div class="min-w-0">
+              <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                <i data-lucide="crosshair" class="w-5 h-5 text-emerald-400 shrink-0"></i>
+                <span>Live Quantitative Screener Desk</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5">Real-time scan results across all pillars, RVOL volume expansion, and sector benchmarks.</p>
             </div>
             
-            <select id="signals-portfolio-select" onchange="renderGlobalSignals()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
-              <option value="ALL">All Portfolios</option>
-              <option value="INSTITUTIONAL_6PILLAR">Portfolio 1 (Institutional)</option>
-              <option value="NIFTY500_MOMENTUM">Portfolio 2 (Nifty 500)</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="overflow-x-auto custom-scroll mt-4">
-          <table class="w-full text-left text-xs text-slate-300">
-            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
-              <tr>
-                <th class="p-3">Symbol</th>
-                <th class="p-3">Portfolio</th>
-                <th class="p-3">Sector</th>
-                <th class="p-3">Bucket / Verdict</th>
-                <th class="p-3">Score</th>
-                <th class="p-3">ML Prob</th>
-                <th class="p-3">Entry</th>
-                <th class="p-3">Stop Loss</th>
-                <th class="p-3">Target 1</th>
-                <th class="p-3">RSI-14</th>
-                <th class="p-3">Weekly Conf</th>
-                <th class="p-3 text-right">Order Sizing</th>
-              </tr>
-            </thead>
-            <tbody id="global-signals-tbody" class="divide-y divide-slate-800/60 font-mono">
-              <tr>
-                <td colspan="12" class="p-8 text-center text-slate-500 font-sans">Loading latest screener signals...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ================================================================= -->
-    <!-- TAB 4: TRADE HISTORY & CLOUD SYNC AUDIT LOG                        -->
-    <!-- ================================================================= -->
-    <div id="tab-history" class="tab-content hidden space-y-6">
-      
-      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
-          <div>
-            <h2 class="text-lg font-bold text-white flex items-center gap-2">
-              <i data-lucide="history" class="w-5 h-5 text-amber-400"></i>
-              <span>Execution History: Active Open Holdings & Closed Trades (Full IST Timestamps)</span>
-            </h2>
-            <p class="text-xs text-slate-400">Complete audit trail of manual & automated trade entries, live LTP updates, exits, R-multiples, and Telegram Cloud Master File syncs.</p>
-          </div>
-          
-          <div class="flex flex-wrap items-center gap-2">
-            <button onclick="refreshLivePrices(false)" class="px-3 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition">
-              <i data-lucide="zap" class="w-3.5 h-3.5"></i>
-              <span>Refresh Live Prices</span>
-            </button>
-            <select id="history-filter-select" onchange="loadHistoryData()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200">
-              <option value="ALL">All Portfolios</option>
-              <option value="INSTITUTIONAL_6PILLAR">Portfolio 1 (Institutional)</option>
-              <option value="NIFTY500_MOMENTUM">Portfolio 2 (Nifty 500)</option>
-            </select>
-            <button onclick="resetPortfolioModal()" class="px-3 py-2 rounded-lg bg-rose-950/60 hover:bg-rose-900/70 border border-rose-800 text-rose-300 text-xs font-semibold transition">
-              Reset PnL to ₹0
-            </button>
-          </div>
-        </div>
-
-        <div class="overflow-x-auto custom-scroll mt-4">
-          <table class="w-full text-left text-xs text-slate-300">
-            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
-              <tr>
-                <th class="p-3">Symbol</th>
-                <th class="p-3">Portfolio</th>
-                <th class="p-3">Entry Date & Time (IST)</th>
-                <th class="p-3">Updated / Exit Time (IST)</th>
-                <th class="p-3">Entry Price</th>
-                <th class="p-3">Live LTP / Exit</th>
-                <th class="p-3">Shares</th>
-                <th class="p-3">PnL (INR)</th>
-                <th class="p-3">Return %</th>
-                <th class="p-3">R-Multiple</th>
-                <th class="p-3">Hold Days</th>
-                <th class="p-3 text-right">Cloud Sync & State</th>
-              </tr>
-            </thead>
-            <tbody id="history-tbody" class="divide-y divide-slate-800/60 font-mono">
-              <tr>
-                <td colspan="12" class="p-8 text-center text-slate-500 font-sans">Loading trade execution & cloud sync history...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Telegram Cloud Vault Sync & Trade Audit Trail in History Tab -->
-      <div class="bg-slate-900/80 border border-cyan-500/30 rounded-2xl p-5">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
-          <div>
-            <h3 class="font-bold text-white text-sm flex items-center gap-2">
-              <i data-lucide="cloud" class="w-4 h-4 text-cyan-400"></i>
-              <span>Telegram Cloud Master File Sync & Trade Audit Log</span>
-            </h3>
-            <p class="text-xs text-slate-400">Every manual/auto trade and Master Vault cloud sync with exact IST timestamps and Telegram message ID.</p>
-          </div>
-          <button onclick="syncVaultToCloud()" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-mono font-bold transition">
-            ☁️ Sync Master File Now
-          </button>
-        </div>
-        <div class="overflow-x-auto custom-scroll mt-3">
-          <table class="w-full text-left text-xs text-slate-300">
-            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
-              <tr>
-                <th class="p-3">Timestamp (IST)</th>
-                <th class="p-3">Cloud Event / Trigger</th>
-                <th class="p-3">Telegram Pinned Msg</th>
-                <th class="p-3">Active Trades</th>
-                <th class="p-3">OHLCV Universe</th>
-                <th class="p-3">Master Size</th>
-                <th class="p-3 text-right">Sync Status</th>
-              </tr>
-            </thead>
-            <tbody id="history-cloud-sync-tbody" class="divide-y divide-slate-800/60 font-mono">
-              <tr>
-                <td colspan="7" class="p-6 text-center text-slate-500 font-sans">Loading Telegram Cloud sync logs...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ================================================================= -->
-    <!-- TAB 5: CLOUD VAULT, SCHEDULER & AUTOMATION MONITOR                -->
-    <!-- ================================================================= -->
-    <div id="tab-scheduler" class="tab-content hidden space-y-6">
-
-      <!-- Telegram Cloud Vault & Disaster Recovery Panel -->
-      <div class="bg-slate-900/80 border border-cyan-500/40 rounded-2xl p-5 shadow-lg">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-          <div>
-            <h2 class="text-lg font-bold text-white flex items-center gap-2">
-              <i data-lucide="cloud" class="w-5 h-5 text-cyan-400"></i>
-              <span>Telegram Cloud Vault (Trade DB + 2-Yr OHLCV Cache Persistence)</span>
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">
-              Protects against Render container restarts: automatically backs up & restores both SQLite Trade History and 2-Year Historical OHLCV DataFrames with Smart Incremental Gap-Filling.
-            </p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <button onclick="syncVaultToCloud()" class="px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-black font-semibold text-xs flex items-center gap-1.5 transition">
-              <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i>
-              <span>Sync DB + OHLCV to Cloud</span>
-            </button>
-            <button onclick="restoreVaultFromCloud()" class="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition">
-              <i data-lucide="download-cloud" class="w-3.5 h-3.5 text-emerald-400"></i>
-              <span>Restore from Cloud</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 text-xs font-mono">
-          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
-            <div class="text-slate-400 text-[11px] uppercase">Telegram Bot Status</div>
-            <div id="vault-bot-status" class="text-emerald-400 font-bold text-sm mt-1">CHECKING...</div>
-            <div id="vault-chat-id" class="text-slate-500 text-[11px] mt-1">Chat ID: --</div>
+            <!-- Search & Filter Controls (Responsive Full-Width on Mobile, Inline on Desktop) -->
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
+              <div class="relative flex-1 sm:flex-initial">
+                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500"></i>
+                <input type="text" id="signals-search-input" onkeyup="renderGlobalSignals()" placeholder="Search symbol or sector..." class="bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 w-full sm:w-64">
+              </div>
+              
+              <select id="signals-portfolio-select" onchange="renderGlobalSignals()" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 w-full sm:w-auto">
+                <option value="ALL">All Portfolios</option>
+                <option value="INSTITUTIONAL_6PILLAR">Portfolio 1 (Institutional)</option>
+                <option value="NIFTY500_MOMENTUM">Portfolio 2 (Nifty 500)</option>
+              </select>
+            </div>
           </div>
 
-          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
-            <div class="text-slate-400 text-[11px] uppercase">OHLCV Historical Cloud Cache</div>
-            <div id="vault-ohlcv-count" class="text-cyan-400 font-bold text-sm mt-1">0 NSE Tickers Cached</div>
-            <div id="vault-ohlcv-date" class="text-slate-400 text-[11px] mt-1">Latest Bar: -- | Incremental Gap-Fill Active</div>
-          </div>
-
-          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
-            <div class="text-slate-400 text-[11px] uppercase">Last SQLite Trade DB Cloud Sync</div>
-            <div id="vault-db-time" class="text-violet-400 font-bold text-sm mt-1">--</div>
-            <div id="vault-db-file" class="text-slate-400 text-[11px] mt-1">Auto-syncs on every trade & scan</div>
-          </div>
-        </div>
-
-        <!-- Cloud Sync History inside Vault Card -->
-        <div class="mt-4 pt-3 border-t border-slate-800/80">
-          <div class="text-[11px] font-mono uppercase text-slate-400 mb-2 flex items-center justify-between">
-            <span>Recent Telegram Cloud Master Vault Syncs (In-Place Pinned Message Updates)</span>
-            <span id="vault-pinned-msg-badge" class="text-cyan-400 font-bold">Pinned Msg #--</span>
-          </div>
-          <div class="overflow-x-auto custom-scroll">
-            <table class="w-full text-left text-xs text-slate-300 font-mono">
-              <thead class="bg-slate-950/60 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+          <div class="overflow-x-auto custom-scroll mt-4">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
                 <tr>
-                  <th class="p-2.5">Synced Timestamp (IST)</th>
-                  <th class="p-2.5">Sync Note / Trigger</th>
-                  <th class="p-2.5">Telegram Msg ID</th>
-                  <th class="p-2.5">Trades Saved</th>
-                  <th class="p-2.5">OHLCV Stocks</th>
-                  <th class="p-2.5">Compressed Size</th>
-                  <th class="p-2.5 text-right">Mode</th>
+                  <th class="p-3">Symbol</th>
+                  <th class="p-3">Portfolio</th>
+                  <th class="p-3">Sector</th>
+                  <th class="p-3">Bucket / Verdict</th>
+                  <th class="p-3">Score</th>
+                  <th class="p-3">ML Prob</th>
+                  <th class="p-3">Entry</th>
+                  <th class="p-3">Stop Loss</th>
+                  <th class="p-3">Target 1</th>
+                  <th class="p-3">RSI-14</th>
+                  <th class="p-3">Weekly Conf</th>
+                  <th class="p-3 text-right">Order Sizing</th>
                 </tr>
               </thead>
-              <tbody id="vault-sync-history-tbody" class="divide-y divide-slate-800/60">
+              <tbody id="global-signals-tbody" class="divide-y divide-slate-800/60 font-mono">
                 <tr>
-                  <td colspan="7" class="p-4 text-center text-slate-500 font-sans">Loading cloud sync history...</td>
+                  <td colspan="12" class="p-8 text-center text-slate-500 font-sans">Loading latest screener signals...</td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
+
       </div>
-      
-      <!-- Render Anti-Sleep Guard (09:00 AM - 03:50 PM IST) & Dynamic NSE Holiday Calendar -->
-      <div class="bg-slate-900/80 border border-cyan-500/30 rounded-2xl p-5 shadow-lg">
-        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-          <div>
-            <div class="flex items-center gap-2">
-              <span id="keepalive-badge" class="px-2 py-0.5 text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/40">Render Anti-Sleep Guard</span>
-              <span class="text-xs text-slate-400 font-mono">Strictly 09:00 AM – 03:50 PM IST (Mon–Fri, Excl. NSE Holidays)</span>
+
+      <!-- ================================================================= -->
+      <!-- TAB 4: TRADE HISTORY & CLOUD SYNC AUDIT LOG                        -->
+      <!-- ================================================================= -->
+      <div id="tab-history" class="tab-content hidden space-y-4 sm:space-y-6">
+        
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+            <div class="min-w-0">
+              <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                <i data-lucide="history" class="w-5 h-5 text-amber-400 shrink-0"></i>
+                <span>Execution History: Active Open Holdings & Closed Trades</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5">Complete audit trail of manual & automated trade entries, live LTP updates, exits, R-multiples, and Telegram Cloud Master File syncs.</p>
             </div>
-            <h2 class="text-lg font-bold text-white flex items-center gap-2 mt-1">
-              <i data-lucide="activity" class="w-5 h-5 text-cyan-400"></i>
-              <span>Smart Render Anti-Sleep Engine & Live NSE Holiday Sync</span>
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">
-              Prevents Render from spinning down between <b>09:00 AM and 03:50 PM IST</b> on active NSE trading days via 4-minute external health pings. Automatically stops pinging after 03:50 PM IST, on weekends, and on official NSE holidays fetched dynamically from <code class="text-cyan-300">nseindia.com</code>.
+            
+            <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto">
+              <button onclick="refreshLivePrices(false)" class="col-span-2 sm:col-span-1 justify-center px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition whitespace-nowrap">
+                <i data-lucide="zap" class="w-3.5 h-3.5 shrink-0"></i>
+                <span>Refresh Live Prices</span>
+              </button>
+              <select id="history-filter-select" onchange="loadHistoryData()" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 w-full sm:w-auto">
+                <option value="ALL">All Portfolios</option>
+                <option value="INSTITUTIONAL_6PILLAR">Portfolio 1 (Institutional)</option>
+                <option value="NIFTY500_MOMENTUM">Portfolio 2 (Nifty 500)</option>
+              </select>
+              <button onclick="resetPortfolioModal()" class="justify-center px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/70 border border-rose-800 text-rose-300 text-xs font-semibold flex items-center transition whitespace-nowrap">
+                Reset PnL to ₹0
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto custom-scroll mt-4">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                <tr>
+                  <th class="p-3">Symbol</th>
+                  <th class="p-3">Portfolio</th>
+                  <th class="p-3">Entry Date & Time (IST)</th>
+                  <th class="p-3">Updated / Exit Time (IST)</th>
+                  <th class="p-3">Entry Price</th>
+                  <th class="p-3">Live LTP / Exit</th>
+                  <th class="p-3">Shares</th>
+                  <th class="p-3">PnL (INR)</th>
+                  <th class="p-3">Return %</th>
+                  <th class="p-3">R-Multiple</th>
+                  <th class="p-3">Hold Days</th>
+                  <th class="p-3 text-right">Cloud Sync & State</th>
+                </tr>
+              </thead>
+              <tbody id="history-tbody" class="divide-y divide-slate-800/60 font-mono">
+                <tr>
+                  <td colspan="12" class="p-8 text-center text-slate-500 font-sans">Loading trade execution & cloud sync history...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Telegram Cloud Vault Sync & Trade Audit Trail in History Tab -->
+        <div class="bg-slate-900/80 border border-cyan-500/30 rounded-2xl p-4 sm:p-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
+            <div>
+              <h3 class="font-bold text-white text-sm flex items-center gap-2">
+                <i data-lucide="cloud" class="w-4 h-4 text-cyan-400 shrink-0"></i>
+                <span>Telegram Cloud Master File Sync & Trade Audit Log</span>
+              </h3>
+              <p class="text-xs text-slate-400">Every manual/auto trade and Master Vault cloud sync with exact IST timestamps and Telegram message ID.</p>
+            </div>
+            <button onclick="syncVaultToCloud()" class="w-full sm:w-auto justify-center px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-mono font-bold flex items-center gap-1 transition whitespace-nowrap">
+              ☁️ Sync Master File Now
+            </button>
+          </div>
+          <div class="overflow-x-auto custom-scroll mt-3">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                <tr>
+                  <th class="p-3">Timestamp (IST)</th>
+                  <th class="p-3">Cloud Event / Trigger</th>
+                  <th class="p-3">Telegram Pinned Msg</th>
+                  <th class="p-3">Active Trades</th>
+                  <th class="p-3">OHLCV Universe</th>
+                  <th class="p-3">Master Size</th>
+                  <th class="p-3 text-right">Sync Status</th>
+                </tr>
+              </thead>
+              <tbody id="history-cloud-sync-tbody" class="divide-y divide-slate-800/60 font-mono">
+                <tr>
+                  <td colspan="7" class="p-6 text-center text-slate-500 font-sans">Loading Telegram Cloud sync logs...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- TAB 5: CLOUD VAULT, SCHEDULER & AUTOMATION MONITOR                -->
+      <!-- ================================================================= -->
+      <div id="tab-scheduler" class="tab-content hidden space-y-4 sm:space-y-6">
+
+        <!-- Telegram Cloud Vault & Disaster Recovery Panel -->
+        <div class="bg-slate-900/80 border border-cyan-500/40 rounded-2xl p-4 sm:p-5 shadow-lg">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div>
+              <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                <i data-lucide="cloud" class="w-5 h-5 text-cyan-400 shrink-0"></i>
+                <span>Telegram Cloud Vault (Trade DB + 2-Yr OHLCV Cache Persistence)</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-1">
+                Protects against Render container restarts: automatically backs up & restores both SQLite Trade History and 2-Year Historical OHLCV DataFrames with Smart Incremental Gap-Filling.
+              </p>
+            </div>
+            <div class="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
+              <button onclick="syncVaultToCloud()" class="justify-center px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+                <i data-lucide="upload-cloud" class="w-3.5 h-3.5 shrink-0"></i>
+                <span>Sync DB + OHLCV to Cloud</span>
+              </button>
+              <button onclick="restoreVaultFromCloud()" class="justify-center px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+                <i data-lucide="download-cloud" class="w-3.5 h-3.5 text-emerald-400 shrink-0"></i>
+                <span>Restore from Cloud</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 mt-4 text-xs font-mono">
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 sm:p-4">
+              <div class="text-slate-400 text-[11px] uppercase">Telegram Bot Status</div>
+              <div id="vault-bot-status" class="text-emerald-400 font-bold text-sm mt-1">CHECKING...</div>
+              <div id="vault-chat-id" class="text-slate-500 text-[11px] mt-1">Chat ID: --</div>
+            </div>
+
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 sm:p-4">
+              <div class="text-slate-400 text-[11px] uppercase">OHLCV Historical Cloud Cache</div>
+              <div id="vault-ohlcv-count" class="text-cyan-400 font-bold text-sm mt-1">0 NSE Tickers Cached</div>
+              <div id="vault-ohlcv-date" class="text-slate-400 text-[11px] mt-1">Latest Bar: -- | Incremental Gap-Fill Active</div>
+            </div>
+
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 sm:p-4">
+              <div class="text-slate-400 text-[11px] uppercase">Last SQLite Trade DB Cloud Sync</div>
+              <div id="vault-db-time" class="text-violet-400 font-bold text-sm mt-1">--</div>
+              <div id="vault-db-file" class="text-slate-400 text-[11px] mt-1">Auto-syncs on every trade & scan</div>
+            </div>
+          </div>
+
+          <!-- Cloud Sync History inside Vault Card -->
+          <div class="mt-4 pt-3 border-t border-slate-800/80">
+            <div class="text-[11px] font-mono uppercase text-slate-400 mb-2 flex flex-wrap items-center justify-between gap-1">
+              <span>Recent Telegram Cloud Master Vault Syncs (In-Place Pinned Message Updates)</span>
+              <span id="vault-pinned-msg-badge" class="text-cyan-400 font-bold">Pinned Msg #--</span>
+            </div>
+            <div class="overflow-x-auto custom-scroll">
+              <table class="w-full text-left text-xs text-slate-300 font-mono">
+                <thead class="bg-slate-950/60 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th class="p-2.5">Synced Timestamp (IST)</th>
+                    <th class="p-2.5">Sync Note / Trigger</th>
+                    <th class="p-2.5">Telegram Msg ID</th>
+                    <th class="p-2.5">Trades Saved</th>
+                    <th class="p-2.5">OHLCV Stocks</th>
+                    <th class="p-2.5">Compressed Size</th>
+                    <th class="p-2.5 text-right">Mode</th>
+                  </tr>
+                </thead>
+                <tbody id="vault-sync-history-tbody" class="divide-y divide-slate-800/60">
+                  <tr>
+                    <td colspan="7" class="p-4 text-center text-slate-500 font-sans">Loading cloud sync history...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Render Anti-Sleep Guard (09:00 AM - 03:50 PM IST) & Dynamic NSE Holiday Calendar -->
+        <div class="bg-slate-900/80 border border-cyan-500/30 rounded-2xl p-4 sm:p-5 shadow-lg">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span id="keepalive-badge" class="px-2 py-0.5 text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/40">Render Anti-Sleep Guard</span>
+                <span class="text-[11px] sm:text-xs text-slate-400 font-mono">Strictly 09:00 AM – 03:50 PM IST (Mon–Fri, Excl. NSE Holidays)</span>
+              </div>
+              <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2 mt-1">
+                <i data-lucide="activity" class="w-5 h-5 text-cyan-400 shrink-0"></i>
+                <span>Smart Render Anti-Sleep Engine & Live NSE Holiday Sync</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-1">
+                Prevents Render from spinning down between <b>09:00 AM and 03:50 PM IST</b> on active NSE trading days via 4-minute external health pings. Automatically stops pinging after 03:50 PM IST, on weekends, and on official NSE holidays fetched dynamically from <code class="text-cyan-300">nseindia.com</code>.
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button onclick="syncNseHolidaysLive()" class="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition">
+                <i data-lucide="calendar" class="w-4 h-4 shrink-0"></i>
+                <span>Sync NSE Holidays Live</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 mt-4 text-xs font-mono">
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 sm:p-4">
+              <div class="text-slate-400 text-[11px] uppercase">Render Keep-Alive State</div>
+              <div id="keepalive-state-text" class="text-emerald-400 font-bold text-sm mt-1">CHECKING...</div>
+              <div id="keepalive-reason-text" class="text-slate-400 text-[11px] mt-1">Window: 09:00 AM – 03:50 PM IST</div>
+            </div>
+
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 sm:p-4">
+              <div class="text-slate-400 text-[11px] uppercase">Keep-Alive Heartbeat Telemetry</div>
+              <div id="keepalive-pings-count" class="text-cyan-400 font-bold text-sm mt-1">0 Pings Today (Every 4m)</div>
+              <div id="keepalive-last-ping" class="text-slate-400 text-[11px] mt-1">Last Ping: --</div>
+            </div>
+
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 sm:p-4">
+              <div class="text-slate-400 text-[11px] uppercase">Dynamic NSE Holiday Calendar</div>
+              <div id="nse-holiday-source" class="text-violet-400 font-bold text-sm mt-1">Syncing from nseindia.com...</div>
+              <div id="nse-holiday-sync-time" class="text-slate-400 text-[11px] mt-1">Last Synced: --</div>
+            </div>
+          </div>
+
+          <!-- Dynamically Fetched Current Year NSE Holidays Grid -->
+          <div class="mt-4 pt-3 border-t border-slate-800/80">
+            <div class="text-[11px] font-mono uppercase text-slate-400 mb-2 flex flex-wrap items-center justify-between gap-1">
+              <span>Official NSE Capital Market Holidays (<span id="nse-holiday-year-label">--</span>) — Server Sleep Allowed on Holidays</span>
+              <span id="nse-holiday-count-label" class="text-cyan-400">-- Holidays</span>
+            </div>
+            <div id="nse-holidays-badges" class="flex flex-wrap gap-1.5 text-[11px] font-mono">
+              <span class="text-slate-500">Loading dynamic NSE holidays...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Automated Timeline Card -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2 mb-2">
+            <i data-lucide="clock" class="w-5 h-5 text-blue-400 shrink-0"></i>
+            <span>Automated Trading Day Schedule & Strict Market-Hours Gate</span>
+          </h2>
+          <p class="text-xs text-slate-400 mb-4 sm:mb-6">
+            Precision execution timed around NSE Indian market liquidity dynamics (Strict Trading Gate: 09:15 AM – 03:30 PM IST):
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+            <!-- 10:20 AM -->
+            <div class="bg-slate-950/70 border border-cyan-800/40 rounded-xl p-4 relative overflow-hidden">
+              <div class="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl pointer-events-none"></div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-mono font-bold text-cyan-400">10:20 AM IST</span>
+                <span class="px-2 py-0.5 rounded text-[10px] bg-cyan-900/50 text-cyan-300 font-mono">DAILY MON-FRI</span>
+              </div>
+              <h4 class="font-bold text-white text-sm">Morning Intraday Scan</h4>
+              <p class="text-xs text-slate-400 mt-1">
+                Runs 65 minutes post-open after initial gap traps settle. Evaluates opening range expansion, early RVOL volume, and reconciles overnight gaps.
+              </p>
+            </div>
+
+            <!-- 3:05 PM -->
+            <div class="bg-slate-950/70 border border-violet-800/40 rounded-xl p-4 relative overflow-hidden">
+              <div class="absolute top-0 right-0 w-24 h-24 bg-violet-500/5 rounded-full blur-xl pointer-events-none"></div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-mono font-bold text-violet-400">03:05 PM IST</span>
+                <span class="px-2 py-0.5 rounded text-[10px] bg-violet-900/50 text-violet-300 font-mono">DAILY MON-FRI</span>
+              </div>
+              <h4 class="font-bold text-white text-sm">Afternoon MOC Swing Scan</h4>
+              <p class="text-xs text-slate-400 mt-1">
+                Runs 25 minutes before market close. 92% daily volume completed. Applies Intraday Confirmation (±15 pts), checks 4-Tier Strategy Exits & executes new 7-point matrix swing entries.
+              </p>
+            </div>
+
+            <!-- Strict Market Hours Gate -->
+            <div class="bg-slate-950/70 border border-emerald-800/40 rounded-xl p-4 relative overflow-hidden">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-mono font-bold text-emerald-400">09:15 – 15:30 IST</span>
+                <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-900/50 text-emerald-300 font-mono">STRICT GATE</span>
+              </div>
+              <h4 class="font-bold text-white text-sm">Strict Market-Hours Execution Gate</h4>
+              <p class="text-xs text-slate-400 mt-1">
+                Hard execution lock: Trade entries and exits are strictly permitted ONLY during live NSE market hours (09:15 AM – 03:30 PM IST, Mon–Fri excluding NSE holidays).
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Execution Logs Table -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="file-text" class="w-4 h-4 text-slate-400"></i>
+              <span>Scan Execution Logs</span>
+            </h3>
+            <button onclick="loadScanLogs()" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+              <span>Refresh Logs</span>
+            </button>
+          </div>
+
+          <div class="overflow-x-auto custom-scroll mt-4">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                <tr>
+                  <th class="p-3">Timestamp (IST)</th>
+                  <th class="p-3">Scan Type</th>
+                  <th class="p-3">Portfolio</th>
+                  <th class="p-3">Status</th>
+                  <th class="p-3">Duration</th>
+                  <th class="p-3">Candidates</th>
+                  <th class="p-3">Orders</th>
+                  <th class="p-3">Message</th>
+                </tr>
+              </thead>
+              <tbody id="scan-logs-tbody" class="divide-y divide-slate-800/60 font-mono">
+                <tr>
+                  <td colspan="8" class="p-8 text-center text-slate-500 font-sans">No execution logs found.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- TAB 6: CHARTS & SINGLE MASTER FILE OHLCV DATA EXPLORER            -->
+      <!-- ================================================================= -->
+      <div id="tab-charts" class="tab-content hidden space-y-4 sm:space-y-6">
+
+        <!-- Master Vault Banner & Quick Symbol Chart Launcher -->
+        <div class="bg-slate-900/70 border border-emerald-500/30 p-4 sm:p-5 rounded-2xl shadow-lg">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="px-2 py-0.5 text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/40">Single Master File Engine</span>
+                <span class="text-xs text-slate-400 font-mono">data/swing_trades.db • Zero Extra Files</span>
+              </div>
+              <h1 class="text-lg sm:text-2xl font-bold text-white mt-1">Interactive Candlestick Charts & Fetched OHLCV Data</h1>
+              <p class="text-xs text-slate-400 mt-0.5">All <span id="master-total-stocks-label" class="text-emerald-400 font-bold font-mono">--</span> fetched stocks, daily OHLCV bars, active trades, and signals live inside ONE single master file. Click any stock to inspect its Candlestick Chart with Stop-Loss & Target lines and raw daily OHLCV bars.</p>
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
+              <div class="relative flex-1 sm:flex-initial">
+                <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                <input type="text" id="fetched-search-input" oninput="filterFetchedStocks()" placeholder="Search symbol (e.g. RELIANCE, TCS)..." class="pl-9 pr-4 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 w-full sm:w-60 font-mono">
+              </div>
+              <select id="fetched-filter-select" onchange="filterFetchedStocks()" class="px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 w-full sm:w-auto">
+                <option value="ALL">All Fetched Stocks</option>
+                <option value="GAINERS">Top Gainers (1D % > 0)</option>
+                <option value="BULL_EMA">Bullish Trend (Close > EMA50)</option>
+                <option value="RSI_STRONG">High Momentum (RSI 55 - 75)</option>
+              </select>
+              <button onclick="loadFetchedStocksData()" class="justify-center px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5 shrink-0"></i>
+                <span>Refresh Master Data</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fetched Stocks Master Table -->
+        <div class="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden">
+          <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <i data-lucide="database" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+              <h2 class="font-bold text-sm text-white">Fetched Stocks in Single Master File (<span id="fetched-shown-count" class="text-emerald-400 font-mono">0</span>)</h2>
+            </div>
+            <span class="text-[11px] text-slate-400 font-mono" id="fetched-last-updated-tag">Latest Bar Date: --</span>
+          </div>
+
+          <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead class="bg-slate-950">
+                <tr class="border-b border-slate-800 text-[11px] font-mono uppercase text-slate-400">
+                  <th class="p-3">Symbol</th>
+                  <th class="p-3">Last Bar Date</th>
+                  <th class="p-3">Close (₹)</th>
+                  <th class="p-3">1D Change</th>
+                  <th class="p-3">Volume</th>
+                  <th class="p-3">EMA 20 / 50 / 200</th>
+                  <th class="p-3">RSI (14)</th>
+                  <th class="p-3">ATR (14)</th>
+                  <th class="p-3">Stop Loss (-2 ATR)</th>
+                  <th class="p-3">Targets (T1 / T2)</th>
+                  <th class="p-3">Stored Bars</th>
+                  <th class="p-3 text-right">Chart & OHLCV Data</th>
+                </tr>
+              </thead>
+              <tbody id="fetched-stocks-tbody" class="divide-y divide-slate-800/60 font-mono">
+                <tr>
+                  <td colspan="12" class="p-8 text-center text-slate-500 font-sans">Loading fetched stocks from Single Master File...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- MODULE 2: INTRADAY MOMENTUM & VOLUME EXPANSION DESK                 -->
+    <!-- =================================================================== -->
+    <section id="module-intraday" class="module-section hidden space-y-4 sm:space-y-6">
+      <div class="bg-slate-900/75 border border-amber-500/30 rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">MODULE 2 • INTRADAY DESK</span>
+              <span class="text-[11px] font-mono text-emerald-400">⚡ Powered by Live Master Universe & 5m Price Stream</span>
+            </div>
+            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Intraday Momentum, Volume Surge & ORB Confluence Scanner</h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Real-time intraday % expansion leaders, high-velocity RSI/ATR breakout movers, and modular architecture for upcoming 5m/15m Opening Range Breakout (ORB) & VWAP scalping engines.
             </p>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <button onclick="syncNseHolidaysLive()" class="px-3.5 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition">
-              <i data-lucide="calendar" class="w-4 h-4"></i>
-              <span>Sync NSE Holidays Live</span>
+          <div class="flex items-center gap-2 shrink-0">
+            <button onclick="refreshLivePrices(false)" class="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="zap" class="w-3.5 h-3.5 shrink-0"></i>
+              <span>Stream Intraday LTP</span>
             </button>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 text-xs font-mono">
-          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
-            <div class="text-slate-400 text-[11px] uppercase">Render Keep-Alive State</div>
-            <div id="keepalive-state-text" class="text-emerald-400 font-bold text-sm mt-1">CHECKING...</div>
-            <div id="keepalive-reason-text" class="text-slate-400 text-[11px] mt-1">Window: 09:00 AM – 03:50 PM IST</div>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+            <div class="text-[10px] font-mono uppercase text-amber-400">Intraday Gainers (> +2%)</div>
+            <div id="intra-kpi-gainers" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">--</div>
+            <div class="text-[10px] text-slate-400 font-mono mt-0.5">From Master File Universe</div>
           </div>
-
-          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
-            <div class="text-slate-400 text-[11px] uppercase">Keep-Alive Heartbeat Telemetry</div>
-            <div id="keepalive-pings-count" class="text-cyan-400 font-bold text-sm mt-1">0 Pings Today (Every 4m)</div>
-            <div id="keepalive-last-ping" class="text-slate-400 text-[11px] mt-1">Last Ping: --</div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+            <div class="text-[10px] font-mono uppercase text-emerald-400">High Momentum (RSI > 60)</div>
+            <div id="intra-kpi-momentum" class="text-lg sm:text-2xl font-mono font-bold text-emerald-400 mt-1">--</div>
+            <div class="text-[10px] text-slate-400 font-mono mt-0.5">Price > EMA20 & EMA50</div>
           </div>
-
-          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
-            <div class="text-slate-400 text-[11px] uppercase">Dynamic NSE Holiday Calendar</div>
-            <div id="nse-holiday-source" class="text-violet-400 font-bold text-sm mt-1">Syncing from nseindia.com...</div>
-            <div id="nse-holiday-sync-time" class="text-slate-400 text-[11px] mt-1">Last Synced: --</div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+            <div class="text-[10px] font-mono uppercase text-cyan-400">Top Intraday Leader</div>
+            <div id="intra-kpi-leader" class="text-lg sm:text-2xl font-mono font-bold text-cyan-300 mt-1">--</div>
+            <div id="intra-kpi-leader-chg" class="text-[10px] text-emerald-400 font-mono mt-0.5">--</div>
           </div>
-        </div>
-
-        <!-- Dynamically Fetched Current Year NSE Holidays Grid -->
-        <div class="mt-4 pt-3 border-t border-slate-800/80">
-          <div class="text-[11px] font-mono uppercase text-slate-400 mb-2 flex items-center justify-between">
-            <span>Official NSE Capital Market Holidays (<span id="nse-holiday-year-label">--</span>) — Server Sleep Allowed on Holidays</span>
-            <span id="nse-holiday-count-label" class="text-cyan-400">-- Holidays</span>
-          </div>
-          <div id="nse-holidays-badges" class="flex flex-wrap gap-1.5 text-[11px] font-mono">
-            <span class="text-slate-500">Loading dynamic NSE holidays...</span>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+            <div class="text-[10px] font-mono uppercase text-purple-400">Upcoming Pipeline</div>
+            <div class="text-sm sm:text-base font-mono font-bold text-purple-300 mt-1">5m ORB + VWAP</div>
+            <div class="text-[10px] text-slate-400 font-mono mt-0.5">Intraday MIS Auto-Bracket</div>
           </div>
         </div>
       </div>
 
-      <!-- Automated Timeline Card -->
-      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
-        <h2 class="text-lg font-bold text-white flex items-center gap-2 mb-2">
-          <i data-lucide="clock" class="w-5 h-5 text-blue-400"></i>
-          <span>Automated Trading Day Schedule & Strict Market-Hours Gate</span>
-        </h2>
-        <p class="text-xs text-slate-400 mb-6">
-          Precision execution timed around NSE Indian market liquidity dynamics (Strict Trading Gate: 09:15 AM – 03:30 PM IST):
-        </p>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <!-- 10:20 AM -->
-          <div class="bg-slate-950/70 border border-cyan-800/40 rounded-xl p-4 relative overflow-hidden">
-            <div class="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl pointer-events-none"></div>
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-xs font-mono font-bold text-cyan-400">10:20 AM IST</span>
-              <span class="px-2 py-0.5 rounded text-[10px] bg-cyan-900/50 text-cyan-300 font-mono">DAILY MON-FRI</span>
-            </div>
-            <h4 class="font-bold text-white text-sm">Morning Intraday Scan</h4>
-            <p class="text-xs text-slate-400 mt-1">
-              Runs 65 minutes post-open after initial gap traps settle. Evaluates opening range expansion, early RVOL volume, and reconciles overnight gaps.
-            </p>
-          </div>
-
-          <!-- 3:05 PM -->
-          <div class="bg-slate-950/70 border border-violet-800/40 rounded-xl p-4 relative overflow-hidden">
-            <div class="absolute top-0 right-0 w-24 h-24 bg-violet-500/5 rounded-full blur-xl pointer-events-none"></div>
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-xs font-mono font-bold text-violet-400">03:05 PM IST</span>
-              <span class="px-2 py-0.5 rounded text-[10px] bg-violet-900/50 text-violet-300 font-mono">DAILY MON-FRI</span>
-            </div>
-            <h4 class="font-bold text-white text-sm">Afternoon MOC Swing Scan</h4>
-            <p class="text-xs text-slate-400 mt-1">
-              Runs 25 minutes before market close. 92% daily volume completed. Applies Intraday Confirmation (±15 pts), checks 4-Tier Strategy Exits & executes new 7-point matrix swing entries.
-            </p>
-          </div>
-
-          <!-- Strict Market Hours Gate -->
-          <div class="bg-slate-950/70 border border-emerald-800/40 rounded-xl p-4 relative overflow-hidden">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-xs font-mono font-bold text-emerald-400">09:15 – 15:30 IST</span>
-              <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-900/50 text-emerald-300 font-mono">STRICT GATE</span>
-            </div>
-            <h4 class="font-bold text-white text-sm">Strict Market-Hours Execution Gate</h4>
-            <p class="text-xs text-slate-400 mt-1">
-              Hard execution lock: Trade entries and exits are strictly permitted ONLY during live NSE market hours (09:15 AM – 03:30 PM IST, Mon–Fri excluding NSE holidays).
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Execution Logs Table -->
-      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
-        <div class="flex items-center justify-between pb-4 border-b border-slate-800">
-          <h3 class="font-bold text-white text-sm flex items-center gap-2">
-            <i data-lucide="file-text" class="w-4 h-4 text-slate-400"></i>
-            <span>Scan Execution Logs</span>
-          </h3>
-          <button onclick="loadScanLogs()" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
-            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
-            <span>Refresh Logs</span>
-          </button>
-        </div>
-
-        <div class="overflow-x-auto custom-scroll mt-4">
-          <table class="w-full text-left text-xs text-slate-300">
-            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
-              <tr>
-                <th class="p-3">Timestamp (IST)</th>
-                <th class="p-3">Scan Type</th>
-                <th class="p-3">Portfolio</th>
-                <th class="p-3">Status</th>
-                <th class="p-3">Duration</th>
-                <th class="p-3">Candidates</th>
-                <th class="p-3">Orders</th>
-                <th class="p-3">Message</th>
-              </tr>
-            </thead>
-            <tbody id="scan-logs-tbody" class="divide-y divide-slate-800/60 font-mono">
-              <tr>
-                <td colspan="8" class="p-8 text-center text-slate-500 font-sans">No execution logs found.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ================================================================= -->
-    <!-- TAB 6: CHARTS & SINGLE MASTER FILE OHLCV DATA EXPLORER            -->
-    <!-- ================================================================= -->
-    <div id="tab-charts" class="tab-content hidden space-y-6">
-
-      <!-- Master Vault Banner & Quick Symbol Chart Launcher -->
-      <div class="bg-slate-900/70 border border-emerald-500/30 p-5 rounded-2xl shadow-lg">
-        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div class="flex items-center gap-2">
-              <span class="px-2 py-0.5 text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/40">Single Master File Engine</span>
-              <span class="text-xs text-slate-400 font-mono">data/swing_trades.db • Zero Extra Files</span>
-            </div>
-            <h1 class="text-xl sm:text-2xl font-bold text-white mt-1">Interactive Candlestick Charts & Fetched OHLCV Data</h1>
-            <p class="text-xs text-slate-400 mt-0.5">All <span id="master-total-stocks-label" class="text-emerald-400 font-bold font-mono">--</span> fetched stocks, daily OHLCV bars, active trades, and signals live inside ONE single master file. Click any stock to inspect its Candlestick Chart with Stop-Loss & Target lines and raw daily OHLCV bars.</p>
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <div class="relative">
-              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
-              <input type="text" id="fetched-search-input" oninput="filterFetchedStocks()" placeholder="Search symbol (e.g. RELIANCE, TCS)..." class="pl-9 pr-4 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 w-60 font-mono">
-            </div>
-            <select id="fetched-filter-select" onchange="filterFetchedStocks()" class="px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
-              <option value="ALL">All Fetched Stocks</option>
-              <option value="GAINERS">Top Gainers (1D % > 0)</option>
-              <option value="BULL_EMA">Bullish Trend (Close > EMA50)</option>
-              <option value="RSI_STRONG">High Momentum (RSI 55 - 75)</option>
-            </select>
-            <button onclick="loadFetchedStocksData()" class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center gap-1.5 transition">
-              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-              <span>Refresh Master Data</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Fetched Stocks Master Table (Smooth Page Scroll without Inner Vertical Trap) -->
-      <div class="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden">
+      <!-- Live Intraday Momentum Leaders Table -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
         <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div class="flex items-center gap-2">
-            <i data-lucide="database" class="w-4 h-4 text-emerald-400"></i>
-            <h2 class="font-bold text-sm text-white">Fetched Stocks in Single Master File (<span id="fetched-shown-count" class="text-emerald-400 font-mono">0</span>)</h2>
+            <i data-lucide="flame" class="w-4 h-4 text-amber-400 shrink-0"></i>
+            <h3 class="font-bold text-white text-sm">Top Live Intraday Momentum & Volume Surge Leaders (NSE Cash & F&O)</h3>
           </div>
-          <span class="text-[11px] text-slate-400 font-mono" id="fetched-last-updated-tag">Latest Bar Date: --</span>
+          <span class="text-[11px] font-mono text-slate-400">Sorted by Live 1D % Expansion & Trend Alignment</span>
         </div>
-
         <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left border-collapse text-xs">
-            <thead class="bg-slate-950">
-              <tr class="border-b border-slate-800 text-[11px] font-mono uppercase text-slate-400">
+          <table class="w-full text-left text-xs text-slate-300 font-mono">
+            <thead class="bg-slate-950/60 text-[11px] uppercase text-slate-400 border-b border-slate-800">
+              <tr>
                 <th class="p-3">Symbol</th>
-                <th class="p-3">Last Bar Date</th>
-                <th class="p-3">Close (₹)</th>
-                <th class="p-3">1D Change</th>
+                <th class="p-3">Live LTP (₹)</th>
+                <th class="p-3">Intraday %</th>
                 <th class="p-3">Volume</th>
-                <th class="p-3">EMA 20 / 50 / 200</th>
                 <th class="p-3">RSI (14)</th>
-                <th class="p-3">ATR (14)</th>
-                <th class="p-3">Stop Loss (-2 ATR)</th>
-                <th class="p-3">Targets (T1 / T2)</th>
-                <th class="p-3">Stored Bars</th>
-                <th class="p-3 text-right">Chart & OHLCV Data</th>
+                <th class="p-3">ATR (14) Range</th>
+                <th class="p-3">Intraday Stop (-1 ATR)</th>
+                <th class="p-3">Intraday Target (+2 ATR)</th>
+                <th class="p-3 text-right">Action</th>
               </tr>
             </thead>
-            <tbody id="fetched-stocks-tbody" class="divide-y divide-slate-800/60 font-mono">
-              <tr>
-                <td colspan="12" class="p-8 text-center text-slate-500 font-sans">Loading fetched stocks from Single Master File...</td>
-              </tr>
+            <tbody id="intraday-leaders-tbody" class="divide-y divide-slate-800/60">
+              <tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">Loading live intraday momentum leaders from Master File...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
+    </section>
 
-    </div>
+    <!-- =================================================================== -->
+    <!-- MODULE 3: AI & QUANTITATIVE PREDICTIONS DESK                        -->
+    <!-- =================================================================== -->
+    <section id="module-predictions" class="module-section hidden space-y-4 sm:space-y-6">
+      <div class="bg-slate-900/75 border border-purple-500/30 rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">MODULE 3 • AI PREDICTIONS & ML FORECAST</span>
+              <span class="text-[11px] font-mono text-cyan-400">🧠 Calibrated Win-Probability P(W) + Regime Alpha</span>
+            </div>
+            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Quantitative ML Win-Probability & Multi-Horizon Forecast Desk</h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Ranks NSE equities by calibrated ML Win Probability <code class="text-purple-300">P(W)</code>, 6-Pillar composite percentile, and 63-day Relative Strength alpha. Ready for upcoming LSTM/Transformer & Multi-Factor Ensemble models.
+            </p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button onclick="switchModule('module-swing'); switchTab('tab-p1');" class="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="layers" class="w-3.5 h-3.5 shrink-0"></i>
+              <span>Open P1 Execution Desk</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+            <div class="text-[10px] font-mono uppercase text-purple-400">High Conviction (P(W) ≥ 0.65)</div>
+            <div id="pred-kpi-highprob" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">--</div>
+            <div class="text-[10px] text-slate-400 font-mono mt-0.5">Calibrated ML Setups</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+            <div class="text-[10px] font-mono uppercase text-cyan-400">Top ML Probability</div>
+            <div id="pred-kpi-topprob" class="text-lg sm:text-2xl font-mono font-bold text-cyan-400 mt-1">--</div>
+            <div id="pred-kpi-topsym" class="text-[10px] text-slate-400 font-mono mt-0.5">--</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+            <div class="text-[10px] font-mono uppercase text-emerald-400">Bullish Trend Breadth</div>
+            <div id="pred-kpi-breadth" class="text-lg sm:text-2xl font-mono font-bold text-emerald-400 mt-1">--%</div>
+            <div class="text-[10px] text-slate-400 font-mono mt-0.5">% Universe > 50 EMA</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+            <div class="text-[10px] font-mono uppercase text-amber-400">Next AI Expansion</div>
+            <div class="text-sm sm:text-base font-mono font-bold text-amber-300 mt-1">5D / 20D Return Cone</div>
+            <div class="text-[10px] text-slate-400 font-mono mt-0.5">Quantile Regression + FinBERT</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top ML Win-Probability Ranked Stocks -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <i data-lucide="cpu" class="w-4 h-4 text-purple-400 shrink-0"></i>
+            <h3 class="font-bold text-white text-sm">Top Calibrated ML Win-Probability & Composite Alpha Rankings</h3>
+          </div>
+          <span class="text-[11px] font-mono text-slate-400">Live Model Output from Screened Universe</span>
+        </div>
+        <div class="overflow-x-auto custom-scroll">
+          <table class="w-full text-left text-xs text-slate-300 font-mono">
+            <thead class="bg-slate-950/60 text-[11px] uppercase text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="p-3">Rank & Symbol</th>
+                <th class="p-3">Sector</th>
+                <th class="p-3">ML Win Prob P(W)</th>
+                <th class="p-3">6-Pillar Score</th>
+                <th class="p-3">Regime Verdict</th>
+                <th class="p-3">Current LTP</th>
+                <th class="p-3">Expected Target (T1 / T2)</th>
+                <th class="p-3">Model Stop-Loss</th>
+                <th class="p-3 text-right">Inspect</th>
+              </tr>
+            </thead>
+            <tbody id="predictions-ranking-tbody" class="divide-y divide-slate-800/60">
+              <tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">Loading calibrated ML predictions...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- MODULE 4: OPTIONS & DERIVATIVES ANALYTICS DESK                      -->
+    <!-- =================================================================== -->
+    <section id="module-options" class="module-section hidden space-y-4 sm:space-y-6">
+      <div class="bg-slate-900/75 border border-emerald-500/30 rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">MODULE 4 • OPTIONS & DERIVATIVES DESK</span>
+              <span class="text-[11px] font-mono text-cyan-400">🎯 Live Index Benchmarks, India VIX & High-Beta F&O Underlyings</span>
+            </div>
+            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">NSE Index & Equity Options Analytics Desk</h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Tracks live India VIX volatility regime, Nifty 50 / Nifty Bank / Nifty 500 index structures, and high-ATR directional F&O underlying candidates. Designed for upcoming Option Chain PCR, Max Pain, and Gamma Exposure (GEX) modules.
+            </p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button onclick="openStockChartModal('^NSEI')" class="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="candlestick-chart" class="w-3.5 h-3.5 shrink-0"></i>
+              <span>Nifty 50 Chart</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Index & Volatility Benchmark Cards from Master File -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+          <div onclick="openStockChartModal('^NSEI')" class="cursor-pointer bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-3.5 transition">
+            <div class="text-[10px] font-mono uppercase text-cyan-400">NIFTY 50 (^NSEI)</div>
+            <div id="opt-kpi-nifty" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">--</div>
+            <div id="opt-kpi-nifty-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">Click for Index Chart</div>
+          </div>
+          <div onclick="openStockChartModal('^NSEBANK')" class="cursor-pointer bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-3.5 transition">
+            <div class="text-[10px] font-mono uppercase text-violet-400">NIFTY BANK (^NSEBANK)</div>
+            <div id="opt-kpi-bank" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">--</div>
+            <div id="opt-kpi-bank-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">Click for Index Chart</div>
+          </div>
+          <div onclick="openStockChartModal('^INDIAVIX')" class="cursor-pointer bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-3.5 transition">
+            <div class="text-[10px] font-mono uppercase text-amber-400">INDIA VIX (^INDIAVIX)</div>
+            <div id="opt-kpi-vix" class="text-lg sm:text-2xl font-mono font-bold text-amber-400 mt-1">--</div>
+            <div id="opt-kpi-vix-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">Volatility Regime Gauge</div>
+          </div>
+          <div onclick="openStockChartModal('^CRSLDX')" class="cursor-pointer bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-3.5 transition">
+            <div class="text-[10px] font-mono uppercase text-emerald-400">NIFTY 500 (^CRSLDX)</div>
+            <div id="opt-kpi-crsl" class="text-lg sm:text-2xl font-mono font-bold text-emerald-400 mt-1">--</div>
+            <div id="opt-kpi-crsl-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">Broad Market Regime</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modular Upcoming Options Analytics Roadmap Strip -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+        <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-xs font-bold text-cyan-300 font-mono">OI & PCR MATRIX</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">MODULAR SLOT</span>
+          </div>
+          <p class="text-xs text-slate-400">Live NSE Option Chain Put-Call Ratio (PCR), Call/Put OI walls, and intraday OI build-up / short-covering detector.</p>
+        </div>
+        <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-xs font-bold text-violet-300 font-mono">GEX & MAX PAIN</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-violet-500/15 text-violet-300 border border-violet-500/30">MODULAR SLOT</span>
+          </div>
+          <p class="text-xs text-slate-400">Dealer Gamma Exposure (GEX) flip levels, weekly expiry Max Pain pin strikes, and IV Percentile (IVP) ranker.</p>
+        </div>
+        <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-xs font-bold text-emerald-300 font-mono">DIRECTIONAL F&O ENGINE</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">ACTIVE BELOW</span>
+          </div>
+          <p class="text-xs text-slate-400">Identifies liquid underlying stocks with high ATR% expansion and strong directional trend for ATM/OTM Option & Futures setups.</p>
+        </div>
+      </div>
+
+      <!-- High-ATR Directional Underlying Scanner -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <i data-lucide="activity" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+            <h3 class="font-bold text-white text-sm">High-ATR% Directional Underlying Scanner (Liquid Stocks for Options / Futures)</h3>
+          </div>
+          <span class="text-[11px] font-mono text-slate-400">Sorted by Daily ATR% Volatility & Directional Bias</span>
+        </div>
+        <div class="overflow-x-auto custom-scroll">
+          <table class="w-full text-left text-xs text-slate-300 font-mono">
+            <thead class="bg-slate-950/60 text-[11px] uppercase text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="p-3">Underlying</th>
+                <th class="p-3">Spot LTP (₹)</th>
+                <th class="p-3">1D Move</th>
+                <th class="p-3">ATR (14) / ATR %</th>
+                <th class="p-3">Directional Bias</th>
+                <th class="p-3">ATM Strike (Est.)</th>
+                <th class="p-3">Key Support (SL)</th>
+                <th class="p-3">Breakout Target</th>
+                <th class="p-3 text-right">Chart</th>
+              </tr>
+            </thead>
+            <tbody id="options-underlyings-tbody" class="divide-y divide-slate-800/60">
+              <tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">Loading index & underlying volatility data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
   </main>
 
@@ -1208,39 +1507,36 @@
     </div>
   </div>
 
-  <!-- MOBILE BOTTOM NAVIGATION BAR -->
-  <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-[#0b0f19]/95 backdrop-blur-md border-t border-slate-800 z-40 px-1 py-2 flex items-center justify-around text-[10px] pb-safe font-medium">
-    <button onclick="switchTab('tab-p1')" class="mobile-nav-btn flex flex-col items-center gap-1 text-cyan-400" id="mob-nav-p1">
-      <i data-lucide="layers" class="w-4 h-4"></i>
-      <span>P1 Desk</span>
-    </button>
-    <button onclick="switchTab('tab-p2')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-p2">
+  <!-- MOBILE & TABLET PRIMARY MODULE BOTTOM NAVIGATION BAR (Zero Duplication with Swing Sub-Tabs) -->
+  <nav class="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0b0f19]/95 backdrop-blur-md border-t border-slate-800/90 z-40 px-2 py-1.5 flex items-center justify-around text-[10px] pb-safe font-semibold shadow-2xl">
+    <button onclick="switchModule('module-swing')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-cyan-400 bg-cyan-500/10" id="mob-mod-swing">
       <i data-lucide="trending-up" class="w-4 h-4"></i>
-      <span>P2 Nifty500</span>
+      <span>Swing Desk</span>
     </button>
-    <button onclick="switchTab('tab-charts')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-charts">
-      <i data-lucide="candlestick-chart" class="w-4 h-4"></i>
-      <span>Charts/Data</span>
+    <button onclick="switchModule('module-intraday')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-400" id="mob-mod-intraday">
+      <i data-lucide="zap" class="w-4 h-4"></i>
+      <span>Intraday</span>
     </button>
-    <button onclick="switchTab('tab-signals')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-signals">
-      <i data-lucide="crosshair" class="w-4 h-4"></i>
-      <span>Signals</span>
+    <button onclick="switchModule('module-predictions')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-400" id="mob-mod-predictions">
+      <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+      <span>Predictions</span>
     </button>
-    <button onclick="switchTab('tab-history')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-history">
-      <i data-lucide="history" class="w-4 h-4"></i>
-      <span>History</span>
+    <button onclick="switchModule('module-options')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-400" id="mob-mod-options">
+      <i data-lucide="flame" class="w-4 h-4"></i>
+      <span>Options</span>
     </button>
-    <button onclick="switchTab('tab-scheduler')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-scheduler">
+    <button onclick="switchModule('module-swing'); switchTab('tab-scheduler');" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-400" id="mob-mod-vault">
       <i data-lucide="cloud" class="w-4 h-4"></i>
-      <span>Vault</span>
+      <span>Cloud Vault</span>
     </button>
   </nav>
 
   <!-- TOAST NOTIFICATION CONTAINER -->
-  <div id="toast-container" class="fixed bottom-16 md:bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+  <div id="toast-container" class="fixed bottom-16 lg:bottom-6 right-3 sm:right-6 z-50 flex flex-col gap-2 max-w-[92vw] sm:max-w-sm pointer-events-none"></div>
 
   <!-- JAVASCRIPT APP LOGIC -->
   <script>
+    let currentModule = 'module-swing';
     let currentTab = 'tab-p1';
     let currentP1FilterBucket = 'ALL';
     let p1SignalsCache = [];
@@ -1259,6 +1555,16 @@
     let tvChart = null;
     let currentChartSymbol = "RELIANCE";
     let currentChartPayload = null;
+
+    window.addEventListener('resize', () => {
+      const container = document.getElementById('tv-chart-container');
+      if (tvChart && container && container.clientWidth > 0) {
+        tvChart.applyOptions({
+          width: container.clientWidth,
+          height: Math.max(220, (container.clientHeight || 280) - 2)
+        });
+      }
+    });
 
     function isClientInMarketKeepaliveWindow() {
       // Checks if current IST time is Mon-Fri between 09:00 and 15:50 IST
@@ -1356,36 +1662,283 @@
       }, 4000);
     }
 
+    function switchModule(moduleId) {
+      currentModule = moduleId;
+      document.querySelectorAll('.module-section').forEach(el => el.classList.add('hidden'));
+      const target = document.getElementById(moduleId);
+      if (target) target.classList.remove('hidden');
+
+      // Update Desktop Module Switcher
+      const deskMap = {
+        'module-swing': { id: 'desk-mod-swing', activeCls: ['bg-cyan-500', 'text-black', 'shadow-md', 'shadow-cyan-500/20', 'font-bold'] },
+        'module-intraday': { id: 'desk-mod-intraday', activeCls: ['bg-amber-500', 'text-black', 'shadow-md', 'shadow-amber-500/20', 'font-bold'] },
+        'module-predictions': { id: 'desk-mod-predictions', activeCls: ['bg-purple-600', 'text-white', 'shadow-md', 'shadow-purple-500/20', 'font-bold'] },
+        'module-options': { id: 'desk-mod-options', activeCls: ['bg-emerald-500', 'text-black', 'shadow-md', 'shadow-emerald-500/20', 'font-bold'] }
+      };
+
+      document.querySelectorAll('.mod-btn').forEach(btn => {
+        btn.className = 'mod-btn px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap';
+      });
+      const dConf = deskMap[moduleId];
+      if (dConf) {
+        const dBtn = document.getElementById(dConf.id);
+        if (dBtn) {
+          dBtn.classList.remove('text-slate-400', 'hover:text-white', 'hover:bg-slate-800/70', 'font-semibold');
+          dBtn.classList.add(...dConf.activeCls);
+        }
+      }
+
+      // Update Mobile Bottom Module Bar
+      document.querySelectorAll('.mobile-mod-btn').forEach(btn => {
+        btn.className = 'mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-400';
+      });
+      const mobMap = {
+        'module-swing': { id: 'mob-mod-swing', cls: ['text-cyan-400', 'bg-cyan-500/10'] },
+        'module-intraday': { id: 'mob-mod-intraday', cls: ['text-amber-400', 'bg-amber-500/10'] },
+        'module-predictions': { id: 'mob-mod-predictions', cls: ['text-purple-400', 'bg-purple-500/10'] },
+        'module-options': { id: 'mob-mod-options', cls: ['text-emerald-400', 'bg-emerald-500/10'] }
+      };
+      const mConf = mobMap[moduleId];
+      if (mConf) {
+        const mBtn = document.getElementById(mConf.id);
+        if (mBtn) {
+          mBtn.classList.remove('text-slate-400');
+          mBtn.classList.add(...mConf.cls);
+        }
+      }
+
+      lucide.createIcons();
+      if (moduleId !== 'module-swing') {
+        ensureMasterDataThenRenderModules();
+      }
+    }
+
+    async function ensureMasterDataThenRenderModules() {
+      if (!fetchedStocksCache || fetchedStocksCache.length === 0) {
+        await loadFetchedStocksData();
+      }
+      renderIntradayDesk();
+      renderPredictionsDesk();
+      renderOptionsDesk();
+    }
+
+    function renderIntradayDesk() {
+      const stocks = (fetchedStocksCache || []).filter(s => !s.symbol.startsWith('^'));
+      const gainers = stocks.filter(s => (s.change_pct || 0) >= 2.0);
+      const highMom = stocks.filter(s => (s.rsi14 || 0) >= 60 && (s.last_close || 0) > (s.ema20 || 0) && (s.last_close || 0) > (s.ema50 || 0));
+      const sorted = [...stocks].sort((a, b) => (b.change_pct || 0) - (a.change_pct || 0));
+
+      const gEl = document.getElementById('intra-kpi-gainers');
+      const mEl = document.getElementById('intra-kpi-momentum');
+      const lEl = document.getElementById('intra-kpi-leader');
+      const lcEl = document.getElementById('intra-kpi-leader-chg');
+
+      if (gEl) gEl.innerText = `${gainers.length} Stocks`;
+      if (mEl) mEl.innerText = `${highMom.length} Setups`;
+      if (sorted.length > 0) {
+        if (lEl) lEl.innerText = sorted[0].symbol;
+        if (lcEl) lcEl.innerText = `+${(sorted[0].change_pct || 0).toFixed(2)}% (₹${(sorted[0].last_close || 0).toFixed(2)})`;
+      }
+
+      const tbody = document.getElementById('intraday-leaders-tbody');
+      if (!tbody) return;
+      const topList = sorted.slice(0, 40);
+      if (topList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">No intraday stock data loaded yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = topList.map(r => {
+        const chg = r.change_pct || 0;
+        const ltp = r.last_close || 0;
+        const atr = r.atr14 || (ltp * 0.02);
+        const intraSl = Math.max(0.05, ltp - atr);
+        const intraTgt = ltp + (2.0 * atr);
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="p-3 font-bold text-white">
+              <button onclick="openStockChartModal('${r.symbol}')" class="hover:text-amber-400 underline decoration-amber-500/40 underline-offset-4">${r.symbol}</button>
+            </td>
+            <td class="p-3 font-bold text-white">₹${ltp.toFixed(2)}</td>
+            <td class="p-3 font-bold ${chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</td>
+            <td class="p-3 text-slate-300">${(r.last_volume || 0).toLocaleString('en-IN')}</td>
+            <td class="p-3 ${r.rsi14 >= 60 ? 'text-emerald-400 font-bold' : 'text-slate-300'}">${(r.rsi14 || 0).toFixed(1)}</td>
+            <td class="p-3 text-amber-300">₹${atr.toFixed(2)}</td>
+            <td class="p-3 text-rose-400">₹${intraSl.toFixed(2)}</td>
+            <td class="p-3 text-emerald-400">₹${intraTgt.toFixed(2)}</td>
+            <td class="p-3 text-right">
+              <button onclick="openStockChartModal('${r.symbol}')" class="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[11px] font-bold">📈 Chart</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderPredictionsDesk() {
+      const sigs = [...(p1SignalsCache || [])].sort((a, b) => (b.ml_prob || 0) - (a.ml_prob || 0) || (b.score || 0) - (a.score || 0));
+      const highProb = sigs.filter(s => (s.ml_prob || 0) >= 0.65);
+      const stocks = (fetchedStocksCache || []).filter(s => !s.symbol.startsWith('^'));
+      const aboveEma50 = stocks.filter(s => (s.last_close || 0) > (s.ema50 || 0));
+      const breadthPct = stocks.length > 0 ? ((aboveEma50.length / stocks.length) * 100).toFixed(1) : '0.0';
+
+      const hpEl = document.getElementById('pred-kpi-highprob');
+      const tpEl = document.getElementById('pred-kpi-topprob');
+      const tsEl = document.getElementById('pred-kpi-topsym');
+      const brEl = document.getElementById('pred-kpi-breadth');
+
+      if (hpEl) hpEl.innerText = `${highProb.length} Stocks`;
+      if (brEl) brEl.innerText = `${breadthPct}%`;
+      if (sigs.length > 0) {
+        if (tpEl) tpEl.innerText = `${((sigs[0].ml_prob || 0) * 100).toFixed(1)}%`;
+        if (tsEl) tsEl.innerText = `Leader: ${sigs[0].symbol} (Score ${(sigs[0].score || 0).toFixed(1)})`;
+      }
+
+      const tbody = document.getElementById('predictions-ranking-tbody');
+      if (!tbody) return;
+      if (sigs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">Run P1 Scan to populate ML Win-Probability rankings.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = sigs.slice(0, 40).map((s, idx) => {
+        const probPct = ((s.ml_prob || 0) * 100).toFixed(1);
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="p-3 font-bold text-white">
+              <span class="text-slate-500 mr-1">#${idx + 1}</span>
+              <button onclick="openStockChartModal('${s.symbol}')" class="hover:text-purple-400 underline decoration-purple-500/40 underline-offset-4">${s.symbol}</button>
+            </td>
+            <td class="p-3 text-slate-400">${s.sector || 'EQUITY'}</td>
+            <td class="p-3 text-purple-300 font-bold">${probPct}% (${(s.ml_prob || 0).toFixed(2)})</td>
+            <td class="p-3 text-cyan-400 font-bold">${(s.score || 0).toFixed(1)}</td>
+            <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30">${s.bucket}</span></td>
+            <td class="p-3 text-white font-semibold">₹${(s.close || 0).toFixed(2)}</td>
+            <td class="p-3"><span class="text-amber-400">₹${(s.t1 || 0).toFixed(2)}</span> / <span class="text-emerald-400">₹${(s.t2 || 0).toFixed(2)}</span></td>
+            <td class="p-3 text-rose-400">₹${(s.sl || 0).toFixed(2)}</td>
+            <td class="p-3 text-right">
+              <button onclick="openStockChartModal('${s.symbol}')" class="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 text-[11px] font-bold">📈 Forecast Chart</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderOptionsDesk() {
+      const all = fetchedStocksCache || [];
+      const findIdx = (sym) => all.find(r => r.symbol.toUpperCase() === sym.toUpperCase());
+
+      const nsei = findIdx('^NSEI');
+      const bank = findIdx('^NSEBANK');
+      const vix = findIdx('^INDIAVIX');
+      const crsl = findIdx('^CRSLDX');
+
+      const setBenchCard = (item, valId, subId, isVix = false) => {
+        const vEl = document.getElementById(valId);
+        const sEl = document.getElementById(subId);
+        if (!item) return;
+        const chg = item.change_pct || 0;
+        const sign = chg >= 0 ? '+' : '';
+        if (vEl) vEl.innerText = isVix ? `${(item.last_close || 0).toFixed(2)}` : `₹${(item.last_close || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+        if (sEl) {
+          sEl.innerText = `${sign}${chg.toFixed(2)}% • EMA50: ${(item.ema50 || 0).toFixed(1)}`;
+          sEl.className = `text-[10px] font-mono mt-0.5 ${chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+        }
+      };
+
+      setBenchCard(nsei, 'opt-kpi-nifty', 'opt-kpi-nifty-sub');
+      setBenchCard(bank, 'opt-kpi-bank', 'opt-kpi-bank-sub');
+      setBenchCard(vix, 'opt-kpi-vix', 'opt-kpi-vix-sub', true);
+      setBenchCard(crsl, 'opt-kpi-crsl', 'opt-kpi-crsl-sub');
+
+      const tbody = document.getElementById('options-underlyings-tbody');
+      if (!tbody) return;
+
+      const equities = all
+        .filter(r => !r.symbol.startsWith('^') && (r.last_close || 0) >= 150 && (r.last_volume || 0) >= 250000)
+        .map(r => {
+          const ltp = r.last_close || 1;
+          const atrPct = ((r.atr14 || 0) / ltp) * 100;
+          return { ...r, atrPct };
+        })
+        .sort((a, b) => b.atrPct - a.atrPct)
+        .slice(0, 35);
+
+      if (equities.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">No underlying volatility data loaded yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = equities.map(r => {
+        const ltp = r.last_close || 0;
+        const chg = r.change_pct || 0;
+        const step = ltp >= 2000 ? 50 : (ltp >= 500 ? 20 : 10);
+        const atmStrike = Math.round(ltp / step) * step;
+        const isBull = ltp >= (r.ema20 || 0) && (r.rsi14 || 50) >= 52;
+        const biasBadge = isBull
+          ? `<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">BULL CALL BIAS (${atmStrike} CE)</span>`
+          : `<span class="px-2 py-0.5 rounded text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">BEAR / NEUTRAL (${atmStrike} PE)</span>`;
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="p-3 font-bold text-white">
+              <button onclick="openStockChartModal('${r.symbol}')" class="hover:text-emerald-400 underline decoration-emerald-500/40 underline-offset-4">${r.symbol}</button>
+            </td>
+            <td class="p-3 font-bold text-white">₹${ltp.toFixed(2)}</td>
+            <td class="p-3 font-bold ${chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</td>
+            <td class="p-3 text-amber-300">₹${(r.atr14 || 0).toFixed(2)} (${r.atrPct.toFixed(2)}%)</td>
+            <td class="p-3">${biasBadge}</td>
+            <td class="p-3 text-cyan-300 font-bold">₹${atmStrike}</td>
+            <td class="p-3 text-rose-400">₹${(r.auto_sl || 0).toFixed(2)}</td>
+            <td class="p-3 text-emerald-400">₹${(r.auto_t1 || 0).toFixed(2)}</td>
+            <td class="p-3 text-right">
+              <button onclick="openStockChartModal('${r.symbol}')" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold">📈 Chart</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
     function switchTab(tabId) {
+      if (currentModule !== 'module-swing') {
+        switchModule('module-swing');
+      }
       currentTab = tabId;
       document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-      document.getElementById(tabId).classList.remove('hidden');
+      const targetTab = document.getElementById(tabId);
+      if (targetTab) targetTab.classList.remove('hidden');
 
       document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('bg-cyan-500/10', 'text-cyan-400', 'border-cyan-500/30', 'bg-violet-500/10', 'text-violet-400', 'border-violet-500/30', 'bg-emerald-500/10', 'text-emerald-400', 'border-emerald-500/30');
+        btn.classList.remove(
+          'bg-cyan-500/15', 'text-cyan-300', 'border-cyan-500/40',
+          'bg-violet-500/15', 'text-violet-300', 'border-violet-500/40',
+          'bg-emerald-500/15', 'text-emerald-300', 'border-emerald-500/40'
+        );
         btn.classList.add('text-slate-400', 'border-transparent');
       });
 
       const activeBtn = document.getElementById(`nav-${tabId}`);
       if (activeBtn) {
         if (tabId === 'tab-p2') {
-          activeBtn.classList.add('bg-violet-500/10', 'text-violet-400', 'border-violet-500/30');
+          activeBtn.classList.add('bg-violet-500/15', 'text-violet-300', 'border-violet-500/40');
         } else if (tabId === 'tab-charts') {
-          activeBtn.classList.add('bg-emerald-500/10', 'text-emerald-400', 'border-emerald-500/30');
+          activeBtn.classList.add('bg-emerald-500/15', 'text-emerald-300', 'border-emerald-500/40');
         } else {
-          activeBtn.classList.add('bg-cyan-500/10', 'text-cyan-400', 'border-cyan-500/30');
+          activeBtn.classList.add('bg-cyan-500/15', 'text-cyan-300', 'border-cyan-500/40');
         }
         activeBtn.classList.remove('text-slate-400', 'border-transparent');
       }
 
-      document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
-        btn.classList.remove('text-cyan-400', 'text-violet-400', 'text-emerald-400');
-        btn.classList.add('text-slate-400');
-      });
-      const mobBtn = document.getElementById(`mob-nav-${tabId.replace('tab-', '')}`);
-      if (mobBtn) {
-        mobBtn.classList.remove('text-slate-400');
-        mobBtn.classList.add(tabId === 'tab-p2' ? 'text-violet-400' : (tabId === 'tab-charts' ? 'text-emerald-400' : 'text-cyan-400'));
+      // Highlight Cloud Vault button on mobile if user tapped Vault & Cron
+      const mobVault = document.getElementById('mob-mod-vault');
+      const mobSwing = document.getElementById('mob-mod-swing');
+      if (mobVault && mobSwing && currentModule === 'module-swing') {
+        if (tabId === 'tab-scheduler') {
+          mobSwing.className = 'mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-400';
+          mobVault.className = 'mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-cyan-400 bg-cyan-500/10';
+        } else {
+          mobVault.className = 'mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-400';
+          mobSwing.className = 'mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-cyan-400 bg-cyan-500/10';
+        }
       }
 
       lucide.createIcons();
@@ -1435,8 +1988,13 @@
           loadP1Data(),
           loadP2Data()
         ]);
-        if (currentTab === 'tab-charts') await loadFetchedStocksData();
+        if (currentTab === 'tab-charts' || currentModule !== 'module-swing') await loadFetchedStocksData();
         if (currentTab === 'tab-history') await loadHistoryData();
+        if (currentModule !== 'module-swing') {
+          renderIntradayDesk();
+          renderPredictionsDesk();
+          renderOptionsDesk();
+        }
       } catch (e) {
         console.error("Error refreshing data:", e);
       } finally {
