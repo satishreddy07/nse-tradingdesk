@@ -33,13 +33,18 @@ import aiohttp
 import numpy as np
 import pandas as pd
 import requests
+import threading
+import concurrent.futures
 
 from core.data_quality import IST, now_ist, format_ist
+from core.market_calendar import NSEMarketCalendar
+from core.telegram_vault import telegram_vault
 from core.config import (
     P2_BASE_CAPITAL, P2_RISK_PER_TRADE, P2_MAX_SLOTS, P2_STOP_ATR_MULT,
     SEEDS_DIR, HISTORICAL_DATA_DIR
 )
 from execution.state_engine import state_engine
+from engines.institutional_engine import DirectYahooFinanceFetcher
 
 logger = logging.getLogger("Nifty500Engine")
 
@@ -58,6 +63,8 @@ _nifty500_engine_state: Dict[str, Any] = {
     "candidates_found": 0,
     "orders_executed": 0,
     "reconciled_trades": 0,
+    "trading_gate_open": False,
+    "trading_gate_message": "",
     "orders": [],
     "status": "IDLE"
 }
@@ -124,76 +131,92 @@ def get_nifty500_symbols() -> List[str]:
     return ["RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "BHARTIARTL", "SBIN", "LICI", "ITC", "HINDUNILVR"]
 
 
-async def fetch_yahoo_candle(session: aiohttp.ClientSession, ticker: str, semaphore: asyncio.Semaphore) -> Optional[List[Dict[str, Any]]]:
-    """Fetches daily candle history for a ticker."""
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=6mo&interval=1d"
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json",
-    }
-    async with semaphore:
-        try:
-            async with session.get(url, headers=headers, timeout=12) as resp:
-                if resp.status != 200:
-                    return None
-                payload = await resp.json()
-                result = payload.get("chart", {}).get("result")
-                if not result:
-                    return None
-
-                data = result[0]
-                timestamps = data.get("timestamp", [])
-                quotes = data.get("indicators", {}).get("quote", [{}])[0]
-
-                opens = quotes.get("open", [])
-                highs = quotes.get("high", [])
-                lows = quotes.get("low", [])
-                closes = quotes.get("close", [])
-                volumes = quotes.get("volume", [])
-
-                records = []
-                sym_clean = "^CRSLDX" if ticker == "^CRSLDX" else ticker.replace(".NS", "")
-
-                for ts, o, h, l, c, v in zip(timestamps, opens, highs, lows, closes, volumes):
-                    if None in (ts, o, h, l, c, v):
-                        continue
-                    records.append({
-                        "date": pd.to_datetime(ts, unit="s").normalize(),
-                        "symbol": sym_clean,
-                        "open": float(o),
-                        "high": float(h),
-                        "low": float(l),
-                        "close": float(c),
-                        "volume": float(v),
-                    })
-                return records
-        except Exception:
-            return None
-
-
 async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
-    """Asynchronously downloads recent daily candles for tickers + ^CRSLDX benchmark."""
-    tickers = [f"{s}.NS" for s in symbols]
-    tickers.append("^CRSLDX")
+    """
+    Multi-threaded Smart Incremental Gap-Fill OHLCV Downloader for Nifty 500 + ^CRSLDX benchmark.
+    Uses shared `DirectYahooFinanceFetcher` cache (`data/historical_data/*.pkl`) backed by Telegram Cloud Vault.
+    """
+    fetcher = DirectYahooFinanceFetcher(max_workers=24)
+    local_pkl_count = len(list(HISTORICAL_DATA_DIR.glob("*.pkl")))
+    if local_pkl_count < 50:
+        telegram_vault.restore_ohlcv_from_cloud()
 
-    semaphore = asyncio.Semaphore(25)
-    connector = aiohttp.TCPConnector(limit=50, ttl_dns_cache=300)
+    target_date = fetcher.get_latest_expected_bar_date()
+    is_mkt_open, _ = NSEMarketCalendar.can_execute_trades()
+
+    tickers = [f"{s}.NS" for s in symbols]
+    total_tickers = len(tickers)
+    flat_rows = []
+    gap_or_new_count = 0
 
     start_t = time.time()
-    async with aiohttp.ClientSession(connector=connector) as session:
-        tasks = [fetch_yahoo_candle(session, t, semaphore) for t in tickers]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # 1. Fetch ^CRSLDX benchmark
+    _, bench_df = fetcher.fetch_ticker_chart("^CRSLDX", range_period="1y")
+    if bench_df is not None and not bench_df.empty:
+        for idx_ts, r in bench_df.tail(180).iterrows():
+            dt_norm = pd.Timestamp(idx_ts).tz_localize(None).normalize() if pd.Timestamp(idx_ts).tzinfo else pd.Timestamp(idx_ts).normalize()
+            flat_rows.append({
+                "date": dt_norm,
+                "symbol": "^CRSLDX",
+                "open": float(r["Open"]),
+                "high": float(r["High"]),
+                "low": float(r["Low"]),
+                "close": float(r["Close"]),
+                "volume": float(r["Volume"] or 0.0),
+            })
+
+    # 2. Fetch or incrementally gap-fill Nifty 500 constituents in 24 threads
+    completed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
+        future_to_ticker = {
+            executor.submit(fetcher.fetch_or_gapfill_ticker, t, target_date, is_mkt_open): t
+            for t in tickers
+        }
+        for future in concurrent.futures.as_completed(future_to_ticker):
+            completed += 1
+            try:
+                sym, df, mode = future.result()
+                if mode in ("GAP_FILLED", "FULL_DOWNLOAD"):
+                    gap_or_new_count += 1
+                if df is not None and not df.empty:
+                    sym_clean = sym.replace(".NS", "").replace(".BO", "").strip().upper()
+                    sub_df = df.tail(160)
+                    for idx_ts, r in sub_df.iterrows():
+                        if pd.isna(r["Close"]) or pd.isna(r["Open"]):
+                            continue
+                        dt_norm = pd.Timestamp(idx_ts).tz_localize(None).normalize() if pd.Timestamp(idx_ts).tzinfo else pd.Timestamp(idx_ts).normalize()
+                        flat_rows.append({
+                            "date": dt_norm,
+                            "symbol": sym_clean,
+                            "open": float(r["Open"]),
+                            "high": float(r["High"]),
+                            "low": float(r["Low"]),
+                            "close": float(r["Close"]),
+                            "volume": float(r["Volume"] or 0.0),
+                        })
+            except Exception:
+                pass
+
+            if completed % 50 == 0 or completed == total_tickers:
+                pct = 25 + int((completed / max(1, total_tickers)) * 32)
+                state_engine.update_scan_progress(
+                    stage=f"Step 2/5: Incremental OHLCV Sync ({completed}/{total_tickers} Nifty 500 stocks)...",
+                    percent=pct,
+                    stocks_total=total_tickers,
+                    stocks_done=completed,
+                    add_log=(completed % 150 == 0 or completed == total_tickers)
+                )
+
+    if gap_or_new_count > 0:
+        threading.Thread(
+            target=telegram_vault.backup_ohlcv_to_cloud,
+            kwargs={"custom_note": f"Nifty 500 Scan Sync ({gap_or_new_count} updated)"},
+            daemon=True
+        ).start()
 
     elapsed = time.time() - start_t
-    flat_rows = []
-    for sublist in results:
-        if isinstance(sublist, list) and sublist:
-            flat_rows.extend(sublist)
-
-    logger.info(f"-> Batch download finished in {elapsed:.1f}s ({len(flat_rows):,} total bars retrieved).")
+    logger.info(f"-> Nifty 500 Incremental Sync finished in {elapsed:.1f}s ({len(flat_rows):,} total bars retrieved).")
     return pd.DataFrame(flat_rows)
 
 
@@ -213,11 +236,13 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
     Priority 2: Trailing Stop-Loss (TRAILING_SL) -> Price <= Rolling 5-Day Low once gain >= +2R
     Priority 3: Fast Cut (FAST_EMA20_CUT) -> Close < 20 EMA (while not trailing)
     Priority 4: Time Stop (TIME_EXIT) -> Days Held >= 8 and Gain < +1R
+    STRICT TRADING GATE: Only executes exits during NSE Regular Market Hours (09:15 AM – 03:30 PM IST).
     """
     open_positions = state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)
     if not open_positions:
         return []
 
+    can_trade, gate_reason = NSEMarketCalendar.can_execute_trades()
     closed_events = []
 
     for pos in open_positions:
@@ -239,6 +264,11 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
         target_2r = entry_px + (2.0 * r_unit)
 
         highest_seen = max(float(pos.get("highest_price") or entry_px), h, c)
+
+        # If market is closed, update MTM price only and strictly block trade exit execution
+        if not can_trade:
+            state_engine.update_position_price(sym, current_price=c, stop_loss=current_sl, highest_price=highest_seen)
+            continue
 
         previously_trailing = bool(
             pos.get("t1_hit", 0) or
@@ -320,6 +350,7 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
             state_engine.update_position_price(sym, current_price=c, stop_loss=orig_sl, highest_price=highest_seen)
 
     return closed_events
+
 
 
 async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execute: bool = True) -> Dict[str, Any]:
@@ -540,7 +571,9 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
         }
         signals_to_save.append(signal_item)
 
-        if auto_execute and is_bullish and is_strict_setup and len(orders) < available_slots and shares > 0:
+        can_trade_now, gate_msg = NSEMarketCalendar.can_execute_trades()
+
+        if auto_execute and can_trade_now and is_bullish and is_strict_setup and len(orders) < available_slots and shares > 0:
 
             order_payload = {
                 "symbol": sym,
@@ -589,14 +622,22 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
 
     state_engine.save_latest_signals(signals_to_save, portfolio_type=PORTFOLIO_TYPE)
 
+    can_trade_final, gate_msg_final = NSEMarketCalendar.can_execute_trades()
+    _nifty500_engine_state["trading_gate_open"] = can_trade_final
+    _nifty500_engine_state["trading_gate_message"] = gate_msg_final
     _nifty500_engine_state["orders"] = orders
     _nifty500_engine_state["orders_executed"] = executed_count
     _nifty500_engine_state["status"] = "COMPLETED"
 
+    gate_suffix = ""
+    if auto_execute and not can_trade_final:
+        gate_suffix = " [🔒 STRICT TRADING GATE: Market Closed — Signals updated, 0 trades executed]"
+        logger.warning(f"🔒 [P2 Auto-Execute Blocked] {gate_msg_final}")
+
     elapsed = time.time() - start_time
     summary_msg = (
         f"Nifty 500 Scan Complete in {elapsed:.1f}s: {len(stocks['symbol'].unique())} stocks analyzed -> "
-        f"{len(candidates)} RS Candidates | {executed_count} orders placed ({macro_regime_label})"
+        f"{len(candidates)} RS Candidates | {executed_count} orders placed ({macro_regime_label}){gate_suffix}"
     )
     state_engine.log_scan_run(
         scan_type="NIFTY500_MOMENTUM",
@@ -610,9 +651,15 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     )
     state_engine.finish_scan_progress(summary_msg)
 
+    # Backup DB state to Telegram Cloud Vault in background
+    threading.Thread(
+        target=telegram_vault.backup_db_to_cloud,
+        kwargs={"custom_note": f"P2 Nifty 500 Scan Complete ({len(candidates)} RS Candidates)"},
+        daemon=True
+    ).start()
+
     logger.info(f"=== 🎯 {summary_msg} ===")
     return {
-
         "status": "SUCCESS",
         "macro_regime": macro_regime_label,
         "bench_ltp": bench_ltp,
@@ -623,7 +670,9 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
         "candidates_found": len(candidates),
         "orders_executed": executed_count,
         "orders": orders,
-        "reconciled_trades": reconciled_trades
+        "reconciled_trades": reconciled_trades,
+        "trading_gate_open": can_trade_final,
+        "trading_gate_message": gate_msg_final
     }
 
 
@@ -648,10 +697,14 @@ def run_nifty500_pipeline_sync(mode: str = "SCHEDULED_305PM", auto_execute: bool
 
 def get_nifty500_status() -> Dict[str, Any]:
     """Returns current status and latest run summary."""
+    can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
     curr_eq, tot_eq, active_count = get_live_compounded_equity()
     state_copy = dict(_nifty500_engine_state)
+    state_copy["trading_gate_open"] = can_trade
+    state_copy["trading_gate_message"] = gate_msg
     state_copy["compounded_equity"] = curr_eq
     state_copy["active_slots"] = active_count
     state_copy["available_slots"] = max(0, P2_MAX_SLOTS - active_count)
     state_copy["stats"] = state_engine.get_portfolio_stats(portfolio_type=PORTFOLIO_TYPE)
     return state_copy
+

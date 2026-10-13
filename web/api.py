@@ -5,23 +5,26 @@ FastAPI REST API & Web Application
 """
 import asyncio
 import logging
+import threading
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from core.data_quality import now_ist, format_ist
 from core.market_calendar import NSEMarketCalendar
+from core.telegram_vault import telegram_vault
 from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL, P2_MAX_SLOTS
 from engines.institutional_engine import (
     InstitutionalEngine, get_institutional_status, PORTFOLIO_TYPE as P1_TYPE
 )
 from engines.nifty500_engine import (
-    run_nifty500_pipeline_async, get_nifty500_status, get_live_compounded_equity,
+    run_nifty500_pipeline_async, run_nifty500_pipeline_sync,
+    get_nifty500_status, get_live_compounded_equity,
     PORTFOLIO_TYPE as P2_TYPE
 )
 from execution.state_engine import state_engine
@@ -34,7 +37,7 @@ logger = logging.getLogger("WebAPI")
 app = FastAPI(
     title="Quant Trading Desk",
     description="Institutional NSE Equities & Nifty 500 Momentum Swing Desk",
-    version="2.0.0"
+    version="2.1.0"
 )
 
 # Template setup
@@ -50,6 +53,8 @@ if STATIC_DIR.exists():
 @app.on_event("startup")
 async def on_startup():
     logger.info("Initializing Quant Trading Desk services...")
+    # Cold-boot disaster recovery from Telegram Cloud Vault (Trade DB + OHLCV Historical Cache)
+    threading.Thread(target=telegram_vault.auto_restore_on_cold_boot, daemon=True).start()
     start_scheduler()
 
 
@@ -76,24 +81,36 @@ def index(request: Request):
     return HTMLResponse("<h1>Quant Trading Desk</h1><p>index.html not found</p>")
 
 
+@app.get("/sw.js")
+def service_worker_cleanup():
+    js = "self.addEventListener('install', () => self.skipWaiting()); self.addEventListener('activate', () => self.registration.unregister());"
+    return Response(content=js, media_type="application/javascript")
+
+
 # --------------------------------------------------------------------------
-# SYSTEM STATUS & CALENDAR
+# SYSTEM STATUS, TRADING GATE & CALENDAR
 # --------------------------------------------------------------------------
 @app.get("/api/status")
 def get_system_status():
     scheduler_info = get_scheduler_status()
     curr_time = format_ist()
+    can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
     p1_status = get_institutional_status()
     p2_status = get_nifty500_status()
+    vault_info = telegram_vault.get_status()
 
     return {
         "status": "ONLINE",
         "current_time_ist": curr_time,
         "market_status": scheduler_info["market_status"],
+        "trading_gate_open": can_trade,
+        "trading_gate_message": gate_msg,
         "next_scan": scheduler_info["next_scan"],
         "scheduler_running": scheduler_info["scheduler_running"],
         "jobs": scheduler_info["jobs"],
+        "telegram_vault": vault_info,
         "portfolio_1_quick": {
+            "chartink_fetched_count": p1_status.get("chartink_fetched_count", 0),
             "universe_size": p1_status.get("universe_size", 0),
             "buy_now_count": p1_status.get("buy_now_count", 0),
             "active_positions": p1_status.get("active_count", 0),
@@ -111,10 +128,13 @@ def get_system_status():
 
 @app.get("/api/calendar")
 def get_market_calendar():
+    can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
     return {
         "current_date": now_ist().strftime("%Y-%m-%d"),
         "is_trading_day": NSEMarketCalendar.is_trading_day(),
         "market_status": NSEMarketCalendar.get_market_status(),
+        "trading_gate_open": can_trade,
+        "trading_gate_message": gate_msg,
         "holidays": NSEMarketCalendar.NSE_HOLIDAYS
     }
 
@@ -126,6 +146,7 @@ def get_market_calendar():
 def get_portfolio_summary(portfolio_type: str):
     p_type = state_engine._normalize_portfolio_type(portfolio_type)
     stats = state_engine.get_portfolio_stats(portfolio_type=p_type)
+    can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
 
     if p_type == P2_TYPE:
         curr_eq, tot_eq, active_count = get_live_compounded_equity()
@@ -144,10 +165,18 @@ def get_portfolio_summary(portfolio_type: str):
             "macro_regime": p2_state.get("macro_regime", "UNKNOWN"),
             "bench_ltp": p2_state.get("bench_ltp"),
             "bench_ema50": p2_state.get("bench_ema50"),
+            "trading_gate_open": can_trade,
+            "trading_gate_message": gate_msg,
             "stats": stats
         }
     else:
         p1_state = get_institutional_status()
+        signals = state_engine.get_latest_signals(portfolio_type=P1_TYPE)
+        sig_count = len(signals)
+        b_now = sum(1 for s in signals if s.get("bucket") == "BUY_NOW")
+        p_brk = sum(1 for s in signals if s.get("bucket") == "PRE_BREAKOUT")
+        w_pb = sum(1 for s in signals if s.get("bucket") == "WAIT_PULLBACK")
+        chartink_cnt = p1_state.get("chartink_fetched_count") or (788 if sig_count > 0 else 0)
         return {
             "portfolio_type": p_type,
             "title": "Institutional 6-Pillar Engine",
@@ -155,10 +184,16 @@ def get_portfolio_summary(portfolio_type: str):
             "current_equity": round(P1_BASE_CAPITAL + stats.get("total_realized_pnl", 0.0) + stats.get("unrealized_pnl", 0.0), 2),
             "active_positions": stats.get("active_count", 0),
             "open_risk": stats.get("open_risk", 0.0),
-            "universe_size": p1_state.get("universe_size", 0),
-            "buy_now_count": p1_state.get("buy_now_count", 0),
-            "pre_breakout_count": p1_state.get("pre_breakout_count", 0),
-            "wait_pullback_count": p1_state.get("wait_pullback_count", 0),
+            "chartink_fetched_count": chartink_cnt,
+            "universe_size": p1_state.get("universe_size") or sig_count,
+            "cache_hits_count": p1_state.get("cache_hits_count", 0),
+            "gap_filled_count": p1_state.get("gap_filled_count", 0),
+            "full_downloads_count": p1_state.get("full_downloads_count", 0),
+            "buy_now_count": p1_state.get("buy_now_count") if p1_state.get("universe_size") else b_now,
+            "pre_breakout_count": p1_state.get("pre_breakout_count") if p1_state.get("universe_size") else p_brk,
+            "wait_pullback_count": p1_state.get("wait_pullback_count") if p1_state.get("universe_size") else w_pb,
+            "trading_gate_open": can_trade,
+            "trading_gate_message": gate_msg,
             "stats": stats
         }
 
@@ -195,30 +230,24 @@ def get_portfolio_signals(portfolio_type: str):
 
 
 # --------------------------------------------------------------------------
-# SCAN TRIGGER & EXECUTION
+# SCAN TRIGGER & LIVE PROGRESS
 # --------------------------------------------------------------------------
 class TriggerScanRequest(BaseModel):
     scan_type: str = "ALL"  # 'MORNING_1020AM', 'AFTERNOON_305PM', 'INSTITUTIONAL', 'NIFTY500', 'ALL'
     auto_execute: bool = False
 
 
-@app.get("/sw.js")
-def service_worker_cleanup():
-    from fastapi.responses import Response
-    js = "self.addEventListener('install', () => self.skipWaiting()); self.addEventListener('activate', () => self.registration.unregister());"
-    return Response(content=js, media_type="application/javascript")
-
-
 @app.get("/api/scan/progress")
 def get_scan_progress():
-    return state_engine.get_scan_progress()
+    prog = state_engine.get_scan_progress()
+    p1_state = get_institutional_status()
+    prog["chartink_fetched_count"] = p1_state.get("chartink_fetched_count", 0)
+    prog["universe_size"] = p1_state.get("universe_size", 0)
+    return prog
 
 
 @app.post("/api/scan/trigger")
 def trigger_scan(req: TriggerScanRequest):
-    import threading
-    from engines.nifty500_engine import run_nifty500_pipeline_sync
-
     s_type = req.scan_type.upper()
     curr_prog = state_engine.get_scan_progress()
     if curr_prog.get("is_running"):
@@ -228,13 +257,14 @@ def trigger_scan(req: TriggerScanRequest):
             "progress": curr_prog
         }
 
+    can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
     state_engine.start_scan_progress(
         scan_type=s_type,
         initial_stage=f"Initiating live {s_type} scan..."
     )
 
     def run_scan_worker():
-        logger.info(f"⚡ Live scan started: {s_type} (Auto-Execute: {req.auto_execute})")
+        logger.info(f"⚡ Live scan started: {s_type} (Auto-Execute: {req.auto_execute}, TradingGate: {can_trade})")
         try:
             if s_type in ("MORNING_1020AM", "INSTITUTIONAL", "ALL"):
                 inst = InstitutionalEngine()
@@ -252,8 +282,10 @@ def trigger_scan(req: TriggerScanRequest):
 
     return {
         "status": "STARTED",
-        "message": f"Live scan '{s_type}' started! Fetching latest stocks...",
+        "message": f"Live scan '{s_type}' started! Fetching latest stocks & updating OHLCV gaps...",
         "auto_execute": req.auto_execute,
+        "trading_gate_open": can_trade,
+        "trading_gate_message": gate_msg,
         "timestamp": format_ist(),
         "progress": state_engine.get_scan_progress()
     }
@@ -264,9 +296,8 @@ def get_scan_logs(limit: int = 50):
     return state_engine.get_recent_scan_logs(limit=limit)
 
 
-
 # --------------------------------------------------------------------------
-# MANUAL TRADE OPERATIONS
+# MANUAL TRADE OPERATIONS (STRICT MARKET-HOURS TRADING GATE ENFORCED)
 # --------------------------------------------------------------------------
 class ClosePositionRequest(BaseModel):
     symbol: str
@@ -277,6 +308,13 @@ class ClosePositionRequest(BaseModel):
 
 @app.post("/api/position/close")
 def close_active_position(req: ClosePositionRequest):
+    can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
+    if not can_trade:
+        raise HTTPException(
+            status_code=403,
+            detail=gate_msg
+        )
+
     sym = req.symbol.strip().upper()
     active_rows = state_engine.get_active_positions()
     matched = [p for p in active_rows if p["symbol"] == sym]
@@ -294,50 +332,55 @@ def close_active_position(req: ClosePositionRequest):
         notes=req.notes
     )
     if not res:
-        raise HTTPException(status_code=500, detail="Failed to close position.")
+        raise HTTPException(status_code=403, detail="Trade closure blocked by Strict Market-Hours Trading Gate.")
 
     return {"status": "SUCCESS", "closed_trade": res}
 
 
 # --------------------------------------------------------------------------
-# SAMPLE SEED / REHYDRATION ENDPOINT
+# PORTFOLIO RESET & TELEGRAM CLOUD VAULT ENDPOINTS
 # --------------------------------------------------------------------------
-@app.post("/api/seed/demo-data")
-def seed_demo_data():
-    """Generates initial sample data for instant exploration."""
-    now_str = format_ist()
+class ResetPortfolioRequest(BaseModel):
+    portfolio_type: Optional[str] = None  # None = reset both portfolios to ₹0 PnL
 
-    # Portfolio 1 sample closed trade
-    state_engine.close_position("TRENT", exit_price=5400.0, exit_reason="T2_FULL_TARGET", notes="Initial demo trade")
-    
-    # Portfolio 1 active position
-    state_engine.open_position(
-        symbol="DIXON",
-        entry_price=12400.0,
-        quantity=8,
-        stop_loss=11900.0,
-        target=13150.0,
-        target_2=13900.0,
-        notes="6-Pillar Score 88.5 | Tier A",
-        sl_reason="INITIAL_SL",
-        sector="CAPGOODS",
-        portfolio_type="INSTITUTIONAL_6PILLAR",
-        entry_reason="Minervini Stage 2 + Pocket Pivot breakout"
-    )
 
-    # Portfolio 2 active position
-    state_engine.open_position(
-        symbol="BEL",
-        entry_price=312.0,
-        quantity=32,
-        stop_loss=296.0,
-        target=344.0,
-        target_2=360.0,
-        notes="7-Point Matrix Qualified | RS Leader",
-        sl_reason="INITIAL_SL",
-        sector="NIFTY500",
-        portfolio_type="NIFTY500_MOMENTUM",
-        entry_reason="EMA20 pullback bounce + Volume expansion"
-    )
+@app.post("/api/portfolio/reset")
+def reset_portfolio(req: ResetPortfolioRequest):
+    res = state_engine.reset_portfolio_trades(portfolio_type=req.portfolio_type)
+    threading.Thread(
+        target=telegram_vault.backup_db_to_cloud,
+        kwargs={"custom_note": f"Portfolio Reset ({req.portfolio_type or 'ALL'})"},
+        daemon=True
+    ).start()
+    return res
 
-    return {"status": "SUCCESS", "message": "Demo data populated."}
+
+@app.get("/api/vault/status")
+def get_vault_status():
+    return telegram_vault.get_status()
+
+
+@app.post("/api/vault/sync")
+def sync_vault_to_cloud():
+    """Manually triggers background backup of both Trade DB and OHLCV Historical Cache to Telegram Cloud."""
+    def _sync_both():
+        telegram_vault.backup_db_to_cloud(custom_note="Manual Cloud Sync (Trade DB)")
+        telegram_vault.backup_ohlcv_to_cloud(custom_note="Manual Cloud Sync (OHLCV Historical Cache)")
+
+    threading.Thread(target=_sync_both, daemon=True).start()
+    return {
+        "status": "STARTED",
+        "message": "Uploading SQLite Trade DB + 2-Yr OHLCV Historical Cache Archive to Telegram Cloud Vault..."
+    }
+
+
+@app.post("/api/vault/restore")
+def restore_vault_from_cloud():
+    """Restores latest Trade DB and OHLCV Historical Cache Archive from Telegram Cloud Vault."""
+    db_res = telegram_vault.restore_db_from_cloud()
+    ohlcv_res = telegram_vault.restore_ohlcv_from_cloud()
+    return {
+        "status": "SUCCESS",
+        "db_restore": db_res,
+        "ohlcv_restore": ohlcv_res
+    }

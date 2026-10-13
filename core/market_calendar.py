@@ -239,3 +239,22 @@ class NSEMarketCalendar:
             "seconds_remaining": int((target_dt - dt).total_seconds()),
             "label": f"10:20 AM Morning Scan ({next_date.strftime('%a, %d %b')})"
         }
+
+    @classmethod
+    def can_execute_trades(cls, dt: datetime.datetime = None) -> Tuple[bool, str]:
+        """
+        Strict Market-Hours Trading Gate:
+        Returns (True, reason) ONLY if current IST time is between 09:15:00 and 15:30:00 IST
+        on an active NSE trading day (Monday-Friday, excluding NSE holidays).
+        Otherwise returns (False, strict_gate_reason).
+        """
+        status = cls.get_market_status(dt)
+        if status.get("is_open") and status.get("session_phase") == "REGULAR_HOURS":
+            return True, f"TRADING GATE OPEN ({status.get('ist_time')} IST - Regular Market Hours 09:15–15:30 IST)"
+        reason = (
+            f"STRICT TRADING GATE LOCKED: Market is currently in {status.get('session_phase')} "
+            f"({status.get('message')}). Trade entries & exits are strictly permitted only during "
+            f"NSE Regular Trading Hours (09:15 AM – 03:30 PM IST, Mon–Fri)."
+        )
+        return False, reason
+

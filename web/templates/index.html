@@ -92,11 +92,16 @@
       </div>
 
       <!-- Center Status Bar (Desktop) -->
-      <div class="hidden md:flex items-center gap-4 text-xs">
+      <div class="hidden md:flex items-center gap-3 text-xs">
         <!-- Market Status Badge -->
         <div id="market-status-pill" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300">
           <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
           <span id="market-status-text" class="font-medium">Checking Market...</span>
+        </div>
+
+        <!-- Strict Trading Gate Badge -->
+        <div id="trading-gate-pill" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-950/50 border border-rose-800/60 text-rose-300 font-mono" title="Orders can only execute during NSE Regular Trading Hours (09:15 AM - 03:30 PM IST, Mon-Fri)">
+          <span id="trading-gate-text">🔒 Gate: Checking...</span>
         </div>
 
         <!-- Next Scan Countdown -->
@@ -142,7 +147,7 @@
             <div class="border-t border-slate-800 mt-1 pt-1">
               <label class="flex items-center gap-2 px-3 py-1 text-[11px] text-slate-400 cursor-pointer">
                 <input type="checkbox" id="chk-auto-exec" class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
-                <span>Auto-place qualifying orders</span>
+                <span>Auto-place orders (Market Hours Only)</span>
               </label>
             </div>
           </div>
@@ -196,8 +201,8 @@
         </button>
 
         <button onclick="switchTab('tab-scheduler')" id="nav-tab-scheduler" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
-          <i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i>
-          <span>Scheduler & Logs</span>
+          <i data-lucide="cloud" class="w-4 h-4 text-blue-400"></i>
+          <span>Cloud Vault & Scheduler</span>
         </button>
 
       </nav>
@@ -249,7 +254,7 @@
             <h2 class="text-xl font-extrabold text-white">Institutional 6-Pillar Percentile Engine</h2>
           </div>
           <p class="text-xs text-slate-400 mt-1">
-            Dynamic Chartink Screener Universe • ₹5,00,000 Base • ML Meta-Classifier Re-Ranker • 4-Bucket Classification (BUY NOW / PRE-BREAKOUT / WAIT PULLBACK / AVOID) • T1 +1.5R (BE Trail) / T2 +3.0R
+            Dynamic Chartink Screener Universe • 24-Thread Incremental Gap-Fill OHLCV Sync • Telegram Cloud Vault • Strict Market-Hours Trading Gate (09:15–15:30 IST)
           </p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-center">
@@ -261,8 +266,14 @@
       </div>
 
 
-      <!-- KPI Metric Cards Grid -->
-      <div class="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+      <!-- KPI Metric Cards Grid (6 Cards including Chartink Live Universe Counter) -->
+      <div class="grid grid-cols-2 lg:grid-cols-6 gap-3.5">
+        <div class="bg-slate-900/80 border border-cyan-500/30 rounded-xl p-4">
+          <div class="text-[11px] font-medium text-cyan-400 uppercase tracking-wider">Chartink Fetched</div>
+          <div id="p1-kpi-chartink" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">0 Stocks</div>
+          <div id="p1-kpi-analyzed" class="text-[10px] text-slate-400 mt-1 font-mono">Liquid Analyzed: 0</div>
+        </div>
+
         <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
           <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Portfolio Equity</div>
           <div id="p1-kpi-equity" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">₹5,00,000</div>
@@ -289,7 +300,7 @@
           <div id="p1-kpi-pf" class="text-[10px] text-slate-400 mt-1 font-mono">Profit Factor: 0.00</div>
         </div>
 
-        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 col-span-2 lg:col-span-1">
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
           <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Expectancy (R)</div>
           <div id="p1-kpi-expectancy" class="text-lg sm:text-2xl font-mono font-bold text-cyan-400 mt-1">+0.00 R</div>
           <div id="p1-kpi-ratio" class="text-[10px] text-slate-400 mt-1 font-mono">Avg Win: +0.0R | Loss: -0.0R</div>
@@ -316,6 +327,7 @@
             <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
               <tr>
                 <th class="p-3.5">Symbol</th>
+                <th class="p-3.5">Entry Date & Time (IST)</th>
                 <th class="p-3.5">Entry / LTP</th>
                 <th class="p-3.5">Stop Loss</th>
                 <th class="p-3.5">T1 (1.5R) / T2 (3.0R)</th>
@@ -328,7 +340,7 @@
             </thead>
             <tbody id="p1-positions-tbody" class="divide-y divide-slate-800/60 font-mono">
               <tr>
-                <td colspan="9" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 1. Run a scan to discover setups.</td>
+                <td colspan="10" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 1. Run a scan during market hours (09:15–15:30 IST).</td>
               </tr>
             </tbody>
           </table>
@@ -486,6 +498,7 @@
             <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
               <tr>
                 <th class="p-3.5">Symbol</th>
+                <th class="p-3.5">Entry Date & Time (IST)</th>
                 <th class="p-3.5">Entry / LTP</th>
                 <th class="p-3.5">Current Stop</th>
                 <th class="p-3.5">+2R Trailing Target</th>
@@ -498,7 +511,7 @@
             </thead>
             <tbody id="p2-positions-tbody" class="divide-y divide-slate-800/60 font-mono">
               <tr>
-                <td colspan="9" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 2.</td>
+                <td colspan="10" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 2.</td>
               </tr>
             </tbody>
           </table>
@@ -609,20 +622,25 @@
     <div id="tab-history" class="tab-content hidden space-y-6">
       
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
-        <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
           <div>
             <h2 class="text-lg font-bold text-white flex items-center gap-2">
               <i data-lucide="history" class="w-5 h-5 text-amber-400"></i>
-              <span>Execution History & Closed Trades</span>
+              <span>Execution History & Closed Trades (Full IST Timestamps)</span>
             </h2>
-            <p class="text-xs text-slate-400">Complete historical audit trail of exits, R-multiples, and return percentages.</p>
+            <p class="text-xs text-slate-400">Complete historical audit trail of entries, exits, R-multiples, and return percentages.</p>
           </div>
           
-          <select id="history-filter-select" onchange="loadHistoryData()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200">
-            <option value="ALL">All Portfolios</option>
-            <option value="INSTITUTIONAL_6PILLAR">Portfolio 1 (Institutional)</option>
-            <option value="NIFTY500_MOMENTUM">Portfolio 2 (Nifty 500)</option>
-          </select>
+          <div class="flex items-center gap-2">
+            <select id="history-filter-select" onchange="loadHistoryData()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200">
+              <option value="ALL">All Portfolios</option>
+              <option value="INSTITUTIONAL_6PILLAR">Portfolio 1 (Institutional)</option>
+              <option value="NIFTY500_MOMENTUM">Portfolio 2 (Nifty 500)</option>
+            </select>
+            <button onclick="resetPortfolioModal()" class="px-3 py-2 rounded-lg bg-rose-950/60 hover:bg-rose-900/70 border border-rose-800 text-rose-300 text-xs font-semibold transition">
+              Reset PnL to ₹0
+            </button>
+          </div>
         </div>
 
         <div class="overflow-x-auto custom-scroll mt-4">
@@ -631,6 +649,8 @@
               <tr>
                 <th class="p-3">Symbol</th>
                 <th class="p-3">Portfolio</th>
+                <th class="p-3">Entry Date & Time (IST)</th>
+                <th class="p-3">Exit Date & Time (IST)</th>
                 <th class="p-3">Entry Price</th>
                 <th class="p-3">Exit Price</th>
                 <th class="p-3">Shares</th>
@@ -638,13 +658,12 @@
                 <th class="p-3">Return %</th>
                 <th class="p-3">R-Multiple</th>
                 <th class="p-3">Hold Days</th>
-                <th class="p-3">Exit Reason</th>
-                <th class="p-3 text-right">Date</th>
+                <th class="p-3 text-right">Exit Reason</th>
               </tr>
             </thead>
             <tbody id="history-tbody" class="divide-y divide-slate-800/60 font-mono">
               <tr>
-                <td colspan="11" class="p-8 text-center text-slate-500 font-sans">No trade history recorded yet.</td>
+                <td colspan="12" class="p-8 text-center text-slate-500 font-sans">No trade history recorded yet.</td>
               </tr>
             </tbody>
           </table>
@@ -654,18 +673,63 @@
     </div>
 
     <!-- ================================================================= -->
-    <!-- TAB 5: SCHEDULER & AUTOMATION MONITOR                             -->
+    <!-- TAB 5: CLOUD VAULT, SCHEDULER & AUTOMATION MONITOR                -->
     <!-- ================================================================= -->
     <div id="tab-scheduler" class="tab-content hidden space-y-6">
+
+      <!-- Telegram Cloud Vault & Disaster Recovery Panel -->
+      <div class="bg-slate-900/80 border border-cyan-500/40 rounded-2xl p-5 shadow-lg">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="cloud" class="w-5 h-5 text-cyan-400"></i>
+              <span>Telegram Cloud Vault (Trade DB + 2-Yr OHLCV Cache Persistence)</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">
+              Protects against Render container restarts: automatically backs up & restores both SQLite Trade History and 2-Year Historical OHLCV DataFrames with Smart Incremental Gap-Filling.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="syncVaultToCloud()" class="px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-black font-semibold text-xs flex items-center gap-1.5 transition">
+              <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i>
+              <span>Sync DB + OHLCV to Cloud</span>
+            </button>
+            <button onclick="restoreVaultFromCloud()" class="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition">
+              <i data-lucide="download-cloud" class="w-3.5 h-3.5 text-emerald-400"></i>
+              <span>Restore from Cloud</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 text-xs font-mono">
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+            <div class="text-slate-400 text-[11px] uppercase">Telegram Bot Status</div>
+            <div id="vault-bot-status" class="text-emerald-400 font-bold text-sm mt-1">ONLINE (Configured)</div>
+            <div id="vault-chat-id" class="text-slate-500 text-[11px] mt-1">Chat ID: 8183911891</div>
+          </div>
+
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+            <div class="text-slate-400 text-[11px] uppercase">OHLCV Historical Cloud Cache</div>
+            <div id="vault-ohlcv-count" class="text-cyan-400 font-bold text-sm mt-1">0 NSE Tickers Cached</div>
+            <div id="vault-ohlcv-date" class="text-slate-400 text-[11px] mt-1">Latest Bar: -- | Incremental Gap-Fill Active</div>
+          </div>
+
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+            <div class="text-slate-400 text-[11px] uppercase">Last SQLite Trade DB Cloud Sync</div>
+            <div id="vault-db-time" class="text-violet-400 font-bold text-sm mt-1">--</div>
+            <div id="vault-db-file" class="text-slate-400 text-[11px] mt-1">Auto-syncs on every trade & scan</div>
+          </div>
+        </div>
+      </div>
       
       <!-- Automated Timeline Card -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
         <h2 class="text-lg font-bold text-white flex items-center gap-2 mb-2">
           <i data-lucide="clock" class="w-5 h-5 text-blue-400"></i>
-          <span>Automated Trading Day Schedule</span>
+          <span>Automated Trading Day Schedule & Strict Market-Hours Gate</span>
         </h2>
         <p class="text-xs text-slate-400 mb-6">
-          Precision execution timed around NSE Indian market liquidity dynamics:
+          Precision execution timed around NSE Indian market liquidity dynamics (Strict Trading Gate: 09:15 AM – 03:30 PM IST):
         </p>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -695,15 +759,15 @@
             </p>
           </div>
 
-          <!-- Holiday Calendar Check -->
-          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 relative overflow-hidden">
+          <!-- Strict Market Hours Gate -->
+          <div class="bg-slate-950/70 border border-emerald-800/40 rounded-xl p-4 relative overflow-hidden">
             <div class="flex items-center justify-between mb-2">
-              <span class="text-xs font-mono font-bold text-amber-400">NSE CALENDAR</span>
-              <span class="px-2 py-0.5 rounded text-[10px] bg-amber-900/50 text-amber-300 font-mono">AUTOMATIC</span>
+              <span class="text-xs font-mono font-bold text-emerald-400">09:15 – 15:30 IST</span>
+              <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-900/50 text-emerald-300 font-mono">STRICT GATE</span>
             </div>
-            <h4 class="font-bold text-white text-sm">Holiday & Weekend Guard</h4>
+            <h4 class="font-bold text-white text-sm">Strict Market-Hours Execution Gate</h4>
             <p class="text-xs text-slate-400 mt-1">
-              Strictly enforces official NSE Exchange holiday schedule. Prevents erroneous off-market requests and safely sleeps until the next active trading session.
+              Hard execution lock: Trade entries and exits are strictly permitted ONLY during live NSE market hours (09:15 AM – 03:30 PM IST, Mon–Fri excluding NSE holidays).
             </p>
           </div>
         </div>
@@ -897,7 +961,7 @@
     }
 
     // -------------------------------------------------------------------------
-    // SYSTEM STATUS & CALENDAR
+    // SYSTEM STATUS, TRADING GATE & TELEGRAM VAULT TELEMETRY
     // -------------------------------------------------------------------------
     async function loadSystemStatus() {
       const res = await fetch('/api/status');
@@ -907,12 +971,24 @@
       // Market Status
       const mStatus = data.market_status || {};
       const statusText = mStatus.message || "Market Closed";
-      const statusPill = document.getElementById('market-status-pill');
       const statusEl = document.getElementById('market-status-text');
       const mobStatusEl = document.getElementById('mobile-market-status');
 
       if (statusEl) statusEl.innerText = statusText;
       if (mobStatusEl) mobStatusEl.innerHTML = `<span class="w-2 h-2 rounded-full ${mStatus.is_open ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse"></span><span>${statusText}</span>`;
+
+      // Strict Market-Hours Trading Gate Pill
+      const gatePill = document.getElementById('trading-gate-pill');
+      const gateText = document.getElementById('trading-gate-text');
+      if (gateText) {
+        if (mStatus.can_trade) {
+          gateText.innerText = "GATE OPEN (09:15-15:30 IST)";
+          if (gatePill) gatePill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-xs font-mono text-emerald-300";
+        } else {
+          gateText.innerText = "GATE LOCKED (NO TRADES OUTSIDE 09:15-15:30)";
+          if (gatePill) gatePill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/60 border border-rose-500/40 text-xs font-mono text-rose-300";
+        }
+      }
 
       // Next Scan
       const nextScan = data.next_scan || {};
@@ -921,6 +997,17 @@
       const mobNextEl = document.getElementById('mobile-next-scan');
       if (nextScanEl) nextScanEl.innerText = `Next: ${nextText}`;
       if (mobNextEl) mobNextEl.innerText = `Next: ${nextText}`;
+
+      // Telegram Cloud Vault Telemetry
+      const v = data.telegram_vault || {};
+      const vBot = document.getElementById('vault-bot-status');
+      const vCount = document.getElementById('vault-ohlcv-count');
+      const vDate = document.getElementById('vault-ohlcv-date');
+      const vDbTime = document.getElementById('vault-db-time');
+      if (vBot) vBot.innerText = v.enabled ? "CONNECTED (Auto-Restore Ready)" : "DISABLED";
+      if (vCount) vCount.innerText = `${v.local_ohlcv_files || 0} Stocks`;
+      if (vDate) vDate.innerText = `Latest Bar: ${v.latest_bar_date || 'N/A'}`;
+      if (vDbTime) vDbTime.innerText = v.last_db_backup_ist || "Synced";
     }
 
     // -------------------------------------------------------------------------
@@ -937,7 +1024,12 @@
         document.getElementById('badge-p1-count').innerText = sum.active_positions || 0;
         document.getElementById('p1-active-count-tag').innerText = `${sum.active_positions || 0} Open`;
         document.getElementById('p1-kpi-risk').innerText = `Open Risk: ₹${(st.open_risk || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-        
+
+        const chartinkEl = document.getElementById('p1-kpi-chartink');
+        const analyzedEl = document.getElementById('p1-kpi-analyzed');
+        if (chartinkEl) chartinkEl.innerText = `${sum.chartink_fetched_count || 0} Stocks`;
+        if (analyzedEl) analyzedEl.innerText = `Liquid Analyzed: ${sum.universe_size || 0}`;
+
         const pnl = st.total_realized_pnl || 0;
         const pnlEl = document.getElementById('p1-kpi-realized');
         pnlEl.innerText = `${pnl >= 0 ? '+' : ''}₹${pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
@@ -983,7 +1075,7 @@
       if (!tbody) return;
 
       if (!positions || positions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 1. Run a scan to find setups.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 1. Trades execute strictly during NSE market hours (09:15 AM – 03:30 PM IST).</td></tr>`;
         return;
       }
 
@@ -999,6 +1091,7 @@
               <span>${p.symbol}</span>
               <span class="text-[10px] px-1 rounded bg-slate-800 text-slate-400 font-normal">${p.sector || 'NSE'}</span>
             </td>
+            <td class="p-3.5 text-slate-300 text-[11px] font-mono">${p.entry_date || '-'}</td>
             <td class="p-3.5">
               <div>₹${p.entry_price.toFixed(2)}</div>
               <div class="text-[11px] text-slate-400">LTP: ₹${(p.current_price || p.entry_price).toFixed(2)}</div>
@@ -1113,7 +1206,6 @@
 
         // Regime banner
         const isBull = (sum.macro_regime || "").includes("BULL");
-        const rBanner = document.getElementById('p2-regime-banner');
         const rText = document.getElementById('p2-regime-text');
         const rDesc = document.getElementById('p2-regime-desc');
         const rIcon = document.getElementById('p2-regime-icon-box');
@@ -1125,7 +1217,7 @@
         if (isBull) {
           if (rIcon) rIcon.className = "w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center";
           if (rText) rText.className = "text-emerald-400 font-mono font-bold";
-          if (rDesc) rDesc.innerText = "Benchmark Nifty 500 is trading comfortably above its 50-day EMA. New long setups permitted.";
+          if (rDesc) rDesc.innerText = "Benchmark Nifty 500 is trading comfortably above its 50-day EMA. New long setups permitted (09:15-15:30 IST).";
         } else {
           if (rIcon) rIcon.className = "w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center";
           if (rText) rText.className = "text-rose-400 font-mono font-bold";
@@ -1153,7 +1245,7 @@
       if (!tbody) return;
 
       if (!positions || positions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 2.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 2 (PnL: ₹0.00). Trades execute strictly during NSE market hours (09:15 AM – 03:30 PM IST).</td></tr>`;
         return;
       }
 
@@ -1169,6 +1261,7 @@
         return `
           <tr class="hover:bg-slate-800/30 transition">
             <td class="p-3.5 font-bold text-white">${p.symbol}</td>
+            <td class="p-3.5 text-slate-300 text-[11px] font-mono">${p.entry_date || '-'}</td>
             <td class="p-3.5">
               <div>₹${p.entry_price.toFixed(2)}</div>
               <div class="text-[11px] text-slate-400">LTP: ₹${(p.current_price || p.entry_price).toFixed(2)}</div>
@@ -1277,7 +1370,7 @@
     }
 
     // -------------------------------------------------------------------------
-    // TRADE HISTORY
+    // TRADE HISTORY (FULL DATE + TIME TIMESTAMPS)
     // -------------------------------------------------------------------------
     async function loadHistoryData() {
       const pFilter = document.getElementById('history-filter-select')?.value || "ALL";
@@ -1290,7 +1383,7 @@
       if (!tbody) return;
 
       if (history.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" class="p-8 text-center text-slate-500 font-sans">No closed trades recorded yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-500 font-sans">No closed trades recorded yet (PnL: ₹0.00).</td></tr>`;
         return;
       }
 
@@ -1303,6 +1396,7 @@
           <tr class="hover:bg-slate-800/30 transition">
             <td class="p-3 font-bold text-white">${t.symbol}</td>
             <td class="p-3 text-[11px] text-slate-400">${t.portfolio_type.includes('NIFTY') ? 'P2 (Nifty 500)' : 'P1 (6-Pillar)'}</td>
+            <td class="p-3 text-slate-300 text-[11px] font-mono">${t.entry_date || '-'}</td>
             <td class="p-3">₹${t.entry_price.toFixed(2)}</td>
             <td class="p-3">₹${t.exit_price.toFixed(2)}</td>
             <td class="p-3">${t.quantity}</td>
@@ -1313,7 +1407,7 @@
             </td>
             <td class="p-3">${t.hold_days || 1}d</td>
             <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">${t.exit_reason}</span></td>
-            <td class="p-3 text-right text-slate-400 text-[11px]">${t.exit_date ? t.exit_date.substring(0, 10) : ''}</td>
+            <td class="p-3 text-right text-slate-300 text-[11px] font-mono">${t.exit_date || '-'}</td>
           </tr>
         `;
       }).join('');
@@ -1372,6 +1466,11 @@
         const logFeedEl = document.getElementById('scan-log-feed');
         const pulseDot = document.getElementById('scan-pulse-dot');
         const btnP1Text = document.getElementById('btn-p1-scan-text');
+        const chartinkKpiEl = document.getElementById('p1-kpi-chartink');
+
+        if (prog.chartink_count > 0 && chartinkKpiEl) {
+          chartinkKpiEl.innerText = `${prog.chartink_count} Stocks`;
+        }
 
         if (prog.is_running) {
           wasScanRunning = true;
@@ -1386,7 +1485,8 @@
           if (barEl) barEl.style.width = `${prog.percent || 5}%`;
           if (counterEl) {
             if (prog.stocks_total > 0) {
-              counterEl.innerText = `${prog.stocks_done || 0} / ${prog.stocks_total} Stocks`;
+              const gapInfo = prog.gap_filled > 0 ? ` (${prog.gap_filled} gap-filled, ${prog.cache_hits || 0} cached)` : '';
+              counterEl.innerText = `${prog.stocks_done || 0} / ${prog.stocks_total} Stocks${gapInfo}`;
             } else {
               counterEl.innerText = "Connecting to Screener...";
             }
@@ -1470,11 +1570,12 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ symbol: symbol, exit_price: price, exit_reason: 'MANUAL_UI_EXIT' })
         });
-        if (res.ok) {
+        const data = await res.json();
+        if (res.ok && data.status === 'closed') {
           showToast(`Position in ${symbol} closed successfully.`, 'success');
           refreshAllData();
         } else {
-          showToast("Failed to close position.", 'error');
+          showToast(data.message || data.detail || "Blocked by Strict Market-Hours Trading Gate (09:15-15:30 IST).", 'error');
         }
       } catch (e) {
         showToast(`Error: ${e.message}`, 'error');
@@ -1485,6 +1586,55 @@
       showToast(`Executing order for ${symbol} (${shares} shares @ ₹${entry})...`, 'info');
       // Triggers scan with auto_execute
       triggerScan(pType.includes('NIFTY') ? 'NIFTY500' : 'INSTITUTIONAL');
+    }
+
+    // -------------------------------------------------------------------------
+    // TELEGRAM CLOUD VAULT & PORTFOLIO PNL RESET ACTIONS
+    // -------------------------------------------------------------------------
+    async function syncVaultToCloud() {
+      showToast("Uploading SQLite Trade DB & 2-Year OHLCV Cache to Telegram Cloud Vault...", "info");
+      try {
+        const res = await fetch('/api/vault/sync', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message || "Telegram Cloud Vault sync triggered!", "success");
+        setTimeout(loadSystemStatus, 4000);
+      } catch (e) {
+        showToast(`Vault sync error: ${e.message}`, "error");
+      }
+    }
+
+    async function restoreVaultFromCloud() {
+      if (!confirm("Restore SQLite Trade DB and OHLCV Historical Cache from Telegram Cloud Vault?")) return;
+      showToast("Restoring DB & OHLCV Cache from Telegram Cloud Vault...", "info");
+      try {
+        const res = await fetch('/api/vault/restore', { method: 'POST' });
+        const data = await res.json();
+        showToast(`Restored! DB: ${data.db_restored ? 'YES' : 'NO'}, OHLCV Cache: ${data.ohlcv_restored ? 'YES' : 'NO'}`, "success");
+        await refreshAllData();
+      } catch (e) {
+        showToast(`Vault restore error: ${e.message}`, "error");
+      }
+    }
+
+    async function resetPortfolioModal(pType) {
+      const label = pType ? pType : "ALL PORTFOLIOS (P1 & P2)";
+      if (!confirm(`Are you sure you want to reset ${label} PnL & trade history to ₹0.00 and sync to Telegram Cloud Vault?`)) return;
+      try {
+        const res = await fetch('/api/portfolio/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ portfolio_type: pType })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(data.message || "Portfolio PnL reset to ₹0.00!", "success");
+          await refreshAllData();
+        } else {
+          showToast("Failed to reset portfolio.", "error");
+        }
+      } catch (e) {
+        showToast(`Reset error: ${e.message}`, "error");
+      }
     }
   </script>
 </body>

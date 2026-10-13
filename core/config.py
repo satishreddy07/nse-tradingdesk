@@ -38,3 +38,16 @@ SCHEDULE_MORNING_HOUR = 10
 SCHEDULE_MORNING_MINUTE = 20
 SCHEDULE_AFTERNOON_HOUR = 15
 SCHEDULE_AFTERNOON_MINUTE = 5
+
+# Telegram Cloud Vault Config (Persists Trade DB + OHLCV Historical Cache across Render restarts)
+TELEGRAM_BOT_TOKEN = os.environ.get(
+    "TELEGRAM_BOT_TOKEN",
+    "8887427921:AAHS4Nq3BtxPW6vZnQ7z3crpPCprVHbJsMI"
+)
+TELEGRAM_CHAT_ID = os.environ.get(
+    "TELEGRAM_CHAT_ID",
+    "8183911891"
+)
+VAULT_MANIFEST_PATH = DATA_DIR / "vault_manifest.json"
+VAULT_CONFIG_PATH = DATA_DIR / "vault_config.json"
+

@@ -153,7 +153,7 @@ class StateEngine:
                 logger.info("Database schemas verified and ready.")
 
     # --------------------------------------------------------------------------
-    # ACTIVE POSITIONS OPERATIONS
+    # ACTIVE POSITIONS OPERATIONS (WITH STRICT MARKET-HOURS TRADING GATE)
     # --------------------------------------------------------------------------
     def open_position(
         self,
@@ -173,10 +173,21 @@ class StateEngine:
         entry_metrics: Optional[Dict[str, Any]] = None,
         trade_features: Optional[Dict[str, Any]] = None
     ) -> bool:
-        """Opens a new position in the database."""
+        """
+        Opens a new position in the database.
+        STRICT TRADING GATE: Blocks order execution outside NSE trading hours (09:15–15:30 IST, Mon–Fri).
+        """
+        from core.market_calendar import NSEMarketCalendar
+        from core.telegram_vault import telegram_vault
+
+        can_trade, gate_reason = NSEMarketCalendar.can_execute_trades()
+        if not can_trade:
+            logger.warning(f"🔒 [Strict Trading Gate] Blocked BUY order for {symbol}: {gate_reason}")
+            return False
+
         sym_clean = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
         p_type = self._normalize_portfolio_type(portfolio_type)
-        now_str = format_ist()
+        now_str = format_ist()  # Full timestamp: YYYY-MM-DD HH:MM:SS IST
 
         metrics_str = json.dumps(entry_metrics or {})
         features_str = json.dumps(trade_features or {})
@@ -202,7 +213,22 @@ class StateEngine:
                         metrics_str, features_str, now_str
                     ))
                     conn.commit()
-                    logger.info(f"Opened position for {sym_clean} ({quantity} shs @ ₹{entry_price:.2f}) in {p_type}")
+                    logger.info(f"Opened position for {sym_clean} ({quantity} shs @ ₹{entry_price:.2f}) in {p_type} at {now_str}")
+
+                    # Sync to Telegram Cloud Vault
+                    telegram_vault.send_alert_and_sync(
+                        title=f"🚀 NEW TRADE OPENED: {sym_clean} ({p_type})",
+                        message=(
+                            f"<b>Symbol:</b> <code>{sym_clean}</code>\n"
+                            f"<b>Portfolio:</b> {p_type}\n"
+                            f"<b>Entry Price:</b> ₹{entry_price:,.2f} × {quantity} shs\n"
+                            f"<b>Stop Loss:</b> ₹{stop_loss:,.2f} | <b>Target 1:</b> ₹{target:,.2f}\n"
+                            f"<b>Entry Timestamp:</b> {now_str}\n"
+                            f"<b>Setup:</b> {entry_reason or notes}"
+                        ),
+                        sync_db=True,
+                        sync_ohlcv=False
+                    )
                     return True
                 except Exception as e:
                     logger.error(f"Error opening position for {sym_clean}: {e}")
@@ -274,11 +300,24 @@ class StateEngine:
         symbol: str,
         exit_price: float,
         exit_reason: str,
-        notes: str = ""
+        notes: str = "",
+        bypass_gate: bool = False
     ) -> Optional[Dict[str, Any]]:
-        """Closes an active position and logs it to trade_history."""
+        """
+        Closes an active position and logs it to trade_history with full IST timestamps.
+        STRICT TRADING GATE: Blocks exit execution outside NSE trading hours unless bypass_gate=True.
+        """
+        from core.market_calendar import NSEMarketCalendar
+        from core.telegram_vault import telegram_vault
+
+        if not bypass_gate:
+            can_trade, gate_reason = NSEMarketCalendar.can_execute_trades()
+            if not can_trade:
+                logger.warning(f"🔒 [Strict Trading Gate] Blocked EXIT order for {symbol}: {gate_reason}")
+                return None
+
         sym_clean = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
-        now_str = format_ist()
+        now_str = format_ist()  # Full timestamp: YYYY-MM-DD HH:MM:SS IST
 
         with self._lock:
             with self._get_connection() as conn:
@@ -309,7 +348,7 @@ class StateEngine:
                 except Exception:
                     hold_days = int(pos.get("hold_days", 1) or 1)
 
-                # Insert into trade_history
+                # Insert into trade_history with full timestamps
                 conn.execute("""
                 INSERT INTO trade_history (
                     symbol, portfolio_type, entry_price, exit_price, quantity, pnl,
@@ -335,11 +374,46 @@ class StateEngine:
                     "pnl": round(total_pnl, 2),
                     "r_multiple": r_multiple,
                     "return_pct": return_pct,
+                    "entry_date": entry_dt_str,
+                    "exit_date": now_str,
                     "exit_reason": exit_reason,
                     "hold_days": hold_days
                 }
-                logger.info(f"Closed {sym_clean} in {p_type}: PnL ₹{total_pnl:+.2f} ({r_multiple:+.2f}R) Reason: {exit_reason}")
+                logger.info(f"Closed {sym_clean} in {p_type} at {now_str}: PnL ₹{total_pnl:+.2f} ({r_multiple:+.2f}R) Reason: {exit_reason}")
+
+                # Sync to Telegram Cloud Vault
+                telegram_vault.send_alert_and_sync(
+                    title=f"🏁 TRADE CLOSED: {sym_clean} ({exit_reason})",
+                    message=(
+                        f"<b>Symbol:</b> <code>{sym_clean}</code> ({p_type})\n"
+                        f"<b>Entry:</b> ₹{entry_px:,.2f} ({entry_dt_str})\n"
+                        f"<b>Exit:</b> ₹{exit_price:,.2f} ({now_str})\n"
+                        f"<b>Realized PnL:</b> ₹{total_pnl:+,.2f} ({r_multiple:+.2f}R | {return_pct:+.2f}%)\n"
+                        f"<b>Reason:</b> {exit_reason}"
+                    ),
+                    sync_db=True,
+                    sync_ohlcv=False
+                )
                 return trade_record
+
+    def reset_portfolio_trades(self, portfolio_type: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Resets active_positions and trade_history (either for a specific portfolio or all portfolios)
+        so Realized & Unrealized PnL start cleanly at ₹0.00.
+        """
+        with self._lock:
+            with self._get_connection() as conn:
+                if portfolio_type:
+                    p_type = self._normalize_portfolio_type(portfolio_type)
+                    conn.execute("DELETE FROM active_positions WHERE portfolio_type = ?", (p_type,))
+                    conn.execute("DELETE FROM trade_history WHERE portfolio_type = ?", (p_type,))
+                else:
+                    conn.execute("DELETE FROM active_positions")
+                    conn.execute("DELETE FROM trade_history")
+                conn.commit()
+        logger.info(f"Reset trades completed (portfolio={portfolio_type or 'ALL'}).")
+        return {"status": "SUCCESS", "portfolio": portfolio_type or "ALL", "timestamp": format_ist()}
+
 
     # --------------------------------------------------------------------------
     # TRADE HISTORY & PORTFOLIO METRICS
