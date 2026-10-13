@@ -74,63 +74,20 @@ class TelegramVaultManager:
         from execution.state_engine import state_engine
         state_engine.set_kv("vault_manifest", manifest)
 
-    def _pin_cloud_index(
-        self,
-        creds: Dict[str, Any],
-        master_file_id: str,
-        stocks_count: int,
-        latest_bar_date: str,
-        active_trades: int = 0,
-        closed_trades: int = 0,
-        note: str = ""
-    ) -> None:
-        """
-        Posts and pins a machine-readable `#VAULT_INDEX_JSON:{...}` message in the Telegram chat
-        so Render cold-boots can always discover the latest Single Master File ID via `getChat`.
-        """
-        if not master_file_id:
+    def _delete_telegram_message(self, creds: Dict[str, Any], message_id: Optional[int]) -> None:
+        if not message_id:
             return
         try:
-            payload = {
-                "master_file_id": master_file_id,
-                "db_file_id": master_file_id,
-                "stocks_count": stocks_count,
-                "latest_bar_date": latest_bar_date,
-                "active_trades": active_trades,
-                "closed_trades": closed_trades,
-                "note": note,
-                "updated_at": format_ist()
-            }
-            text = (
-                f"📌 <b>QUANT MASTER VAULT INDEX (DO NOT DELETE)</b>\n"
-                f"Single Master File ({stocks_count} Stocks OHLCV | {active_trades} Open Trades | {closed_trades} Closed Trades)\n"
-                f"Trigger: {note}\n"
-                f"<code>#VAULT_INDEX_JSON:{json.dumps(payload)}</code>"
+            requests.post(
+                f"https://api.telegram.org/bot{creds['bot_token']}/deleteMessage",
+                data={"chat_id": creds["chat_id"], "message_id": int(message_id)},
+                timeout=8
             )
-            resp = requests.post(
-                f"https://api.telegram.org/bot{creds['bot_token']}/sendMessage",
-                data={"chat_id": creds["chat_id"], "text": text, "parse_mode": "HTML"},
-                timeout=12
-            ).json()
-            if resp.get("ok"):
-                msg_id = resp["result"]["message_id"]
-                requests.post(
-                    f"https://api.telegram.org/bot{creds['bot_token']}/pinChatMessage",
-                    data={"chat_id": creds["chat_id"], "message_id": msg_id, "disable_notification": True},
-                    timeout=10
-                )
-        except Exception as e:
-            logger.debug(f"Could not pin vault index message: {e}")
+        except Exception:
+            pass
 
-    def fetch_cloud_index_from_telegram(self) -> Optional[Dict[str, Any]]:
-        """
-        Queries Telegram's live pinned message (`getChat` -> `pinned_message`) directly
-        so Telegram acts as the authoritative cloud source of truth across restarts.
-        """
-        creds = self.get_credentials()
-        if not creds["enabled"]:
-            return None
-
+    def _get_pinned_message_info(self, creds: Dict[str, Any]) -> Dict[str, Any]:
+        """Returns the currently pinned message object from Telegram (`getChat`)."""
         try:
             chat_resp = requests.get(
                 f"https://api.telegram.org/bot{creds['bot_token']}/getChat",
@@ -138,18 +95,46 @@ class TelegramVaultManager:
                 timeout=12
             ).json()
             if chat_resp.get("ok"):
-                pinned = chat_resp.get("result", {}).get("pinned_message", {})
-                text = pinned.get("text") or pinned.get("caption") or ""
-                if "#VAULT_INDEX_JSON:" in text:
-                    json_part = text.split("#VAULT_INDEX_JSON:", 1)[1].strip().split("\n")[0]
-                    parsed = json.loads(json_part)
-                    if isinstance(parsed, dict) and (parsed.get("master_file_id") or parsed.get("db_file_id")):
-                        return parsed
-                doc = pinned.get("document")
-                if doc and doc.get("file_id"):
-                    return {"master_file_id": doc["file_id"], "db_file_id": doc["file_id"]}
+                return chat_resp.get("result", {}).get("pinned_message", {}) or {}
         except Exception as e:
             logger.debug(f"Error inspecting Telegram pinned message: {e}")
+        return {}
+
+    def fetch_cloud_index_from_telegram(self) -> Optional[Dict[str, Any]]:
+        """
+        Queries Telegram's live pinned `quant_master_vault.db.gz` message (`getChat` -> `pinned_message`)
+        directly so Telegram acts as the authoritative cloud source of truth across restarts.
+        """
+        creds = self.get_credentials()
+        if not creds["enabled"]:
+            return None
+
+        pinned = self._get_pinned_message_info(creds)
+        if not pinned:
+            return None
+
+        doc = pinned.get("document") or {}
+        doc_fid = doc.get("file_id")
+        text = pinned.get("caption") or pinned.get("text") or ""
+
+        parsed: Dict[str, Any] = {}
+        if "#VAULT_INDEX_JSON:" in text:
+            try:
+                json_part = text.split("#VAULT_INDEX_JSON:", 1)[1].strip().split("\n")[0]
+                parsed = json.loads(json_part)
+            except Exception:
+                parsed = {}
+
+        if doc_fid:
+            parsed["master_file_id"] = doc_fid
+            parsed["db_file_id"] = doc_fid
+            parsed["message_id"] = pinned.get("message_id")
+            return parsed
+
+        if parsed.get("master_file_id") or parsed.get("db_file_id"):
+            parsed["message_id"] = pinned.get("message_id")
+            return parsed
+
         return None
 
     def discover_cloud_master_file_id(self) -> Optional[str]:
@@ -170,13 +155,14 @@ class TelegramVaultManager:
         return None
 
     # --------------------------------------------------------------------------
-    # SINGLE MASTER FILE BACKUP & RESTORE
+    # SINGLE MASTER FILE BACKUP & RESTORE (IN-PLACE UPDATE ON TELEGRAM)
     # --------------------------------------------------------------------------
     def backup_master_file_to_cloud(self, custom_note: str = "Auto Master File Sync") -> Dict[str, Any]:
         """
         Creates an ACID-safe SQLite snapshot of the Single Master File (`data/swing_trades.db`),
-        compresses it with gzip (`quant_master_vault.db.gz`), uploads it to Telegram Cloud,
-        and pins the index message.
+        compresses it with gzip (`quant_master_vault.db.gz`), and UPDATES THE EXISTING PINNED
+        MASTER FILE IN-PLACE in Telegram using `editMessageMedia` (or replaces & deletes the old
+        message if >48h old), ensuring ONLY ONE `quant_master_vault.db.gz` file ever exists in Telegram!
         """
         from execution.state_engine import state_engine
 
@@ -198,8 +184,9 @@ class TelegramVaultManager:
                 closed_cnt = len(state_engine.get_trade_history(limit=5000))
                 ts_str = format_ist()
 
-                # Pre-update manifest timestamp inside SQLite before taking snapshot so restored DB knows its own timestamp
+                # Pre-update manifest timestamp inside SQLite before taking snapshot
                 manifest = self.get_manifest()
+                prev_msg_id = (manifest.get("last_master_backup") or {}).get("message_id")
                 pre_record = {
                     "status": "SUCCESS",
                     "filename": "quant_master_vault.db.gz",
@@ -230,32 +217,87 @@ class TelegramVaultManager:
 
                 size_kb = round(tmp_gz.stat().st_size / 1024.0, 1)
 
+                index_meta = {
+                    "stocks_count": stocks_cnt,
+                    "latest_bar_date": latest_bar,
+                    "active_trades": active_cnt,
+                    "closed_trades": closed_cnt,
+                    "note": custom_note,
+                    "updated_at": ts_str
+                }
+
                 caption = (
-                    f"🏛️ <b>QUANT SINGLE MASTER VAULT</b>\n"
-                    f"📝 <b>Trigger:</b> {custom_note}\n"
+                    f"📌 <b>QUANT SINGLE MASTER VAULT (DO NOT DELETE)</b>\n"
+                    f"📝 <b>Last Update:</b> {custom_note}\n"
                     f"📊 <b>Trades:</b> {active_cnt} Active | {closed_cnt} Closed\n"
-                    f"📦 <b>OHLCV Stocks in Master DB:</b> {stocks_cnt} stocks (Latest: {latest_bar})\n"
-                    f"💾 <b>Compressed Master Size:</b> {size_kb} KB\n"
-                    f"🕒 <b>Timestamp:</b> {ts_str}\n"
-                    f"<code>#QUANT_MASTER_VAULT</code>"
+                    f"📦 <b>OHLCV Universe:</b> {stocks_cnt} Stocks (Latest Bar: {latest_bar})\n"
+                    f"💾 <b>Master Size:</b> {size_kb} KB | 🕒 <b>Synced:</b> {ts_str}\n"
+                    f"<code>#VAULT_INDEX_JSON:{json.dumps(index_meta)}</code>"
                 )
 
-                with open(tmp_gz, "rb") as doc_file:
-                    resp = requests.post(
-                        f"https://api.telegram.org/bot{creds['bot_token']}/sendDocument",
-                        data={"chat_id": creds["chat_id"], "caption": caption, "parse_mode": "HTML"},
-                        files={"document": ("quant_master_vault.db.gz", doc_file, "application/gzip")},
-                        timeout=90
-                    ).json()
+                # Check if we already have a pinned document message in Telegram to update in-place!
+                pinned = self._get_pinned_message_info(creds)
+                pinned_msg_id = pinned.get("message_id") or prev_msg_id
+                pinned_has_doc = bool(pinned.get("document"))
 
-                if not resp.get("ok"):
-                    err = resp.get("description", "Unknown Telegram error")
-                    logger.warning(f"Telegram Master Vault upload failed: {err}")
-                    return {"status": "ERROR", "message": err}
+                resp = None
+                updated_in_place = False
+
+                if pinned_msg_id and pinned_has_doc:
+                    media_payload = json.dumps({
+                        "type": "document",
+                        "media": "attach://document",
+                        "caption": caption,
+                        "parse_mode": "HTML"
+                    })
+                    with open(tmp_gz, "rb") as doc_file:
+                        edit_resp = requests.post(
+                            f"https://api.telegram.org/bot{creds['bot_token']}/editMessageMedia",
+                            data={
+                                "chat_id": creds["chat_id"],
+                                "message_id": int(pinned_msg_id),
+                                "media": media_payload
+                            },
+                            files={"document": ("quant_master_vault.db.gz", doc_file, "application/gzip")},
+                            timeout=90
+                        ).json()
+                    if edit_resp.get("ok"):
+                        resp = edit_resp
+                        updated_in_place = True
+
+                # If no pinned document existed yet (or edit window expired), send once, pin it, and delete old message
+                if not updated_in_place:
+                    with open(tmp_gz, "rb") as doc_file:
+                        resp = requests.post(
+                            f"https://api.telegram.org/bot{creds['bot_token']}/sendDocument",
+                            data={"chat_id": creds["chat_id"], "caption": caption, "parse_mode": "HTML"},
+                            files={"document": ("quant_master_vault.db.gz", doc_file, "application/gzip")},
+                            timeout=90
+                        ).json()
+
+                    if not resp or not resp.get("ok"):
+                        err = (resp or {}).get("description", "Unknown Telegram error")
+                        logger.warning(f"Telegram Master Vault upload failed: {err}")
+                        return {"status": "ERROR", "message": err}
+
+                    new_msg_id = resp["result"]["message_id"]
+                    requests.post(
+                        f"https://api.telegram.org/bot{creds['bot_token']}/pinChatMessage",
+                        data={"chat_id": creds["chat_id"], "message_id": new_msg_id, "disable_notification": True},
+                        timeout=10
+                    )
+                    # Delete previous message so only ONE master file remains in Telegram
+                    if pinned_msg_id and int(pinned_msg_id) != int(new_msg_id):
+                        self._delete_telegram_message(creds, int(pinned_msg_id))
+                    if prev_msg_id and int(prev_msg_id) not in (int(new_msg_id), int(pinned_msg_id or 0)):
+                        self._delete_telegram_message(creds, int(prev_msg_id))
 
                 file_id = resp["result"]["document"]["file_id"]
+                msg_id = resp["result"]["message_id"]
                 record = {
                     "status": "SUCCESS",
+                    "mode": "UPDATED_IN_PLACE" if updated_in_place else "CREATED_AND_PINNED",
+                    "message_id": msg_id,
                     "file_id": file_id,
                     "filename": "quant_master_vault.db.gz",
                     "stocks_count": stocks_cnt,
@@ -276,18 +318,9 @@ class TelegramVaultManager:
                 manifest["history"] = hist[:25]
                 self._save_manifest(manifest)
 
-                self._pin_cloud_index(
-                    creds=creds,
-                    master_file_id=file_id,
-                    stocks_count=stocks_cnt,
-                    latest_bar_date=latest_bar,
-                    active_trades=active_cnt,
-                    closed_trades=closed_cnt,
-                    note=custom_note
-                )
                 logger.info(
-                    f"☁️ Single Master File backed up to Telegram Cloud "
-                    f"({stocks_cnt} stocks, {active_cnt} open trades, {closed_cnt} closed trades, {size_kb} KB)"
+                    f"☁️ Single Master File {'UPDATED IN-PLACE' if updated_in_place else 'PINNED'} in Telegram Cloud "
+                    f"(msg_id={msg_id}, {stocks_cnt} stocks, {active_cnt} open trades, {closed_cnt} closed trades, {size_kb} KB)"
                 )
                 return record
 
