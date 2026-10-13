@@ -466,9 +466,37 @@ class StateEngine:
         """
         Builds full Candlestick + Volume + EMA(20/50/200) + RSI14 + Trade Level lines (Entry, SL, T1, T2)
         and raw OHLCV data table from the Single Master File for any fetched or traded stock.
+        Automatically gap-fills/refreshes from Yahoo Finance if the stored bar is behind the latest
+        trading session or if NSE market hours are currently open.
         """
         sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
-        df, _ = self.get_ohlcv_df(sym)
+        df, age_hrs = self.get_ohlcv_df(sym)
+
+        try:
+            from engines.institutional_engine import DirectYahooFinanceFetcher
+            from core.market_calendar import NSEMarketCalendar
+            target_date = DirectYahooFinanceFetcher.get_latest_expected_bar_date()
+            is_mkt_open, _ = NSEMarketCalendar.can_execute_trades()
+
+            needs_live_sync = False
+            if df is None or df.empty:
+                needs_live_sync = True
+            else:
+                last_idx = df.index[-1]
+                last_dt = last_idx.date() if hasattr(last_idx, "date") else pd.Timestamp(last_idx).date()
+                if last_dt < target_date or (is_mkt_open and age_hrs > 0.02):
+                    needs_live_sync = True
+
+            if needs_live_sync:
+                fetcher = DirectYahooFinanceFetcher(max_workers=4)
+                _, refreshed_df, _ = fetcher.fetch_or_gapfill_ticker(
+                    sym, target_date=target_date, is_market_open=is_mkt_open, persist_immediately=True
+                )
+                if refreshed_df is not None and not refreshed_df.empty:
+                    df = refreshed_df
+        except Exception as e:
+            logger.debug(f"Auto chart gapfill notice for {sym}: {e}")
+
         if df is None or df.empty:
             return {"status": "NOT_FOUND", "symbol": sym, "message": f"No OHLCV data in Master File for {sym}"}
 

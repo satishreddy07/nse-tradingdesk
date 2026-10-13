@@ -220,12 +220,41 @@ class DirectYahooFinanceFetcher:
             d = d - datetime.timedelta(days=1)
         return d
 
+    @staticmethod
+    def get_intraday_volume_multiplier(last_bar_date: Optional[datetime.date] = None) -> float:
+        """
+        Computes the intraday volume projection factor when evaluating a partial trading bar
+        during NSE regular market hours (09:15 AM – 03:30 PM IST, 375 total minutes).
+        Example:
+        - At 10:20 AM IST (65 mins elapsed): 375 / 65 = 5.77 -> capped at 4.5x pace
+        - At 03:05 PM IST (350 mins elapsed): 375 / 350 = 1.07x pace
+        - Outside market hours (completed daily bar): 1.0x
+        """
+        now = now_ist()
+        if last_bar_date is not None and last_bar_date != now.date():
+            return 1.0
+        if not NSEMarketCalendar.is_trading_day(now.date()):
+            return 1.0
+        t = now.time()
+        if datetime.time(9, 15) <= t <= datetime.time(15, 30):
+            open_dt = now.replace(hour=9, minute=15, second=0, microsecond=0)
+            elapsed_mins = max(15.0, (now - open_dt).total_seconds() / 60.0)
+            return min(4.5, max(1.0, 375.0 / elapsed_mins))
+        return 1.0
+
     def _request_yahoo_df(
         self,
         ticker: str,
         params: Dict[str, Any],
         max_retries: int = 3
     ) -> Optional[pd.DataFrame]:
+        """
+        Fetches Daily OHLCV bars from Yahoo Finance v8 API AND stitches the live
+        intraday partial bar from `quote_data['meta']` (`regularMarketPrice`,
+        `regularMarketDayHigh`, `regularMarketDayLow`, `regularMarketVolume`, `regularMarketTime`)
+        so that any scan run at 10:20 AM, 3:05 PM, or manually during market hours includes
+        historical daily OHLCV + the live partial candle up to the exact moment the scanner runs.
+        """
         yf_ticker = ticker if (ticker.startswith("^") or "." in ticker) else f"{ticker}.NS"
         for attempt in range(max_retries):
             endpoint = self.endpoints[(hash(yf_ticker) + attempt) % len(self.endpoints)]
@@ -238,6 +267,7 @@ class DirectYahooFinanceFetcher:
                     if not res:
                         return None
                     quote_data = res[0]
+                    meta = quote_data.get("meta", {}) or {}
                     timestamps = quote_data.get("timestamp", [])
                     quotes = quote_data.get("indicators", {}).get("quote", [{}])[0]
                     if not timestamps or not quotes.get("close"):
@@ -251,8 +281,50 @@ class DirectYahooFinanceFetcher:
                         "Volume": quotes.get("volume", []),
                     }, index=pd.DatetimeIndex(dates))
                     df.dropna(subset=["Close"], inplace=True)
+                    if df.empty:
+                        return None
+                    df["Volume"] = df["Volume"].fillna(0.0)
                     df = df.sort_index()
                     df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+
+                    # Stitch Live Intraday Partial Bar from `meta` if present
+                    reg_time = meta.get("regularMarketTime")
+                    reg_price = meta.get("regularMarketPrice")
+                    if reg_time and reg_price and float(reg_price) > 0:
+                        meta_dt = datetime.datetime.fromtimestamp(int(reg_time), tz=IST).replace(
+                            hour=9, minute=15, second=0, microsecond=0
+                        )
+                        reg_p = float(reg_price)
+                        reg_h = float(meta.get("regularMarketDayHigh") or reg_p)
+                        reg_l = float(meta.get("regularMarketDayLow") or reg_p)
+                        reg_v = float(meta.get("regularMarketVolume") or 0.0)
+                        prev_c = float(meta.get("chartPreviousClose") or meta.get("previousClose") or df["Close"].iloc[-1])
+                        reg_o = float(meta.get("regularMarketOpen") or prev_c)
+
+                        last_dt = df.index[-1]
+                        if meta_dt.date() == last_dt.date():
+                            # Update today's partial or final bar with latest live intraday high/low/close/volume
+                            cur_o = float(df.iloc[-1]["Open"]) if not pd.isna(df.iloc[-1]["Open"]) else reg_o
+                            cur_h = float(df.iloc[-1]["High"]) if not pd.isna(df.iloc[-1]["High"]) else reg_h
+                            cur_l = float(df.iloc[-1]["Low"]) if not pd.isna(df.iloc[-1]["Low"]) else reg_l
+                            cur_v = float(df.iloc[-1]["Volume"]) if not pd.isna(df.iloc[-1]["Volume"]) else 0.0
+                            df.iloc[-1, df.columns.get_loc("Open")] = cur_o
+                            df.iloc[-1, df.columns.get_loc("High")] = max(cur_h, reg_h, reg_p)
+                            df.iloc[-1, df.columns.get_loc("Low")] = min(cur_l, reg_l, reg_p) if cur_l > 0 else min(reg_l, reg_p)
+                            df.iloc[-1, df.columns.get_loc("Close")] = reg_p
+                            df.iloc[-1, df.columns.get_loc("Volume")] = max(cur_v, reg_v)
+                        elif meta_dt.date() > last_dt.date() and NSEMarketCalendar.is_trading_day(meta_dt.date()):
+                            # Append today's live partial intraday candle
+                            live_row = pd.DataFrame({
+                                "Open": [reg_o],
+                                "High": [max(reg_o, reg_h, reg_p)],
+                                "Low": [min(reg_o, reg_l, reg_p)],
+                                "Close": [reg_p],
+                                "Volume": [reg_v],
+                            }, index=pd.DatetimeIndex([meta_dt]))
+                            df = pd.concat([df, live_row]).sort_index()
+                            df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+
                     return df
                 elif resp.status_code == 429:
                     time.sleep((1.5 ** attempt) + np.random.uniform(0.2, 0.8))
@@ -276,6 +348,9 @@ class DirectYahooFinanceFetcher:
         """
         Smart Incremental Gap-Filler for a single ticker backed by the Single Master File:
         Returns (ticker, dataframe, fetch_mode) where fetch_mode in ('CACHE_HIT', 'GAP_FILLED', 'FULL_DOWNLOAD', 'FAILED').
+        - Outside market hours: if `last_bar_date == target_date`, uses cached Master File series.
+        - During market hours (09:15 AM – 03:30 PM IST): refreshes whenever `age_hours > 0.02` (~1 min)
+          so every scan at 10:20 AM, 3:05 PM, or manual trigger always stitches the live partial intraday bar!
         """
         if target_date is None:
             target_date = self.get_latest_expected_bar_date()
@@ -288,8 +363,8 @@ class DirectYahooFinanceFetcher:
             last_bar_date = last_idx.date() if hasattr(last_idx, "date") else pd.Timestamp(last_idx).date()
             gap_days = (target_date - last_bar_date).days
 
-            # Case 1: Already up to date!
-            if gap_days <= 0 and (not is_market_open or age_hours <= 0.35):
+            # Case 1: Already up to date (outside market hours, or refreshed within the last ~1 min during live hours)
+            if gap_days <= 0 and (not is_market_open or age_hours <= 0.02):
                 return ticker, cached_df, "CACHE_HIT"
 
             # Case 2: Cached in Master File up to a past date (e.g. Oct 08 -> 20 days gap) or live intraday bar update
@@ -572,8 +647,12 @@ class FeatureEngine:
         bb_width_min_6m = bb_width_series.iloc[-min(n, 126):].min()
         bb_sq_ratio = bb_width / (bb_width_min_6m + 1e-9)
 
+        last_idx_dt = df.index[-1].date() if hasattr(df.index[-1], "date") else pd.Timestamp(df.index[-1]).date()
+        intraday_vol_mult = DirectYahooFinanceFetcher.get_intraday_volume_multiplier(last_idx_dt)
+        effective_last_vol = float(volume.iloc[-1]) * intraday_vol_mult
+
         vol_50d_avg_prev = volume.shift(1).rolling(50).mean().iloc[-1] if n >= 51 else volume.mean()
-        vol_ratio = volume.iloc[-1] / (vol_50d_avg_prev + 1e-9)
+        vol_ratio = effective_last_vol / (vol_50d_avg_prev + 1e-9)
 
         daily_returns = close.pct_change() * 100
         vol_50_rolling = volume.rolling(min(n, 50)).mean()
@@ -582,7 +661,7 @@ class FeatureEngine:
 
         down_vols = volume.iloc[-10:][daily_returns.iloc[-10:] < 0]
         max_down_vol = down_vols.max() if not down_vols.empty else 0
-        pocket_pivot = bool(daily_returns.iloc[-1] > 0 and volume.iloc[-1] > max_down_vol)
+        pocket_pivot = bool(daily_returns.iloc[-1] > 0 and effective_last_vol > max_down_vol)
         vol_dryup = float(volume.iloc[-5:].mean() / (vol_50d_avg_prev + 1e-9))
 
         pivot_20d = float(high.iloc[-20:].max())

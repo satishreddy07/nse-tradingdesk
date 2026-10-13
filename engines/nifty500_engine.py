@@ -473,21 +473,25 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     stocks["atr"] = tr.groupby(stocks["symbol"]).transform(lambda s: s.ewm(alpha=1 / 14, adjust=False).mean())
 
-    # 7-Point Entry Criteria Matrix
+    latest_session = stocks["date"].max()
+    latest_dt = pd.Timestamp(latest_session).date() if not pd.isna(latest_session) else None
+    intraday_vol_mult = DirectYahooFinanceFetcher.get_intraday_volume_multiplier(latest_dt)
+    effective_vol = np.where(stocks["date"] == latest_session, stocks["volume"] * intraday_vol_mult, stocks["volume"])
+
+    # 7-Point Entry Criteria Matrix (evaluates Daily OHLCV + Live Intraday Partial Bar up to scan time)
     uptrend = (stocks["ema_20"] > stocks["ema_50"]) & (stocks["close"] > stocks["ema_50"])
     rs_leader = stocks["rs_spread"] > 0.0
     pullback_zone = (stocks["close"] >= stocks["ema_20"] * 0.985) & (stocks["close"] <= stocks["ema_20"] * 1.020)
     rsi_zone = (stocks["rsi"] >= 40.0) & (stocks["rsi"] <= 62.0)
     prior_c = stocks.groupby("symbol")["close"].shift(1)
     bullish_bar = (stocks["close"] > stocks["open"]) & (stocks["close"] > prior_c)
-    vol_confirm = stocks["volume"] >= 0.80 * stocks["vol_ma20"]
+    vol_confirm = effective_vol >= 0.80 * stocks["vol_ma20"]
 
     stocks["tech_setup"] = (
         uptrend & rs_leader & pullback_zone & rsi_zone & bullish_bar & vol_confirm
     )
     stocks["signal"] = stocks["tech_setup"] & stocks["bull_regime"]
 
-    latest_session = stocks["date"].max()
     active_bars = stocks[stocks["date"] == latest_session].copy()
 
     current_open_syms = [p["symbol"] for p in state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)]
