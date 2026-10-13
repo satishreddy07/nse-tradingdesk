@@ -53,12 +53,16 @@ if STATIC_DIR.exists():
 
 @app.middleware("http")
 async def capture_public_host_middleware(request: Request, call_next):
-    """Automatically detects the public Render URL from incoming HTTP headers for Anti-Sleep Guard."""
+    """Automatically detects the public Render URL for Anti-Sleep Guard and enforces zero browser caching."""
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
     if host:
         register_external_request_origin(proto, host)
-    return await call_next(request)
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.on_event("startup")
