@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
 from core.data_quality import now_ist, format_ist
@@ -41,6 +42,7 @@ app = FastAPI(
     description="Institutional NSE Equities & Nifty 500 Momentum Swing Desk",
     version="2.1.0"
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Template setup
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -54,15 +56,18 @@ if STATIC_DIR.exists():
 
 @app.middleware("http")
 async def capture_public_host_middleware(request: Request, call_next):
-    """Automatically detects the public Render URL for Anti-Sleep Guard and enforces zero browser caching."""
+    """Automatically detects the public Render URL for Anti-Sleep Guard and enforces zero browser caching for dynamic APIs while allowing static caching."""
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
     if host:
         register_external_request_origin(proto, host)
     response = await call_next(request)
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
+    if not request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    else:
+        response.headers["Cache-Control"] = "public, max-age=86400"
     return response
 
 

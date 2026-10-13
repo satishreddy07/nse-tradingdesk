@@ -165,7 +165,15 @@ class NiftyAnalyticsEngine:
         self._option_chain_cache_ts: float = 0.0
         self._predictions_mem_cache: Dict[str, Any] = {}
         self._predictions_cache_ts: float = 0.0
+        self._equity_curves_cache: Optional[Dict[str, Any]] = None
+        self._equity_curves_cache_ts: float = 0.0
         self._ensure_tables()
+
+    def invalidate_equity_curves_cache(self) -> None:
+        """Invalidates in-memory equity curves cache when new trades or option strategies are executed."""
+        with self._lock:
+            self._equity_curves_cache = None
+            self._equity_curves_cache_ts = 0.0
 
     def _ensure_tables(self) -> None:
         """Creates SQLite tables inside `data/swing_trades.db` for intraday option snapshots and T+1/T+5 predictions."""
@@ -786,11 +794,23 @@ class NiftyAnalyticsEngine:
     def fetch_and_analyze_option_chain(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Fetches live NSE Nifty 50 Option Chain for both Current Weekly and Current Monthly Expiries,
-        computes deep OI analytics, caches in memory for 45s, and persists to `data/swing_trades.db`.
+        computes deep OI analytics, caches in memory (90s during market hours, 900s off-market), and persists to `data/swing_trades.db`.
         """
         now_ts = time.time()
-        if not force_refresh and self._option_chain_mem_cache and (now_ts - self._option_chain_cache_ts) < 45:
+        market_open = NSEMarketCalendar.can_execute_trades()
+        cache_ttl = 90 if market_open else 900
+        if not force_refresh and self._option_chain_mem_cache and (now_ts - self._option_chain_cache_ts) < cache_ttl:
             return self._option_chain_mem_cache
+
+        # If market is closed and we don't have fresh in-memory data, fall back to master DB persisted snapshot first
+        if not force_refresh and not market_open:
+            persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
+            if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
+                persisted["source"] = "MASTER_DB_PERSISTED_NSE_CHAIN"
+                with self._lock:
+                    self._option_chain_mem_cache = persisted
+                    self._option_chain_cache_ts = now_ts
+                return persisted
 
         session = self._get_nse_session(force_refresh=force_refresh)
         try:
@@ -2188,8 +2208,19 @@ class NiftyAnalyticsEngine:
         Plus Walk-Forward Validation, Calibration, Option Chain PCR overlay, and Quant Suggestions.
         """
         now_ts = time.time()
-        if not force_refresh and self._predictions_mem_cache and (now_ts - self._predictions_cache_ts) < 60:
+        market_open = NSEMarketCalendar.can_execute_trades()
+        cache_ttl = 300 if market_open else 3600
+        if not force_refresh and self._predictions_mem_cache and (now_ts - self._predictions_cache_ts) < cache_ttl:
             return self._predictions_mem_cache
+
+        # If not forcing refresh, check Master DB persisted predictions first
+        if not force_refresh:
+            persisted = state_engine.get_kv("latest_nifty_predictions")
+            if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
+                with self._lock:
+                    self._predictions_mem_cache = persisted
+                    self._predictions_cache_ts = now_ts
+                return persisted
 
         all_tickers = [
             "^NSEI", "^NSEBANK", "^CNXIT", "^CNXAUTO", "^CNXPHARMA", "^CNXFMCG", "^CNXMETAL", "^CNXREALTY", "^CNXENERGY",
@@ -3049,6 +3080,8 @@ class NiftyAnalyticsEngine:
         except Exception as e:
             logger.warning(f"Telegram alert error on deploy options strategy: {e}")
 
+        self.invalidate_equity_curves_cache()
+
         return {
             "status": "OK",
             "strategy_id": strat_id,
@@ -3144,6 +3177,8 @@ class NiftyAnalyticsEngine:
         except Exception as e:
             logger.warning(f"Telegram alert error on exit options strategy: {e}")
 
+        self.invalidate_equity_curves_cache()
+
         return {
             "status": "OK",
             "strategy_id": strategy_id,
@@ -3162,10 +3197,17 @@ class NiftyAnalyticsEngine:
             with state_engine._get_connection() as conn:
                 rows = conn.execute("SELECT * FROM options_strategies ORDER BY id DESC").fetchall()
 
-        opt_chain_data = self.fetch_and_analyze_option_chain(force_refresh=False)
-        weekly_chain = opt_chain_data.get("weekly", {}).get("chain", [])
-        monthly_chain = opt_chain_data.get("monthly", {}).get("chain", [])
-        spot_price = opt_chain_data.get("spot_price", 0.0)
+        has_active = any(dict(r).get("status") == "ACTIVE" for r in rows)
+        if has_active:
+            opt_chain_data = self.fetch_and_analyze_option_chain(force_refresh=False)
+            weekly_chain = opt_chain_data.get("weekly", {}).get("chain", [])
+            monthly_chain = opt_chain_data.get("monthly", {}).get("chain", [])
+            spot_price = opt_chain_data.get("spot_price", 0.0)
+        else:
+            opt_chain_data = {}
+            weekly_chain = []
+            monthly_chain = []
+            spot_price = 0.0
 
         ltp_map = {}
         for row in (weekly_chain + monthly_chain):
@@ -3315,7 +3357,13 @@ class NiftyAnalyticsEngine:
         1. Options Strategy Desk (Base ₹2L)
         2. Swing Trading Desk (P1 Base ₹5L)
         3. Nifty 500 Compounding Desk (P2 Base ₹1L)
+        Caches in-memory for 60s unless invalidated by a trade/strategy action.
         """
+        now_ts = time.time()
+        with self._lock:
+            if self._equity_curves_cache is not None and (now_ts - self._equity_curves_cache_ts) < 60:
+                return self._equity_curves_cache
+
         opt_port = self.get_options_portfolio()
         opt_curve = opt_port.get("equity_curve", [])
 
@@ -3382,13 +3430,19 @@ class NiftyAnalyticsEngine:
                 "label": f"Open Positions ({len(p2_active)} Stocks)"
             })
 
-        return {
+        result = {
             "status": "OK",
             "options_curve": opt_curve,
             "swing_curve": p1_curve,
             "nifty500_curve": p2_curve,
             "timestamp_ist": format_ist()
         }
+
+        with self._lock:
+            self._equity_curves_cache = result
+            self._equity_curves_cache_ts = now_ts
+
+        return result
 
 
 nifty_analytics_engine = NiftyAnalyticsEngine()

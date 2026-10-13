@@ -42,8 +42,12 @@
   <!-- TradingView Lightweight Charts for Institutional Candlesticks + SL/Target Overlays -->
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 
+  <!-- Google Fonts: Inter & JetBrains Mono (Non-blocking asynchronous load) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
     body {
       font-family: 'Inter', sans-serif;
       background-color: #070a13;
@@ -2577,10 +2581,6 @@
       setInterval(updateClock, 1000);
       refreshAllData();
       pollScanProgress();
-      // Auto-stream live market prices 1.5s after page load so Active Holdings & Signals show latest live LTP
-      setTimeout(() => {
-        refreshLivePrices(true);
-      }, 1500);
 
       // Setup Options Payoff Canvas Hover & Touch Events
       const payoffCanvas = document.getElementById('opt-payoff-canvas');
@@ -5286,13 +5286,11 @@
         await Promise.all([
           loadSystemStatus(),
           loadP1Data(),
-          loadP2Data()
+          loadP2Data(),
+          (typeof loadAllEquityCurves === 'function' ? loadAllEquityCurves() : Promise.resolve())
         ]);
         if (currentModule === 'module-swing' && currentTab === 'tab-charts') await loadFetchedStocksData();
         if (currentModule === 'module-swing' && currentTab === 'tab-history') await loadHistoryData();
-        if (typeof loadAllEquityCurves === 'function') {
-          await loadAllEquityCurves();
-        }
         if (currentModule !== 'module-swing') {
           await ensureMasterDataThenRenderModules();
         }
@@ -5553,7 +5551,12 @@
     // PORTFOLIO 1 DATA
     // -------------------------------------------------------------------------
     async function loadP1Data() {
-      const sumRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/summary');
+      const [sumRes, posRes, sigRes] = await Promise.all([
+        fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/summary'),
+        fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/positions'),
+        fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/signals')
+      ]);
+
       if (sumRes.ok) {
         const sum = await sumRes.json();
         const st = sum.stats || {};
@@ -5591,14 +5594,12 @@
         document.getElementById('p1-kpi-ratio').innerText = `Avg Win: +${st.avg_win_r || 0}R | Loss: ${st.avg_loss_r || 0}R`;
       }
 
-      const posRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/positions');
       if (posRes.ok) {
         const positions = await posRes.json();
         p1ActiveSet = new Set((positions || []).map(p => (p.symbol || '').toUpperCase()));
         renderP1Positions(positions);
       }
 
-      const sigRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/signals');
       if (sigRes.ok) {
         p1SignalsCache = await sigRes.json();
         const cAll = p1SignalsCache.length;
@@ -5756,7 +5757,12 @@
     // PORTFOLIO 2 DATA
     // -------------------------------------------------------------------------
     async function loadP2Data() {
-      const sumRes = await fetch('/api/portfolio/NIFTY500_MOMENTUM/summary');
+      const [sumRes, posRes, sigRes] = await Promise.all([
+        fetch('/api/portfolio/NIFTY500_MOMENTUM/summary'),
+        fetch('/api/portfolio/NIFTY500_MOMENTUM/positions'),
+        fetch('/api/portfolio/NIFTY500_MOMENTUM/signals')
+      ]);
+
       if (sumRes.ok) {
         const sum = await sumRes.json();
         const st = sum.stats || {};
@@ -5808,14 +5814,12 @@
         }
       }
 
-      const posRes = await fetch('/api/portfolio/NIFTY500_MOMENTUM/positions');
       if (posRes.ok) {
         const positions = await posRes.json();
         p2ActiveSet = new Set((positions || []).map(p => (p.symbol || '').toUpperCase()));
         renderP2Positions(positions);
       }
 
-      const sigRes = await fetch('/api/portfolio/NIFTY500_MOMENTUM/signals');
       if (sigRes.ok) {
         p2SignalsCache = await sigRes.json();
         renderP2SignalsTable(p2SignalsCache);
