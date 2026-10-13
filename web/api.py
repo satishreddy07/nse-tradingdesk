@@ -506,7 +506,7 @@ def get_vault_status():
 def sync_vault_to_cloud():
     """Manually triggers background backup of the Single Master File (`data/swing_trades.db`) to Telegram Cloud."""
     cnt = state_engine.get_ohlcv_stats().get("stocks_count", 0)
-    telegram_vault.sync_master_vault_async(note="Manual UI Single Master File Sync", send_notification=True)
+    telegram_vault.sync_master_vault_async(note="Manual UI Single Master File Sync", send_notification=False)
     return {
         "status": "STARTED",
         "message": f"Updating Single Master File in-place on Telegram Cloud ({cnt} Stocks OHLCV + All Trades)..."

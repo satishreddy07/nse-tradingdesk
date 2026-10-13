@@ -1480,6 +1480,19 @@ class NiftyAnalyticsEngine:
         except Exception as e:
             logger.warning(f"Nifty 50 batch download fallback warning: {e}")
 
+        # Resilient fallback: pull from Single Master DB ohlcv_master_store if live download was rate-limited
+        if n50_df is None or len(n50_df) < 2:
+            series_dict = {}
+            for sym in NIFTY_50_CONSTITUENTS:
+                try:
+                    cdf, _ = state_engine.get_ohlcv_df(sym)
+                    if cdf is not None and not cdf.empty and "close" in cdf.columns:
+                        series_dict[sym] = cdf["close"]
+                except Exception:
+                    pass
+            if series_dict:
+                n50_df = pd.DataFrame(series_dict)
+
         # Compute Nifty 50 constituent metrics
         n50_adv = 0
         n50_dec = 0
@@ -2231,11 +2244,18 @@ class NiftyAnalyticsEngine:
         series_map: Dict[str, pd.DataFrame] = {}
 
         def _fetch_one(tk: str):
-            _, df = self.yf_fetcher.fetch_ticker_chart(tk, range_period="1y", max_retries=2)
+            df = None
+            try:
+                _, df = self.yf_fetcher.fetch_ticker_chart(tk, range_period="1y", max_retries=2)
+            except Exception:
+                df = None
             if df is None or len(df) < 5:
-                cached_df, _ = state_engine.get_ohlcv_df(tk)
-                if cached_df is not None and not cached_df.empty:
-                    df = cached_df
+                try:
+                    cached_df, _ = state_engine.get_ohlcv_df(tk)
+                    if cached_df is not None and not cached_df.empty:
+                        df = cached_df
+                except Exception:
+                    pass
             return tk, df
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=14) as ex:
@@ -2612,7 +2632,7 @@ class NiftyAnalyticsEngine:
             self._predictions_cache_ts = now_ts
         state_engine.set_kv("latest_nifty_predictions", payload)
         try:
-            telegram_vault.sync_master_vault_async(note=f"Nifty Predictions Forecast & Attribution Sync ({pred_date})", send_notification=True)
+            telegram_vault.sync_master_vault_async(note=f"Nifty Predictions Forecast & Attribution Sync ({pred_date})", send_notification=False)
         except Exception:
             pass
         return payload
@@ -2764,33 +2784,37 @@ class NiftyAnalyticsEngine:
                         t1_err_sum += abs(err_pts_1)
                         in_band_1 = low_1s_1 <= actual_1 <= high_1s_1
 
-                        # Strict Directional Validation
-                        if score_i >= 8.0:
-                            dir_ok_1 = (ret_pct_1 >= -0.10)
-                            hard_miss_1 = (ret_pct_1 < -0.20)
-                        elif score_i <= -8.0:
-                            dir_ok_1 = (ret_pct_1 <= 0.10)
-                            hard_miss_1 = (ret_pct_1 > 0.20)
-                        else:
-                            dir_ok_1 = abs(ret_pct_1) <= 0.50
-                            hard_miss_1 = abs(ret_pct_1) > 0.75
+                        # Strict Directional Validation:
+                        # - Bullish call: must close green (or near-zero flat >= -0.05%). If it closes red, DIRECTION_MISS.
+                        # - Bearish call: must close red (or near-zero flat <= 0.05%). If it closes green, NEVER a hit.
+                        # - Range call: must stay within corridor.
+                        is_bull_call = score_i >= 8.0
+                        is_bear_call = score_i <= -8.0
 
-                        if hard_miss_1:
-                            val_1 = "DIRECTION_MISS"
-                        elif dir_ok_1 and in_band_1:
-                            val_1 = "VALIDATED_HIT"
-                            t1_hits += 1
-                        elif dir_ok_1 and abs(ret_pct_1) <= 0.25:
-                            val_1 = "VALIDATED_HIT"
-                            t1_hits += 1
+                        if is_bull_call:
+                            if ret_pct_1 >= -0.05 and (in_band_1 or actual_1 > high_1s_1):
+                                val_1 = "VALIDATED_HIT"
+                                t1_hits += 1
+                            else:
+                                val_1 = "DIRECTION_MISS"
+                        elif is_bear_call:
+                            if ret_pct_1 <= 0.05 and (in_band_1 or actual_1 < low_1s_1):
+                                val_1 = "VALIDATED_HIT"
+                                t1_hits += 1
+                            else:
+                                val_1 = "DIRECTION_MISS"
                         else:
-                            val_1 = "DIRECTION_MISS"
+                            if in_band_1 and abs(ret_pct_1) <= 0.45:
+                                val_1 = "VALIDATED_HIT"
+                                t1_hits += 1
+                            else:
+                                val_1 = "DIRECTION_MISS"
 
                         if val_1 == "VALIDATED_HIT":
                             pos_pillars = [k.capitalize() for k, v in pillar_snap.items() if (score_i > 0 and v > 5) or (score_i < 0 and v < -5)]
                             attr_1 = (
                                 f"RIGHT (HIT): Model {v_t1} call ({score_i:+.1f} score) verified as Nifty moved {ret_pct_1:+.2f}% ({actual_1 - s0:+.1f} pts) "
-                                f"to ₹{actual_1:,.2f} within 1σ corridor. Aligned pillars: {', '.join(pos_pillars) or 'Broad Multi-Factor'}. "
+                                f"to ₹{actual_1:,.2f} within direction corridor. Aligned pillars: {', '.join(pos_pillars) or 'Broad Multi-Factor'}. "
                                 f"Error vs expected close: {err_pts_1:+.1f} pts."
                             )
                         else:
@@ -2824,23 +2848,27 @@ class NiftyAnalyticsEngine:
                         t5_err_sum += abs(err_pts_5)
                         in_band_5 = low_1s_5 <= actual_5 <= high_1s_5
 
-                        if score_i >= 8.0:
-                            dir_ok_5 = (ret_pct_5 >= -0.25)
-                            hard_miss_5 = (ret_pct_5 < -0.50)
-                        elif score_i <= -8.0:
-                            dir_ok_5 = (ret_pct_5 <= 0.25)
-                            hard_miss_5 = (ret_pct_5 > 0.50)
-                        else:
-                            dir_ok_5 = abs(ret_pct_5) <= 1.0
-                            hard_miss_5 = abs(ret_pct_5) > 1.5
+                        is_bull_call_5 = score_i >= 8.0
+                        is_bear_call_5 = score_i <= -8.0
 
-                        if hard_miss_5:
-                            val_5 = "DIRECTION_MISS"
-                        elif dir_ok_5 and in_band_5:
-                            val_5 = "VALIDATED_HIT"
-                            t5_hits += 1
+                        if is_bull_call_5:
+                            if ret_pct_5 >= 0.0 and (in_band_5 or actual_5 > high_1s_5):
+                                val_5 = "VALIDATED_HIT"
+                                t5_hits += 1
+                            else:
+                                val_5 = "DIRECTION_MISS"
+                        elif is_bear_call_5:
+                            if ret_pct_5 <= 0.0 and (in_band_5 or actual_5 < low_1s_5):
+                                val_5 = "VALIDATED_HIT"
+                                t5_hits += 1
+                            else:
+                                val_5 = "DIRECTION_MISS"
                         else:
-                            val_5 = "DIRECTION_MISS"
+                            if in_band_5 and abs(ret_pct_5) <= 1.0:
+                                val_5 = "VALIDATED_HIT"
+                                t5_hits += 1
+                            else:
+                                val_5 = "DIRECTION_MISS"
 
                         if val_5 == "VALIDATED_HIT":
                             attr_5 = (

@@ -1816,8 +1816,34 @@
           </div>
         </div>
 
+        <!-- Options Sub-Menu Tabs Navigation Bar -->
+        <div class="flex flex-wrap items-center gap-2 pt-3 mt-3 border-t border-slate-800">
+          <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800 gap-1 w-full sm:w-auto overflow-x-auto">
+            <button onclick="switchOptionsSubTab('chain')" id="opt-tab-btn-chain" class="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyan-500 text-black shadow-md shadow-cyan-500/20 flex items-center justify-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+              <span>Option Chain & OI</span>
+            </button>
+            <button onclick="switchOptionsSubTab('builder')" id="opt-tab-btn-builder" class="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800/70 flex items-center justify-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+              <span>Strategy Builder & Payoff</span>
+              <span id="opt-subtab-builder-badge" class="px-1.5 py-0.2 rounded text-[10px] bg-cyan-500/20 text-cyan-300 font-bold">0</span>
+            </button>
+            <button onclick="switchOptionsSubTab('portfolio')" id="opt-tab-btn-portfolio" class="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800/70 flex items-center justify-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
+              <span>Options Portfolio & Equity</span>
+              <span id="opt-subtab-port-badge" class="px-1.5 py-0.2 rounded text-[10px] bg-purple-500/20 text-purple-300 font-bold">0</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- SUB-TAB 1: OPTION CHAIN MATRIX & DEEP OI ANALYTICS                  -->
+      <!-- =================================================================== -->
+      <div id="opt-sub-chain" class="space-y-4">
         <!-- 8 Deep OI & Volatility KPI Cards for Selected Expiry -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 mt-4 text-xs font-mono">
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 text-xs font-mono">
           <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
             <div class="text-[10px] text-cyan-400 uppercase">Nifty Spot / ATM</div>
             <div id="opt-kpi-spot" class="text-base font-bold text-white mt-0.5">--</div>
@@ -1882,11 +1908,62 @@
         </div>
       </div>
 
+      <!-- Strike-by-Strike Deep Option Chain Table (±12 Strikes Around ATM) -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <i data-lucide="layers" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+            <h3 class="font-bold text-white text-sm">
+              Nifty 50 Option Chain Strike-by-Strike Deep OI Matrix (<span id="opt-table-expiry-label" class="text-emerald-400 font-mono">--</span>)
+            </h3>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Jump to Strategy Builder Shortcut Button -->
+            <button onclick="switchOptionsSubTab('builder')" class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 transition flex items-center gap-1.5 cursor-pointer">
+              <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+              <span>Strategy Builder & Payoff (<span id="opt-chain-builder-badge">0</span> legs)</span>
+            </button>
+            <!-- Mobile View Filter Toggle (Fixing Mobile Column Overflow) -->
+            <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800 text-xs font-mono">
+              <button onclick="setOptionChainMobileFilter('all')" id="btn-chain-filt-all" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500 text-black transition">Full Chain</button>
+              <button onclick="setOptionChainMobileFilter('ce')" id="btn-chain-filt-ce" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">Calls Only</button>
+              <button onclick="setOptionChainMobileFilter('pe')" id="btn-chain-filt-pe" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">Puts Only</button>
+            </div>
+            <span id="opt-table-verdict-badge" class="text-[11px] font-mono px-2.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
+          </div>
+        </div>
+        <div class="overflow-x-auto custom-scroll">
+          <table class="w-full text-left text-[11px] sm:text-xs text-slate-300 font-mono">
+            <thead class="bg-slate-950/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+              <tr id="opt-chain-thead-tr">
+                <th class="p-2.5 text-rose-300 col-ce">CE Buildup</th>
+                <th class="p-2.5 text-rose-300 col-ce">CE OI (Contracts)</th>
+                <th class="p-2.5 text-rose-300 col-ce">CE ΔOI</th>
+                <th class="p-2.5 text-rose-300 col-ce">CE Vol</th>
+                <th class="p-2.5 text-rose-300 col-ce">CE IV</th>
+                <th class="p-2.5 text-rose-300 col-ce">CE LTP (Chg%)</th>
+                <th class="p-2.5 text-center bg-slate-900 text-amber-300 font-bold border-x border-slate-800 col-strike">STRIKE</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE LTP (Chg%)</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE IV</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE Vol</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE ΔOI</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE OI (Contracts)</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE Buildup</th>
+                <th class="p-2.5 text-right col-pcr">Strike PCR</th>
+              </tr>
+            </thead>
+            <tbody id="opt-chain-tbody" class="divide-y divide-slate-800/60">
+              <tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">Loading live NSE Nifty 50 Option Chain strike table...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </div> <!-- Close Sub-Tab 1: opt-sub-chain -->
+
       <!-- =================================================================== -->
-      <!-- ADVANCED OPTIONS STRATEGY BUILDER & INTERACTIVE DUAL-CURVE PAYOFF GRAPH -->
+      <!-- SUB-TAB 2: STRATEGY BUILDER & DUAL-CURVE PAYOFF GRAPH (OPSTRA/SENSIBULL) -->
       <!-- =================================================================== -->
-      <!-- ADVANCED OPTIONS STRATEGY BUILDER & SENSIBULL/OPSTRA SUITE -->
-      <!-- =================================================================== -->
+      <div id="opt-sub-builder" class="space-y-4 hidden">
       <div class="bg-slate-900/85 border border-cyan-500/40 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
         
         <!-- Header & Strategy Presets -->
@@ -2066,11 +2143,13 @@
           </div>
         </div>
 
-      </div>
+      </div> <!-- Close Builder inner card -->
+    </div> <!-- Close Sub-Tab 2: opt-sub-builder -->
 
-      <!-- =================================================================== -->
-      <!-- OPTIONS TRADING PORTFOLIO & EQUITY CURVE DESK (STRATEGY-WISE TRACKING) -->
-      <!-- =================================================================== -->
+    <!-- =================================================================== -->
+    <!-- SUB-TAB 3: OPTIONS TRADING PORTFOLIO & EQUITY CURVE DESK            -->
+    <!-- =================================================================== -->
+    <div id="opt-sub-portfolio" class="space-y-4 hidden">
       <div id="options-portfolio-desk" class="bg-slate-900/85 border border-purple-500/30 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
           <div>
@@ -2189,53 +2268,8 @@
           </div>
         </div>
       </div>
-
-      <!-- Strike-by-Strike Deep Option Chain Table (±12 Strikes Around ATM) -->
-      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
-        <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div class="flex items-center gap-2">
-            <i data-lucide="layers" class="w-4 h-4 text-emerald-400 shrink-0"></i>
-            <h3 class="font-bold text-white text-sm">
-              Nifty 50 Option Chain Strike-by-Strike Deep OI Matrix (<span id="opt-table-expiry-label" class="text-emerald-400 font-mono">--</span>)
-            </h3>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <!-- Mobile View Filter Toggle (Fixing Mobile Column Overflow) -->
-            <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800 text-xs font-mono">
-              <button onclick="setOptionChainMobileFilter('all')" id="btn-chain-filt-all" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500 text-black transition">Full Chain</button>
-              <button onclick="setOptionChainMobileFilter('ce')" id="btn-chain-filt-ce" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">Calls Only</button>
-              <button onclick="setOptionChainMobileFilter('pe')" id="btn-chain-filt-pe" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">Puts Only</button>
-            </div>
-            <span id="opt-table-verdict-badge" class="text-[11px] font-mono px-2.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
-          </div>
-        </div>
-        <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left text-[11px] sm:text-xs text-slate-300 font-mono">
-            <thead class="bg-slate-950/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
-              <tr id="opt-chain-thead-tr">
-                <th class="p-2.5 text-rose-300 col-ce">CE Buildup</th>
-                <th class="p-2.5 text-rose-300 col-ce">CE OI (Contracts)</th>
-                <th class="p-2.5 text-rose-300 col-ce">CE ΔOI</th>
-                <th class="p-2.5 text-rose-300 col-ce">CE Vol</th>
-                <th class="p-2.5 text-rose-300 col-ce">CE IV</th>
-                <th class="p-2.5 text-rose-300 col-ce">CE LTP (Chg%)</th>
-                <th class="p-2.5 text-center bg-slate-900 text-amber-300 font-bold border-x border-slate-800 col-strike">STRIKE</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE LTP (Chg%)</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE IV</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE Vol</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE ΔOI</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE OI (Contracts)</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE Buildup</th>
-                <th class="p-2.5 text-right col-pcr">Strike PCR</th>
-              </tr>
-            </thead>
-            <tbody id="opt-chain-tbody" class="divide-y divide-slate-800/60">
-              <tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">Loading live NSE Nifty 50 Option Chain strike table...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+    </div> <!-- Close Sub-Tab 3: opt-sub-portfolio -->
+  </section>
 
   </main>
 
@@ -2960,22 +2994,36 @@
     // MODULE 3: NIFTY 50 T+1 & T+5 MULTI-PILLAR QUANT PREDICTIONS DESK
     // =========================================================================
     async function loadPredictionsDesk(forceRefresh = false) {
+      if (niftyPredictionsCache && !forceRefresh) {
+        renderPredictionsUI(niftyPredictionsCache);
+      }
       const btn = document.getElementById('btn-pred-refresh');
       if (forceRefresh && btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span>Computing 6 Pillars...</span>`;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span><span>Computing 6 Pillars...</span>`;
       }
       try {
         const res = await fetch(`/api/nifty/predictions?force_refresh=${forceRefresh ? 'true' : 'false'}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error("Predictions API HTTP error:", res.status, errText);
+          if (forceRefresh) showToast(`Prediction service returned HTTP ${res.status}`, 'error');
+          return;
+        }
         const data = await res.json();
-        niftyPredictionsCache = data;
-        renderPredictionsUI(data);
-        if (forceRefresh) {
-          showToast(`🧠 Nifty 50 T+1 & T+5 Forecast Recomputed (Spot ₹${data.spot_price || '--'})!`, 'success');
+        if (data && data.status === 'OK') {
+          niftyPredictionsCache = data;
+          renderPredictionsUI(data);
+          if (forceRefresh) {
+            showToast(`🧠 Nifty 50 T+1 & T+5 Forecast Recomputed (Spot ₹${data.spot_price ? Number(data.spot_price).toFixed(2) : '--'})!`, 'success');
+          }
+        } else {
+          console.warn("Prediction returned non-OK status:", data);
+          if (forceRefresh) showToast(data?.detail || data?.message || "Prediction calculation incomplete", 'warning');
         }
       } catch (e) {
         console.error("Failed loading Nifty Predictions Desk:", e);
+        if (forceRefresh) showToast(`Prediction error: ${e.message}`, 'error');
       } finally {
         if (forceRefresh && btn) {
           btn.disabled = false;
@@ -3364,16 +3412,19 @@
         const fiiNet = Number(latestCash.fii_net || 0);
         const diiNet = Number(latestCash.dii_net || 0);
         const totNet = Number(latestCash.total_net || (fiiNet + diiNet));
-        const fiiLongPct = Number(latestOi.fii_index_fut_long_pct || 0);
-        const clientLongPct = Number(latestOi.client_index_fut_long_pct || 0);
+        const fiiLongPct = Number(latestOi.fii_fut_long_pct ?? latestOi.fii_index_fut_long_pct ?? 0);
+        const clientLongPct = Number(latestOi.client_fut_long_pct ?? latestOi.client_index_fut_long_pct ?? 0);
+        const fiiNetFut = Number(latestOi.fii_fut_net ?? latestOi.fii_index_fut_net ?? 0);
+        const clientNetFut = Number(latestOi.client_fut_net ?? latestOi.client_index_fut_net ?? 0);
         const flowSc = Number(instData.flow_score || 0);
+        const cashDate = latestCash.date || latestCash.trade_date || 'Today';
 
         const kpis = [
-          { lbl: `FII Cash Net (${latestCash.date || 'Today'})`, val: `${fiiNet >= 0 ? '+' : ''}₹${fiiNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`, col: fiiNet >= 0 ? 'text-emerald-400' : 'text-rose-400' },
-          { lbl: `DII Cash Net (${latestCash.date || 'Today'})`, val: `${diiNet >= 0 ? '+' : ''}₹${diiNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`, col: diiNet >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+          { lbl: `FII Cash Net (${cashDate})`, val: `${fiiNet >= 0 ? '+' : ''}₹${fiiNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`, col: fiiNet >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+          { lbl: `DII Cash Net (${cashDate})`, val: `${diiNet >= 0 ? '+' : ''}₹${diiNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`, col: diiNet >= 0 ? 'text-emerald-400' : 'text-rose-400' },
           { lbl: `Institutional Total Net`, val: `${totNet >= 0 ? '+' : ''}₹${totNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`, col: totNet >= 0 ? 'text-emerald-400' : 'text-rose-400' },
-          { lbl: `FII Fut Long %`, val: `${fiiLongPct.toFixed(1)}% (${Number(latestOi.fii_index_fut_net || 0) >= 0 ? '+' : ''}${Number(latestOi.fii_index_fut_net || 0).toLocaleString()} net)`, col: fiiLongPct <= 15 ? 'text-rose-400' : (fiiLongPct >= 50 ? 'text-emerald-400' : 'text-amber-300') },
-          { lbl: `Retail Client Long %`, val: `${clientLongPct.toFixed(1)}% (${Number(latestOi.client_index_fut_net || 0) >= 0 ? '+' : ''}${Number(latestOi.client_index_fut_net || 0).toLocaleString()} net)`, col: clientLongPct >= 70 ? 'text-rose-400' : 'text-slate-200' },
+          { lbl: `FII Fut Long %`, val: `${fiiLongPct.toFixed(1)}% (${fiiNetFut >= 0 ? '+' : ''}${fiiNetFut.toLocaleString()} net)`, col: fiiLongPct <= 15 ? 'text-rose-400' : (fiiLongPct >= 50 ? 'text-emerald-400' : 'text-amber-300') },
+          { lbl: `Retail Client Long %`, val: `${clientLongPct.toFixed(1)}% (${clientNetFut >= 0 ? '+' : ''}${clientNetFut.toLocaleString()} net)`, col: clientLongPct >= 70 ? 'text-rose-400' : 'text-slate-200' },
           { lbl: `Inst Flow Score`, val: `${flowSc >= 0 ? '+' : ''}${flowSc.toFixed(1)} / 100`, col: flowSc >= 10 ? 'text-emerald-400' : (flowSc <= -10 ? 'text-rose-400' : 'text-amber-300') },
         ];
         instKpiGrid.innerHTML = kpis.map(k => `
@@ -3395,9 +3446,10 @@
             const fNet = Number(r.fii_net || 0);
             const dNet = Number(r.dii_net || 0);
             const tNet = Number(r.total_net || (fNet + dNet));
+            const rowDate = r.date || r.trade_date || '--';
             return `
               <tr class="hover:bg-slate-800/40 transition">
-                <td class="p-2 font-bold text-white">${r.date}</td>
+                <td class="p-2 font-bold text-white">${rowDate}</td>
                 <td class="p-2 text-slate-300">₹${Number(r.fii_buy || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
                 <td class="p-2 text-slate-300">₹${Number(r.fii_sell || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
                 <td class="p-2 font-bold ${fNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${fNet >= 0 ? '+' : ''}₹${fNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
@@ -3417,14 +3469,15 @@
           fiiOiTbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500 font-sans">No participant OI history recorded.</td></tr>`;
         } else {
           fiiOiTbody.innerHTML = oiList.map(r => {
-            const fNet = Number(r.fii_net || 0);
-            const fPct = Number(r.fii_long_pct || 0);
-            const cNet = Number(r.client_net || 0);
-            const cPct = Number(r.client_long_pct || 0);
-            const pNet = Number(r.pro_net || 0);
+            const fNet = Number(r.fii_fut_net ?? r.fii_net ?? 0);
+            const fPct = Number(r.fii_fut_long_pct ?? r.fii_long_pct ?? 0);
+            const cNet = Number(r.client_fut_net ?? r.client_net ?? 0);
+            const cPct = Number(r.client_fut_long_pct ?? r.client_long_pct ?? 0);
+            const pNet = Number(r.pro_fut_net ?? r.pro_net ?? 0);
+            const rowDate = r.date || r.trade_date || '--';
             return `
               <tr class="hover:bg-slate-800/40 transition">
-                <td class="p-2 font-bold text-white">${r.date}</td>
+                <td class="p-2 font-bold text-white">${rowDate}</td>
                 <td class="p-2 font-bold ${fNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${fNet >= 0 ? '+' : ''}${fNet.toLocaleString()}</td>
                 <td class="p-2 font-bold ${fPct <= 15 ? 'text-rose-400' : (fPct >= 50 ? 'text-emerald-400' : 'text-amber-300')}">${fPct.toFixed(1)}%</td>
                 <td class="p-2 font-bold ${cNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${cNet >= 0 ? '+' : ''}${cNet.toLocaleString()}</td>
@@ -3516,6 +3569,48 @@
     // =========================================================================
     // MODULE 4: NIFTY 50 WEEKLY & MONTHLY OPTION CHAIN DEEP OI ANALYTICS DESK
     // =========================================================================
+    let currentOptionsSubTab = 'chain';
+
+    function switchOptionsSubTab(tab) {
+      currentOptionsSubTab = tab;
+      const tabConfigs = [
+        { id: 'chain', panel: 'opt-sub-chain', btn: 'opt-tab-btn-chain' },
+        { id: 'builder', panel: 'opt-sub-builder', btn: 'opt-tab-btn-builder' },
+        { id: 'portfolio', panel: 'opt-sub-portfolio', btn: 'opt-tab-btn-portfolio' }
+      ];
+
+      tabConfigs.forEach(tc => {
+        const panelEl = document.getElementById(tc.panel);
+        const btnEl = document.getElementById(tc.btn);
+        if (panelEl) {
+          if (tc.id === tab) {
+            panelEl.classList.remove('hidden');
+          } else {
+            panelEl.classList.add('hidden');
+          }
+        }
+        if (btnEl) {
+          if (tc.id === tab) {
+            btnEl.className = "flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyan-500 text-black shadow-md shadow-cyan-500/20 flex items-center justify-center gap-1.5 transition whitespace-nowrap";
+          } else {
+            btnEl.className = "flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800/70 flex items-center justify-center gap-1.5 transition whitespace-nowrap";
+          }
+        }
+      });
+
+      if (tab === 'builder') {
+        setTimeout(() => {
+          recalculateStrategyMetrics();
+          drawPayoffGraph();
+        }, 60);
+      } else if (tab === 'portfolio') {
+        setTimeout(() => {
+          loadOptionsPortfolioDesk();
+        }, 50);
+      }
+      if (window.lucide) lucide.createIcons();
+    }
+
     async function loadOptionsChainDesk(forceRefresh = false) {
       try {
         const res = await fetch(`/api/nifty/options-chain?force_refresh=${forceRefresh ? 'true' : 'false'}`);
@@ -3897,6 +3992,12 @@
     function renderStrategyLegs() {
       const countEl = document.getElementById('strat-legs-count');
       if (countEl) countEl.innerText = strategyLegs.length;
+
+      const subBadge = document.getElementById('opt-subtab-builder-badge');
+      if (subBadge) subBadge.innerText = strategyLegs.length;
+
+      const chainBadge = document.getElementById('opt-chain-builder-badge');
+      if (chainBadge) chainBadge.innerText = strategyLegs.length;
 
       const container = document.getElementById('strat-legs-list');
       if (!container) return;
@@ -4587,10 +4688,9 @@
         const data = await res.json();
         if (res.ok && data.status === 'OK') {
           showToast(`🚀 Strategy "${stratName}" deployed to Options Portfolio & backed up to Telegram Cloud!`, "success");
+          switchOptionsSubTab('portfolio');
           await loadOptionsPortfolioDesk();
           await loadAllEquityCurves();
-          const desk = document.getElementById('options-portfolio-desk');
-          if (desk) desk.scrollIntoView({ behavior: 'smooth' });
         } else {
           showToast(`Failed to deploy: ${data.detail || data.message || 'Server error'}`, "error");
         }
@@ -4668,6 +4768,9 @@
 
       const activeBadgeCount = document.getElementById('opt-active-strat-count');
       if (activeBadgeCount) activeBadgeCount.innerText = s.active_count;
+
+      const subPortBadge = document.getElementById('opt-subtab-port-badge');
+      if (subPortBadge) subPortBadge.innerText = s.active_count;
 
       // Render Active Strategies
       const activeContainer = document.getElementById('opt-active-strat-list');
@@ -5294,6 +5397,9 @@
         if (currentModule !== 'module-swing') {
           await ensureMasterDataThenRenderModules();
         }
+        // Pre-fetch predictions and options chain in background for instantaneous navigation
+        if (!niftyPredictionsCache) loadPredictionsDesk(false);
+        if (!niftyOptionsChainCache) loadOptionsChainDesk(false);
       } catch (e) {
         console.error("Error refreshing data:", e);
       } finally {

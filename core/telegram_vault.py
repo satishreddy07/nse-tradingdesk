@@ -158,10 +158,11 @@ class TelegramVaultManager:
     # --------------------------------------------------------------------------
     # SINGLE MASTER FILE BACKUP & RESTORE (IN-PLACE UPDATE ON TELEGRAM)
     # --------------------------------------------------------------------------
-    def sync_master_vault_async(self, note: str = "Auto Master File Sync", send_notification: bool = True) -> None:
+    def sync_master_vault_async(self, note: str = "Auto Master File Sync", send_notification: bool = False) -> None:
         """
         Asynchronously backs up the Single Master File (`data/swing_trades.db`) to Telegram Cloud
         in a background thread to prevent blocking live trading engine execution.
+        Zero notification spam to Telegram; all backups logged with timestamps in SQLite manifest & Vault section.
         """
         threading.Thread(
             target=self.backup_master_file_to_cloud,
@@ -172,7 +173,7 @@ class TelegramVaultManager:
     def backup_master_file_to_cloud(
         self,
         custom_note: str = "Auto Master File Sync",
-        send_notification: bool = True
+        send_notification: bool = False
     ) -> Dict[str, Any]:
         """
         Creates an ACID-safe SQLite snapshot of the Single Master File (`data/swing_trades.db`),
@@ -332,7 +333,7 @@ class TelegramVaultManager:
                             with open(tmp_gz, "rb") as doc_file:
                                 resp = requests.post(
                                     f"https://api.telegram.org/bot{creds['bot_token']}/sendDocument",
-                                    data={"chat_id": creds["chat_id"], "caption": caption, "parse_mode": "HTML"},
+                                    data={"chat_id": creds["chat_id"], "caption": caption, "parse_mode": "HTML", "disable_notification": True},
                                     files={"document": ("quant_master_vault.db.gz", doc_file, "application/gzip")},
                                     timeout=90
                                 ).json()
@@ -389,33 +390,12 @@ class TelegramVaultManager:
                     hist[0] = full_entry
                 else:
                     hist.insert(0, full_entry)
-                manifest["history"] = hist[:30]
+                manifest["history"] = hist[:60]
                 self._save_manifest(manifest)
 
-                # Send explicit timestamped notification on successful backup
-                if send_notification:
-                    try:
-                        backup_alert = (
-                            f"✅ <b>MASTER CLOUD BACKUP SUCCESSFUL • ZERO DATA LOSS</b>\n"
-                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                            f"🕒 <b>Backup Timestamp:</b> <code>{ts_str}</code>\n"
-                            f"📝 <b>Run Trigger:</b> {custom_note}\n"
-                            f"💾 <b>Master File:</b> <code>quant_master_vault.db.gz</code> ({size_kb} KB)\n"
-                            f"📊 <b>Master Database Preserved:</b>\n"
-                            f"  • {active_cnt} Active Positions | {closed_cnt} Closed Trades\n"
-                            f"  • {stocks_cnt} Stocks OHLCV Master Store (Bar: {latest_bar})\n"
-                            f"  • {intra_cnt} Weekly Option Intraday Snapshots\n"
-                            f"  • {pred_cnt} Nifty T+1 & T+5 Prediction Sessions\n"
-                            f"🛡️ <b>Integrity Check:</b> SQLite ACID Snapshot Verified (No Data Loss)\n"
-                            f"📌 <b>Cloud Reference:</b> Telegram Msg #{msg_id}"
-                        )
-                        requests.post(
-                            f"https://api.telegram.org/bot{creds['bot_token']}/sendMessage",
-                            data={"chat_id": creds["chat_id"], "text": backup_alert, "parse_mode": "HTML"},
-                            timeout=12
-                        )
-                    except Exception as notif_err:
-                        logger.debug(f"Backup notification delivery warning: {notif_err}")
+                # Backup text notifications completely silenced per user request to eliminate spam.
+                # Every backup event is strictly recorded with exact IST timestamps in the manifest and visible in the UI Vault section.
+                pass
 
                 logger.info(
                     f"☁️ Single Master File {'UPDATED IN-PLACE' if updated_in_place else 'PINNED'} in Telegram Cloud "
@@ -434,10 +414,10 @@ class TelegramVaultManager:
                     tmp_gz.unlink(missing_ok=True)
 
     # Aliases so existing callers all write to the Single Master File backup
-    def backup_db_to_cloud(self, custom_note: str = "Trade Update Sync", send_notification: bool = True) -> Dict[str, Any]:
+    def backup_db_to_cloud(self, custom_note: str = "Trade Update Sync", send_notification: bool = False) -> Dict[str, Any]:
         return self.backup_master_file_to_cloud(custom_note=custom_note, send_notification=send_notification)
 
-    def backup_ohlcv_to_cloud(self, custom_note: str = "OHLCV Gap-Fill Sync", send_notification: bool = True) -> Dict[str, Any]:
+    def backup_ohlcv_to_cloud(self, custom_note: str = "OHLCV Gap-Fill Sync", send_notification: bool = False) -> Dict[str, Any]:
         return self.backup_master_file_to_cloud(custom_note=custom_note, send_notification=send_notification)
 
     def restore_master_file_from_cloud(self, file_id: Optional[str] = None) -> Dict[str, Any]:
