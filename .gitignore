@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Historical data cache (regenerated on fly)
+data/historical_data/*.pkl
+data/historical_data/*.csv
+
+# SQLite WAL/SHM temporary files
+data/*.db-wal
+data/*.db-shm
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

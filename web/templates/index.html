@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Quant Trading Desk | Institutional NSE & Nifty 500 Momentum</title>
+  
+  <!-- Tailwind CSS CDN with dark mode -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              dark: '#070a13',
+              card: '#0f172a',
+              border: '#1e293b',
+              cyan: '#06b6d4',
+              violet: '#8b5cf6',
+              emerald: '#10b981',
+              rose: '#f43f5e',
+              amber: '#f59e0b'
+            }
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'Menlo', 'Consolas', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Chart.js for Quant Performance Visuals -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #070a13;
+      color: #f1f5f9;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    .glow-cyan {
+      box-shadow: 0 0 20px -5px rgba(6, 182, 212, 0.25);
+    }
+    .glow-violet {
+      box-shadow: 0 0 20px -5px rgba(139, 92, 246, 0.25);
+    }
+    /* Mobile safe area padding */
+    .pb-safe {
+      padding-bottom: env(safe-area-inset-bottom, 1rem);
+    }
+  </style>
+</head>
+<body class="bg-[#070a13] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black">
+
+  <!-- TOP HEADER -->
+  <header class="sticky top-0 z-40 bg-[#0b0f19]/90 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Logo / Title -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-violet-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+          <i data-lucide="activity" class="w-5 h-5 text-black stroke-[2.5]"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-extrabold tracking-tight text-white text-lg">QUANT<span class="text-cyan-400">DESK</span></span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">v2.0 NSE</span>
+          </div>
+          <p class="text-[11px] text-slate-400 font-medium hidden sm:block">Automated 10:20 AM & 3:05 PM Dual Swing Engines</p>
+        </div>
+      </div>
+
+      <!-- Center Status Bar (Desktop) -->
+      <div class="hidden md:flex items-center gap-4 text-xs">
+        <!-- Market Status Badge -->
+        <div id="market-status-pill" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300">
+          <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="market-status-text" class="font-medium">Checking Market...</span>
+        </div>
+
+        <!-- Next Scan Countdown -->
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-950/40 border border-cyan-800/50 text-cyan-300">
+          <i data-lucide="timer" class="w-3.5 h-3.5 text-cyan-400"></i>
+          <span id="next-scan-text" class="font-mono">Next: Loading...</span>
+        </div>
+
+        <!-- Live Clock -->
+        <div class="px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 font-mono text-slate-400">
+          <span id="live-ist-clock">--:--:-- IST</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-2">
+        <!-- Quick Scan Trigger Dropdown -->
+        <div class="relative">
+          <button id="btn-scan-menu" onclick="toggleScanMenu()" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-black font-semibold text-xs transition-all shadow-md shadow-cyan-500/20 active:scale-95">
+            <i data-lucide="zap" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+            <span>Run Scan</span>
+            <i data-lucide="chevron-down" class="w-3 h-3"></i>
+          </button>
+          
+          <div id="scan-dropdown" class="hidden absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-2 z-50 text-xs">
+            <div class="px-2 py-1 text-[10px] uppercase font-mono text-slate-400 font-semibold border-b border-slate-800 mb-1">Trigger Execution</div>
+            <button onclick="triggerScan('MORNING_1020AM')" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-800 flex items-center justify-between text-slate-200">
+              <span>🌅 Morning Scan (10:20 AM)</span>
+              <span class="text-[10px] text-cyan-400 font-mono">P1 Base</span>
+            </button>
+            <button onclick="triggerScan('AFTERNOON_305PM')" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-800 flex items-center justify-between text-slate-200">
+              <span>🌇 MOC Close Scan (3:05 PM)</span>
+              <span class="text-[10px] text-violet-400 font-mono">P1+P2</span>
+            </button>
+            <button onclick="triggerScan('INSTITUTIONAL')" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-800 flex items-center justify-between text-slate-200">
+              <span>📊 Portfolio 1 Only (6-Pillar)</span>
+              <span class="text-[10px] text-slate-400 font-mono">₹5L</span>
+            </button>
+            <button onclick="triggerScan('NIFTY500')" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-800 flex items-center justify-between text-slate-200">
+              <span>🎯 Portfolio 2 Only (Nifty 500)</span>
+              <span class="text-[10px] text-slate-400 font-mono">₹1L</span>
+            </button>
+            <div class="border-t border-slate-800 mt-1 pt-1">
+              <label class="flex items-center gap-2 px-3 py-1 text-[11px] text-slate-400 cursor-pointer">
+                <input type="checkbox" id="chk-auto-exec" class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+                <span>Auto-place qualifying orders</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Refresh Button -->
+        <button onclick="refreshAllData()" class="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="Refresh Live Data">
+          <i data-lucide="refresh-cw" class="w-4 h-4" id="refresh-icon"></i>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Mobile Mini Status Bar -->
+    <div class="md:hidden flex items-center justify-between px-4 py-1.5 bg-slate-900 border-t border-slate-800 text-[11px]">
+      <div id="mobile-market-status" class="flex items-center gap-1.5 text-slate-300">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        <span>Checking Market...</span>
+      </div>
+      <div class="text-cyan-400 font-mono" id="mobile-next-scan">
+        Next: 3:05 PM
+      </div>
+    </div>
+  </header>
+
+  <!-- NAVIGATION TABS (PC & MOBILE) -->
+  <div class="bg-[#0b0f19] border-b border-slate-800 sticky top-16 md:top-16 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <nav class="flex space-x-1 sm:space-x-3 overflow-x-auto custom-scroll py-2.5 text-xs font-semibold">
+        
+        <button onclick="switchTab('tab-p1')" id="nav-tab-p1" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+          <i data-lucide="layers" class="w-4 h-4"></i>
+          <span>Portfolio 1: Institutional 6-Pillar</span>
+          <span id="badge-p1-count" class="px-1.5 py-0.2 rounded text-[10px] bg-cyan-900/60 font-mono text-cyan-300">0</span>
+        </button>
+
+        <button onclick="switchTab('tab-p2')" id="nav-tab-p2" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
+          <i data-lucide="trending-up" class="w-4 h-4 text-violet-400"></i>
+          <span>Portfolio 2: Nifty 500 Momentum</span>
+          <span id="badge-p2-slots" class="px-1.5 py-0.2 rounded text-[10px] bg-violet-900/60 font-mono text-violet-300">0/10</span>
+        </button>
+
+        <button onclick="switchTab('tab-signals')" id="nav-tab-signals" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
+          <i data-lucide="crosshair" class="w-4 h-4 text-emerald-400"></i>
+          <span>Live Signals Screener</span>
+        </button>
+
+        <button onclick="switchTab('tab-history')" id="nav-tab-history" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
+          <i data-lucide="history" class="w-4 h-4 text-amber-400"></i>
+          <span>Trade History</span>
+        </button>
+
+        <button onclick="switchTab('tab-scheduler')" id="nav-tab-scheduler" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
+          <i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i>
+          <span>Scheduler & Logs</span>
+        </button>
+
+      </nav>
+    </div>
+  </div>
+
+  <!-- MAIN VIEWPORT CONTAINER -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-8">
+
+    <!-- ================================================================= -->
+    <!-- TAB 1: PORTFOLIO 1 — INSTITUTIONAL 6-PILLAR ENGINE                -->
+    <!-- ================================================================= -->
+    <div id="tab-p1" class="tab-content space-y-6">
+      
+      <!-- Engine Header & Subtitle -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/60 border border-slate-800 p-5 rounded-2xl glow-cyan">
+        <div>
+          <div class="flex items-center gap-2.5">
+            <span class="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">PORTFOLIO 1</span>
+            <h2 class="text-xl font-extrabold text-white">Institutional 6-Pillar Percentile Engine</h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">
+            Dynamic Chartink Screener Universe • ₹5,00,000 Base • ML Meta-Classifier Re-Ranker • 4-Bucket Classification (BUY NOW / PRE-BREAKOUT / WAIT PULLBACK / AVOID) • T1 +1.5R (BE Trail) / T2 +3.0R
+          </p>
+        </div>
+        <div class="flex items-center gap-2 self-start sm:self-center">
+          <button onclick="triggerScan('INSTITUTIONAL')" class="px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-black font-semibold text-xs flex items-center gap-1.5 transition">
+            <i data-lucide="play" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+            <span>Scan P1 Universe</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- KPI Metric Cards Grid -->
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+          <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Portfolio Equity</div>
+          <div id="p1-kpi-equity" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">₹5,00,000</div>
+          <div class="text-[10px] text-cyan-400 mt-1 font-mono">Base: ₹5,00,000</div>
+        </div>
+
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+          <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Active Positions</div>
+          <div id="p1-kpi-active" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">0</div>
+          <div id="p1-kpi-risk" class="text-[10px] text-rose-400 mt-1 font-mono">Open Risk: ₹0</div>
+        </div>
+
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+          <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Realized PnL</div>
+          <div id="p1-kpi-realized" class="text-lg sm:text-2xl font-mono font-bold text-slate-200 mt-1">₹0.00</div>
+          <div id="p1-kpi-unrealized" class="text-[10px] text-slate-400 mt-1 font-mono">Unrealized: ₹0.00</div>
+        </div>
+
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+          <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Win Rate / PF</div>
+          <div class="text-lg sm:text-2xl font-mono font-bold text-emerald-400 mt-1">
+            <span id="p1-kpi-winrate">0.0%</span>
+          </div>
+          <div id="p1-kpi-pf" class="text-[10px] text-slate-400 mt-1 font-mono">Profit Factor: 0.00</div>
+        </div>
+
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 col-span-2 lg:col-span-1">
+          <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Expectancy (R)</div>
+          <div id="p1-kpi-expectancy" class="text-lg sm:text-2xl font-mono font-bold text-cyan-400 mt-1">+0.00 R</div>
+          <div id="p1-kpi-ratio" class="text-[10px] text-slate-400 mt-1 font-mono">Avg Win: +0.0R | Loss: -0.0R</div>
+        </div>
+      </div>
+
+      <!-- Active Holdings Section -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i data-lucide="briefcase" class="w-4 h-4 text-cyan-400"></i>
+            <h3 class="font-bold text-white text-sm">Active Holdings & Trailing Stops</h3>
+            <span id="p1-active-count-tag" class="text-xs font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">0 Open</span>
+          </div>
+          <button onclick="reconcilePortfolio('INSTITUTIONAL_6PILLAR')" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+            <span>Reconcile Stops</span>
+          </button>
+        </div>
+
+        <!-- Desktop Table / Mobile Cards for Holdings -->
+        <div class="overflow-x-auto custom-scroll">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="p-3.5">Symbol</th>
+                <th class="p-3.5">Entry / LTP</th>
+                <th class="p-3.5">Stop Loss</th>
+                <th class="p-3.5">T1 (1.5R) / T2 (3.0R)</th>
+                <th class="p-3.5">Qty / Value</th>
+                <th class="p-3.5">Unrealized PnL</th>
+                <th class="p-3.5">R-Multiple</th>
+                <th class="p-3.5">Status</th>
+                <th class="p-3.5 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="p1-positions-tbody" class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td colspan="9" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 1. Run a scan to discover setups.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Signals Snapshot Section -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="target" class="w-4 h-4 text-cyan-400"></i>
+              <span>Latest Screened Setups (Portfolio 1)</span>
+            </h3>
+            <p class="text-xs text-slate-400">Classified across 6 Pillars & ML Win Probability</p>
+          </div>
+          
+          <!-- Filter Buttons -->
+          <div class="flex items-center gap-1.5 overflow-x-auto custom-scroll text-xs">
+            <button onclick="filterP1Signals('ALL')" class="p1-filter-btn px-2.5 py-1 rounded bg-slate-800 text-slate-200 font-medium">All</button>
+            <button onclick="filterP1Signals('BUY_NOW')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-emerald-400 font-medium">BUY NOW</button>
+            <button onclick="filterP1Signals('PRE_BREAKOUT')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-cyan-400 font-medium">PRE BREAKOUT</button>
+            <button onclick="filterP1Signals('WAIT_PULLBACK')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-amber-400 font-medium">WAIT PULLBACK</button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto custom-scroll">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="p-3">Stock / Sector</th>
+                <th class="p-3">Bucket</th>
+                <th class="p-3">Score</th>
+                <th class="p-3">ML P(W)</th>
+                <th class="p-3">Tier</th>
+                <th class="p-3">Close / Entry</th>
+                <th class="p-3">Stop Loss</th>
+                <th class="p-3">T1 / T2</th>
+                <th class="p-3">Suggested Shares</th>
+                <th class="p-3">Risk (INR)</th>
+                <th class="p-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="p1-signals-tbody" class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td colspan="11" class="p-8 text-center text-slate-500 font-sans">No signal data loaded yet. Click 'Scan P1 Universe'.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- TAB 2: PORTFOLIO 2 — NIFTY 500 MOMENTUM COMPOUNDED ENGINE         -->
+    <!-- ================================================================= -->
+    <div id="tab-p2" class="tab-content hidden space-y-6">
+      
+      <!-- Engine Header & Subtitle -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/60 border border-slate-800 p-5 rounded-2xl glow-violet">
+        <div>
+          <div class="flex items-center gap-2.5">
+            <span class="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">PORTFOLIO 2</span>
+            <h2 class="text-xl font-extrabold text-white">Nifty 500 Momentum Compounded Engine</h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">
+            ₹1,00,000 Base Dynamic Reinvestment Compounding • Max 10 Concurrent Slots (10% Cap) • 1.5% Compounded Risk • 7-Point Entry Criteria Matrix • 4-Tier Strategy Exit Hierarchy
+          </p>
+        </div>
+        <div class="flex items-center gap-2 self-start sm:self-center">
+          <button onclick="triggerScan('NIFTY500')" class="px-3.5 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs flex items-center gap-1.5 transition">
+            <i data-lucide="play" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+            <span>Run 3:05 PM Scan</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Macro Regime Gate Banner -->
+      <div id="p2-regime-banner" class="p-4 rounded-xl border border-slate-800 bg-slate-900/90 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div id="p2-regime-icon-box" class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+            <i data-lucide="shield-check" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-white flex items-center gap-2">
+              <span>Macro Regime Gate:</span>
+              <span id="p2-regime-text" class="text-emerald-400 font-mono">BULL REGIME (^CRSLDX > 50 EMA)</span>
+            </div>
+            <div class="text-[11px] text-slate-400 mt-0.5" id="p2-regime-desc">
+              Benchmark Nifty 500 is trading comfortably above its 50-day EMA. New long setups permitted.
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 text-xs font-mono text-slate-300">
+          <div>LTP: <span id="p2-bench-ltp" class="text-white">--</span></div>
+          <div>EMA50: <span id="p2-bench-ema" class="text-slate-400">--</span></div>
+        </div>
+      </div>
+
+      <!-- KPI Metric Cards Grid -->
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+          <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Compounded Equity</div>
+          <div id="p2-kpi-equity" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">₹1,00,000</div>
+          <div id="p2-kpi-multiplier" class="text-[10px] text-violet-400 mt-1 font-mono">1.00x Base Capital</div>
+        </div>
+
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+          <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Portfolio Slots</div>
+          <div id="p2-kpi-slots" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">0 / 10</div>
+          <div id="p2-kpi-slotcap" class="text-[10px] text-slate-400 mt-1 font-mono">Slot Cap: ₹10,000 (10%)</div>
+        </div>
+
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+          <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Risk / Trade (1.5%)</div>
+          <div id="p2-kpi-risk" class="text-lg sm:text-2xl font-mono font-bold text-amber-400 mt-1">₹1,500</div>
+          <div class="text-[10px] text-slate-400 mt-1 font-mono">Stop: 2.0x ATR Wilder</div>
+        </div>
+
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+          <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Realized PnL</div>
+          <div id="p2-kpi-realized" class="text-lg sm:text-2xl font-mono font-bold text-slate-200 mt-1">₹0.00</div>
+          <div id="p2-kpi-winrate" class="text-[10px] text-emerald-400 mt-1 font-mono">Win Rate: 0.0%</div>
+        </div>
+
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 col-span-2 lg:col-span-1">
+          <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">4-Tier Exit Rules</div>
+          <div class="text-xs text-slate-300 mt-2 space-y-1 font-mono">
+            <div>1. SL: -2.0 ATR</div>
+            <div>2. Trail: 5D Low @ +2R</div>
+            <div>3. Cut: &lt;20 EMA | 4. 8D</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Holdings Section with 4-Tier Strategy Exits -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i data-lucide="layers" class="w-4 h-4 text-violet-400"></i>
+            <h3 class="font-bold text-white text-sm">Active Positions (Portfolio 2)</h3>
+            <span id="p2-active-count-tag" class="text-xs font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">0 Open</span>
+          </div>
+          <button onclick="reconcilePortfolio('NIFTY500_MOMENTUM')" class="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1">
+            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+            <span>Evaluate Exits</span>
+          </button>
+        </div>
+
+        <div class="overflow-x-auto custom-scroll">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="p-3.5">Symbol</th>
+                <th class="p-3.5">Entry / LTP</th>
+                <th class="p-3.5">Current Stop</th>
+                <th class="p-3.5">+2R Trailing Target</th>
+                <th class="p-3.5">Shares / Cost</th>
+                <th class="p-3.5">Unrealized PnL</th>
+                <th class="p-3.5">Days Held</th>
+                <th class="p-3.5">Exit Strategy State</th>
+                <th class="p-3.5 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="p2-positions-tbody" class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td colspan="9" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 2.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Qualifying Candidate Signals for 3:05 PM MOC -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="check-circle" class="w-4 h-4 text-violet-400"></i>
+              <span>7-Point Matrix Qualifying Setups (3:05 PM Close)</span>
+            </h3>
+            <p class="text-xs text-slate-400">Ranked by Relative Strength Spread vs Nifty 500</p>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto custom-scroll">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="p-3">Stock Symbol</th>
+                <th class="p-3">LTP (3:05 PM)</th>
+                <th class="p-3">RS Spread (63d)</th>
+                <th class="p-3">RSI-14 (40-62)</th>
+                <th class="p-3">Initial SL (-2 ATR)</th>
+                <th class="p-3">+2R Trailing Level</th>
+                <th class="p-3">Calculated Shares</th>
+                <th class="p-3">Allocated (INR)</th>
+                <th class="p-3">Risk (INR)</th>
+                <th class="p-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="p2-signals-tbody" class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td colspan="10" class="p-8 text-center text-slate-500 font-sans">No candidate signals yet. Run 3:05 PM MOC scan.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- TAB 3: LIVE SIGNALS & SCREENER DESK                               -->
+    <!-- ================================================================= -->
+    <div id="tab-signals" class="tab-content hidden space-y-6">
+      
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="crosshair" class="w-5 h-5 text-emerald-400"></i>
+              <span>Live Quantitative Screener Desk</span>
+            </h2>
+            <p class="text-xs text-slate-400">Real-time scan results across all pillars, RVOL volume expansion, and sector benchmarks.</p>
+          </div>
+          
+          <!-- Search & Filter Controls -->
+          <div class="flex items-center gap-2.5">
+            <div class="relative">
+              <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500"></i>
+              <input type="text" id="signals-search-input" onkeyup="renderGlobalSignals()" placeholder="Search symbol or sector..." class="bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 w-48 sm:w-64">
+            </div>
+            
+            <select id="signals-portfolio-select" onchange="renderGlobalSignals()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+              <option value="ALL">All Portfolios</option>
+              <option value="INSTITUTIONAL_6PILLAR">Portfolio 1 (Institutional)</option>
+              <option value="NIFTY500_MOMENTUM">Portfolio 2 (Nifty 500)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto custom-scroll mt-4">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="p-3">Symbol</th>
+                <th class="p-3">Portfolio</th>
+                <th class="p-3">Sector</th>
+                <th class="p-3">Bucket / Verdict</th>
+                <th class="p-3">Score</th>
+                <th class="p-3">ML Prob</th>
+                <th class="p-3">Entry</th>
+                <th class="p-3">Stop Loss</th>
+                <th class="p-3">Target 1</th>
+                <th class="p-3">RSI-14</th>
+                <th class="p-3">Weekly Conf</th>
+                <th class="p-3 text-right">Order Sizing</th>
+              </tr>
+            </thead>
+            <tbody id="global-signals-tbody" class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td colspan="12" class="p-8 text-center text-slate-500 font-sans">Loading latest screener signals...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- TAB 4: TRADE HISTORY & AUDIT LOG                                  -->
+    <!-- ================================================================= -->
+    <div id="tab-history" class="tab-content hidden space-y-6">
+      
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="history" class="w-5 h-5 text-amber-400"></i>
+              <span>Execution History & Closed Trades</span>
+            </h2>
+            <p class="text-xs text-slate-400">Complete historical audit trail of exits, R-multiples, and return percentages.</p>
+          </div>
+          
+          <select id="history-filter-select" onchange="loadHistoryData()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200">
+            <option value="ALL">All Portfolios</option>
+            <option value="INSTITUTIONAL_6PILLAR">Portfolio 1 (Institutional)</option>
+            <option value="NIFTY500_MOMENTUM">Portfolio 2 (Nifty 500)</option>
+          </select>
+        </div>
+
+        <div class="overflow-x-auto custom-scroll mt-4">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="p-3">Symbol</th>
+                <th class="p-3">Portfolio</th>
+                <th class="p-3">Entry Price</th>
+                <th class="p-3">Exit Price</th>
+                <th class="p-3">Shares</th>
+                <th class="p-3">PnL (INR)</th>
+                <th class="p-3">Return %</th>
+                <th class="p-3">R-Multiple</th>
+                <th class="p-3">Hold Days</th>
+                <th class="p-3">Exit Reason</th>
+                <th class="p-3 text-right">Date</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody" class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td colspan="11" class="p-8 text-center text-slate-500 font-sans">No trade history recorded yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- TAB 5: SCHEDULER & AUTOMATION MONITOR                             -->
+    <!-- ================================================================= -->
+    <div id="tab-scheduler" class="tab-content hidden space-y-6">
+      
+      <!-- Automated Timeline Card -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
+        <h2 class="text-lg font-bold text-white flex items-center gap-2 mb-2">
+          <i data-lucide="clock" class="w-5 h-5 text-blue-400"></i>
+          <span>Automated Trading Day Schedule</span>
+        </h2>
+        <p class="text-xs text-slate-400 mb-6">
+          Precision execution timed around NSE Indian market liquidity dynamics:
+        </p>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- 10:20 AM -->
+          <div class="bg-slate-950/70 border border-cyan-800/40 rounded-xl p-4 relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl pointer-events-none"></div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-mono font-bold text-cyan-400">10:20 AM IST</span>
+              <span class="px-2 py-0.5 rounded text-[10px] bg-cyan-900/50 text-cyan-300 font-mono">DAILY MON-FRI</span>
+            </div>
+            <h4 class="font-bold text-white text-sm">Morning Intraday Scan</h4>
+            <p class="text-xs text-slate-400 mt-1">
+              Runs 65 minutes post-open after initial gap traps settle. Evaluates opening range expansion, early RVOL volume, and reconciles overnight gaps.
+            </p>
+          </div>
+
+          <!-- 3:05 PM -->
+          <div class="bg-slate-950/70 border border-violet-800/40 rounded-xl p-4 relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-24 h-24 bg-violet-500/5 rounded-full blur-xl pointer-events-none"></div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-mono font-bold text-violet-400">03:05 PM IST</span>
+              <span class="px-2 py-0.5 rounded text-[10px] bg-violet-900/50 text-violet-300 font-mono">DAILY MON-FRI</span>
+            </div>
+            <h4 class="font-bold text-white text-sm">Afternoon MOC Swing Scan</h4>
+            <p class="text-xs text-slate-400 mt-1">
+              Runs 25 minutes before market close. 92% daily volume completed. Applies Intraday Confirmation (±15 pts), checks 4-Tier Strategy Exits & executes new 7-point matrix swing entries.
+            </p>
+          </div>
+
+          <!-- Holiday Calendar Check -->
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 relative overflow-hidden">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-mono font-bold text-amber-400">NSE CALENDAR</span>
+              <span class="px-2 py-0.5 rounded text-[10px] bg-amber-900/50 text-amber-300 font-mono">AUTOMATIC</span>
+            </div>
+            <h4 class="font-bold text-white text-sm">Holiday & Weekend Guard</h4>
+            <p class="text-xs text-slate-400 mt-1">
+              Strictly enforces official NSE Exchange holiday schedule. Prevents erroneous off-market requests and safely sleeps until the next active trading session.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Execution Logs Table -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+          <h3 class="font-bold text-white text-sm flex items-center gap-2">
+            <i data-lucide="file-text" class="w-4 h-4 text-slate-400"></i>
+            <span>Scan Execution Logs</span>
+          </h3>
+          <button onclick="loadScanLogs()" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+            <span>Refresh Logs</span>
+          </button>
+        </div>
+
+        <div class="overflow-x-auto custom-scroll mt-4">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="p-3">Timestamp (IST)</th>
+                <th class="p-3">Scan Type</th>
+                <th class="p-3">Portfolio</th>
+                <th class="p-3">Status</th>
+                <th class="p-3">Duration</th>
+                <th class="p-3">Candidates</th>
+                <th class="p-3">Orders</th>
+                <th class="p-3">Message</th>
+              </tr>
+            </thead>
+            <tbody id="scan-logs-tbody" class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td colspan="8" class="p-8 text-center text-slate-500 font-sans">No execution logs found.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- MOBILE BOTTOM NAVIGATION BAR -->
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-[#0b0f19]/95 backdrop-blur-md border-t border-slate-800 z-50 px-2 py-2 flex items-center justify-around text-[10px] pb-safe font-medium">
+    <button onclick="switchTab('tab-p1')" class="mobile-nav-btn flex flex-col items-center gap-1 text-cyan-400" id="mob-nav-p1">
+      <i data-lucide="layers" class="w-5 h-5"></i>
+      <span>Portfolio 1</span>
+    </button>
+    <button onclick="switchTab('tab-p2')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-p2">
+      <i data-lucide="trending-up" class="w-5 h-5"></i>
+      <span>Portfolio 2</span>
+    </button>
+    <button onclick="switchTab('tab-signals')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-signals">
+      <i data-lucide="crosshair" class="w-5 h-5"></i>
+      <span>Signals</span>
+    </button>
+    <button onclick="switchTab('tab-history')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-history">
+      <i data-lucide="history" class="w-5 h-5"></i>
+      <span>History</span>
+    </button>
+    <button onclick="switchTab('tab-scheduler')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-scheduler">
+      <i data-lucide="calendar" class="w-5 h-5"></i>
+      <span>Schedule</span>
+    </button>
+  </nav>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast-container" class="fixed bottom-16 md:bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+  <!-- JAVASCRIPT APP LOGIC -->
+  <script>
+    let currentTab = 'tab-p1';
+    let p1SignalsCache = [];
+    let p2SignalsCache = [];
+    let allPositionsCache = [];
+
+    // Initialize Lucide Icons & Clocks
+    document.addEventListener("DOMContentLoaded", () => {
+      lucide.createIcons();
+      setInterval(updateClock, 1000);
+      refreshAllData();
+      setInterval(refreshAllData, 30000); // Poll status every 30s
+    });
+
+    function updateClock() {
+      const now = new Date();
+      // Render IST time string
+      const istString = now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+      const clockEl = document.getElementById('live-ist-clock');
+      if (clockEl) clockEl.innerText = `${istString} IST`;
+    }
+
+    function toggleScanMenu() {
+      const menu = document.getElementById('scan-dropdown');
+      menu.classList.toggle('hidden');
+    }
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (e) => {
+      const menu = document.getElementById('scan-dropdown');
+      const btn = document.getElementById('btn-scan-menu');
+      if (menu && !menu.contains(e.target) && !btn.contains(e.target)) {
+        menu.classList.add('hidden');
+      }
+    });
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const bg = type === 'success' ? 'bg-emerald-950 border-emerald-700 text-emerald-200' :
+                 type === 'error' ? 'bg-rose-950 border-rose-700 text-rose-200' :
+                 'bg-slate-900 border-slate-700 text-slate-200';
+      
+      toast.className = `p-3.5 rounded-xl border shadow-2xl text-xs flex items-center gap-2 pointer-events-auto transition-all transform translate-y-2 opacity-0 ${bg}`;
+      toast.innerHTML = `<span>${message}</span>`;
+      container.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
+    }
+
+    function switchTab(tabId) {
+      currentTab = tabId;
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.getElementById(tabId).classList.remove('hidden');
+
+      // Update Desktop Nav styles
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('bg-cyan-500/10', 'text-cyan-400', 'border-cyan-500/30', 'bg-violet-500/10', 'text-violet-400', 'border-violet-500/30');
+        btn.classList.add('text-slate-400', 'border-transparent');
+      });
+
+      const activeBtn = document.getElementById(`nav-${tabId}`);
+      if (activeBtn) {
+        if (tabId === 'tab-p2') {
+          activeBtn.classList.add('bg-violet-500/10', 'text-violet-400', 'border-violet-500/30');
+        } else {
+          activeBtn.classList.add('bg-cyan-500/10', 'text-cyan-400', 'border-cyan-500/30');
+        }
+        activeBtn.classList.remove('text-slate-400', 'border-transparent');
+      }
+
+      // Update Mobile Nav styles
+      document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+        btn.classList.remove('text-cyan-400', 'text-violet-400');
+        btn.classList.add('text-slate-400');
+      });
+      const mobBtn = document.getElementById(`mob-nav-${tabId.replace('tab-', '')}`);
+      if (mobBtn) {
+        mobBtn.classList.remove('text-slate-400');
+        mobBtn.classList.add(tabId === 'tab-p2' ? 'text-violet-400' : 'text-cyan-400');
+      }
+
+      lucide.createIcons();
+      if (tabId === 'tab-signals') renderGlobalSignals();
+      if (tabId === 'tab-history') loadHistoryData();
+      if (tabId === 'tab-scheduler') loadScanLogs();
+    }
+
+    async function refreshAllData() {
+      const icon = document.getElementById('refresh-icon');
+      if (icon) icon.classList.add('animate-spin');
+
+      try {
+        await Promise.all([
+          loadSystemStatus(),
+          loadP1Data(),
+          loadP2Data()
+        ]);
+      } catch (e) {
+        console.error("Error refreshing data:", e);
+      } finally {
+        if (icon) icon.classList.remove('animate-spin');
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // SYSTEM STATUS & CALENDAR
+    // -------------------------------------------------------------------------
+    async function loadSystemStatus() {
+      const res = await fetch('/api/status');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      // Market Status
+      const mStatus = data.market_status || {};
+      const statusText = mStatus.message || "Market Closed";
+      const statusPill = document.getElementById('market-status-pill');
+      const statusEl = document.getElementById('market-status-text');
+      const mobStatusEl = document.getElementById('mobile-market-status');
+
+      if (statusEl) statusEl.innerText = statusText;
+      if (mobStatusEl) mobStatusEl.innerHTML = `<span class="w-2 h-2 rounded-full ${mStatus.is_open ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse"></span><span>${statusText}</span>`;
+
+      // Next Scan
+      const nextScan = data.next_scan || {};
+      const nextText = nextScan.label ? `${nextScan.label}` : "Next: Scheduled";
+      const nextScanEl = document.getElementById('next-scan-text');
+      const mobNextEl = document.getElementById('mobile-next-scan');
+      if (nextScanEl) nextScanEl.innerText = `Next: ${nextText}`;
+      if (mobNextEl) mobNextEl.innerText = `Next: ${nextText}`;
+    }
+
+    // -------------------------------------------------------------------------
+    // PORTFOLIO 1 DATA
+    // -------------------------------------------------------------------------
+    async function loadP1Data() {
+      // Summary
+      const sumRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/summary');
+      if (sumRes.ok) {
+        const sum = await sumRes.json();
+        const st = sum.stats || {};
+        document.getElementById('p1-kpi-equity').innerText = `₹${(sum.current_equity || 500000).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+        document.getElementById('p1-kpi-active').innerText = sum.active_positions || 0;
+        document.getElementById('badge-p1-count').innerText = sum.active_positions || 0;
+        document.getElementById('p1-active-count-tag').innerText = `${sum.active_positions || 0} Open`;
+        document.getElementById('p1-kpi-risk').innerText = `Open Risk: ₹${(st.open_risk || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+        
+        const pnl = st.total_realized_pnl || 0;
+        const pnlEl = document.getElementById('p1-kpi-realized');
+        pnlEl.innerText = `${pnl >= 0 ? '+' : ''}₹${pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        pnlEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+        document.getElementById('p1-kpi-unrealized').innerText = `Unrealized: ₹${(st.unrealized_pnl || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        document.getElementById('p1-kpi-winrate').innerText = `${st.win_rate || 0}%`;
+        document.getElementById('p1-kpi-pf').innerText = `Profit Factor: ${st.profit_factor || 0}`;
+        document.getElementById('p1-kpi-expectancy').innerText = `${st.expectancy_r >= 0 ? '+' : ''}${st.expectancy_r || 0} R`;
+        document.getElementById('p1-kpi-ratio').innerText = `Avg Win: +${st.avg_win_r || 0}R | Loss: ${st.avg_loss_r || 0}R`;
+      }
+
+      // Positions
+      const posRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/positions');
+      if (posRes.ok) {
+        const positions = await posRes.json();
+        renderP1Positions(positions);
+      }
+
+      // Signals
+      const sigRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/signals');
+      if (sigRes.ok) {
+        p1SignalsCache = await sigRes.json();
+        renderP1SignalsTable(p1SignalsCache);
+      }
+    }
+
+    function renderP1Positions(positions) {
+      const tbody = document.getElementById('p1-positions-tbody');
+      if (!tbody) return;
+
+      if (!positions || positions.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 1. Run a scan to find setups.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = positions.map(p => {
+        const pnl = p.unrealized_pnl || 0;
+        const pnlClass = pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        const pnlSign = pnl >= 0 ? '+' : '';
+        const t1Badge = p.t1_hit ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-300">T1 BOOKED</span>' : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">OPEN</span>';
+
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="p-3.5 font-bold text-white flex items-center gap-1.5">
+              <span>${p.symbol}</span>
+              <span class="text-[10px] px-1 rounded bg-slate-800 text-slate-400 font-normal">${p.sector || 'NSE'}</span>
+            </td>
+            <td class="p-3.5">
+              <div>₹${p.entry_price.toFixed(2)}</div>
+              <div class="text-[11px] text-slate-400">LTP: ₹${(p.current_price || p.entry_price).toFixed(2)}</div>
+            </td>
+            <td class="p-3.5 text-rose-400 font-semibold">₹${p.stop_loss.toFixed(2)}</td>
+            <td class="p-3.5">
+              <div class="text-amber-400">T1: ₹${p.target.toFixed(2)}</div>
+              <div class="text-emerald-400 text-[11px]">T2: ₹${(p.target_2 || 0).toFixed(2)}</div>
+            </td>
+            <td class="p-3.5">
+              <div>${p.quantity} shs</div>
+              <div class="text-[11px] text-slate-400">₹${(p.quantity * p.entry_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+            </td>
+            <td class="p-3.5 ${pnlClass} font-bold font-mono">
+              ${pnlSign}₹${pnl.toFixed(2)}
+              <div class="text-[10px] font-normal">(${pnlSign}${(p.return_pct || 0).toFixed(2)}%)</div>
+            </td>
+            <td class="p-3.5 font-bold ${p.current_r >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+              ${p.current_r >= 0 ? '+' : ''}${(p.current_r || 0).toFixed(2)} R
+            </td>
+            <td class="p-3.5">${t1Badge}</td>
+            <td class="p-3.5 text-right">
+              <button onclick="closePositionModal('${p.symbol}', ${p.current_price || p.entry_price})" class="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] transition">Close</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderP1SignalsTable(signals) {
+      const tbody = document.getElementById('p1-signals-tbody');
+      if (!tbody) return;
+
+      if (!signals || signals.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="11" class="p-8 text-center text-slate-500 font-sans">No signals in current snapshot. Run a scan.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = signals.map(s => {
+        let bStyle = 'bg-slate-800 text-slate-400';
+        if (s.bucket === 'BUY_NOW') bStyle = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        else if (s.bucket === 'PRE_BREAKOUT') bStyle = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
+        else if (s.bucket === 'WAIT_PULLBACK') bStyle = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="p-3 font-bold text-white">
+              <div>${s.symbol}</div>
+              <div class="text-[10px] text-slate-400 font-normal">${s.sector || 'EQUITY'}</div>
+            </td>
+            <td class="p-3">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold ${bStyle}">${s.bucket}</span>
+            </td>
+            <td class="p-3 text-cyan-400 font-bold">${(s.score || 0).toFixed(1)}</td>
+            <td class="p-3 text-purple-400">${(s.ml_prob || 0).toFixed(2)}</td>
+            <td class="p-3 font-bold text-slate-200">${s.tier || 'A'}</td>
+            <td class="p-3">₹${(s.close || 0).toFixed(2)}</td>
+            <td class="p-3 text-rose-400">₹${(s.sl || 0).toFixed(2)}</td>
+            <td class="p-3">
+              <span class="text-amber-400">₹${(s.t1 || 0).toFixed(2)}</span> / 
+              <span class="text-emerald-400">₹${(s.t2 || 0).toFixed(2)}</span>
+            </td>
+            <td class="p-3">${s.shares || 0} shs</td>
+            <td class="p-3 text-purple-300 font-mono">₹${(s.capital_at_risk || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+            <td class="p-3 text-right">
+              ${s.bucket === 'BUY_NOW' ? `<button onclick="executeSignalOrder('${s.symbol}', ${s.entry}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2})" class="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[10px] transition">Buy CNC</button>` : `<span class="text-slate-600 text-[10px]">-</span>`}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function filterP1Signals(bucket) {
+      document.querySelectorAll('.p1-filter-btn').forEach(b => {
+        b.classList.remove('bg-cyan-500', 'text-black');
+        b.classList.add('hover:bg-slate-800');
+      });
+
+      if (bucket === 'ALL') {
+        renderP1SignalsTable(p1SignalsCache);
+      } else {
+        const filtered = p1SignalsCache.filter(s => s.bucket === bucket);
+        renderP1SignalsTable(filtered);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // PORTFOLIO 2 DATA
+    // -------------------------------------------------------------------------
+    async function loadP2Data() {
+      // Summary
+      const sumRes = await fetch('/api/portfolio/NIFTY500_MOMENTUM/summary');
+      if (sumRes.ok) {
+        const sum = await sumRes.json();
+        const st = sum.stats || {};
+        
+        document.getElementById('p2-kpi-equity').innerText = `₹${(sum.current_equity || 100000).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+        const mult = (sum.current_equity / sum.base_capital).toFixed(2);
+        document.getElementById('p2-kpi-multiplier').innerText = `${mult}x Dynamic Compounding`;
+        
+        document.getElementById('p2-kpi-slots').innerText = `${sum.active_slots || 0} / ${sum.max_slots || 10}`;
+        document.getElementById('badge-p2-slots').innerText = `${sum.active_slots || 0}/${sum.max_slots || 10}`;
+        document.getElementById('p2-active-count-tag').innerText = `${sum.active_slots || 0} Open`;
+        document.getElementById('p2-kpi-slotcap').innerText = `Slot Cap: ₹${(sum.slot_cap_inr || 10000).toLocaleString('en-IN', { maximumFractionDigits: 0 })} (10%)`;
+        document.getElementById('p2-kpi-risk').innerText = `₹${(sum.risk_per_trade_inr || 1500).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+        
+        const pnl = st.total_realized_pnl || 0;
+        const pnlEl = document.getElementById('p2-kpi-realized');
+        pnlEl.innerText = `${pnl >= 0 ? '+' : ''}₹${pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        pnlEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+        document.getElementById('p2-kpi-winrate').innerText = `Win Rate: ${st.win_rate || 0}%`;
+
+        // Regime banner
+        const isBull = (sum.macro_regime || "").includes("BULL");
+        const rBanner = document.getElementById('p2-regime-banner');
+        const rText = document.getElementById('p2-regime-text');
+        const rDesc = document.getElementById('p2-regime-desc');
+        const rIcon = document.getElementById('p2-regime-icon-box');
+
+        if (rText) rText.innerText = sum.macro_regime || "UNKNOWN";
+        if (document.getElementById('p2-bench-ltp')) document.getElementById('p2-bench-ltp').innerText = sum.bench_ltp ? `₹${sum.bench_ltp.toFixed(2)}` : '--';
+        if (document.getElementById('p2-bench-ema')) document.getElementById('p2-bench-ema').innerText = sum.bench_ema50 ? `₹${sum.bench_ema50.toFixed(2)}` : '--';
+
+        if (isBull) {
+          if (rIcon) rIcon.className = "w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center";
+          if (rText) rText.className = "text-emerald-400 font-mono font-bold";
+          if (rDesc) rDesc.innerText = "Benchmark Nifty 500 is trading comfortably above its 50-day EMA. New long setups permitted.";
+        } else {
+          if (rIcon) rIcon.className = "w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center";
+          if (rText) rText.className = "text-rose-400 font-mono font-bold";
+          if (rDesc) rDesc.innerText = "Benchmark Nifty 500 is below 50-EMA. Defensive capital preservation: 100% Cash Defense.";
+        }
+      }
+
+      // Positions
+      const posRes = await fetch('/api/portfolio/NIFTY500_MOMENTUM/positions');
+      if (posRes.ok) {
+        const positions = await posRes.json();
+        renderP2Positions(positions);
+      }
+
+      // Signals
+      const sigRes = await fetch('/api/portfolio/NIFTY500_MOMENTUM/signals');
+      if (sigRes.ok) {
+        p2SignalsCache = await sigRes.json();
+        renderP2SignalsTable(p2SignalsCache);
+      }
+    }
+
+    function renderP2Positions(positions) {
+      const tbody = document.getElementById('p2-positions-tbody');
+      if (!tbody) return;
+
+      if (!positions || positions.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 2.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = positions.map(p => {
+        const pnl = p.unrealized_pnl || 0;
+        const pnlClass = pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        const pnlSign = pnl >= 0 ? '+' : '';
+        const isTrailing = Boolean(p.t1_hit || p.sl_reason === 'TRAILING_SL');
+        const stateBadge = isTrailing ?
+          '<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">🎯 TRAILING 5D LOW</span>' :
+          '<span class="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">🛑 INITIAL SL (-2.0 ATR)</span>';
+
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="p-3.5 font-bold text-white">${p.symbol}</td>
+            <td class="p-3.5">
+              <div>₹${p.entry_price.toFixed(2)}</div>
+              <div class="text-[11px] text-slate-400">LTP: ₹${(p.current_price || p.entry_price).toFixed(2)}</div>
+            </td>
+            <td class="p-3.5 text-rose-400 font-semibold">₹${p.stop_loss.toFixed(2)}</td>
+            <td class="p-3.5 text-violet-400 font-semibold">₹${p.target.toFixed(2)}</td>
+            <td class="p-3.5">
+              <div>${p.quantity} shs</div>
+              <div class="text-[11px] text-slate-400">₹${(p.quantity * p.entry_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+            </td>
+            <td class="p-3.5 ${pnlClass} font-bold font-mono">
+              ${pnlSign}₹${pnl.toFixed(2)}
+              <div class="text-[10px] font-normal">(${pnlSign}${(p.return_pct || 0).toFixed(2)}%)</div>
+            </td>
+            <td class="p-3.5 text-slate-300">${p.hold_days || 0} / 8 days</td>
+            <td class="p-3.5">${stateBadge}</td>
+            <td class="p-3.5 text-right">
+              <button onclick="closePositionModal('${p.symbol}', ${p.current_price || p.entry_price})" class="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] transition">Close</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderP2SignalsTable(signals) {
+      const tbody = document.getElementById('p2-signals-tbody');
+      if (!tbody) return;
+
+      if (!signals || signals.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-500 font-sans">No candidate signals yet. Run 3:05 PM MOC scan.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = signals.map(s => {
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="p-3 font-bold text-white">${s.symbol}</td>
+            <td class="p-3 font-semibold text-slate-200">₹${(s.close || 0).toFixed(2)}</td>
+            <td class="p-3 text-emerald-400 font-bold">+${(s.rs_spread || 0).toFixed(1)}%</td>
+            <td class="p-3 text-cyan-300">${(s.rsi14 || 0).toFixed(1)}</td>
+            <td class="p-3 text-rose-400 font-semibold">₹${(s.sl || 0).toFixed(2)}</td>
+            <td class="p-3 text-violet-400 font-semibold">₹${(s.t1 || 0).toFixed(2)}</td>
+            <td class="p-3">${s.shares || 0} shs</td>
+            <td class="p-3 text-slate-300">₹${((s.shares || 0) * (s.close || 0)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+            <td class="p-3 text-rose-300">₹${(s.capital_at_risk || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+            <td class="p-3 text-right">
+              <button onclick="executeSignalOrder('${s.symbol}', ${s.close}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2}, 'NIFTY500_MOMENTUM')" class="px-2.5 py-1 rounded bg-violet-600 hover:bg-violet-500 text-white font-bold text-[10px] transition">Execute MOC</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // -------------------------------------------------------------------------
+    // GLOBAL SIGNALS SCREENER
+    // -------------------------------------------------------------------------
+    function renderGlobalSignals() {
+      const search = (document.getElementById('signals-search-input')?.value || "").toUpperCase();
+      const pFilter = document.getElementById('signals-portfolio-select')?.value || "ALL";
+
+      let combined = [];
+      if (pFilter === 'ALL' || pFilter === 'INSTITUTIONAL_6PILLAR') {
+        combined = combined.concat(p1SignalsCache.map(s => ({ ...s, p_label: 'P1 (6-Pillar)' })));
+      }
+      if (pFilter === 'ALL' || pFilter === 'NIFTY500_MOMENTUM') {
+        combined = combined.concat(p2SignalsCache.map(s => ({ ...s, p_label: 'P2 (Nifty 500)' })));
+      }
+
+      if (search) {
+        combined = combined.filter(s => s.symbol.includes(search) || (s.sector || "").includes(search));
+      }
+
+      const tbody = document.getElementById('global-signals-tbody');
+      if (!tbody) return;
+
+      if (combined.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-500 font-sans">No matching signals found.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = combined.map(s => {
+        let bStyle = 'bg-slate-800 text-slate-400';
+        if (s.bucket === 'BUY_NOW') bStyle = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        else if (s.bucket === 'PRE_BREAKOUT') bStyle = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
+        else if (s.bucket === 'WAIT_PULLBACK') bStyle = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="p-3 font-bold text-white">${s.symbol}</td>
+            <td class="p-3 text-[11px] text-slate-400">${s.p_label}</td>
+            <td class="p-3 text-slate-400">${s.sector || 'NSE'}</td>
+            <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${bStyle}">${s.bucket}</span></td>
+            <td class="p-3 text-cyan-400 font-bold">${(s.score || 0).toFixed(1)}</td>
+            <td class="p-3 text-purple-400">${(s.ml_prob || 0).toFixed(2)}</td>
+            <td class="p-3 font-semibold text-slate-200">₹${(s.entry || s.close || 0).toFixed(2)}</td>
+            <td class="p-3 text-rose-400">₹${(s.sl || 0).toFixed(2)}</td>
+            <td class="p-3 text-amber-400">₹${(s.t1 || 0).toFixed(2)}</td>
+            <td class="p-3">${(s.rsi14 || 0).toFixed(1)}</td>
+            <td class="p-3">${s.week_confluence ? '<span class="text-emerald-400 font-bold">YES</span>' : '<span class="text-slate-600">NO</span>'}</td>
+            <td class="p-3 text-right">
+              ${s.shares || 0} shs (₹${(s.capital_at_risk || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} risk)
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // -------------------------------------------------------------------------
+    // TRADE HISTORY
+    // -------------------------------------------------------------------------
+    async function loadHistoryData() {
+      const pFilter = document.getElementById('history-filter-select')?.value || "ALL";
+      const pParam = pFilter === 'ALL' ? '' : `portfolio_type=${pFilter}`;
+      const res = await fetch(`/api/portfolio/INSTITUTIONAL_6PILLAR/history?${pParam}`);
+      if (!res.ok) return;
+
+      const history = await res.json();
+      const tbody = document.getElementById('history-tbody');
+      if (!tbody) return;
+
+      if (history.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="11" class="p-8 text-center text-slate-500 font-sans">No closed trades recorded yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = history.map(t => {
+        const pnl = t.pnl || 0;
+        const pnlClass = pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        const pnlSign = pnl >= 0 ? '+' : '';
+
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="p-3 font-bold text-white">${t.symbol}</td>
+            <td class="p-3 text-[11px] text-slate-400">${t.portfolio_type.includes('NIFTY') ? 'P2 (Nifty 500)' : 'P1 (6-Pillar)'}</td>
+            <td class="p-3">₹${t.entry_price.toFixed(2)}</td>
+            <td class="p-3">₹${t.exit_price.toFixed(2)}</td>
+            <td class="p-3">${t.quantity}</td>
+            <td class="p-3 ${pnlClass} font-bold font-mono">${pnlSign}₹${pnl.toFixed(2)}</td>
+            <td class="p-3 ${pnlClass} font-bold font-mono">${pnlSign}${(t.return_pct || 0).toFixed(2)}%</td>
+            <td class="p-3 ${t.r_multiple >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">
+              ${t.r_multiple >= 0 ? '+' : ''}${(t.r_multiple || 0).toFixed(2)} R
+            </td>
+            <td class="p-3">${t.hold_days || 1}d</td>
+            <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">${t.exit_reason}</span></td>
+            <td class="p-3 text-right text-slate-400 text-[11px]">${t.exit_date ? t.exit_date.substring(0, 10) : ''}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // -------------------------------------------------------------------------
+    // SCAN EXECUTION LOGS
+    // -------------------------------------------------------------------------
+    async function loadScanLogs() {
+      const res = await fetch('/api/scan/logs');
+      if (!res.ok) return;
+
+      const logs = await res.json();
+      const tbody = document.getElementById('scan-logs-tbody');
+      if (!tbody) return;
+
+      if (logs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-500 font-sans">No scan logs recorded yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = logs.map(l => {
+        const isSuccess = l.status === 'SUCCESS';
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="p-3 font-mono text-slate-400">${l.timestamp}</td>
+            <td class="p-3 font-semibold text-white">${l.scan_type}</td>
+            <td class="p-3 text-slate-400">${l.portfolio_type}</td>
+            <td class="p-3">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isSuccess ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300'}">${l.status}</span>
+            </td>
+            <td class="p-3 text-slate-300">${l.execution_time_sec ? l.execution_time_sec.toFixed(1) + 's' : '-'}</td>
+            <td class="p-3 text-cyan-400">${l.candidates_count || 0}</td>
+            <td class="p-3 text-emerald-400 font-bold">${l.orders_count || 0}</td>
+            <td class="p-3 text-slate-400 max-w-xs truncate" title="${l.message || ''}">${l.message || '-'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // -------------------------------------------------------------------------
+    // ACTION TRIGGERS
+    // -------------------------------------------------------------------------
+    async function triggerScan(scanType) {
+      document.getElementById('scan-dropdown').classList.add('hidden');
+      const autoExec = document.getElementById('chk-auto-exec')?.checked || false;
+      showToast(`Initiating ${scanType} scan in background...`, 'info');
+
+      try {
+        const res = await fetch('/api/scan/trigger', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scan_type: scanType, auto_execute: autoExec })
+        });
+        const data = await res.json();
+        showToast(data.message || "Scan queued successfully.", 'success');
+        setTimeout(refreshAllData, 3000);
+      } catch (e) {
+        showToast(`Failed to trigger scan: ${e.message}`, 'error');
+      }
+    }
+
+    async function reconcilePortfolio(pType) {
+      showToast("Reconciling stops and target levels...", "info");
+      await triggerScan(pType === 'NIFTY500_MOMENTUM' ? 'NIFTY500' : 'INSTITUTIONAL');
+      setTimeout(refreshAllData, 2000);
+    }
+
+    async function closePositionModal(symbol, price) {
+      if (!confirm(`Are you sure you want to close position in ${symbol} at ₹${price}?`)) return;
+
+      try {
+        const res = await fetch('/api/position/close', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol: symbol, exit_price: price, exit_reason: 'MANUAL_UI_EXIT' })
+        });
+        if (res.ok) {
+          showToast(`Position in ${symbol} closed successfully.`, 'success');
+          refreshAllData();
+        } else {
+          showToast("Failed to close position.", 'error');
+        }
+      } catch (e) {
+        showToast(`Error: ${e.message}`, 'error');
+      }
+    }
+
+    async function executeSignalOrder(symbol, entry, shares, sl, t1, t2, pType = 'INSTITUTIONAL_6PILLAR') {
+      showToast(`Executing order for ${symbol} (${shares} shares @ ₹${entry})...`, 'info');
+      // Triggers scan with auto_execute
+      triggerScan(pType.includes('NIFTY') ? 'NIFTY500' : 'INSTITUTIONAL');
+    }
+  </script>
+</body>
+</html>
