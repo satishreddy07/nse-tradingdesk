@@ -255,7 +255,7 @@ class DirectYahooFinanceFetcher:
         so that any scan run at 10:20 AM, 3:05 PM, or manually during market hours includes
         historical daily OHLCV + the live partial candle up to the exact moment the scanner runs.
         """
-        yf_ticker = ticker if (ticker.startswith("^") or "." in ticker) else f"{ticker}.NS"
+        yf_ticker = ticker if (ticker.startswith("^") or "." in ticker or "=" in ticker or "-" in ticker) else f"{ticker}.NS"
         for attempt in range(max_retries):
             endpoint = self.endpoints[(hash(yf_ticker) + attempt) % len(self.endpoints)]
             url = endpoint.format(ticker=yf_ticker)

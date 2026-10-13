@@ -225,6 +225,30 @@ def scheduled_afternoon_scan_job():
         logger.error(f"Error in 3:05 PM Nifty 500 scan: {e}", exc_info=True)
 
 
+def scheduled_nifty_intraday_50min_job(slot_label: Optional[str] = None):
+    """
+    Runs at every 50-minute interval from 09:30 AM to 03:30 PM IST (09:30, 10:20, 11:10, 12:00, 12:50, 13:40, 14:30, 15:20/15:30).
+    Collects live Nifty 50 Current Weekly Option Chain data, stores the snapshot in SQLite (`data/swing_trades.db`),
+    refreshes Nifty T+1/T+5 predictions on opening/closing slots, and syncs to Telegram Cloud Vault.
+    """
+    current_dt = now_ist()
+    if not NSEMarketCalendar.is_trading_day(current_dt.date()):
+        return
+    try:
+        from engines.nifty_analytics_engine import nifty_analytics_engine
+        dash = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override=slot_label, sync_cloud=True)
+        snap = dash.get("latest_snapshot") or {}
+        logger.info(
+            f"⚡ [50m Intraday Option Expiry Collector] Captured slot {snap.get('slot_time')} | "
+            f"Nifty Spot: {snap.get('spot_price')} | Straddle: {snap.get('straddle_premium')} | "
+            f"Near-ATM PCR: {snap.get('near_atm_pcr')} | State: {snap.get('market_state')}"
+        )
+        if slot_label in ("09:30", "12:00", "15:20", None):
+            nifty_analytics_engine.compute_nifty_predictions(force_refresh=True)
+    except Exception as e:
+        logger.warning(f"50m Nifty intraday option snapshot job warning: {e}")
+
+
 def start_scheduler():
     """Initializes and starts the BackgroundScheduler with IST triggers & Render Anti-Sleep Guard."""
     global _scheduler
@@ -267,6 +291,29 @@ def start_scheduler():
             misfire_grace_time=180
         )
 
+        # Job 0D: 50-Minute Nifty Weekly Option Expiry Telemetry Collector (09:30 AM to 03:30 PM IST)
+        intraday_50m_schedule = [
+            (9, 30, "09:30"),
+            (10, 20, "10:20"),
+            (11, 10, "11:10"),
+            (12, 0, "12:00"),
+            (12, 50, "12:50"),
+            (13, 40, "13:40"),
+            (14, 30, "14:30"),
+            (15, 20, "15:20"),
+            (15, 30, "15:20"),
+        ]
+        for hr, mn, slot_lbl in intraday_50m_schedule:
+            _scheduler.add_job(
+                scheduled_nifty_intraday_50min_job,
+                kwargs={"slot_label": slot_lbl},
+                trigger=CronTrigger(day_of_week="mon-fri", hour=hr, minute=mn, timezone=IST),
+                id=f"job_nifty_50m_{hr:02d}{mn:02d}",
+                name=f"{hr:02d}:{mn:02d} IST Nifty Weekly Option 50m Collector ({slot_lbl})",
+                replace_existing=True,
+                misfire_grace_time=300
+            )
+
         # Job 1: 10:20 AM IST Monday-Friday
         trigger_morning = CronTrigger(
             day_of_week="mon-fri",
@@ -300,12 +347,14 @@ def start_scheduler():
         )
 
         _scheduler.start()
-        # Trigger an immediate keep-alive check & live price refresh if server booted inside market hours
+        # Trigger an immediate keep-alive check, live price refresh, and Nifty 50m option capture if in market hours
         threading.Thread(target=scheduled_render_keepalive_job, daemon=True).start()
         threading.Thread(target=scheduled_live_price_stream_job, daemon=True).start()
+        threading.Thread(target=scheduled_nifty_intraday_50min_job, daemon=True).start()
         logger.info(
             "✓ Automated Scheduler active on Asia/Kolkata timezone: "
-            "08:55 AM NSE Holiday Sync, 09:00–15:50 Render Anti-Sleep Guard, 5m Live Price Stream, 10:20 AM & 3:05 PM Scans."
+            "08:55 AM NSE Holiday Sync, 09:00–15:50 Render Anti-Sleep Guard, 5m Live Price Stream, "
+            "50m Nifty Weekly Option Expiry Collector (09:30–15:30), 10:20 AM & 3:05 PM Scans."
         )
         return _scheduler
 

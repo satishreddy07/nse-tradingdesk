@@ -1068,79 +1068,162 @@
     </section>
 
     <!-- =================================================================== -->
-    <!-- MODULE 2: INTRADAY MOMENTUM & VOLUME EXPANSION DESK                 -->
+    <!-- MODULE 2: NIFTY 50 INTRADAY 50-MINUTE WEEKLY OPTION EXPIRY DESK      -->
     <!-- =================================================================== -->
     <section id="module-intraday" class="module-section hidden space-y-4 sm:space-y-6">
-      <div class="bg-slate-900/75 border border-amber-500/30 rounded-2xl p-4 sm:p-5 shadow-lg">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="bg-slate-900/80 border border-amber-500/35 rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <div class="flex flex-wrap items-center gap-2">
-              <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">MODULE 2 • INTRADAY DESK</span>
-              <span class="text-[11px] font-mono text-emerald-400">⚡ Powered by Live Master Universe & 5m Price Stream</span>
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">MODULE 2 • NIFTY 50 INTRADAY EXPIRY DESK</span>
+              <span id="intra-expiry-badge" class="text-[11px] font-mono text-emerald-400">⚡ 50-Min Weekly Option Expiry Collector (09:30 – 15:30 IST)</span>
             </div>
-            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Intraday Momentum, Volume Surge & ORB Confluence Scanner</h2>
+            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Nifty 50 Current Weekly Option Expiry • 50-Minute Intraday Telemetry</h2>
             <p class="text-xs text-slate-400 mt-0.5">
-              Real-time intraday % expansion leaders, high-velocity RSI/ATR breakout movers, and modular architecture for upcoming 5m/15m Opening Range Breakout (ORB) & VWAP scalping engines.
+              Collects & persists live NSE Nifty 50 Weekly Option Chain data every 50 minutes (<code class="text-amber-300">09:30, 10:20, 11:10, 12:00, 12:50, 13:40, 14:30, 15:20/15:30 IST</code>) into the Single Master File to track intraday writer flow, straddle theta decay, PCR shifts, and wall defense.
             </p>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button onclick="refreshLivePrices(false)" class="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
-              <i data-lucide="zap" class="w-3.5 h-3.5 shrink-0"></i>
-              <span>Stream Intraday LTP</span>
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <button onclick="captureIntradaySnapshotNow()" id="btn-intra-capture" class="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="camera" class="w-3.5 h-3.5 shrink-0"></i>
+              <span>Capture 50m Slot Now</span>
+            </button>
+            <button onclick="loadIntradayExpiryDesk(true)" class="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
+              <span>Refresh</span>
+            </button>
+            <button onclick="openStockChartModal('^NSEI')" class="w-full sm:w-auto justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="candlestick-chart" class="w-3.5 h-3.5 shrink-0"></i>
+              <span>Nifty Chart</span>
             </button>
           </div>
         </div>
 
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
-            <div class="text-[10px] font-mono uppercase text-amber-400">Intraday Gainers (> +2%)</div>
-            <div id="intra-kpi-gainers" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">--</div>
-            <div class="text-[10px] text-slate-400 font-mono mt-0.5">From Master File Universe</div>
+        <!-- 6 Live Intraday Weekly Expiry KPI Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] font-mono uppercase text-amber-400">Nifty Spot & ATM</div>
+            <div id="intra-kpi-spot" class="text-base sm:text-xl font-mono font-bold text-white mt-1">--</div>
+            <div id="intra-kpi-spot-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">ATM: -- | Exp: --</div>
           </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
-            <div class="text-[10px] font-mono uppercase text-emerald-400">High Momentum (RSI > 60)</div>
-            <div id="intra-kpi-momentum" class="text-lg sm:text-2xl font-mono font-bold text-emerald-400 mt-1">--</div>
-            <div class="text-[10px] text-slate-400 font-mono mt-0.5">Price > EMA20 & EMA50</div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] font-mono uppercase text-cyan-400">ATM Straddle Premium</div>
+            <div id="intra-kpi-straddle" class="text-base sm:text-xl font-mono font-bold text-cyan-300 mt-1">--</div>
+            <div id="intra-kpi-straddle-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">CE: -- | PE: --</div>
           </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
-            <div class="text-[10px] font-mono uppercase text-cyan-400">Top Intraday Leader</div>
-            <div id="intra-kpi-leader" class="text-lg sm:text-2xl font-mono font-bold text-cyan-300 mt-1">--</div>
-            <div id="intra-kpi-leader-chg" class="text-[10px] text-emerald-400 font-mono mt-0.5">--</div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] font-mono uppercase text-emerald-400">Near-ATM / Overall PCR</div>
+            <div id="intra-kpi-pcr" class="text-base sm:text-xl font-mono font-bold text-emerald-400 mt-1">--</div>
+            <div id="intra-kpi-pcr-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">ATM PCR: -- | ΔOI PCR: --</div>
           </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
-            <div class="text-[10px] font-mono uppercase text-purple-400">Upcoming Pipeline</div>
-            <div class="text-sm sm:text-base font-mono font-bold text-purple-300 mt-1">5m ORB + VWAP</div>
-            <div class="text-[10px] text-slate-400 font-mono mt-0.5">Intraday MIS Auto-Bracket</div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] font-mono uppercase text-violet-400">Put Wall / Call Wall</div>
+            <div id="intra-kpi-walls" class="text-base sm:text-xl font-mono font-bold text-violet-300 mt-1">-- / --</div>
+            <div id="intra-kpi-maxpain" class="text-[10px] text-slate-400 font-mono mt-0.5">Max Pain: --</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] font-mono uppercase text-blue-400">Fresh Intraday ΔOI (±8)</div>
+            <div id="intra-kpi-oiflow" class="text-base sm:text-xl font-mono font-bold text-white mt-1">--</div>
+            <div id="intra-kpi-oiflow-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">PE ΔOI vs CE ΔOI</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] font-mono uppercase text-rose-400">Regime & ATM IV / Skew</div>
+            <div id="intra-kpi-regime" class="text-xs sm:text-sm font-mono font-bold text-amber-300 mt-1 truncate">--</div>
+            <div id="intra-kpi-iv" class="text-[10px] text-slate-400 font-mono mt-0.5">ATM IV: -- | Skew: --</div>
           </div>
         </div>
       </div>
 
-      <!-- Live Intraday Momentum Leaders Table -->
+      <!-- 3 Precision Intraday Diagnostic & Playbook Cards -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="bg-slate-900/80 border border-emerald-500/35 rounded-2xl p-4 sm:p-5">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-mono font-bold uppercase text-emerald-400 flex items-center gap-1.5">
+              <i data-lucide="radio" class="w-4 h-4"></i>
+              <span>1. What Is Happening Right Now</span>
+            </span>
+            <span id="intra-latest-slot-tag" class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Slot --</span>
+          </div>
+          <p id="intra-what-happening" class="text-xs sm:text-sm text-slate-200 leading-relaxed">
+            Loading live Nifty 50 weekly option writer telemetry...
+          </p>
+        </div>
+
+        <div class="bg-slate-900/80 border border-cyan-500/35 rounded-2xl p-4 sm:p-5">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-mono font-bold uppercase text-cyan-400 flex items-center gap-1.5">
+              <i data-lucide="compass" class="w-4 h-4"></i>
+              <span>2. What Could Happen Through The Day</span>
+            </span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">Gamma & Walls</span>
+          </div>
+          <p id="intra-what-could-happen" class="text-xs sm:text-sm text-slate-200 leading-relaxed">
+            Computing intraday straddle breakevens, short-covering triggers, and max pain gravity...
+          </p>
+        </div>
+
+        <div class="bg-slate-900/80 border border-amber-500/40 rounded-2xl p-4 sm:p-5">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-mono font-bold uppercase text-amber-400 flex items-center gap-1.5">
+              <i data-lucide="Lightbulb" class="w-4 h-4"></i>
+              <span>3. Quant Desk Intraday Suggestion</span>
+            </span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30">Action Playbook</span>
+          </div>
+          <p id="intra-quant-suggestion" class="text-xs sm:text-sm text-amber-100 leading-relaxed font-medium">
+            Generating risk-defined intraday option structure suggestion...
+          </p>
+        </div>
+      </div>
+
+      <!-- 50-Minute Collection Schedule Strip (09:30 to 15:20/15:30 IST) -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+          <div>
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="clock" class="w-4 h-4 text-amber-400 shrink-0"></i>
+              <span>50-Minute Intraday Option Expiry Collection Timeline (09:30 AM – 03:30 PM IST)</span>
+            </h3>
+            <p class="text-xs text-slate-400">Automated cron captures every 50 minutes during NSE market hours and stores in <code class="text-amber-300">intraday_option_snapshots</code>.</p>
+          </div>
+          <span id="intra-session-date-label" class="text-xs font-mono text-amber-300">Session: --</span>
+        </div>
+        <div id="intra-schedule-grid" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 text-xs font-mono">
+          <div class="col-span-full text-center text-slate-500 py-4">Loading 50-minute schedule slots...</div>
+        </div>
+      </div>
+
+      <!-- Stored 50-Minute Intraday Snapshots Progression Table -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
         <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div class="flex items-center gap-2">
-            <i data-lucide="flame" class="w-4 h-4 text-amber-400 shrink-0"></i>
-            <h3 class="font-bold text-white text-sm">Top Live Intraday Momentum & Volume Surge Leaders (NSE Cash & F&O)</h3>
+            <i data-lucide="database" class="w-4 h-4 text-amber-400 shrink-0"></i>
+            <h3 class="font-bold text-white text-sm">Intraday 50-Minute Weekly Option Expiry Progression Ledger</h3>
           </div>
-          <span class="text-[11px] font-mono text-slate-400">Sorted by Live 1D % Expansion & Trend Alignment</span>
+          <span class="text-[11px] font-mono text-slate-400">Stored in Single Master File (data/swing_trades.db) • Synced to Telegram Cloud</span>
         </div>
         <div class="overflow-x-auto custom-scroll">
           <table class="w-full text-left text-xs text-slate-300 font-mono">
-            <thead class="bg-slate-950/60 text-[11px] uppercase text-slate-400 border-b border-slate-800">
+            <thead class="bg-slate-950/70 text-[10px] sm:text-[11px] uppercase text-slate-400 border-b border-slate-800">
               <tr>
-                <th class="p-3">Symbol</th>
-                <th class="p-3">Live LTP (₹)</th>
-                <th class="p-3">Intraday %</th>
-                <th class="p-3">Volume</th>
-                <th class="p-3">RSI (14)</th>
-                <th class="p-3">ATR (14) Range</th>
-                <th class="p-3">Intraday Stop (-1 ATR)</th>
-                <th class="p-3">Intraday Target (+2 ATR)</th>
-                <th class="p-3 text-right">Action</th>
+                <th class="p-3">50m Slot</th>
+                <th class="p-3">Captured Time (IST)</th>
+                <th class="p-3">Nifty Spot</th>
+                <th class="p-3">ATM Strike</th>
+                <th class="p-3">ATM CE / PE</th>
+                <th class="p-3">Straddle ₹</th>
+                <th class="p-3">Near-ATM PCR</th>
+                <th class="p-3">Overall / ATM PCR</th>
+                <th class="p-3">Fresh ΔOI PCR</th>
+                <th class="p-3">Put / Call Wall</th>
+                <th class="p-3">Max Pain</th>
+                <th class="p-3">Net PE vs CE ΔOI</th>
+                <th class="p-3">IV / Skew</th>
+                <th class="p-3 text-right">Intraday Regime</th>
               </tr>
             </thead>
-            <tbody id="intraday-leaders-tbody" class="divide-y divide-slate-800/60">
-              <tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">Loading live intraday momentum leaders from Master File...</td></tr>
+            <tbody id="intra-snapshots-tbody" class="divide-y divide-slate-800/60">
+              <tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">Loading 50-minute Nifty Weekly Option Expiry snapshots...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1148,185 +1231,430 @@
     </section>
 
     <!-- =================================================================== -->
-    <!-- MODULE 3: AI & QUANTITATIVE PREDICTIONS DESK                        -->
+    <!-- MODULE 3: NIFTY 50 T+1 & T+5 MULTI-PILLAR QUANT PREDICTIONS DESK    -->
     <!-- =================================================================== -->
     <section id="module-predictions" class="module-section hidden space-y-4 sm:space-y-6">
-      <div class="bg-slate-900/75 border border-purple-500/30 rounded-2xl p-4 sm:p-5 shadow-lg">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="bg-slate-900/80 border border-purple-500/35 rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <div class="flex flex-wrap items-center gap-2">
-              <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">MODULE 3 • AI PREDICTIONS & ML FORECAST</span>
-              <span class="text-[11px] font-mono text-cyan-400">🧠 Calibrated Win-Probability P(W) + Regime Alpha</span>
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">MODULE 3 • NIFTY 50 T+1 & T+5 FORECAST DESK</span>
+              <span id="pred-updated-badge" class="text-[11px] font-mono text-cyan-400">🧠 6-Pillar Multi-Asset Model + 180D Walk-Forward Calibration</span>
             </div>
-            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Quantitative ML Win-Probability & Multi-Horizon Forecast Desk</h2>
+            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Nifty 50 (^NSEI) T+1 & T+5 Quantitative, Macro & Cross-Asset Prediction Engine</h2>
             <p class="text-xs text-slate-400 mt-0.5">
-              Ranks NSE equities by calibrated ML Win Probability <code class="text-purple-300">P(W)</code>, 6-Pillar composite percentile, and 63-day Relative Strength alpha. Ready for upcoming LSTM/Transformer & Multi-Factor Ensemble models.
+              Strictly dedicated to Nifty 50 Index forecasting: integrates Nifty 50 Technicals, Internal NSE Breadth (1,010 Stocks), Weighted Sectoral Leadership, US/Global Markets, USD/INR, US 10Y Bond Yields, Gold, Brent Crude, India VIX, and Live News + RBI MPC / US Fed FOMC Event Risk.
             </p>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button onclick="switchModule('module-swing'); switchTab('tab-p1');" class="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
-              <i data-lucide="layers" class="w-3.5 h-3.5 shrink-0"></i>
-              <span>Open P1 Execution Desk</span>
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <button onclick="loadPredictionsDesk(true)" id="btn-pred-refresh" class="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="cpu" class="w-3.5 h-3.5 shrink-0"></i>
+              <span>Recompute Live Forecast</span>
             </button>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
-            <div class="text-[10px] font-mono uppercase text-purple-400">High Conviction (P(W) ≥ 0.65)</div>
-            <div id="pred-kpi-highprob" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">--</div>
-            <div class="text-[10px] text-slate-400 font-mono mt-0.5">Calibrated ML Setups</div>
-          </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
-            <div class="text-[10px] font-mono uppercase text-cyan-400">Top ML Probability</div>
-            <div id="pred-kpi-topprob" class="text-lg sm:text-2xl font-mono font-bold text-cyan-400 mt-1">--</div>
-            <div id="pred-kpi-topsym" class="text-[10px] text-slate-400 font-mono mt-0.5">--</div>
-          </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
-            <div class="text-[10px] font-mono uppercase text-emerald-400">Bullish Trend Breadth</div>
-            <div id="pred-kpi-breadth" class="text-lg sm:text-2xl font-mono font-bold text-emerald-400 mt-1">--%</div>
-            <div class="text-[10px] text-slate-400 font-mono mt-0.5">% Universe > 50 EMA</div>
-          </div>
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
-            <div class="text-[10px] font-mono uppercase text-amber-400">Next AI Expansion</div>
-            <div class="text-sm sm:text-base font-mono font-bold text-amber-300 mt-1">5D / 20D Return Cone</div>
-            <div class="text-[10px] text-slate-400 font-mono mt-0.5">Quantile Regression + FinBERT</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Top ML Win-Probability Ranked Stocks -->
-      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
-        <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div class="flex items-center gap-2">
-            <i data-lucide="cpu" class="w-4 h-4 text-purple-400 shrink-0"></i>
-            <h3 class="font-bold text-white text-sm">Top Calibrated ML Win-Probability & Composite Alpha Rankings</h3>
-          </div>
-          <span class="text-[11px] font-mono text-slate-400">Live Model Output from Screened Universe</span>
-        </div>
-        <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left text-xs text-slate-300 font-mono">
-            <thead class="bg-slate-950/60 text-[11px] uppercase text-slate-400 border-b border-slate-800">
-              <tr>
-                <th class="p-3">Rank & Symbol</th>
-                <th class="p-3">Sector</th>
-                <th class="p-3">ML Win Prob P(W)</th>
-                <th class="p-3">6-Pillar Score</th>
-                <th class="p-3">Regime Verdict</th>
-                <th class="p-3">Current LTP</th>
-                <th class="p-3">Expected Target (T1 / T2)</th>
-                <th class="p-3">Model Stop-Loss</th>
-                <th class="p-3 text-right">Inspect</th>
-              </tr>
-            </thead>
-            <tbody id="predictions-ranking-tbody" class="divide-y divide-slate-800/60">
-              <tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">Loading calibrated ML predictions...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- =================================================================== -->
-    <!-- MODULE 4: OPTIONS & DERIVATIVES ANALYTICS DESK                      -->
-    <!-- =================================================================== -->
-    <section id="module-options" class="module-section hidden space-y-4 sm:space-y-6">
-      <div class="bg-slate-900/75 border border-emerald-500/30 rounded-2xl p-4 sm:p-5 shadow-lg">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">MODULE 4 • OPTIONS & DERIVATIVES DESK</span>
-              <span class="text-[11px] font-mono text-cyan-400">🎯 Live Index Benchmarks, India VIX & High-Beta F&O Underlyings</span>
-            </div>
-            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">NSE Index & Equity Options Analytics Desk</h2>
-            <p class="text-xs text-slate-400 mt-0.5">
-              Tracks live India VIX volatility regime, Nifty 50 / Nifty Bank / Nifty 500 index structures, and high-ATR directional F&O underlying candidates. Designed for upcoming Option Chain PCR, Max Pain, and Gamma Exposure (GEX) modules.
-            </p>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button onclick="openStockChartModal('^NSEI')" class="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+            <button onclick="openStockChartModal('^NSEI')" class="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
               <i data-lucide="candlestick-chart" class="w-3.5 h-3.5 shrink-0"></i>
               <span>Nifty 50 Chart</span>
             </button>
           </div>
         </div>
 
-        <!-- Live Index & Volatility Benchmark Cards from Master File -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
-          <div onclick="openStockChartModal('^NSEI')" class="cursor-pointer bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-3.5 transition">
-            <div class="text-[10px] font-mono uppercase text-cyan-400">NIFTY 50 (^NSEI)</div>
-            <div id="opt-kpi-nifty" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">--</div>
-            <div id="opt-kpi-nifty-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">Click for Index Chart</div>
+        <!-- T+1 & T+5 Forecast Hero Cards -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+          <!-- T+1 Card -->
+          <div class="bg-slate-950/90 border border-purple-500/35 rounded-2xl p-4 sm:p-5">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
+              <div>
+                <div class="text-[10px] font-mono uppercase text-purple-400">HORIZON 1 • NEXT TRADING SESSION (T+1)</div>
+                <div id="pred-t1-verdict" class="text-base sm:text-xl font-extrabold text-white mt-0.5">LOADING...</div>
+              </div>
+              <div class="text-right font-mono">
+                <div class="text-[10px] text-slate-400">Expected T+1 Close</div>
+                <div id="pred-t1-close" class="text-base sm:text-xl font-bold text-cyan-300">--</div>
+                <div id="pred-t1-move" class="text-[11px] text-slate-400">--</div>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="flex justify-between text-[11px] font-mono mb-1">
+                <span id="pred-t1-prob-up" class="text-emerald-400 font-bold">Up: --%</span>
+                <span id="pred-t1-prob-flat" class="text-slate-300">Range: --%</span>
+                <span id="pred-t1-prob-down" class="text-rose-400 font-bold">Down: --%</span>
+              </div>
+              <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden flex">
+                <div id="pred-t1-bar-up" class="bg-emerald-500 h-full" style="width: 33%"></div>
+                <div id="pred-t1-bar-flat" class="bg-slate-500 h-full" style="width: 34%"></div>
+                <div id="pred-t1-bar-down" class="bg-rose-500 h-full" style="width: 33%"></div>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2.5 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
+              <div class="bg-slate-900/80 rounded-xl p-2.5 border border-slate-800">
+                <div class="text-[10px] text-slate-400">1σ Session Cone (68% Conf.)</div>
+                <div id="pred-t1-1sigma" class="text-white font-bold mt-0.5">-- to --</div>
+              </div>
+              <div class="bg-slate-900/80 rounded-xl p-2.5 border border-slate-800">
+                <div class="text-[10px] text-slate-400">2σ Tail Risk Cone (95% Conf.)</div>
+                <div id="pred-t1-2sigma" class="text-slate-300 font-bold mt-0.5">-- to --</div>
+              </div>
+            </div>
           </div>
-          <div onclick="openStockChartModal('^NSEBANK')" class="cursor-pointer bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-3.5 transition">
-            <div class="text-[10px] font-mono uppercase text-violet-400">NIFTY BANK (^NSEBANK)</div>
-            <div id="opt-kpi-bank" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">--</div>
-            <div id="opt-kpi-bank-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">Click for Index Chart</div>
+
+          <!-- T+5 Card -->
+          <div class="bg-slate-950/90 border border-cyan-500/35 rounded-2xl p-4 sm:p-5">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
+              <div>
+                <div class="text-[10px] font-mono uppercase text-cyan-400">HORIZON 2 • NEXT 5 TRADING DAYS (T+5 WEEKLY)</div>
+                <div id="pred-t5-verdict" class="text-base sm:text-xl font-extrabold text-white mt-0.5">LOADING...</div>
+              </div>
+              <div class="text-right font-mono">
+                <div class="text-[10px] text-slate-400">Expected T+5 Close</div>
+                <div id="pred-t5-close" class="text-base sm:text-xl font-bold text-cyan-300">--</div>
+                <div id="pred-t5-move" class="text-[11px] text-slate-400">--</div>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="flex justify-between text-[11px] font-mono mb-1">
+                <span id="pred-t5-prob-up" class="text-emerald-400 font-bold">Up: --%</span>
+                <span id="pred-t5-prob-flat" class="text-slate-300">Range: --%</span>
+                <span id="pred-t5-prob-down" class="text-rose-400 font-bold">Down: --%</span>
+              </div>
+              <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden flex">
+                <div id="pred-t5-bar-up" class="bg-emerald-500 h-full" style="width: 33%"></div>
+                <div id="pred-t5-bar-flat" class="bg-slate-500 h-full" style="width: 34%"></div>
+                <div id="pred-t5-bar-down" class="bg-rose-500 h-full" style="width: 33%"></div>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2.5 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
+              <div class="bg-slate-900/80 rounded-xl p-2.5 border border-slate-800">
+                <div class="text-[10px] text-slate-400">1σ 5-Day Cone (68% Conf.)</div>
+                <div id="pred-t5-1sigma" class="text-white font-bold mt-0.5">-- to --</div>
+              </div>
+              <div class="bg-slate-900/80 rounded-xl p-2.5 border border-slate-800">
+                <div class="text-[10px] text-slate-400">2σ 5-Day Tail Cone (95% Conf.)</div>
+                <div id="pred-t5-2sigma" class="text-slate-300 font-bold mt-0.5">-- to --</div>
+              </div>
+            </div>
           </div>
-          <div onclick="openStockChartModal('^INDIAVIX')" class="cursor-pointer bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-3.5 transition">
-            <div class="text-[10px] font-mono uppercase text-amber-400">INDIA VIX (^INDIAVIX)</div>
-            <div id="opt-kpi-vix" class="text-lg sm:text-2xl font-mono font-bold text-amber-400 mt-1">--</div>
-            <div id="opt-kpi-vix-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">Volatility Regime Gauge</div>
+        </div>
+
+        <!-- 6-Pillar Composite Scores & Walk-Forward Calibration Strip -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 mt-4 text-xs font-mono">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-400 uppercase">Composite Score</div>
+            <div id="pred-score-comp" class="text-base font-bold text-white mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">Range [-100, +100]</div>
           </div>
-          <div onclick="openStockChartModal('^CRSLDX')" class="cursor-pointer bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-3.5 transition">
-            <div class="text-[10px] font-mono uppercase text-emerald-400">NIFTY 500 (^CRSLDX)</div>
-            <div id="opt-kpi-crsl" class="text-lg sm:text-2xl font-mono font-bold text-emerald-400 mt-1">--</div>
-            <div id="opt-kpi-crsl-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">Broad Market Regime</div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-400 uppercase">1. Technical (25%)</div>
+            <div id="pred-score-tech" class="text-base font-bold text-white mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">EMA/RSI/MACD/Pivot</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-400 uppercase">2. Breadth (20%)</div>
+            <div id="pred-score-breadth" class="text-base font-bold text-white mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">1,010 NSE Stocks</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-400 uppercase">3. Sectoral (20%)</div>
+            <div id="pred-score-sectoral" class="text-base font-bold text-white mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">Weighted 8 Sectors</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-400 uppercase">4. Global/US (15%)</div>
+            <div id="pred-score-global" class="text-base font-bold text-white mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">S&P/Nasdaq/Asia</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-400 uppercase">5. Macro/FX (10%)</div>
+            <div id="pred-score-macro" class="text-base font-bold text-white mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">INR/US10Y/Gold/Oil</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-400 uppercase">6. News/RBI/Fed</div>
+            <div id="pred-score-news" class="text-base font-bold text-white mt-0.5">--</div>
+            <div class="text-[10px] text-slate-500">RSS + Option PCR</div>
+          </div>
+          <div class="bg-slate-950/80 border border-emerald-500/30 rounded-xl p-3">
+            <div class="text-[10px] text-emerald-400 uppercase">180D Walk-Forward</div>
+            <div id="pred-val-hitrate" class="text-sm font-bold text-emerald-300 mt-0.5">T1: --% | T5: --%</div>
+            <div id="pred-val-brier" class="text-[10px] text-slate-400">Brier: --</div>
           </div>
         </div>
       </div>
 
-      <!-- Modular Upcoming Options Analytics Roadmap Strip -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
-        <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-xs font-bold text-cyan-300 font-mono">OI & PCR MATRIX</span>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">MODULAR SLOT</span>
+      <!-- Quant Desk Playbook & Suggestions Strip -->
+      <div id="pred-suggestions-grid" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 text-xs text-slate-400">Loading Nifty T+1 & T+5 quant playbook suggestions...</div>
+      </div>
+
+      <!-- Row 1: Nifty 50 Technical Structure + Internal Market Breadth (1,010 Stocks) -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Pillar 1: Nifty 50 Technicals & Pivots -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="activity" class="w-4 h-4 text-cyan-400 shrink-0"></i>
+              <span>Pillar 1: Nifty 50 (^NSEI) Technical Structure & Floor Pivots</span>
+            </h3>
+            <span id="pred-tech-date" class="text-[11px] font-mono text-slate-400">Bar: --</span>
           </div>
-          <p class="text-xs text-slate-400">Live NSE Option Chain Put-Call Ratio (PCR), Call/Put OI walls, and intraday OI build-up / short-covering detector.</p>
+          <div id="pred-tech-metrics" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3 text-xs font-mono">
+            <div class="col-span-full text-slate-500 py-4 text-center">Loading Nifty 50 technical structure...</div>
+          </div>
         </div>
-        <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-xs font-bold text-violet-300 font-mono">GEX & MAX PAIN</span>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-violet-500/15 text-violet-300 border border-violet-500/30">MODULAR SLOT</span>
+
+        <!-- Pillar 2: Internal Market Breadth (All 1,010 Fetched Stocks) -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="bar-chart-3" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+              <span>Pillar 2: NSE Internal Market Breadth (1,010 Master Universe Stocks)</span>
+            </h3>
+            <span id="pred-breadth-regime" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">--</span>
           </div>
-          <p class="text-xs text-slate-400">Dealer Gamma Exposure (GEX) flip levels, weekly expiry Max Pain pin strikes, and IV Percentile (IVP) ranker.</p>
-        </div>
-        <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-xs font-bold text-emerald-300 font-mono">DIRECTIONAL F&O ENGINE</span>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">ACTIVE BELOW</span>
+          <div id="pred-breadth-metrics" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3 text-xs font-mono">
+            <div class="col-span-full text-slate-500 py-4 text-center">Computing internal market breadth...</div>
           </div>
-          <p class="text-xs text-slate-400">Identifies liquid underlying stocks with high ATR% expansion and strong directional trend for ATM/OTM Option & Futures setups.</p>
         </div>
       </div>
 
-      <!-- High-ATR Directional Underlying Scanner -->
+      <!-- Row 2: Pillar 3 Weighted Sectoral Analysis & Pillar 4/5 Global + Cross-Asset Macro -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Pillar 3: Sectoral Leadership -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+          <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="pie-chart" class="w-4 h-4 text-violet-400 shrink-0"></i>
+              <span>Pillar 3: Nifty 50 Weighted Sectoral Leadership & Breadth</span>
+            </h3>
+            <span class="text-[11px] font-mono text-slate-400">Live Sector Indices + Baskets</span>
+          </div>
+          <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-left text-xs text-slate-300 font-mono">
+              <thead class="bg-slate-950/60 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2.5">Sector (Nifty Wt)</th>
+                  <th class="p-2.5">Index LTP</th>
+                  <th class="p-2.5">1D %</th>
+                  <th class="p-2.5">5D %</th>
+                  <th class="p-2.5">&gt;EMA20 / 50</th>
+                  <th class="p-2.5 text-right">Impulse</th>
+                </tr>
+              </thead>
+              <tbody id="pred-sectoral-tbody" class="divide-y divide-slate-800/60">
+                <tr><td colspan="6" class="p-6 text-center text-slate-500 font-sans">Loading sectoral indices...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Pillar 4 & 5: Global Markets + Cross-Asset Macro (USD/INR, US 10Y, Gold, Oil, VIX) -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+          <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="globe" class="w-4 h-4 text-amber-400 shrink-0"></i>
+              <span>Pillars 4 & 5: US/Global Markets, USD/INR, US 10Y Yields, Gold & Crude</span>
+            </h3>
+            <span class="text-[11px] font-mono text-slate-400">Live Cross-Asset Telemetry</span>
+          </div>
+          <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-left text-xs text-slate-300 font-mono">
+              <thead class="bg-slate-950/60 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2.5">Asset / Benchmark</th>
+                  <th class="p-2.5">Live LTP</th>
+                  <th class="p-2.5">1D %</th>
+                  <th class="p-2.5">5D %</th>
+                  <th class="p-2.5">EMA 20</th>
+                  <th class="p-2.5 text-right">Nifty Impact</th>
+                </tr>
+              </thead>
+              <tbody id="pred-global-macro-tbody" class="divide-y divide-slate-800/60">
+                <tr><td colspan="6" class="p-6 text-center text-slate-500 font-sans">Loading global & cross-asset macro cues...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 3: Pillar 6 Live News & RBI/Fed Calendar + Validated Prediction Audit Ledger -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Pillar 6: Central Bank Events (RBI MPC / US Fed) & Live News Headlines -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="newspaper" class="w-4 h-4 text-purple-400 shrink-0"></i>
+              <span>Pillar 6: RBI MPC & US Fed FOMC Calendar + Live News Sentiment</span>
+            </h3>
+            <span id="pred-news-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">--</span>
+          </div>
+          <div id="pred-cb-events" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 my-3 text-xs font-mono"></div>
+          <div id="pred-news-list" class="space-y-2 max-h-72 overflow-y-auto custom-scroll pr-1 text-xs">
+            <div class="text-slate-500 py-4 text-center">Fetching live market & central bank news...</div>
+          </div>
+        </div>
+
+        <!-- Walk-Forward Prediction Audit Ledger -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+          <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+            <div>
+              <h3 class="font-bold text-white text-sm flex items-center gap-2">
+                <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+                <span>Nifty 50 Prediction Validation & Calibration Ledger</span>
+              </h3>
+              <p class="text-[11px] text-slate-400">Tracks daily T+1 and T+5 predictions stored in <code class="text-emerald-300">nifty_predictions_log</code> against realized Nifty closes.</p>
+            </div>
+          </div>
+          <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-left text-xs text-slate-300 font-mono">
+              <thead class="bg-slate-950/60 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2.5">Date</th>
+                  <th class="p-2.5">Spot</th>
+                  <th class="p-2.5">Score</th>
+                  <th class="p-2.5">T+1 Exp (1σ Cone)</th>
+                  <th class="p-2.5">T+5 Exp (1σ Cone)</th>
+                  <th class="p-2.5 text-right">Validation</th>
+                </tr>
+              </thead>
+              <tbody id="pred-ledger-tbody" class="divide-y divide-slate-800/60">
+                <tr><td colspan="6" class="p-6 text-center text-slate-500 font-sans">Loading prediction validation ledger...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- MODULE 4: NIFTY 50 WEEKLY & MONTHLY OPTION CHAIN DEEP OI DESK       -->
+    <!-- =================================================================== -->
+    <section id="module-options" class="module-section hidden space-y-4 sm:space-y-6">
+      <div class="bg-slate-900/80 border border-emerald-500/35 rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">MODULE 4 • NIFTY 50 DEEP OPTION CHAIN DESK</span>
+              <span id="opt-nse-timestamp" class="text-[11px] font-mono text-cyan-400">🎯 Live NSE Option Chain v3 • Weekly & Monthly Expiries</span>
+            </div>
+            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Nifty 50 Current Weekly & Monthly Option Chain • Deep OI & Skew Analysis</h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Live NSE Option Chain analysis for Nifty 50: Overall PCR, Near-ATM PCR (±5 strikes), Exact ATM PCR (±1 strike), Fresh ΔOI PCR, Max Pain, Primary & Secondary Call/Put Walls, 25-Delta IV Skew, Dealer GEX Regime, and 4-Quadrant Strike Buildup.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+              <button onclick="switchOptionsExpiryView('weekly')" id="btn-opt-weekly" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-black transition">
+                Weekly (<span id="opt-lbl-weekly-exp">--</span>)
+              </button>
+              <button onclick="switchOptionsExpiryView('monthly')" id="btn-opt-monthly" class="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-300 hover:text-white transition">
+                Monthly (<span id="opt-lbl-monthly-exp">--</span>)
+              </button>
+            </div>
+            <button onclick="loadOptionsChainDesk(true)" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 shrink-0"></i>
+              <span>Refresh Live Chain</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 8 Deep OI & Volatility KPI Cards for Selected Expiry -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 mt-4 text-xs font-mono">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-cyan-400 uppercase">Nifty Spot / ATM</div>
+            <div id="opt-kpi-spot" class="text-base font-bold text-white mt-0.5">--</div>
+            <div id="opt-kpi-atm" class="text-[10px] text-slate-400">ATM: --</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-emerald-400 uppercase">Overall OI PCR</div>
+            <div id="opt-kpi-overall-pcr" class="text-base font-bold text-emerald-400 mt-0.5">--</div>
+            <div id="opt-kpi-vol-pcr" class="text-[10px] text-slate-400">Vol PCR: --</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-emerald-300 uppercase">Near-ATM PCR (±5)</div>
+            <div id="opt-kpi-nearatm-pcr" class="text-base font-bold text-white mt-0.5">--</div>
+            <div id="opt-kpi-exactatm-pcr" class="text-[10px] text-slate-400">Exact ATM (±1): --</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-amber-400 uppercase">Fresh ΔOI PCR (±8)</div>
+            <div id="opt-kpi-chgoi-pcr" class="text-base font-bold text-amber-300 mt-0.5">--</div>
+            <div id="opt-kpi-net-chgoi" class="text-[10px] text-slate-400">Net PE-CE: --</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-purple-400 uppercase">Max Pain Strike</div>
+            <div id="opt-kpi-maxpain" class="text-base font-bold text-purple-300 mt-0.5">--</div>
+            <div id="opt-kpi-maxpain-dist" class="text-[10px] text-slate-400">Dist: --</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-rose-400 uppercase">Call Walls (Res)</div>
+            <div id="opt-kpi-callwall" class="text-base font-bold text-rose-400 mt-0.5">--</div>
+            <div id="opt-kpi-callwall2" class="text-[10px] text-slate-400">CW2: -- | Fresh: --</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-emerald-400 uppercase">Put Walls (Sup)</div>
+            <div id="opt-kpi-putwall" class="text-base font-bold text-emerald-400 mt-0.5">--</div>
+            <div id="opt-kpi-putwall2" class="text-[10px] text-slate-400">PW2: -- | Fresh: --</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-blue-400 uppercase">Straddle & Skew</div>
+            <div id="opt-kpi-straddle" class="text-base font-bold text-blue-300 mt-0.5">--</div>
+            <div id="opt-kpi-skew" class="text-[10px] text-slate-400">IV: --% | Skew: --</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Weekly vs Monthly Expiry Side-by-Side Comparison & Quant Suggestions -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex items-center justify-between pb-2.5 border-b border-slate-800">
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="git-compare" class="w-4 h-4 text-cyan-400 shrink-0"></i>
+              <span>Weekly vs Monthly Term Structure Comparison</span>
+            </h3>
+          </div>
+          <div id="opt-term-comparison" class="mt-3 space-y-2 text-xs font-mono">
+            <div class="text-slate-500 py-4 text-center">Loading Weekly vs Monthly comparison...</div>
+          </div>
+        </div>
+
+        <div id="opt-suggestions-container" class="lg:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 text-xs text-slate-400 col-span-full">
+            Loading institutional Option Chain strategy suggestions...
+          </div>
+        </div>
+      </div>
+
+      <!-- Strike-by-Strike Deep Option Chain Table (±12 Strikes Around ATM) -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
         <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div class="flex items-center gap-2">
-            <i data-lucide="activity" class="w-4 h-4 text-emerald-400 shrink-0"></i>
-            <h3 class="font-bold text-white text-sm">High-ATR% Directional Underlying Scanner (Liquid Stocks for Options / Futures)</h3>
+            <i data-lucide="layers" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+            <h3 class="font-bold text-white text-sm">
+              Nifty 50 Option Chain Strike-by-Strike Deep OI Matrix (<span id="opt-table-expiry-label" class="text-emerald-400 font-mono">--</span>)
+            </h3>
           </div>
-          <span class="text-[11px] font-mono text-slate-400">Sorted by Daily ATR% Volatility & Directional Bias</span>
+          <span id="opt-table-verdict-badge" class="text-[11px] font-mono px-2.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
         </div>
         <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left text-xs text-slate-300 font-mono">
-            <thead class="bg-slate-950/60 text-[11px] uppercase text-slate-400 border-b border-slate-800">
+          <table class="w-full text-left text-[11px] sm:text-xs text-slate-300 font-mono">
+            <thead class="bg-slate-950/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
               <tr>
-                <th class="p-3">Underlying</th>
-                <th class="p-3">Spot LTP (₹)</th>
-                <th class="p-3">1D Move</th>
-                <th class="p-3">ATR (14) / ATR %</th>
-                <th class="p-3">Directional Bias</th>
-                <th class="p-3">ATM Strike (Est.)</th>
-                <th class="p-3">Key Support (SL)</th>
-                <th class="p-3">Breakout Target</th>
-                <th class="p-3 text-right">Chart</th>
+                <th class="p-2.5 text-rose-300">CE Buildup</th>
+                <th class="p-2.5 text-rose-300">CE OI (Contracts)</th>
+                <th class="p-2.5 text-rose-300">CE ΔOI</th>
+                <th class="p-2.5 text-rose-300">CE Vol</th>
+                <th class="p-2.5 text-rose-300">CE IV</th>
+                <th class="p-2.5 text-rose-300">CE LTP (Chg%)</th>
+                <th class="p-2.5 text-center bg-slate-900 text-amber-300 font-bold border-x border-slate-800">STRIKE</th>
+                <th class="p-2.5 text-emerald-300">PE LTP (Chg%)</th>
+                <th class="p-2.5 text-emerald-300">PE IV</th>
+                <th class="p-2.5 text-emerald-300">PE Vol</th>
+                <th class="p-2.5 text-emerald-300">PE ΔOI</th>
+                <th class="p-2.5 text-emerald-300">PE OI (Contracts)</th>
+                <th class="p-2.5 text-emerald-300">PE Buildup</th>
+                <th class="p-2.5 text-right">Strike PCR</th>
               </tr>
             </thead>
-            <tbody id="options-underlyings-tbody" class="divide-y divide-slate-800/60">
-              <tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">Loading index & underlying volatility data...</td></tr>
+            <tbody id="opt-chain-tbody" class="divide-y divide-slate-800/60">
+              <tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">Loading live NSE Nifty 50 Option Chain strike table...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1713,186 +2041,737 @@
       }
     }
 
+    let niftyIntradayCache = null;
+    let niftyPredictionsCache = null;
+    let niftyOptionsChainCache = null;
+    let selectedOptionsExpiryType = 'weekly'; // 'weekly' or 'monthly'
+
     async function ensureMasterDataThenRenderModules() {
-      if (!fetchedStocksCache || fetchedStocksCache.length === 0) {
-        await loadFetchedStocksData();
+      if (currentModule === 'module-intraday') {
+        await loadIntradayExpiryDesk(false);
+      } else if (currentModule === 'module-predictions') {
+        await loadPredictionsDesk(false);
+      } else if (currentModule === 'module-options') {
+        await loadOptionsChainDesk(false);
       }
-      renderIntradayDesk();
-      renderPredictionsDesk();
-      renderOptionsDesk();
     }
 
-    function renderIntradayDesk() {
-      const stocks = (fetchedStocksCache || []).filter(s => !s.symbol.startsWith('^'));
-      const gainers = stocks.filter(s => (s.change_pct || 0) >= 2.0);
-      const highMom = stocks.filter(s => (s.rsi14 || 0) >= 60 && (s.last_close || 0) > (s.ema20 || 0) && (s.last_close || 0) > (s.ema50 || 0));
-      const sorted = [...stocks].sort((a, b) => (b.change_pct || 0) - (a.change_pct || 0));
-
-      const gEl = document.getElementById('intra-kpi-gainers');
-      const mEl = document.getElementById('intra-kpi-momentum');
-      const lEl = document.getElementById('intra-kpi-leader');
-      const lcEl = document.getElementById('intra-kpi-leader-chg');
-
-      if (gEl) gEl.innerText = `${gainers.length} Stocks`;
-      if (mEl) mEl.innerText = `${highMom.length} Setups`;
-      if (sorted.length > 0) {
-        if (lEl) lEl.innerText = sorted[0].symbol;
-        if (lcEl) lcEl.innerText = `+${(sorted[0].change_pct || 0).toFixed(2)}% (₹${(sorted[0].last_close || 0).toFixed(2)})`;
-      }
-
-      const tbody = document.getElementById('intraday-leaders-tbody');
-      if (!tbody) return;
-      const topList = sorted.slice(0, 40);
-      if (topList.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">No intraday stock data loaded yet.</td></tr>`;
-        return;
-      }
-
-      tbody.innerHTML = topList.map(r => {
-        const chg = r.change_pct || 0;
-        const ltp = r.last_close || 0;
-        const atr = r.atr14 || (ltp * 0.02);
-        const intraSl = Math.max(0.05, ltp - atr);
-        const intraTgt = ltp + (2.0 * atr);
-        return `
-          <tr class="hover:bg-slate-800/40 transition">
-            <td class="p-3 font-bold text-white">
-              <button onclick="openStockChartModal('${r.symbol}')" class="hover:text-amber-400 underline decoration-amber-500/40 underline-offset-4">${r.symbol}</button>
-            </td>
-            <td class="p-3 font-bold text-white">₹${ltp.toFixed(2)}</td>
-            <td class="p-3 font-bold ${chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</td>
-            <td class="p-3 text-slate-300">${(r.last_volume || 0).toLocaleString('en-IN')}</td>
-            <td class="p-3 ${r.rsi14 >= 60 ? 'text-emerald-400 font-bold' : 'text-slate-300'}">${(r.rsi14 || 0).toFixed(1)}</td>
-            <td class="p-3 text-amber-300">₹${atr.toFixed(2)}</td>
-            <td class="p-3 text-rose-400">₹${intraSl.toFixed(2)}</td>
-            <td class="p-3 text-emerald-400">₹${intraTgt.toFixed(2)}</td>
-            <td class="p-3 text-right">
-              <button onclick="openStockChartModal('${r.symbol}')" class="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[11px] font-bold">📈 Chart</button>
-            </td>
-          </tr>
-        `;
-      }).join('');
+    async function renderIntradayDesk() {
+      await loadIntradayExpiryDesk(false);
     }
 
-    function renderPredictionsDesk() {
-      const sigs = [...(p1SignalsCache || [])].sort((a, b) => (b.ml_prob || 0) - (a.ml_prob || 0) || (b.score || 0) - (a.score || 0));
-      const highProb = sigs.filter(s => (s.ml_prob || 0) >= 0.65);
-      const stocks = (fetchedStocksCache || []).filter(s => !s.symbol.startsWith('^'));
-      const aboveEma50 = stocks.filter(s => (s.last_close || 0) > (s.ema50 || 0));
-      const breadthPct = stocks.length > 0 ? ((aboveEma50.length / stocks.length) * 100).toFixed(1) : '0.0';
-
-      const hpEl = document.getElementById('pred-kpi-highprob');
-      const tpEl = document.getElementById('pred-kpi-topprob');
-      const tsEl = document.getElementById('pred-kpi-topsym');
-      const brEl = document.getElementById('pred-kpi-breadth');
-
-      if (hpEl) hpEl.innerText = `${highProb.length} Stocks`;
-      if (brEl) brEl.innerText = `${breadthPct}%`;
-      if (sigs.length > 0) {
-        if (tpEl) tpEl.innerText = `${((sigs[0].ml_prob || 0) * 100).toFixed(1)}%`;
-        if (tsEl) tsEl.innerText = `Leader: ${sigs[0].symbol} (Score ${(sigs[0].score || 0).toFixed(1)})`;
-      }
-
-      const tbody = document.getElementById('predictions-ranking-tbody');
-      if (!tbody) return;
-      if (sigs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">Run P1 Scan to populate ML Win-Probability rankings.</td></tr>`;
-        return;
-      }
-
-      tbody.innerHTML = sigs.slice(0, 40).map((s, idx) => {
-        const probPct = ((s.ml_prob || 0) * 100).toFixed(1);
-        return `
-          <tr class="hover:bg-slate-800/40 transition">
-            <td class="p-3 font-bold text-white">
-              <span class="text-slate-500 mr-1">#${idx + 1}</span>
-              <button onclick="openStockChartModal('${s.symbol}')" class="hover:text-purple-400 underline decoration-purple-500/40 underline-offset-4">${s.symbol}</button>
-            </td>
-            <td class="p-3 text-slate-400">${s.sector || 'EQUITY'}</td>
-            <td class="p-3 text-purple-300 font-bold">${probPct}% (${(s.ml_prob || 0).toFixed(2)})</td>
-            <td class="p-3 text-cyan-400 font-bold">${(s.score || 0).toFixed(1)}</td>
-            <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30">${s.bucket}</span></td>
-            <td class="p-3 text-white font-semibold">₹${(s.close || 0).toFixed(2)}</td>
-            <td class="p-3"><span class="text-amber-400">₹${(s.t1 || 0).toFixed(2)}</span> / <span class="text-emerald-400">₹${(s.t2 || 0).toFixed(2)}</span></td>
-            <td class="p-3 text-rose-400">₹${(s.sl || 0).toFixed(2)}</td>
-            <td class="p-3 text-right">
-              <button onclick="openStockChartModal('${s.symbol}')" class="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 text-[11px] font-bold">📈 Forecast Chart</button>
-            </td>
-          </tr>
-        `;
-      }).join('');
+    async function renderPredictionsDesk() {
+      await loadPredictionsDesk(false);
     }
 
-    function renderOptionsDesk() {
-      const all = fetchedStocksCache || [];
-      const findIdx = (sym) => all.find(r => r.symbol.toUpperCase() === sym.toUpperCase());
+    async function renderOptionsDesk() {
+      await loadOptionsChainDesk(false);
+    }
 
-      const nsei = findIdx('^NSEI');
-      const bank = findIdx('^NSEBANK');
-      const vix = findIdx('^INDIAVIX');
-      const crsl = findIdx('^CRSLDX');
-
-      const setBenchCard = (item, valId, subId, isVix = false) => {
-        const vEl = document.getElementById(valId);
-        const sEl = document.getElementById(subId);
-        if (!item) return;
-        const chg = item.change_pct || 0;
-        const sign = chg >= 0 ? '+' : '';
-        if (vEl) vEl.innerText = isVix ? `${(item.last_close || 0).toFixed(2)}` : `₹${(item.last_close || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-        if (sEl) {
-          sEl.innerText = `${sign}${chg.toFixed(2)}% • EMA50: ${(item.ema50 || 0).toFixed(1)}`;
-          sEl.className = `text-[10px] font-mono mt-0.5 ${chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+    // =========================================================================
+    // MODULE 2: NIFTY 50 INTRADAY 50-MIN WEEKLY OPTION EXPIRY TELEMETRY
+    // =========================================================================
+    async function loadIntradayExpiryDesk(forceRefresh = false) {
+      try {
+        if (forceRefresh) {
+          await fetch('/api/nifty/options-chain?force_refresh=true');
         }
+        const res = await fetch('/api/nifty/intraday-expiry');
+        if (!res.ok) return;
+        const data = await res.json();
+        niftyIntradayCache = data;
+        renderIntradayExpiryUI(data);
+      } catch (e) {
+        console.error("Failed loading Intraday Expiry Desk:", e);
+      }
+    }
+
+    async function captureIntradaySnapshotNow() {
+      const btn = document.getElementById('btn-intra-capture');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>Capturing Live...</span>`;
+      }
+      try {
+        showToast("⚡ Capturing live Nifty 50 Weekly Option Chain 50m snapshot...", "info");
+        const res = await fetch('/api/nifty/intraday-expiry/capture', { method: 'POST' });
+        const data = await res.json();
+        niftyIntradayCache = data;
+        renderIntradayExpiryUI(data);
+        showToast(`✓ Captured 50m slot (${data.latest_snapshot?.slot_time || 'Now'}) & synced to Master File!`, "success");
+      } catch (e) {
+        showToast(`Capture error: ${e.message}`, "error");
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<i data-lucide="camera" class="w-3.5 h-3.5 shrink-0"></i><span>Capture 50m Slot Now</span>`;
+          lucide.createIcons();
+        }
+      }
+    }
+
+    function renderIntradayExpiryUI(data) {
+      if (!data) return;
+      const latest = data.latest_snapshot || {};
+      let meta = {};
+      try {
+        meta = latest.snapshot_json ? JSON.parse(latest.snapshot_json) : {};
+      } catch (e) {
+        meta = {};
+      }
+
+      const expBadge = document.getElementById('intra-expiry-badge');
+      if (expBadge) {
+        expBadge.innerText = `⚡ Active Weekly Expiry: ${data.expiry_date || latest.expiry_date || '--'} • ${data.snapshots_count || 0} Slots Recorded Today`;
+      }
+      const sessLbl = document.getElementById('intra-session-date-label');
+      if (sessLbl) {
+        sessLbl.innerText = `Session: ${data.session_date || '--'} • Weekly Expiry: ${data.expiry_date || '--'}`;
+      }
+
+      const spot = Number(latest.spot_price || 0);
+      const spotDiff = Number(meta.spot_from_open || 0);
+      const spotEl = document.getElementById('intra-kpi-spot');
+      const spotSub = document.getElementById('intra-kpi-spot-sub');
+      if (spotEl) spotEl.innerText = spot > 0 ? `₹${spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--';
+      if (spotSub) {
+        const diffSign = spotDiff >= 0 ? '+' : '';
+        spotSub.innerText = `ATM ${latest.atm_strike || '--'} | ΔOpen: ${diffSign}${spotDiff.toFixed(1)} pts`;
+      }
+
+      const strad = Number(latest.straddle_premium || 0);
+      const decayPct = Number(meta.straddle_decay_pct || 0);
+      const stradEl = document.getElementById('intra-kpi-straddle');
+      const stradSub = document.getElementById('intra-kpi-straddle-sub');
+      if (stradEl) stradEl.innerText = strad > 0 ? `₹${strad.toFixed(2)}` : '--';
+      if (stradSub) {
+        stradSub.innerText = `${(latest.atm_ce_ltp || 0).toFixed(1)} CE + ${(latest.atm_pe_ltp || 0).toFixed(1)} PE (${decayPct >= 0 ? '+' : ''}${decayPct.toFixed(1)}%)`;
+      }
+
+      const nearPcr = Number(latest.near_atm_pcr || 0);
+      const ovPcr = Number(latest.overall_pcr || 0);
+      const pcrEl = document.getElementById('intra-kpi-pcr');
+      const pcrSub = document.getElementById('intra-kpi-pcr-sub');
+      if (pcrEl) {
+        pcrEl.innerText = nearPcr > 0 ? `${nearPcr.toFixed(2)} / ${ovPcr.toFixed(2)}` : '--';
+        pcrEl.className = `text-base sm:text-xl font-mono font-bold mt-1 ${nearPcr >= 1.1 ? 'text-emerald-400' : (nearPcr <= 0.9 ? 'text-rose-400' : 'text-amber-300')}`;
+      }
+      if (pcrSub) {
+        pcrSub.innerText = `ATM: ${(latest.atm_pcr || 0).toFixed(2)} | ΔOI PCR: ${(latest.chg_oi_pcr || 0).toFixed(2)}`;
+      }
+
+      const wallsEl = document.getElementById('intra-kpi-walls');
+      const mpEl = document.getElementById('intra-kpi-maxpain');
+      if (wallsEl) wallsEl.innerText = `${latest.put_wall || '--'} PE / ${latest.call_wall || '--'} CE`;
+      if (mpEl) mpEl.innerText = `Max Pain: ${latest.max_pain || '--'} | Fresh: ${meta.fresh_put_wall || '--'}/${meta.fresh_call_wall || '--'}`;
+
+      const peChg = Number(latest.net_pe_oi_chg || 0);
+      const ceChg = Number(latest.net_ce_oi_chg || 0);
+      const netFlowLakhs = (peChg - ceChg) / 100000.0;
+      const oiFlowEl = document.getElementById('intra-kpi-oiflow');
+      const oiFlowSub = document.getElementById('intra-kpi-oiflow-sub');
+      if (oiFlowEl) {
+        oiFlowEl.innerText = `${netFlowLakhs >= 0 ? '+' : ''}${netFlowLakhs.toFixed(2)}L Net PE`;
+        oiFlowEl.className = `text-base sm:text-xl font-mono font-bold mt-1 ${netFlowLakhs >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      if (oiFlowSub) {
+        oiFlowSub.innerText = `PE: ${(peChg / 100000).toFixed(1)}L vs CE: ${(ceChg / 100000).toFixed(1)}L`;
+      }
+
+      const regEl = document.getElementById('intra-kpi-regime');
+      const ivEl = document.getElementById('intra-kpi-iv');
+      if (regEl) regEl.innerText = (latest.market_state || 'BALANCED').replace(/_/g, ' ');
+      if (ivEl) ivEl.innerText = `ATM IV: ${(latest.atm_iv || 0).toFixed(2)}% | Skew: ${(latest.iv_skew || 0) >= 0 ? '+' : ''}${(latest.iv_skew || 0).toFixed(2)}%`;
+
+      // Narrative Cards
+      const slotTag = document.getElementById('intra-latest-slot-tag');
+      if (slotTag) slotTag.innerText = `Slot ${latest.slot_time || '--'} IST`;
+      const whEl = document.getElementById('intra-what-happening');
+      if (whEl) whEl.innerText = latest.what_is_happening || 'No intraday snapshot recorded yet.';
+      const wchEl = document.getElementById('intra-what-could-happen');
+      if (wchEl) wchEl.innerText = latest.what_could_happen || 'Click "Capture 50m Slot Now" to analyze live weekly option chain.';
+      const qsEl = document.getElementById('intra-quant-suggestion');
+      if (qsEl) qsEl.innerText = latest.quant_suggestion || '--';
+
+      // 8-Slot 50-Minute Schedule Strip
+      const schedGrid = document.getElementById('intra-schedule-grid');
+      const slots = data.scheduled_50m_slots || [];
+      if (schedGrid && slots.length > 0) {
+        schedGrid.innerHTML = slots.map(sl => {
+          const isCap = sl.status === 'CAPTURED';
+          const isUp = sl.status === 'UPCOMING';
+          const borderCls = isCap ? 'border-emerald-500/50 bg-emerald-950/25' : (isUp ? 'border-slate-800 bg-slate-950/60' : 'border-slate-800/80 bg-slate-950/40 opacity-75');
+          const badge = isCap
+            ? `<span class="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-300 font-bold">✓ CAPTURED</span>`
+            : (isUp ? `<span class="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/15 text-amber-300">⏳ UPCOMING</span>`
+                    : `<span class="px-1.5 py-0.5 rounded text-[9px] bg-slate-800 text-slate-400">PRE-START</span>`);
+          return `
+            <div class="rounded-xl border p-2.5 ${borderCls}">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-white text-xs">${sl.slot_time} IST</span>
+                ${badge}
+              </div>
+              <div class="mt-1.5 text-[11px] ${isCap ? 'text-slate-200' : 'text-slate-500'}">
+                <div>Spot: <b>${sl.spot_price ? '₹' + Number(sl.spot_price).toFixed(1) : '--'}</b></div>
+                <div>Strad: <b>${sl.straddle_premium ? '₹' + Number(sl.straddle_premium).toFixed(1) : '--'}</b> | PCR: <b>${sl.near_atm_pcr ? Number(sl.near_atm_pcr).toFixed(2) : '--'}</b></div>
+                <div class="text-[10px] text-slate-400 mt-0.5">Walls: ${sl.put_wall || '--'}P / ${sl.call_wall || '--'}C</div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // Snapshots Table
+      const tbody = document.getElementById('intra-snapshots-tbody');
+      const snaps = data.snapshots || [];
+      if (tbody) {
+        if (snaps.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">No 50-minute snapshots recorded yet today. Click "Capture 50m Slot Now".</td></tr>`;
+        } else {
+          tbody.innerHTML = snaps.map(s => {
+            let sm = {};
+            try { sm = s.snapshot_json ? JSON.parse(s.snapshot_json) : {}; } catch (e) {}
+            const decay = Number(sm.straddle_decay_pct || 0);
+            const npcr = Number(s.near_atm_pcr || 0);
+            const pcrCol = npcr >= 1.1 ? 'text-emerald-400' : (npcr <= 0.9 ? 'text-rose-400' : 'text-amber-300');
+            const netLakhs = ((Number(s.net_pe_oi_chg || 0) - Number(s.net_ce_oi_chg || 0)) / 100000.0);
+            return `
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="p-3 font-bold text-amber-300">${s.slot_time} IST</td>
+                <td class="p-3 text-slate-400 text-[11px]">${s.timestamp_ist || '--'}</td>
+                <td class="p-3 font-bold text-white">₹${Number(s.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="p-3 font-bold text-cyan-300">${s.atm_strike}</td>
+                <td class="p-3 text-slate-200">${Number(s.atm_ce_ltp || 0).toFixed(1)}C / ${Number(s.atm_pe_ltp || 0).toFixed(1)}P</td>
+                <td class="p-3 font-bold text-cyan-300">₹${Number(s.straddle_premium || 0).toFixed(2)} <span class="text-[10px] ${decay <= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${decay >= 0 ? '+' : ''}${decay.toFixed(1)}%)</span></td>
+                <td class="p-3 font-bold ${pcrCol}">${npcr.toFixed(2)}</td>
+                <td class="p-3 text-slate-300">${Number(s.overall_pcr || 0).toFixed(2)} / ${Number(s.atm_pcr || 0).toFixed(2)}</td>
+                <td class="p-3 font-bold ${Number(s.chg_oi_pcr || 1) >= 1.05 ? 'text-emerald-400' : 'text-rose-400'}">${Number(s.chg_oi_pcr || 0).toFixed(2)}</td>
+                <td class="p-3"><span class="text-emerald-400">${s.put_wall}P</span> / <span class="text-rose-400">${s.call_wall}C</span></td>
+                <td class="p-3 text-purple-300 font-bold">${s.max_pain}</td>
+                <td class="p-3 font-bold ${netLakhs >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${netLakhs >= 0 ? '+' : ''}${netLakhs.toFixed(2)}L</td>
+                <td class="p-3 text-slate-300">${Number(s.atm_iv || 0).toFixed(1)}% (${Number(s.iv_skew || 0) >= 0 ? '+' : ''}${Number(s.iv_skew || 0).toFixed(2)})</td>
+                <td class="p-3 text-right"><span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30">${(s.market_state || '').replace(/_/g, ' ')}</span></td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+    }
+
+    // =========================================================================
+    // MODULE 3: NIFTY 50 T+1 & T+5 MULTI-PILLAR QUANT PREDICTIONS DESK
+    // =========================================================================
+    async function loadPredictionsDesk(forceRefresh = false) {
+      const btn = document.getElementById('btn-pred-refresh');
+      if (forceRefresh && btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>Computing 6 Pillars...</span>`;
+      }
+      try {
+        const res = await fetch(`/api/nifty/predictions?force_refresh=${forceRefresh ? 'true' : 'false'}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        niftyPredictionsCache = data;
+        renderPredictionsUI(data);
+        if (forceRefresh) {
+          showToast(`🧠 Nifty 50 T+1 & T+5 Forecast Recomputed (Spot ₹${data.spot_price || '--'})!`, 'success');
+        }
+      } catch (e) {
+        console.error("Failed loading Nifty Predictions Desk:", e);
+      } finally {
+        if (forceRefresh && btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<i data-lucide="cpu" class="w-3.5 h-3.5 shrink-0"></i><span>Recompute Live Forecast</span>`;
+          lucide.createIcons();
+        }
+      }
+    }
+
+    function renderPredictionsUI(data) {
+      if (!data || data.status !== 'OK') return;
+
+      const updBadge = document.getElementById('pred-updated-badge');
+      if (updBadge) {
+        updBadge.innerText = `🧠 Updated: ${data.timestamp_ist || '--'} • Nifty Spot: ₹${Number(data.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      }
+
+      const formatVerdictColor = (v) => {
+        if (!v) return 'text-white';
+        if (v.includes('BULLISH')) return 'text-emerald-400';
+        if (v.includes('BEARISH')) return 'text-rose-400';
+        return 'text-amber-300';
       };
 
-      setBenchCard(nsei, 'opt-kpi-nifty', 'opt-kpi-nifty-sub');
-      setBenchCard(bank, 'opt-kpi-bank', 'opt-kpi-bank-sub');
-      setBenchCard(vix, 'opt-kpi-vix', 'opt-kpi-vix-sub', true);
-      setBenchCard(crsl, 'opt-kpi-crsl', 'opt-kpi-crsl-sub');
+      // T+1 Card
+      const t1 = data.t1_forecast || {};
+      const t1VerdictEl = document.getElementById('pred-t1-verdict');
+      if (t1VerdictEl) {
+        t1VerdictEl.innerText = t1.verdict || '--';
+        t1VerdictEl.className = `text-base sm:text-xl font-extrabold mt-0.5 ${formatVerdictColor(t1.verdict)}`;
+      }
+      const t1CloseEl = document.getElementById('pred-t1-close');
+      if (t1CloseEl) t1CloseEl.innerText = `₹${Number(t1.expected_close || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      const t1MoveEl = document.getElementById('pred-t1-move');
+      if (t1MoveEl) {
+        const pts = Number(t1.expected_pts || 0);
+        const pct = Number(t1.expected_pct || 0);
+        t1MoveEl.innerText = `${pts >= 0 ? '+' : ''}${pts.toFixed(1)} pts (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
+        t1MoveEl.className = `text-[11px] font-bold ${pts >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      const p1Up = Math.round(Number(t1.prob_up || 0) * 1000) / 10;
+      const p1Fl = Math.round(Number(t1.prob_flat || 0) * 1000) / 10;
+      const p1Dn = Math.round(Number(t1.prob_down || 0) * 1000) / 10;
+      if (document.getElementById('pred-t1-prob-up')) document.getElementById('pred-t1-prob-up').innerText = `Up: ${p1Up.toFixed(1)}%`;
+      if (document.getElementById('pred-t1-prob-flat')) document.getElementById('pred-t1-prob-flat').innerText = `Range: ${p1Fl.toFixed(1)}%`;
+      if (document.getElementById('pred-t1-prob-down')) document.getElementById('pred-t1-prob-down').innerText = `Down: ${p1Dn.toFixed(1)}%`;
+      if (document.getElementById('pred-t1-bar-up')) document.getElementById('pred-t1-bar-up').style.width = `${p1Up}%`;
+      if (document.getElementById('pred-t1-bar-flat')) document.getElementById('pred-t1-bar-flat').style.width = `${p1Fl}%`;
+      if (document.getElementById('pred-t1-bar-down')) document.getElementById('pred-t1-bar-down').style.width = `${p1Dn}%`;
+      if (document.getElementById('pred-t1-1sigma') && Array.isArray(t1.range_1sigma)) {
+        document.getElementById('pred-t1-1sigma').innerText = `₹${Number(t1.range_1sigma[0]).toFixed(0)} – ₹${Number(t1.range_1sigma[1]).toFixed(0)}`;
+      }
+      if (document.getElementById('pred-t1-2sigma') && Array.isArray(t1.range_2sigma)) {
+        document.getElementById('pred-t1-2sigma').innerText = `₹${Number(t1.range_2sigma[0]).toFixed(0)} – ₹${Number(t1.range_2sigma[1]).toFixed(0)}`;
+      }
 
-      const tbody = document.getElementById('options-underlyings-tbody');
+      // T+5 Card
+      const t5 = data.t5_forecast || {};
+      const t5VerdictEl = document.getElementById('pred-t5-verdict');
+      if (t5VerdictEl) {
+        t5VerdictEl.innerText = t5.verdict || '--';
+        t5VerdictEl.className = `text-base sm:text-xl font-extrabold mt-0.5 ${formatVerdictColor(t5.verdict)}`;
+      }
+      const t5CloseEl = document.getElementById('pred-t5-close');
+      if (t5CloseEl) t5CloseEl.innerText = `₹${Number(t5.expected_close || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      const t5MoveEl = document.getElementById('pred-t5-move');
+      if (t5MoveEl) {
+        const pts5 = Number(t5.expected_pts || 0);
+        const pct5 = Number(t5.expected_pct || 0);
+        t5MoveEl.innerText = `${pts5 >= 0 ? '+' : ''}${pts5.toFixed(1)} pts (${pct5 >= 0 ? '+' : ''}${pct5.toFixed(2)}%)`;
+        t5MoveEl.className = `text-[11px] font-bold ${pts5 >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      const p5Up = Math.round(Number(t5.prob_up || 0) * 1000) / 10;
+      const p5Fl = Math.round(Number(t5.prob_flat || 0) * 1000) / 10;
+      const p5Dn = Math.round(Number(t5.prob_down || 0) * 1000) / 10;
+      if (document.getElementById('pred-t5-prob-up')) document.getElementById('pred-t5-prob-up').innerText = `Up: ${p5Up.toFixed(1)}%`;
+      if (document.getElementById('pred-t5-prob-flat')) document.getElementById('pred-t5-prob-flat').innerText = `Range: ${p5Fl.toFixed(1)}%`;
+      if (document.getElementById('pred-t5-prob-down')) document.getElementById('pred-t5-prob-down').innerText = `Down: ${p5Dn.toFixed(1)}%`;
+      if (document.getElementById('pred-t5-bar-up')) document.getElementById('pred-t5-bar-up').style.width = `${p5Up}%`;
+      if (document.getElementById('pred-t5-bar-flat')) document.getElementById('pred-t5-bar-flat').style.width = `${p5Fl}%`;
+      if (document.getElementById('pred-t5-bar-down')) document.getElementById('pred-t5-bar-down').style.width = `${p5Dn}%`;
+      if (document.getElementById('pred-t5-1sigma') && Array.isArray(t5.range_1sigma)) {
+        document.getElementById('pred-t5-1sigma').innerText = `₹${Number(t5.range_1sigma[0]).toFixed(0)} – ₹${Number(t5.range_1sigma[1]).toFixed(0)}`;
+      }
+      if (document.getElementById('pred-t5-2sigma') && Array.isArray(t5.range_2sigma)) {
+        document.getElementById('pred-t5-2sigma').innerText = `₹${Number(t5.range_2sigma[0]).toFixed(0)} – ₹${Number(t5.range_2sigma[1]).toFixed(0)}`;
+      }
+
+      // Pillar Scores & Walk-Forward Validation
+      const ps = data.pillar_scores || {};
+      const setScoreEl = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const num = Number(val || 0);
+        el.innerText = `${num >= 0 ? '+' : ''}${num.toFixed(1)}`;
+        el.className = `text-base font-bold mt-0.5 ${num > 5 ? 'text-emerald-400' : (num < -5 ? 'text-rose-400' : 'text-amber-300')}`;
+      };
+      setScoreEl('pred-score-comp', data.composite_score);
+      setScoreEl('pred-score-tech', ps.technical_score);
+      setScoreEl('pred-score-breadth', ps.breadth_score);
+      setScoreEl('pred-score-sectoral', ps.sectoral_score);
+      setScoreEl('pred-score-global', ps.global_score);
+      setScoreEl('pred-score-macro', ps.macro_score);
+      setScoreEl('pred-score-news', ps.news_and_deriv_score);
+
+      const vc = data.validation_and_calibration || {};
+      if (document.getElementById('pred-val-hitrate')) {
+        document.getElementById('pred-val-hitrate').innerText = `T1: ${(vc.t1_hit_rate_pct || 0).toFixed(1)}% | T5: ${(vc.t5_hit_rate_pct || 0).toFixed(1)}%`;
+      }
+      if (document.getElementById('pred-val-brier')) {
+        document.getElementById('pred-val-brier').innerText = `Brier: ${(vc.brier_score_t1 || 0).toFixed(3)} (${vc.lookback_days || 180}d)`;
+      }
+
+      // Quant Suggestions Grid
+      const sugGrid = document.getElementById('pred-suggestions-grid');
+      const sugs = data.quant_suggestions || [];
+      if (sugGrid && sugs.length > 0) {
+        sugGrid.innerHTML = sugs.map(s => `
+          <div class="bg-slate-900/80 border border-purple-500/30 rounded-2xl p-4">
+            <div class="text-[10px] font-mono font-bold uppercase text-purple-400">${s.horizon || 'QUANT ADVISORY'}</div>
+            <div class="text-xs sm:text-sm font-bold text-white mt-1">${s.title || ''}</div>
+            <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">${s.detail || ''}</p>
+          </div>
+        `).join('');
+      }
+
+      const pillars = data.pillars || {};
+      // Pillar 1: Nifty Technicals
+      const tech = pillars.nifty_technicals || {};
+      if (document.getElementById('pred-tech-date')) {
+        document.getElementById('pred-tech-date').innerText = `Bar: ${tech.last_date || '--'} (${tech.bars || 0}d)`;
+      }
+      const techGrid = document.getElementById('pred-tech-metrics');
+      if (techGrid) {
+        const items = [
+          { lbl: 'Spot Close', val: `₹${Number(tech.close || 0).toFixed(2)}`, col: 'text-white' },
+          { lbl: '1D / 5D Return', val: `${Number(tech.ret_1d || 0) >= 0 ? '+' : ''}${Number(tech.ret_1d || 0).toFixed(2)}% / ${Number(tech.ret_5d || 0).toFixed(2)}%`, col: Number(tech.ret_1d || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+          { lbl: '20D / 63D Return', val: `${Number(tech.ret_20d || 0).toFixed(2)}% / ${Number(tech.ret_63d || 0).toFixed(2)}%`, col: Number(tech.ret_20d || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+          { lbl: 'RSI(14) & MACD Hist', val: `${Number(tech.rsi14 || 0).toFixed(1)} | ${Number(tech.macd_hist || 0).toFixed(1)}`, col: 'text-cyan-300' },
+          { lbl: 'EMA 9 / EMA 20', val: `${Number(tech.ema9 || 0).toFixed(0)} / ${Number(tech.ema20 || 0).toFixed(0)}`, col: 'text-slate-200' },
+          { lbl: 'EMA 50 / EMA 200', val: `${Number(tech.ema50 || 0).toFixed(0)} / ${Number(tech.ema200 || 0).toFixed(0)}`, col: 'text-amber-300' },
+          { lbl: 'ATR(14) & BB %B', val: `₹${Number(tech.atr14 || 0).toFixed(1)} (${Number(tech.atr_pct || 0).toFixed(2)}%) | %B: ${Number(tech.bb_pct_b || 0).toFixed(2)}`, col: 'text-purple-300' },
+          { lbl: 'Floor Pivots (S1 / P / R1)', val: `${Number(tech.s1 || 0).toFixed(0)} / ${Number(tech.pivot || 0).toFixed(0)} / ${Number(tech.r1 || 0).toFixed(0)}`, col: 'text-emerald-300' },
+        ];
+        techGrid.innerHTML = items.map(it => `
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase">${it.lbl}</div>
+            <div class="text-xs font-bold mt-1 ${it.col}">${it.val}</div>
+          </div>
+        `).join('');
+      }
+
+      // Pillar 2: Market Breadth
+      const br = pillars.market_breadth || {};
+      if (document.getElementById('pred-breadth-regime')) {
+        document.getElementById('pred-breadth-regime').innerText = (br.regime || 'NEUTRAL').replace(/_/g, ' ');
+      }
+      const brGrid = document.getElementById('pred-breadth-metrics');
+      if (brGrid) {
+        const bItems = [
+          { lbl: 'Advances / Declines', val: `${br.advances || 0} Adv / ${br.declines || 0} Dec`, col: (br.advances || 0) >= (br.declines || 0) ? 'text-emerald-400' : 'text-rose-400' },
+          { lbl: 'A/D Ratio & Universe', val: `${Number(br.ad_ratio || 0).toFixed(2)} (${br.total_stocks || 0} Stocks)`, col: 'text-white' },
+          { lbl: '% Stocks > EMA 20', val: `${Number(br.pct_above_ema20 || 0).toFixed(1)}%`, col: Number(br.pct_above_ema20 || 0) >= 50 ? 'text-emerald-400' : 'text-amber-300' },
+          { lbl: '% Stocks > EMA 50', val: `${Number(br.pct_above_ema50 || 0).toFixed(1)}%`, col: Number(br.pct_above_ema50 || 0) >= 50 ? 'text-emerald-400' : 'text-rose-400' },
+          { lbl: '% Stocks > EMA 200', val: `${Number(br.pct_above_ema200 || 0).toFixed(1)}%`, col: 'text-cyan-300' },
+          { lbl: 'RSI > 60 vs RSI < 40', val: `${Number(br.pct_rsi_bullish || 0).toFixed(1)}% vs ${Number(br.pct_rsi_bearish || 0).toFixed(1)}%`, col: 'text-slate-200' },
+          { lbl: 'Up / Down Vol Ratio', val: `${Number(br.up_down_volume_ratio || 0).toFixed(2)}x`, col: Number(br.up_down_volume_ratio || 0) >= 1 ? 'text-emerald-400' : 'text-rose-400' },
+          { lbl: 'Breadth Impulse Score', val: `${Number(br.score || 0) >= 0 ? '+' : ''}${Number(br.score || 0).toFixed(1)}`, col: Number(br.score || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+        ];
+        brGrid.innerHTML = bItems.map(it => `
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase">${it.lbl}</div>
+            <div class="text-xs font-bold mt-1 ${it.col}">${it.val}</div>
+          </div>
+        `).join('');
+      }
+
+      // Pillar 3: Sectoral Table
+      const secTbody = document.getElementById('pred-sectoral-tbody');
+      const secRows = pillars.sectoral_analysis || [];
+      if (secTbody) {
+        secTbody.innerHTML = secRows.map(s => {
+          const r1 = Number(s.ret_1d || 0);
+          const r5 = Number(s.ret_5d || 0);
+          const imp = Number(s.impulse_score || 0);
+          return `
+            <tr class="hover:bg-slate-800/40 transition">
+              <td class="p-2.5 font-bold text-white">${s.sector} <span class="text-[10px] text-slate-400">(${s.nifty_weight_pct}%)</span></td>
+              <td class="p-2.5 text-slate-200">${s.index_ltp ? '₹' + Number(s.index_ltp).toLocaleString('en-IN', { maximumFractionDigits: 1 }) : '--'}</td>
+              <td class="p-2.5 font-bold ${r1 >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r1 >= 0 ? '+' : ''}${r1.toFixed(2)}%</td>
+              <td class="p-2.5 ${r5 >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r5 >= 0 ? '+' : ''}${r5.toFixed(2)}%</td>
+              <td class="p-2.5 text-slate-300">${Number(s.breadth_above_ema20_pct || 0).toFixed(0)}% / ${Number(s.breadth_above_ema50_pct || 0).toFixed(0)}%</td>
+              <td class="p-2.5 text-right font-bold ${imp >= 5 ? 'text-emerald-400' : (imp <= -5 ? 'text-rose-400' : 'text-amber-300')}">${imp >= 0 ? '+' : ''}${imp.toFixed(1)} (${s.status})</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // Pillars 4 & 5: Global + Cross-Asset Macro Table
+      const gmTbody = document.getElementById('pred-global-macro-tbody');
+      const gRows = (pillars.global_markets || []).map(g => ({ ...g, group: 'GLOBAL' }));
+      const mRows = (pillars.macro_cross_asset || []).map(m => ({ ...m, group: 'MACRO', trend: m.impact_on_nifty }));
+      const combinedGM = [...gRows, ...mRows];
+      if (gmTbody) {
+        gmTbody.innerHTML = combinedGM.map(item => {
+          const r1 = Number(item.ret_1d || 0);
+          const r5 = Number(item.ret_5d || 0);
+          const tr = item.trend || item.impact_on_nifty || 'NEUTRAL';
+          const isTailwind = tr.includes('TAILWIND') || tr.includes('BULL');
+          const isHeadwind = tr.includes('HEADWIND') || tr.includes('BEAR');
+          const badgeCls = isTailwind ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : (isHeadwind ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-slate-800 text-slate-300 border-slate-700');
+          return `
+            <tr class="hover:bg-slate-800/40 transition">
+              <td class="p-2.5 font-bold text-white">${item.name} <span class="text-[10px] text-slate-500">[${item.group}]</span></td>
+              <td class="p-2.5 font-bold text-cyan-300">${Number(item.ltp || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
+              <td class="p-2.5 font-bold ${r1 >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r1 >= 0 ? '+' : ''}${r1.toFixed(2)}%</td>
+              <td class="p-2.5 ${r5 >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r5 >= 0 ? '+' : ''}${r5.toFixed(2)}%</td>
+              <td class="p-2.5 text-slate-400">${Number(item.ema20 || 0).toFixed(2)}</td>
+              <td class="p-2.5 text-right"><span class="px-2 py-0.5 rounded text-[10px] border ${badgeCls}">${tr.replace(/_/g, ' ')}</span></td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // Pillar 6: Central Bank Calendar & Live News
+      const news = pillars.news_and_events || {};
+      const newsBadge = document.getElementById('pred-news-badge');
+      if (newsBadge) {
+        newsBadge.innerText = `${(news.sentiment_label || 'NEUTRAL').replace(/_/g, ' ')} (${Number(news.score || 0) >= 0 ? '+' : ''}${Number(news.score || 0).toFixed(0)}) • ${news.event_risk_flag || 'NORMAL'}`;
+      }
+      const cbDiv = document.getElementById('pred-cb-events');
+      if (cbDiv) {
+        const cbs = news.central_bank_events || [];
+        cbDiv.innerHTML = cbs.map(ev => `
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
+            <div>
+              <div class="text-[10px] text-purple-400 font-bold">${ev.bank} • ${ev.date}</div>
+              <div class="text-[11px] text-slate-200 font-semibold">${ev.title}</div>
+            </div>
+            <span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-amber-300 font-bold shrink-0">${ev.status_label}</span>
+          </div>
+        `).join('');
+      }
+      const newsList = document.getElementById('pred-news-list');
+      if (newsList) {
+        const headlines = news.headlines || [];
+        if (headlines.length === 0) {
+          newsList.innerHTML = `<div class="text-slate-500 py-4 text-center">No recent RSS headlines available.</div>`;
+        } else {
+          newsList.innerHTML = headlines.map(h => {
+            const sCol = h.sentiment === 'BULLISH' ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : (h.sentiment === 'BEARISH' ? 'text-rose-400 border-rose-500/30 bg-rose-500/10' : 'text-slate-300 border-slate-700 bg-slate-800');
+            return `
+              <a href="${h.link || '#'}" target="_blank" rel="noopener" class="block bg-slate-950/70 hover:bg-slate-900 border border-slate-800/90 rounded-xl p-2.5 transition">
+                <div class="flex items-center justify-between gap-2 mb-1">
+                  <span class="text-[10px] font-mono text-cyan-400">${h.category || 'MARKET'} • ${h.published || ''}</span>
+                  <span class="px-1.5 py-0.5 rounded text-[9px] font-mono border ${sCol}">${h.sentiment}</span>
+                </div>
+                <div class="text-xs text-slate-200 font-medium leading-snug">${h.title}</div>
+              </a>
+            `;
+          }).join('');
+        }
+      }
+
+      // Prediction Validation Ledger
+      const ledTbody = document.getElementById('pred-ledger-tbody');
+      const ledger = data.prediction_ledger || [];
+      if (ledTbody) {
+        if (ledger.length === 0) {
+          ledTbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-500 font-sans">No prediction ledger entries yet.</td></tr>`;
+        } else {
+          ledTbody.innerHTML = ledger.map(r => {
+            const sc = Number(r.composite_score || 0);
+            const vStatus = r.t1_validated === 'VALIDATED_HIT'
+              ? `<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300">✓ HIT (${r.actual_t1_close || '--'})</span>`
+              : `<span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/15 text-amber-300">${r.t1_validated || 'PENDING'}</span>`;
+            return `
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="p-2.5 font-bold text-white">${r.prediction_date}</td>
+                <td class="p-2.5 text-slate-200">₹${Number(r.spot_at_prediction || 0).toFixed(1)}</td>
+                <td class="p-2.5 font-bold ${sc >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${sc >= 0 ? '+' : ''}${sc.toFixed(1)}</td>
+                <td class="p-2.5 text-cyan-300">₹${Number(r.t1_expected_close || 0).toFixed(0)} <span class="text-[10px] text-slate-400">[${Number(r.t1_low_1s || 0).toFixed(0)}–${Number(r.t1_high_1s || 0).toFixed(0)}]</span></td>
+                <td class="p-2.5 text-purple-300">₹${Number(r.t5_expected_close || 0).toFixed(0)} <span class="text-[10px] text-slate-400">[${Number(r.t5_low_1s || 0).toFixed(0)}–${Number(r.t5_high_1s || 0).toFixed(0)}]</span></td>
+                <td class="p-2.5 text-right">${vStatus}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+    }
+
+    // =========================================================================
+    // MODULE 4: NIFTY 50 WEEKLY & MONTHLY OPTION CHAIN DEEP OI ANALYTICS DESK
+    // =========================================================================
+    async function loadOptionsChainDesk(forceRefresh = false) {
+      try {
+        const res = await fetch(`/api/nifty/options-chain?force_refresh=${forceRefresh ? 'true' : 'false'}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        niftyOptionsChainCache = data;
+        renderOptionsChainUI(data);
+        if (forceRefresh) {
+          showToast(`🎯 Live NSE Nifty 50 Option Chain Refreshed (Weekly ${data.weekly?.expiry || ''} & Monthly ${data.monthly?.expiry || ''})!`, 'success');
+        }
+      } catch (e) {
+        console.error("Failed loading Options Chain Desk:", e);
+      }
+    }
+
+    function switchOptionsExpiryView(mode) {
+      selectedOptionsExpiryType = mode === 'monthly' ? 'monthly' : 'weekly';
+      const btnW = document.getElementById('btn-opt-weekly');
+      const btnM = document.getElementById('btn-opt-monthly');
+      if (btnW && btnM) {
+        if (selectedOptionsExpiryType === 'weekly') {
+          btnW.className = "px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-black transition";
+          btnM.className = "px-3 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-300 hover:text-white transition";
+        } else {
+          btnM.className = "px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-black transition";
+          btnW.className = "px-3 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-300 hover:text-white transition";
+        }
+      }
+      if (niftyOptionsChainCache) {
+        renderOptionsChainUI(niftyOptionsChainCache);
+      }
+    }
+
+    function renderOptionsChainUI(data) {
+      if (!data || data.status !== 'OK') return;
+
+      const w = data.weekly || {};
+      const m = data.monthly || {};
+      const active = selectedOptionsExpiryType === 'monthly' ? m : w;
+
+      if (document.getElementById('opt-lbl-weekly-exp')) document.getElementById('opt-lbl-weekly-exp').innerText = w.expiry || '--';
+      if (document.getElementById('opt-lbl-monthly-exp')) document.getElementById('opt-lbl-monthly-exp').innerText = m.expiry || '--';
+      if (document.getElementById('opt-nse-timestamp')) {
+        document.getElementById('opt-nse-timestamp').innerText = `🎯 NSE Live Timestamp: ${data.nse_timestamp || '--'} • Source: ${data.source || 'NSE'}`;
+      }
+
+      const pcr = active.pcr || {};
+      const walls = active.walls_and_pain || {};
+      const strad = active.straddle || {};
+      const vol = active.volatility_and_gex || {};
+
+      if (document.getElementById('opt-kpi-spot')) document.getElementById('opt-kpi-spot').innerText = `₹${Number(active.spot_price || data.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      if (document.getElementById('opt-kpi-atm')) document.getElementById('opt-kpi-atm').innerText = `ATM Strike: ${active.atm_strike || '--'} (${active.expiry || '--'})`;
+
+      if (document.getElementById('opt-kpi-overall-pcr')) document.getElementById('opt-kpi-overall-pcr').innerText = Number(pcr.overall_oi_pcr || 0).toFixed(3);
+      if (document.getElementById('opt-kpi-vol-pcr')) document.getElementById('opt-kpi-vol-pcr').innerText = `Vol PCR: ${Number(pcr.overall_vol_pcr || 0).toFixed(2)}`;
+
+      if (document.getElementById('opt-kpi-nearatm-pcr')) document.getElementById('opt-kpi-nearatm-pcr').innerText = Number(pcr.near_atm_pcr || 0).toFixed(3);
+      if (document.getElementById('opt-kpi-exactatm-pcr')) document.getElementById('opt-kpi-exactatm-pcr').innerText = `Exact ATM (±1): ${Number(pcr.exact_atm_pcr || 0).toFixed(2)}`;
+
+      const netNearLakhs = Number(vol.net_near_chg_oi_diff || 0) / 100000.0;
+      if (document.getElementById('opt-kpi-chgoi-pcr')) document.getElementById('opt-kpi-chgoi-pcr').innerText = Number(pcr.chg_oi_pcr || 0).toFixed(2);
+      if (document.getElementById('opt-kpi-net-chgoi')) document.getElementById('opt-kpi-net-chgoi').innerText = `Net PE-CE: ${netNearLakhs >= 0 ? '+' : ''}${netNearLakhs.toFixed(2)}L`;
+
+      if (document.getElementById('opt-kpi-maxpain')) document.getElementById('opt-kpi-maxpain').innerText = walls.max_pain || '--';
+      if (document.getElementById('opt-kpi-maxpain-dist')) {
+        const dMp = Number(walls.spot_vs_max_pain || 0);
+        document.getElementById('opt-kpi-maxpain-dist').innerText = `Spot vs MP: ${dMp >= 0 ? '+' : ''}${dMp.toFixed(1)} pts`;
+      }
+
+      if (document.getElementById('opt-kpi-callwall')) document.getElementById('opt-kpi-callwall').innerText = `${walls.call_wall_1 || '--'} CE`;
+      if (document.getElementById('opt-kpi-callwall2')) document.getElementById('opt-kpi-callwall2').innerText = `CW2: ${walls.call_wall_2 || '--'} | Fresh: ${walls.fresh_call_wall || '--'}`;
+
+      if (document.getElementById('opt-kpi-putwall')) document.getElementById('opt-kpi-putwall').innerText = `${walls.put_wall_1 || '--'} PE`;
+      if (document.getElementById('opt-kpi-putwall2')) document.getElementById('opt-kpi-putwall2').innerText = `PW2: ${walls.put_wall_2 || '--'} | Fresh: ${walls.fresh_put_wall || '--'}`;
+
+      if (document.getElementById('opt-kpi-straddle')) document.getElementById('opt-kpi-straddle').innerText = `₹${Number(strad.straddle_premium || 0).toFixed(2)} (±${Number(strad.implied_move_pct || 0).toFixed(2)}%)`;
+      if (document.getElementById('opt-kpi-skew')) document.getElementById('opt-kpi-skew').innerText = `IV: ${Number(vol.atm_iv || 0).toFixed(1)}% | Skew: ${Number(vol.iv_skew || 0) >= 0 ? '+' : ''}${Number(vol.iv_skew || 0).toFixed(2)}%`;
+
+      // Weekly vs Monthly Term Structure Comparison
+      const termDiv = document.getElementById('opt-term-comparison');
+      if (termDiv) {
+        const rows = [
+          { lbl: 'Expiry Date', wv: w.expiry || '--', mv: m.expiry || '--' },
+          { lbl: 'ATM Straddle ₹', wv: `₹${Number(w.straddle?.straddle_premium || 0).toFixed(1)} (±${Number(w.straddle?.implied_move_pct || 0).toFixed(2)}%)`, mv: `₹${Number(m.straddle?.straddle_premium || 0).toFixed(1)} (±${Number(m.straddle?.implied_move_pct || 0).toFixed(2)}%)` },
+          { lbl: 'Near-ATM / Overall PCR', wv: `${Number(w.pcr?.near_atm_pcr || 0).toFixed(2)} / ${Number(w.pcr?.overall_oi_pcr || 0).toFixed(2)}`, mv: `${Number(m.pcr?.near_atm_pcr || 0).toFixed(2)} / ${Number(m.pcr?.overall_oi_pcr || 0).toFixed(2)}` },
+          { lbl: 'Put Wall / Call Wall', wv: `${w.walls_and_pain?.put_wall_1 || '--'}P / ${w.walls_and_pain?.call_wall_1 || '--'}C`, mv: `${m.walls_and_pain?.put_wall_1 || '--'}P / ${m.walls_and_pain?.call_wall_1 || '--'}C` },
+          { lbl: 'Max Pain Strike', wv: `${w.walls_and_pain?.max_pain || '--'}`, mv: `${m.walls_and_pain?.max_pain || '--'}` },
+          { lbl: 'ATM IV % & 25Δ Skew', wv: `${Number(w.volatility_and_gex?.atm_iv || 0).toFixed(2)}% (${Number(w.volatility_and_gex?.iv_skew || 0) >= 0 ? '+' : ''}${Number(w.volatility_and_gex?.iv_skew || 0).toFixed(2)})`, mv: `${Number(m.volatility_and_gex?.atm_iv || 0).toFixed(2)}% (${Number(m.volatility_and_gex?.iv_skew || 0) >= 0 ? '+' : ''}${Number(m.volatility_and_gex?.iv_skew || 0).toFixed(2)})` },
+        ];
+        termDiv.innerHTML = `
+          <div class="grid grid-cols-3 text-[10px] text-slate-400 uppercase pb-1 border-b border-slate-800 font-bold">
+            <div>Metric</div>
+            <div class="text-emerald-400">Weekly</div>
+            <div class="text-cyan-400">Monthly</div>
+          </div>
+          ${rows.map(r => `
+            <div class="grid grid-cols-3 py-1 border-b border-slate-800/50 text-[11px]">
+              <div class="text-slate-400">${r.lbl}</div>
+              <div class="text-white font-semibold">${r.wv}</div>
+              <div class="text-slate-200 font-semibold">${r.mv}</div>
+            </div>
+          `).join('')}
+        `;
+      }
+
+      // Quant Suggestions
+      const sugContainer = document.getElementById('opt-suggestions-container');
+      const sugs = data.quant_suggestions || [];
+      if (sugContainer && sugs.length > 0) {
+        sugContainer.innerHTML = sugs.map(s => `
+          <div class="bg-slate-900/80 border border-emerald-500/30 rounded-2xl p-4">
+            <div class="text-[10px] font-mono font-bold uppercase text-emerald-400">${s.category || 'OPTIONS ADVISORY'}</div>
+            <div class="text-xs sm:text-sm font-bold text-white mt-1">${s.title || ''}</div>
+            <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">${s.detail || ''}</p>
+          </div>
+        `).join('');
+      }
+
+      // Strike-by-Strike Deep Option Chain Table
+      if (document.getElementById('opt-table-expiry-label')) {
+        document.getElementById('opt-table-expiry-label').innerText = `${selectedOptionsExpiryType.toUpperCase()} • ${active.expiry || '--'}`;
+      }
+      if (document.getElementById('opt-table-verdict-badge')) {
+        document.getElementById('opt-table-verdict-badge').innerText = `${active.verdict || '--'} • GEX: ${(vol.gex_regime || '').replace(/_/g, ' ')}`;
+      }
+
+      const strikes = active.strikes || [];
+      const tbody = document.getElementById('opt-chain-tbody');
       if (!tbody) return;
-
-      const equities = all
-        .filter(r => !r.symbol.startsWith('^') && (r.last_close || 0) >= 150 && (r.last_volume || 0) >= 250000)
-        .map(r => {
-          const ltp = r.last_close || 1;
-          const atrPct = ((r.atr14 || 0) / ltp) * 100;
-          return { ...r, atrPct };
-        })
-        .sort((a, b) => b.atrPct - a.atrPct)
-        .slice(0, 35);
-
-      if (equities.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">No underlying volatility data loaded yet.</td></tr>`;
+      if (strikes.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">No strike rows available.</td></tr>`;
         return;
       }
 
-      tbody.innerHTML = equities.map(r => {
-        const ltp = r.last_close || 0;
-        const chg = r.change_pct || 0;
-        const step = ltp >= 2000 ? 50 : (ltp >= 500 ? 20 : 10);
-        const atmStrike = Math.round(ltp / step) * step;
-        const isBull = ltp >= (r.ema20 || 0) && (r.rsi14 || 50) >= 52;
-        const biasBadge = isBull
-          ? `<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">BULL CALL BIAS (${atmStrike} CE)</span>`
-          : `<span class="px-2 py-0.5 rounded text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">BEAR / NEUTRAL (${atmStrike} PE)</span>`;
+      const maxOi = Math.max(1, ...strikes.map(s => Math.max(s.ce_oi || 0, s.pe_oi || 0)));
+      const formatBuildupBadge = (b, isCall) => {
+        if (b === 'SHORT_BUILDUP') {
+          // Option Writing (Resistance on Call side, Support on Put side)
+          const cls = isCall ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+          const lbl = isCall ? 'CALL WRITING' : 'PUT WRITING';
+          return `<span class="px-1.5 py-0.5 rounded text-[9px] border ${cls} font-bold">${lbl}</span>`;
+        }
+        if (b === 'LONG_BUILDUP') {
+          const cls = isCall ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border-rose-500/30';
+          const lbl = isCall ? 'CALL BUYING' : 'PUT BUYING';
+          return `<span class="px-1.5 py-0.5 rounded text-[9px] border ${cls}">${lbl}</span>`;
+        }
+        if (b === 'SHORT_COVERING') {
+          return `<span class="px-1.5 py-0.5 rounded text-[9px] border border-cyan-500/30 bg-cyan-500/15 text-cyan-300">SHORT COVER</span>`;
+        }
+        if (b === 'LONG_UNWINDING') {
+          return `<span class="px-1.5 py-0.5 rounded text-[9px] border border-amber-500/30 bg-amber-500/15 text-amber-300">UNWINDING</span>`;
+        }
+        return `<span class="text-[9px] text-slate-500">NEUTRAL</span>`;
+      };
+
+      tbody.innerHTML = strikes.map(s => {
+        const isAtm = s.strike === active.atm_strike;
+        const isMp = s.strike === walls.max_pain;
+        const isCw1 = s.strike === walls.call_wall_1;
+        const isPw1 = s.strike === walls.put_wall_1;
+        const rowBg = isAtm ? 'bg-amber-500/10 border-y border-amber-500/40' : 'hover:bg-slate-800/40';
+        const ceBarPct = Math.min(100, Math.round(((s.ce_oi || 0) / maxOi) * 100));
+        const peBarPct = Math.min(100, Math.round(((s.pe_oi || 0) / maxOi) * 100));
 
         return `
-          <tr class="hover:bg-slate-800/40 transition">
-            <td class="p-3 font-bold text-white">
-              <button onclick="openStockChartModal('${r.symbol}')" class="hover:text-emerald-400 underline decoration-emerald-500/40 underline-offset-4">${r.symbol}</button>
+          <tr class="${rowBg} transition">
+            <td class="p-2">${formatBuildupBadge(s.ce_buildup, true)}</td>
+            <td class="p-2">
+              <div class="flex items-center justify-between gap-1">
+                <span class="font-bold text-white">${(s.ce_oi || 0).toLocaleString('en-IN')}</span>
+                ${isCw1 ? '<span class="px-1 rounded text-[9px] bg-rose-500 text-black font-bold">CW1</span>' : ''}
+              </div>
+              <div class="w-full h-1 bg-slate-800 rounded overflow-hidden mt-0.5"><div class="bg-rose-500 h-full" style="width:${ceBarPct}%"></div></div>
             </td>
-            <td class="p-3 font-bold text-white">₹${ltp.toFixed(2)}</td>
-            <td class="p-3 font-bold ${chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</td>
-            <td class="p-3 text-amber-300">₹${(r.atr14 || 0).toFixed(2)} (${r.atrPct.toFixed(2)}%)</td>
-            <td class="p-3">${biasBadge}</td>
-            <td class="p-3 text-cyan-300 font-bold">₹${atmStrike}</td>
-            <td class="p-3 text-rose-400">₹${(r.auto_sl || 0).toFixed(2)}</td>
-            <td class="p-3 text-emerald-400">₹${(r.auto_t1 || 0).toFixed(2)}</td>
-            <td class="p-3 text-right">
-              <button onclick="openStockChartModal('${r.symbol}')" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold">📈 Chart</button>
+            <td class="p-2 font-bold ${(s.ce_chg_oi || 0) >= 0 ? 'text-rose-400' : 'text-emerald-400'}">${(s.ce_chg_oi || 0) >= 0 ? '+' : ''}${(s.ce_chg_oi || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 text-slate-400">${(s.ce_vol || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 text-slate-300">${Number(s.ce_iv || 0).toFixed(1)}%</td>
+            <td class="p-2 font-semibold text-white">₹${Number(s.ce_ltp || 0).toFixed(2)} <span class="text-[10px] ${(s.ce_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.ce_pchg || 0) >= 0 ? '+' : ''}${Number(s.ce_pchg || 0).toFixed(0)}%)</span></td>
+            <td class="p-2 text-center bg-slate-900/95 border-x border-slate-800 font-extrabold ${isAtm ? 'text-amber-300 text-sm' : 'text-white'}">
+              <div>${s.strike}</div>
+              <div class="flex items-center justify-center gap-1">
+                ${isAtm ? '<span class="px-1 rounded text-[8px] bg-amber-500 text-black font-bold">ATM</span>' : ''}
+                ${isMp ? '<span class="px-1 rounded text-[8px] bg-purple-500 text-white font-bold">MP</span>' : ''}
+              </div>
             </td>
+            <td class="p-2 font-semibold text-white">₹${Number(s.pe_ltp || 0).toFixed(2)} <span class="text-[10px] ${(s.pe_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.pe_pchg || 0) >= 0 ? '+' : ''}${Number(s.pe_pchg || 0).toFixed(0)}%)</span></td>
+            <td class="p-2 text-slate-300">${Number(s.pe_iv || 0).toFixed(1)}%</td>
+            <td class="p-2 text-slate-400">${(s.pe_vol || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 font-bold ${(s.pe_chg_oi || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${(s.pe_chg_oi || 0) >= 0 ? '+' : ''}${(s.pe_chg_oi || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2">
+              <div class="flex items-center justify-between gap-1">
+                <span class="font-bold text-white">${(s.pe_oi || 0).toLocaleString('en-IN')}</span>
+                ${isPw1 ? '<span class="px-1 rounded text-[9px] bg-emerald-500 text-black font-bold">PW1</span>' : ''}
+              </div>
+              <div class="w-full h-1 bg-slate-800 rounded overflow-hidden mt-0.5"><div class="bg-emerald-500 h-full" style="width:${peBarPct}%"></div></div>
+            </td>
+            <td class="p-2">${formatBuildupBadge(s.pe_buildup, false)}</td>
+            <td class="p-2 text-right font-bold ${(s.strike_pcr || 0) >= 1.1 ? 'text-emerald-400' : ((s.strike_pcr || 0) <= 0.8 ? 'text-rose-400' : 'text-slate-300')}">${Number(s.strike_pcr || 0).toFixed(2)}</td>
           </tr>
         `;
       }).join('');
@@ -1988,12 +2867,10 @@
           loadP1Data(),
           loadP2Data()
         ]);
-        if (currentTab === 'tab-charts' || currentModule !== 'module-swing') await loadFetchedStocksData();
-        if (currentTab === 'tab-history') await loadHistoryData();
+        if (currentModule === 'module-swing' && currentTab === 'tab-charts') await loadFetchedStocksData();
+        if (currentModule === 'module-swing' && currentTab === 'tab-history') await loadHistoryData();
         if (currentModule !== 'module-swing') {
-          renderIntradayDesk();
-          renderPredictionsDesk();
-          renderOptionsDesk();
+          await ensureMasterDataThenRenderModules();
         }
       } catch (e) {
         console.error("Error refreshing data:", e);
