@@ -186,20 +186,34 @@ class TelegramVaultManager:
                 closed_cnt = len(state_engine.get_trade_history(limit=5000))
                 ts_str = format_ist()
 
-                # Pre-update manifest timestamp inside SQLite before taking snapshot
+                # Check if we already have a pinned document message in Telegram to update in-place
+                pinned = self._get_pinned_message_info(creds)
                 manifest = self.get_manifest()
                 prev_msg_id = (manifest.get("last_master_backup") or {}).get("message_id")
+                pinned_msg_id = pinned.get("message_id") or prev_msg_id
+                pinned_has_doc = bool(pinned.get("document"))
+                est_size_kb = round(DB_PATH.stat().st_size / (1024.0 * 3.1), 1) if DB_PATH.exists() else 0.0
+
+                # Pre-update manifest timestamp & history inside SQLite before taking snapshot
                 pre_record = {
+                    "type": "MASTER_VAULT",
                     "status": "SUCCESS",
+                    "mode": "UPDATED_IN_PLACE" if (pinned_msg_id and pinned_has_doc) else "CREATED_AND_PINNED",
+                    "message_id": pinned_msg_id,
                     "filename": "quant_master_vault.db.gz",
                     "stocks_count": stocks_cnt,
                     "latest_bar_date": latest_bar,
                     "active_trades": active_cnt,
                     "closed_trades": closed_cnt,
+                    "size_kb": est_size_kb,
                     "note": custom_note,
                     "timestamp": ts_str
                 }
                 manifest["last_master_backup"] = {**(manifest.get("last_master_backup") or {}), **pre_record}
+                hist_pre = manifest.get("history", [])
+                if not hist_pre or hist_pre[0].get("timestamp") != ts_str or hist_pre[0].get("note") != custom_note:
+                    hist_pre.insert(0, pre_record)
+                manifest["history"] = hist_pre[:30]
                 self._save_manifest(manifest)
 
                 with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f_db:
@@ -236,11 +250,6 @@ class TelegramVaultManager:
                     f"💾 <b>Master Size:</b> {size_kb} KB | 🕒 <b>Synced:</b> {ts_str}\n"
                     f"<code>#VAULT_INDEX_JSON:{json.dumps(index_meta)}</code>"
                 )
-
-                # Check if we already have a pinned document message in Telegram to update in-place!
-                pinned = self._get_pinned_message_info(creds)
-                pinned_msg_id = pinned.get("message_id") or prev_msg_id
-                pinned_has_doc = bool(pinned.get("document"))
 
                 resp = None
                 updated_in_place = False
@@ -316,8 +325,12 @@ class TelegramVaultManager:
                 manifest["last_db_backup"] = record
                 manifest["last_ohlcv_backup"] = record
                 hist = manifest.get("history", [])
-                hist.insert(0, {"type": "MASTER_VAULT", **record})
-                manifest["history"] = hist[:25]
+                full_entry = {"type": "MASTER_VAULT", **record}
+                if hist and hist[0].get("timestamp") == ts_str and hist[0].get("note") == custom_note:
+                    hist[0] = full_entry
+                else:
+                    hist.insert(0, full_entry)
+                manifest["history"] = hist[:30]
                 self._save_manifest(manifest)
 
                 logger.info(

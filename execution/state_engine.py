@@ -698,6 +698,31 @@ class StateEngine:
                         sl_reason, sector, notes, entry_reason, entry_regime,
                         metrics_str, features_str, now_str
                     ))
+
+                    sync_type = "AUTO_BUY_CLOUD_SYNC" if "AUTO" in str(triggered_from).upper() else "MANUAL_BUY_CLOUD_SYNC"
+                    sync_msg = (
+                        f"🟢 BUY EXECUTED & CLOUD SYNCED: {sym_clean} ({quantity} shs @ ₹{entry_price:,.2f} | "
+                        f"SL ₹{stop_loss:,.2f} | T1 ₹{target:,.2f} | T2 ₹{target_2:,.2f}) • {now_str}"
+                    )
+                    sync_details = json.dumps({
+                        "event": "TRADE_OPEN",
+                        "symbol": sym_clean,
+                        "portfolio": p_type,
+                        "entry_price": entry_price,
+                        "quantity": quantity,
+                        "stop_loss": stop_loss,
+                        "target_1": target,
+                        "target_2": target_2,
+                        "triggered_from": triggered_from,
+                        "timestamp_ist": now_str,
+                        "cloud_sync": "SYNCED_TO_TELEGRAM_VAULT"
+                    })
+                    conn.execute("""
+                    INSERT INTO scan_logs (
+                        timestamp, scan_type, portfolio_type, status, execution_time_sec,
+                        candidates_count, orders_count, reconciled_count, message, details_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (now_str, sync_type, p_type, "CLOUD_SYNCED", 0.25, 1, 1, 1, sync_msg, sync_details))
                     conn.commit()
                 except Exception as e:
                     logger.error(f"Error opening position for {sym_clean}: {e}")
@@ -721,14 +746,21 @@ class StateEngine:
         return True
 
     def get_active_positions(self, portfolio_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Retrieves currently open positions, optionally filtered by portfolio."""
-        query = "SELECT * FROM active_positions"
+        """Retrieves currently open positions enriched with latest live prices & timestamps."""
+        query = """
+        SELECT a.*,
+               m.last_close AS master_last_close,
+               m.change_pct AS day_change_pct,
+               m.updated_at AS master_updated_at
+        FROM active_positions a
+        LEFT JOIN ohlcv_master_store m ON a.symbol = m.symbol
+        """
         params = []
-        if portfolio_type:
+        if portfolio_type and str(portfolio_type).upper() != "ALL":
             p_type = self._normalize_portfolio_type(portfolio_type)
-            query += " WHERE portfolio_type = ?"
+            query += " WHERE a.portfolio_type = ?"
             params.append(p_type)
-        query += " ORDER BY entry_date DESC"
+        query += " ORDER BY a.entry_date DESC"
 
         with self._lock:
             with self._get_connection() as conn:
@@ -736,6 +768,17 @@ class StateEngine:
                 result = []
                 for r in rows:
                     item = dict(r)
+                    master_lc = float(item.get("master_last_close") or 0.0)
+                    master_upd = item.get("master_updated_at") or ""
+                    pos_upd = item.get("updated_at") or ""
+                    if master_lc > 0 and (master_upd >= pos_upd or float(item.get("current_price") or 0) == float(item.get("entry_price") or 0)):
+                        item["current_price"] = round(master_lc, 2)
+                        item["highest_price"] = round(max(float(item.get("highest_price") or 0.0), master_lc), 2)
+                        if master_upd:
+                            item["price_updated_at"] = master_upd
+                    else:
+                        item["price_updated_at"] = pos_upd or item.get("entry_date", "")
+                    item["day_change_pct"] = round(float(item.get("day_change_pct") or 0.0), 2)
                     try:
                         item["metrics"] = json.loads(item.get("metrics_json") or "{}")
                     except Exception:
@@ -848,6 +891,32 @@ class StateEngine:
                     exit_reason, sector, notes or pos.get("notes", ""), now_str
                 ))
 
+                sync_msg = (
+                    f"🏁 TRADE EXIT & CLOUD SYNCED: {sym_clean} ({qty} shs @ ₹{exit_price:,.2f} | "
+                    f"PnL ₹{total_pnl:+,.2f} / {r_multiple:+.2f}R / {return_pct:+.2f}% | {exit_reason}) • {now_str}"
+                )
+                sync_details = json.dumps({
+                    "event": "TRADE_CLOSE",
+                    "symbol": sym_clean,
+                    "portfolio": p_type,
+                    "entry_price": entry_px,
+                    "exit_price": exit_price,
+                    "quantity": qty,
+                    "pnl": round(total_pnl, 2),
+                    "r_multiple": r_multiple,
+                    "return_pct": return_pct,
+                    "exit_reason": exit_reason,
+                    "entry_date": entry_dt_str,
+                    "exit_date": now_str,
+                    "cloud_sync": "SYNCED_TO_TELEGRAM_VAULT"
+                })
+                conn.execute("""
+                INSERT INTO scan_logs (
+                    timestamp, scan_type, portfolio_type, status, execution_time_sec,
+                    candidates_count, orders_count, reconciled_count, message, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (now_str, f"TRADE_EXIT_SYNC ({exit_reason})", p_type, "CLOUD_SYNCED", 0.25, 1, 1, 1, sync_msg, sync_details))
+
                 # Delete from active_positions
                 conn.execute("DELETE FROM active_positions WHERE symbol = ?", (sym_clean,))
                 conn.commit()
@@ -915,7 +984,7 @@ class StateEngine:
         """Retrieves closed trade logs."""
         query = "SELECT * FROM trade_history"
         params = []
-        if portfolio_type:
+        if portfolio_type and str(portfolio_type).upper() != "ALL":
             p_type = self._normalize_portfolio_type(portfolio_type)
             query += " WHERE portfolio_type = ?"
             params.append(p_type)
@@ -1022,20 +1091,53 @@ class StateEngine:
                     ))
                 conn.commit()
 
+    def update_signals_live_prices(self, live_ltp_map: Dict[str, Tuple[float, float]], updated_at: str) -> int:
+        """Batch-updates latest_signals close and intraday_pct from a live price stream map."""
+        if not live_ltp_map:
+            return 0
+        rows = [(round(float(ltp), 2), round(float(chg), 2), updated_at, sym) for sym, (ltp, chg) in live_ltp_map.items()]
+        with self._lock:
+            with self._get_connection() as conn:
+                conn.executemany("""
+                UPDATE latest_signals
+                SET close = ?, intraday_pct = ?, updated_at = ?
+                WHERE symbol = ?
+                """, rows)
+                conn.commit()
+        return len(rows)
+
     def get_latest_signals(self, portfolio_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Retrieves stored signals."""
-        query = "SELECT * FROM latest_signals"
+        """Retrieves stored signals enriched with latest live prices from ohlcv_master_store."""
+        query = """
+        SELECT s.*,
+               m.last_close AS master_last_close,
+               m.change_pct AS master_change_pct,
+               m.updated_at AS master_updated_at
+        FROM latest_signals s
+        LEFT JOIN ohlcv_master_store m ON s.symbol = m.symbol
+        """
         params = []
-        if portfolio_type:
+        if portfolio_type and str(portfolio_type).upper() != "ALL":
             p_type = self._normalize_portfolio_type(portfolio_type)
-            query += " WHERE portfolio_type = ?"
+            query += " WHERE s.portfolio_type = ?"
             params.append(p_type)
-        query += " ORDER BY score DESC, ml_prob DESC"
+        query += " ORDER BY s.score DESC, s.ml_prob DESC"
 
         with self._lock:
             with self._get_connection() as conn:
                 rows = conn.execute(query, params).fetchall()
-                return [dict(r) for r in rows]
+                result = []
+                for r in rows:
+                    item = dict(r)
+                    master_lc = float(item.get("master_last_close") or 0.0)
+                    master_upd = item.get("master_updated_at") or ""
+                    sig_upd = item.get("updated_at") or ""
+                    if master_lc > 0 and master_upd >= sig_upd:
+                        item["close"] = round(master_lc, 2)
+                        item["intraday_pct"] = round(float(item.get("master_change_pct") or item.get("intraday_pct") or 0.0), 2)
+                        item["updated_at"] = master_upd
+                    result.append(item)
+                return result
 
     # --------------------------------------------------------------------------
     # SCAN EXECUTION LOGS

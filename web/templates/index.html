@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Quant Trading Desk | Institutional NSE & Nifty 500 Momentum</title>
+  <link rel="icon" type="image/jpeg" href="/static/bull-logo.jpg">
+  <link rel="shortcut icon" type="image/jpeg" href="/static/bull-logo.jpg">
+  <link rel="apple-touch-icon" href="/static/bull-logo.jpg">
   
   <!-- Tailwind CSS CDN with dark mode -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -81,15 +84,13 @@
       
       <!-- Logo / Title -->
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-violet-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-          <i data-lucide="activity" class="w-5 h-5 text-black stroke-[2.5]"></i>
-        </div>
+        <img src="/static/bull-logo.jpg" alt="QuantDesk Bull" class="w-10 h-10 rounded-xl object-cover border border-cyan-500/50 shadow-lg shadow-cyan-500/25">
         <div>
           <div class="flex items-center gap-2">
             <span class="font-extrabold tracking-tight text-white text-lg">QUANT<span class="text-cyan-400">DESK</span></span>
             <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">v2.5 PRO</span>
           </div>
-          <p class="text-[11px] text-slate-400 font-medium hidden sm:block">Single Master File • Live Charts & SL/Targets • Dual Swing Engines</p>
+          <p class="text-[11px] text-slate-400 font-medium hidden sm:block">Single Master File • 5m Live Price Stream • Dual Swing Engines</p>
         </div>
       </div>
 
@@ -155,9 +156,10 @@
           </div>
         </div>
 
-        <!-- Refresh Button -->
-        <button onclick="refreshAllData()" class="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="Refresh Live Data">
-          <i data-lucide="refresh-cw" class="w-4 h-4" id="refresh-icon"></i>
+        <!-- Refresh Live Prices Button (Active Holdings + Screened Stocks) -->
+        <button id="btn-header-refresh-prices" onclick="refreshLivePrices(false)" class="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-semibold text-xs transition" title="Fetch Live Market Prices from Yahoo Finance for all stocks on page">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5" id="refresh-icon"></i>
+          <span class="hidden sm:inline" id="btn-refresh-prices-text">Refresh Prices</span>
         </button>
       </div>
 
@@ -317,16 +319,23 @@
 
       <!-- Active Holdings Section -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
-        <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
-          <div class="flex items-center gap-2">
+        <div class="p-4 sm:p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <i data-lucide="briefcase" class="w-4 h-4 text-cyan-400"></i>
             <h3 class="font-bold text-white text-sm">Active Holdings & Trailing Stops</h3>
             <span id="p1-active-count-tag" class="text-xs font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">0 Open</span>
+            <span id="p1-price-stream-badge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-700/40 text-emerald-300">🟢 5m Live Stream Active</span>
           </div>
-          <button onclick="reconcilePortfolio('INSTITUTIONAL_6PILLAR')" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
-            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
-            <span>Reconcile Stops</span>
-          </button>
+          <div class="flex items-center gap-2">
+            <button onclick="refreshLivePrices(false)" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs flex items-center gap-1 transition">
+              <i data-lucide="zap" class="w-3 h-3"></i>
+              <span>Refresh Live Prices</span>
+            </button>
+            <button onclick="reconcilePortfolio('INSTITUTIONAL_6PILLAR')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+              <span>Reconcile Stops</span>
+            </button>
+          </div>
         </div>
 
         <!-- Desktop Table / Mobile Cards for Holdings -->
@@ -336,13 +345,13 @@
               <tr>
                 <th class="p-3.5">Symbol</th>
                 <th class="p-3.5">Entry Date & Time (IST)</th>
-                <th class="p-3.5">Entry / LTP</th>
+                <th class="p-3.5">Entry / Live LTP</th>
                 <th class="p-3.5">Stop Loss</th>
                 <th class="p-3.5">T1 (1.5R) / T2 (3.0R)</th>
                 <th class="p-3.5">Qty / Value</th>
                 <th class="p-3.5">Unrealized PnL</th>
                 <th class="p-3.5">R-Multiple</th>
-                <th class="p-3.5">Status</th>
+                <th class="p-3.5">Cloud Sync Status</th>
                 <th class="p-3.5 text-right">Action</th>
               </tr>
             </thead>
@@ -363,7 +372,7 @@
               <i data-lucide="target" class="w-4 h-4 text-cyan-400"></i>
               <span>Latest Screened Setups (Portfolio 1)</span>
             </h3>
-            <p class="text-xs text-slate-400">Classified across 6 Pillars & ML Win Probability</p>
+            <p class="text-xs text-slate-400">Classified across 6 Pillars & ML Win Probability • Prices Stream Every 5m</p>
           </div>
           
           <!-- Filter Buttons -->
@@ -489,16 +498,23 @@
 
       <!-- Active Holdings Section with 4-Tier Strategy Exits -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
-        <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
-          <div class="flex items-center gap-2">
+        <div class="p-4 sm:p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <i data-lucide="layers" class="w-4 h-4 text-violet-400"></i>
             <h3 class="font-bold text-white text-sm">Active Positions (Portfolio 2)</h3>
             <span id="p2-active-count-tag" class="text-xs font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">0 Open</span>
+            <span id="p2-price-stream-badge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-700/40 text-emerald-300">🟢 5m Live Stream Active</span>
           </div>
-          <button onclick="reconcilePortfolio('NIFTY500_MOMENTUM')" class="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1">
-            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
-            <span>Evaluate Exits</span>
-          </button>
+          <div class="flex items-center gap-2">
+            <button onclick="refreshLivePrices(false)" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs flex items-center gap-1 transition">
+              <i data-lucide="zap" class="w-3 h-3"></i>
+              <span>Refresh Live Prices</span>
+            </button>
+            <button onclick="reconcilePortfolio('NIFTY500_MOMENTUM')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+              <span>Evaluate Exits</span>
+            </button>
+          </div>
         </div>
 
         <div class="overflow-x-auto custom-scroll">
@@ -625,7 +641,7 @@
     </div>
 
     <!-- ================================================================= -->
-    <!-- TAB 4: TRADE HISTORY & AUDIT LOG                                  -->
+    <!-- TAB 4: TRADE HISTORY & CLOUD SYNC AUDIT LOG                        -->
     <!-- ================================================================= -->
     <div id="tab-history" class="tab-content hidden space-y-6">
       
@@ -634,12 +650,16 @@
           <div>
             <h2 class="text-lg font-bold text-white flex items-center gap-2">
               <i data-lucide="history" class="w-5 h-5 text-amber-400"></i>
-              <span>Execution History & Closed Trades (Full IST Timestamps)</span>
+              <span>Execution History: Active Open Holdings & Closed Trades (Full IST Timestamps)</span>
             </h2>
-            <p class="text-xs text-slate-400">Complete historical audit trail of entries, exits, R-multiples, and return percentages.</p>
+            <p class="text-xs text-slate-400">Complete audit trail of manual & automated trade entries, live LTP updates, exits, R-multiples, and Telegram Cloud Master File syncs.</p>
           </div>
           
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="refreshLivePrices(false)" class="px-3 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition">
+              <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+              <span>Refresh Live Prices</span>
+            </button>
             <select id="history-filter-select" onchange="loadHistoryData()" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200">
               <option value="ALL">All Portfolios</option>
               <option value="INSTITUTIONAL_6PILLAR">Portfolio 1 (Institutional)</option>
@@ -658,20 +678,56 @@
                 <th class="p-3">Symbol</th>
                 <th class="p-3">Portfolio</th>
                 <th class="p-3">Entry Date & Time (IST)</th>
-                <th class="p-3">Exit Date & Time (IST)</th>
+                <th class="p-3">Updated / Exit Time (IST)</th>
                 <th class="p-3">Entry Price</th>
-                <th class="p-3">Exit Price</th>
+                <th class="p-3">Live LTP / Exit</th>
                 <th class="p-3">Shares</th>
                 <th class="p-3">PnL (INR)</th>
                 <th class="p-3">Return %</th>
                 <th class="p-3">R-Multiple</th>
                 <th class="p-3">Hold Days</th>
-                <th class="p-3 text-right">Exit Reason</th>
+                <th class="p-3 text-right">Cloud Sync & State</th>
               </tr>
             </thead>
             <tbody id="history-tbody" class="divide-y divide-slate-800/60 font-mono">
               <tr>
-                <td colspan="12" class="p-8 text-center text-slate-500 font-sans">No trade history recorded yet.</td>
+                <td colspan="12" class="p-8 text-center text-slate-500 font-sans">Loading trade execution & cloud sync history...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Telegram Cloud Vault Sync & Trade Audit Trail in History Tab -->
+      <div class="bg-slate-900/80 border border-cyan-500/30 rounded-2xl p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
+          <div>
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="cloud" class="w-4 h-4 text-cyan-400"></i>
+              <span>Telegram Cloud Master File Sync & Trade Audit Log</span>
+            </h3>
+            <p class="text-xs text-slate-400">Every manual/auto trade and Master Vault cloud sync with exact IST timestamps and Telegram message ID.</p>
+          </div>
+          <button onclick="syncVaultToCloud()" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-mono font-bold transition">
+            ☁️ Sync Master File Now
+          </button>
+        </div>
+        <div class="overflow-x-auto custom-scroll mt-3">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="p-3">Timestamp (IST)</th>
+                <th class="p-3">Cloud Event / Trigger</th>
+                <th class="p-3">Telegram Pinned Msg</th>
+                <th class="p-3">Active Trades</th>
+                <th class="p-3">OHLCV Universe</th>
+                <th class="p-3">Master Size</th>
+                <th class="p-3 text-right">Sync Status</th>
+              </tr>
+            </thead>
+            <tbody id="history-cloud-sync-tbody" class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td colspan="7" class="p-6 text-center text-slate-500 font-sans">Loading Telegram Cloud sync logs...</td>
               </tr>
             </tbody>
           </table>
@@ -726,6 +782,34 @@
             <div class="text-slate-400 text-[11px] uppercase">Last SQLite Trade DB Cloud Sync</div>
             <div id="vault-db-time" class="text-violet-400 font-bold text-sm mt-1">--</div>
             <div id="vault-db-file" class="text-slate-400 text-[11px] mt-1">Auto-syncs on every trade & scan</div>
+          </div>
+        </div>
+
+        <!-- Cloud Sync History inside Vault Card -->
+        <div class="mt-4 pt-3 border-t border-slate-800/80">
+          <div class="text-[11px] font-mono uppercase text-slate-400 mb-2 flex items-center justify-between">
+            <span>Recent Telegram Cloud Master Vault Syncs (In-Place Pinned Message Updates)</span>
+            <span id="vault-pinned-msg-badge" class="text-cyan-400 font-bold">Pinned Msg #--</span>
+          </div>
+          <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-left text-xs text-slate-300 font-mono">
+              <thead class="bg-slate-950/60 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2.5">Synced Timestamp (IST)</th>
+                  <th class="p-2.5">Sync Note / Trigger</th>
+                  <th class="p-2.5">Telegram Msg ID</th>
+                  <th class="p-2.5">Trades Saved</th>
+                  <th class="p-2.5">OHLCV Stocks</th>
+                  <th class="p-2.5">Compressed Size</th>
+                  <th class="p-2.5 text-right">Mode</th>
+                </tr>
+              </thead>
+              <tbody id="vault-sync-history-tbody" class="divide-y divide-slate-800/60">
+                <tr>
+                  <td colspan="7" class="p-4 text-center text-slate-500 font-sans">Loading cloud sync history...</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -1018,31 +1102,31 @@
       </div>
 
       <!-- Modal Scrollable Content: Trade Levels + Candlestick Chart + Daily OHLCV Data Table -->
-      <div id="chart-modal-scroll" class="flex-1 overflow-y-auto custom-scroll p-3 sm:p-4 space-y-4">
+      <div id="chart-modal-scroll" class="flex-1 overflow-y-auto custom-scroll p-2.5 sm:p-3.5 space-y-2.5">
         
         <!-- Trade Levels Banner (Entry, Stop Loss, Target 1, Target 2, RSI, ATR) -->
         <div class="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs font-mono">
-          <div class="p-2.5 rounded-xl bg-cyan-950/30 border border-cyan-800/40">
+          <div class="p-2 rounded-xl bg-cyan-950/30 border border-cyan-800/40">
             <div class="text-[10px] text-cyan-400 uppercase">⚡ Entry Price</div>
             <div class="text-sm font-bold text-white mt-0.5" id="lvl-entry">₹0.00</div>
           </div>
-          <div class="p-2.5 rounded-xl bg-rose-950/30 border border-rose-800/40">
+          <div class="p-2 rounded-xl bg-rose-950/30 border border-rose-800/40">
             <div class="text-[10px] text-rose-400 uppercase">🛑 Stop Loss (SL)</div>
             <div class="text-sm font-bold text-rose-400 mt-0.5" id="lvl-sl">₹0.00</div>
           </div>
-          <div class="p-2.5 rounded-xl bg-amber-950/30 border border-amber-800/40">
+          <div class="p-2 rounded-xl bg-amber-950/30 border border-amber-800/40">
             <div class="text-[10px] text-amber-400 uppercase">🎯 Target 1 (T1)</div>
             <div class="text-sm font-bold text-amber-400 mt-0.5" id="lvl-t1">₹0.00</div>
           </div>
-          <div class="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-800/40">
+          <div class="p-2 rounded-xl bg-emerald-950/30 border border-emerald-800/40">
             <div class="text-[10px] text-emerald-400 uppercase">🚀 Target 2 (T2)</div>
             <div class="text-sm font-bold text-emerald-400 mt-0.5" id="lvl-t2">₹0.00</div>
           </div>
-          <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="p-2 rounded-xl bg-slate-900 border border-slate-800">
             <div class="text-[10px] text-slate-400 uppercase">📊 RSI(14) & ATR(14)</div>
             <div class="text-sm font-bold text-purple-300 mt-0.5" id="lvl-rsi-atr">--</div>
           </div>
-          <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="p-2 rounded-xl bg-slate-900 border border-slate-800">
             <div class="text-[10px] text-slate-400 uppercase">📐 Risk / Reward</div>
             <div class="text-sm font-bold text-cyan-300 mt-0.5" id="lvl-rr">--</div>
           </div>
@@ -1067,8 +1151,13 @@
           </div>
         </div>
 
-        <!-- TradingView Lightweight Chart Container -->
-        <div id="tv-chart-container" class="w-full h-[360px] sm:h-[420px] rounded-xl border border-slate-800 bg-[#070a13] overflow-hidden relative"></div>
+        <!-- TradingView Lightweight Chart Container + Visible Bottom X-Axis Date Timeline Strip -->
+        <div class="rounded-xl border border-slate-800 bg-[#070a13] overflow-hidden">
+          <div id="tv-chart-container" class="w-full h-[255px] sm:h-[295px] lg:h-[315px] bg-[#070a13] relative"></div>
+          <div id="chart-date-timeline-bar" class="px-3 py-1.5 bg-slate-950/95 border-t border-slate-800 flex items-center justify-between text-[10px] sm:text-[11px] font-mono text-slate-300">
+            <span class="text-slate-500">📅 X-Axis Timeline: Loading dates...</span>
+          </div>
+        </div>
 
         <!-- Historical Daily OHLCV Data Table from Master File -->
         <div class="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
@@ -1192,12 +1281,19 @@
       }
     }
 
+    let lastVaultStatusCache = {};
+
     // Initialize Lucide Icons & Clocks
     document.addEventListener("DOMContentLoaded", () => {
       lucide.createIcons();
       setInterval(updateClock, 1000);
       refreshAllData();
       pollScanProgress();
+      // Auto-stream live market prices 1.5s after page load so Active Holdings & Signals show latest live LTP
+      setTimeout(() => {
+        refreshLivePrices(true);
+      }, 1500);
+
       // Smart Polling: Only poll automatically during 09:00 AM – 03:50 PM IST trading days (or when a manual scan is running)
       // so an idle open browser tab never prevents Render from sleeping after 03:50 PM IST or on weekends/holidays.
       setInterval(() => {
@@ -1210,6 +1306,12 @@
           refreshAllData();
         }
       }, 30000);
+      // 5-Minute Live Price Stream for all Active Positions & Screened Stocks on the page
+      setInterval(() => {
+        if (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+          refreshLivePrices(true);
+        }
+      }, 300000);
     });
 
 
@@ -1293,6 +1395,36 @@
       if (tabId === 'tab-scheduler') loadScanLogs();
     }
 
+    async function refreshLivePrices(silent = false) {
+      const icon = document.getElementById('refresh-icon');
+      const btnText = document.getElementById('btn-refresh-prices-text');
+      if (icon) icon.classList.add('animate-spin');
+      if (!silent && btnText) btnText.innerText = 'Streaming...';
+
+      try {
+        const res = await fetch('/api/prices/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: 'ACTIVE_AND_SIGNALS' })
+        });
+        const data = await res.json();
+        await refreshAllData();
+        if (currentTab === 'tab-history') await loadHistoryData();
+        if (!silent) {
+          showToast(
+            `⚡ Live Prices Updated (${data.symbols_updated || 0} stocks, ${data.active_positions_updated || 0} active holdings) at ${data.timestamp || ''}!`,
+            'success'
+          );
+        }
+      } catch (e) {
+        console.error("Error streaming live prices:", e);
+        if (!silent) showToast(`Price refresh error: ${e.message}`, 'error');
+      } finally {
+        if (icon) icon.classList.remove('animate-spin');
+        if (btnText) btnText.innerText = 'Refresh Prices';
+      }
+    }
+
     async function refreshAllData() {
       const icon = document.getElementById('refresh-icon');
       if (icon) icon.classList.add('animate-spin');
@@ -1304,11 +1436,45 @@
           loadP2Data()
         ]);
         if (currentTab === 'tab-charts') await loadFetchedStocksData();
+        if (currentTab === 'tab-history') await loadHistoryData();
       } catch (e) {
         console.error("Error refreshing data:", e);
       } finally {
         if (icon) icon.classList.remove('animate-spin');
       }
+    }
+
+    function renderVaultSyncHistory(v) {
+      const hist = (v && Array.isArray(v.history)) ? v.history : [];
+      const pinnedId = v?.master_file_message_id || (v?.last_master_backup || {}).message_id || 666;
+      const pinnedBadge = document.getElementById('vault-pinned-msg-badge');
+      if (pinnedBadge) pinnedBadge.innerText = `Pinned Msg #${pinnedId}`;
+
+      const rowsHtml = hist.length === 0
+        ? `<tr><td colspan="7" class="p-4 text-center text-slate-500 font-sans">Master File synced to Telegram Pinned Msg #${pinnedId}.</td></tr>`
+        : hist.map(h => {
+            const msgId = h.message_id || pinnedId;
+            const modeBadge = (h.mode || '').includes('IN_PLACE')
+              ? '<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">☁️ IN-PLACE SYNCED</span>'
+              : '<span class="px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">📌 PINNED</span>';
+            return `
+              <tr class="hover:bg-slate-800/30 transition">
+                <td class="p-2.5 text-slate-200 font-mono text-[11px]">${h.timestamp || '-'}</td>
+                <td class="p-2.5 text-white font-semibold">${h.note || 'Master Vault Sync'}</td>
+                <td class="p-2.5 text-cyan-400 font-bold">#${msgId}</td>
+                <td class="p-2.5 text-emerald-400 font-bold">${h.active_trades ?? 0} Open / ${h.closed_trades ?? 0} Closed</td>
+                <td class="p-2.5 text-slate-300">${h.stocks_count || 0} Stocks (${h.latest_bar_date || '--'})</td>
+                <td class="p-2.5 text-slate-400">${h.size_kb || '--'} KB</td>
+                <td class="p-2.5 text-right">${modeBadge}</td>
+              </tr>
+            `;
+          }).join('');
+
+      const vaultTbody = document.getElementById('vault-sync-history-tbody');
+      if (vaultTbody) vaultTbody.innerHTML = rowsHtml;
+
+      const histCloudTbody = document.getElementById('history-cloud-sync-tbody');
+      if (histCloudTbody) histCloudTbody.innerHTML = rowsHtml;
     }
 
     // -------------------------------------------------------------------------
@@ -1327,6 +1493,16 @@
 
       if (statusEl) statusEl.innerText = statusText;
       if (mobStatusEl) mobStatusEl.innerHTML = `<span class="w-2 h-2 rounded-full ${mStatus.is_open ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse"></span><span>${statusText}</span>`;
+
+      // Live Price Stream Badge
+      const lp = data.last_price_stream || {};
+      const p1StreamBadge = document.getElementById('p1-price-stream-badge');
+      const p2StreamBadge = document.getElementById('p2-price-stream-badge');
+      const streamText = lp.timestamp
+        ? `🟢 5m Live Stream • LTP Synced: ${lp.timestamp}`
+        : `🟢 5m Live Stream Active (09:15–15:30 IST)`;
+      if (p1StreamBadge) p1StreamBadge.innerText = streamText;
+      if (p2StreamBadge) p2StreamBadge.innerText = streamText;
 
       // Strict Market-Hours Trading Gate Pill
       const gatePill = document.getElementById('trading-gate-pill');
@@ -1402,6 +1578,7 @@
 
       // Telegram Cloud Vault Telemetry (Single Master File)
       const v = data.telegram_vault || {};
+      lastVaultStatusCache = v;
       const vBot = document.getElementById('vault-bot-status');
       const vChat = document.getElementById('vault-chat-id');
       const vCount = document.getElementById('vault-ohlcv-count');
@@ -1418,6 +1595,8 @@
       if (vDbTime) vDbTime.innerText = v.last_db_backup_ist || "Synced";
       if (badgeMaster && totalStocks > 0) badgeMaster.innerText = totalStocks;
       if (masterLbl && totalStocks > 0) masterLbl.innerText = totalStocks.toLocaleString('en-IN');
+
+      renderVaultSyncHistory(v);
     }
 
     async function syncNseHolidaysLive() {
@@ -1503,11 +1682,16 @@
         return;
       }
 
+      const msgId = lastVaultStatusCache?.master_file_message_id || 666;
       tbody.innerHTML = positions.map(p => {
         const pnl = p.unrealized_pnl || 0;
         const pnlClass = pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
         const pnlSign = pnl >= 0 ? '+' : '';
-        const t1Badge = p.t1_hit ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-300">T1 BOOKED</span>' : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">OPEN</span>';
+        const ltp = p.current_price || p.entry_price;
+        const ltpTime = (p.price_updated_at || p.updated_at || p.entry_date || '').slice(11, 19);
+        const t1Badge = p.t1_hit
+          ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-300">T1 BOOKED • ☁️ #${msgId}</span>`
+          : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-700/40 text-emerald-300">🟢 OPEN • ☁️ #${msgId}</span>`;
 
         return `
           <tr class="hover:bg-slate-800/30 transition">
@@ -1515,10 +1699,13 @@
               <button onclick="openStockChartModal('${p.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">${p.symbol}</button>
               <span class="text-[10px] px-1 rounded bg-slate-800 text-slate-400 font-normal">${p.sector || 'NSE'}</span>
             </td>
-            <td class="p-3.5 text-slate-300 text-[11px] font-mono">${p.entry_date || '-'}</td>
+            <td class="p-3.5 text-slate-300 text-[11px] font-mono">
+              <div>${p.entry_date || '-'}</div>
+              <div class="text-[10px] text-cyan-400/80">LTP @ ${ltpTime || 'Live'} IST</div>
+            </td>
             <td class="p-3.5">
-              <div>₹${p.entry_price.toFixed(2)}</div>
-              <div class="text-[11px] text-slate-400">LTP: ₹${(p.current_price || p.entry_price).toFixed(2)}</div>
+              <div class="text-slate-300">Entry: ₹${p.entry_price.toFixed(2)}</div>
+              <div class="text-[11px] font-bold ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">LTP: ₹${ltp.toFixed(2)}</div>
             </td>
             <td class="p-3.5 text-rose-400 font-semibold">₹${p.stop_loss.toFixed(2)}</td>
             <td class="p-3.5">
@@ -1527,7 +1714,7 @@
             </td>
             <td class="p-3.5">
               <div>${p.quantity} shs</div>
-              <div class="text-[11px] text-slate-400">₹${(p.quantity * p.entry_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+              <div class="text-[11px] text-slate-400">₹${(p.quantity * ltp).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
             </td>
             <td class="p-3.5 ${pnlClass} font-bold font-mono">
               ${pnlSign}₹${pnl.toFixed(2)}
@@ -1537,9 +1724,9 @@
               ${p.current_r >= 0 ? '+' : ''}${(p.current_r || 0).toFixed(2)} R
             </td>
             <td class="p-3.5">${t1Badge}</td>
-            <td class="p-3.5 text-right space-x-1">
+            <td class="p-3.5 text-right space-x-1 whitespace-nowrap">
               <button onclick="openStockChartModal('${p.symbol}')" class="px-2 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[11px] transition">📈 Chart & SL</button>
-              <button onclick="closePositionModal('${p.symbol}', ${p.current_price || p.entry_price})" class="px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] transition">Close</button>
+              <button onclick="closePositionModal('${p.symbol}', ${ltp})" class="px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] transition">Close</button>
             </td>
           </tr>
         `;
@@ -1973,6 +2160,33 @@
       }
     });
 
+    function updateChartDateTimelineBar(candles, fromLogical = null, toLogical = null) {
+      const bar = document.getElementById('chart-date-timeline-bar');
+      if (!bar || !candles || candles.length === 0) return;
+
+      const total = candles.length;
+      const startIdx = fromLogical !== null ? Math.max(0, Math.min(total - 1, Math.floor(fromLogical))) : 0;
+      const endIdx = toLogical !== null ? Math.max(startIdx, Math.min(total - 1, Math.ceil(toLogical))) : (total - 1);
+      const span = Math.max(1, endIdx - startIdx);
+
+      const tickCount = 6;
+      const ticks = [];
+      for (let i = 0; i < tickCount; i++) {
+        const idx = Math.min(total - 1, Math.round(startIdx + (span * i) / (tickCount - 1)));
+        const dt = candles[idx]?.time || '';
+        if (dt && !ticks.includes(dt)) ticks.push(dt);
+      }
+
+      bar.innerHTML = ticks.map((dt, idx) => {
+        const isFirst = idx === 0;
+        const isLast = idx === ticks.length - 1;
+        const badgeCls = isLast
+          ? 'text-emerald-300 font-bold bg-emerald-950/60 border border-emerald-700/40 px-2 py-0.5 rounded'
+          : (isFirst ? 'text-cyan-300 font-semibold' : 'text-slate-300');
+        return `<span class="${badgeCls}">${isFirst ? '📅 ' : ''}${dt}${isLast ? ' (Latest)' : ''}</span>`;
+      }).join('<span class="text-slate-600 hidden sm:inline">───</span>');
+    }
+
     function renderLightweightChartAndTable(payload) {
       const sym = payload.symbol;
       const latest = payload.latest || {};
@@ -1995,14 +2209,17 @@
       document.getElementById('lvl-rr').innerText = `T1: 1:${lvls.rr_t1 || 1.5} | T2: 1:${lvls.rr_t2 || 3.0}`;
       document.getElementById('modal-bars-count').innerText = candles.length;
 
+      updateChartDateTimelineBar(candles);
+
       // Render Lightweight Chart (mouseWheel OFF by default so page/modal scrolling never collides)
       const container = document.getElementById('tv-chart-container');
       container.innerHTML = '';
 
       if (typeof LightweightCharts !== 'undefined' && candles.length > 0) {
+        const chartHeight = Math.max(240, (container.clientHeight || 295) - 2);
         tvChart = LightweightCharts.createChart(container, {
           width: container.clientWidth,
-          height: container.clientHeight || 400,
+          height: chartHeight,
           handleScroll: {
             mouseWheel: chartWheelZoomEnabled,
             pressedMouseMove: true,
@@ -2016,7 +2233,7 @@
           },
           layout: {
             background: { type: 'solid', color: '#070a13' },
-            textColor: '#94a3b8',
+            textColor: '#cbd5e1',
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 11
           },
@@ -2032,8 +2249,14 @@
             scaleMargins: { top: 0.08, bottom: 0.22 }
           },
           timeScale: {
+            visible: true,
+            borderVisible: true,
             borderColor: '#334155',
-            timeVisible: true
+            ticksVisible: true,
+            timeVisible: false,
+            secondsVisible: false,
+            minimumHeight: 28,
+            rightOffset: 3
           }
         });
 
@@ -2128,6 +2351,12 @@
           const hud = document.getElementById('modal-crosshair-hud');
           if (hud) {
             hud.innerHTML = `<span class="text-white font-bold">${b.time}</span> • O: ₹${b.open} • H: ₹${b.high} • L: ₹${b.low} • C: <span class="${b.change_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">₹${b.close} (${b.change_pct >= 0 ? '+' : ''}${b.change_pct}%)</span> • Vol: ${b.volume.toLocaleString('en-IN')} • EMA20: ₹${b.ema20} • EMA50: ₹${b.ema50} • RSI: ${b.rsi14}`;
+          }
+        });
+
+        tvChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+          if (range) {
+            updateChartDateTimelineBar(candles, range.from, range.to);
           }
         });
 
@@ -2232,23 +2461,69 @@
     }
 
     // -------------------------------------------------------------------------
-    // TRADE HISTORY (FULL DATE + TIME TIMESTAMPS & ALIGNED COLUMNS)
+    // TRADE HISTORY (ACTIVE OPEN HOLDINGS + CLOSED TRADES + CLOUD SYNC LOGS)
     // -------------------------------------------------------------------------
     async function loadHistoryData() {
       const pFilter = document.getElementById('history-filter-select')?.value || "ALL";
-      const res = await fetch(`/api/portfolio/${encodeURIComponent(pFilter)}/history`);
-      if (!res.ok) return;
+      const [posRes, histRes, vaultRes] = await Promise.all([
+        fetch(`/api/portfolio/${encodeURIComponent(pFilter)}/positions`),
+        fetch(`/api/portfolio/${encodeURIComponent(pFilter)}/history`),
+        fetch('/api/vault/status')
+      ]);
 
-      const history = await res.json();
+      const activePositions = posRes.ok ? await posRes.json() : [];
+      const closedHistory = histRes.ok ? await histRes.json() : [];
+      if (vaultRes.ok) {
+        const vData = await vaultRes.json();
+        lastVaultStatusCache = vData;
+        renderVaultSyncHistory(vData);
+      }
+
       const tbody = document.getElementById('history-tbody');
       if (!tbody) return;
 
-      if (history.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-500 font-sans">No closed trades recorded yet (PnL: ₹0.00).</td></tr>`;
+      if (activePositions.length === 0 && closedHistory.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-500 font-sans">No active or closed trades recorded yet (PnL: ₹0.00).</td></tr>`;
         return;
       }
 
-      tbody.innerHTML = history.map(t => {
+      const msgId = lastVaultStatusCache?.master_file_message_id || 666;
+
+      const activeRowsHtml = activePositions.map(p => {
+        const pnl = p.unrealized_pnl || 0;
+        const pnlClass = pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        const pnlSign = pnl >= 0 ? '+' : '';
+        const ltp = p.current_price || p.entry_price || 0;
+        const rMult = p.current_r || 0;
+        const retPct = p.return_pct || 0;
+        const updTime = p.price_updated_at || p.updated_at || p.entry_date || '-';
+
+        return `
+          <tr class="bg-emerald-950/15 hover:bg-slate-800/40 transition border-l-2 border-l-emerald-400">
+            <td class="p-3 font-bold text-white">
+              <button onclick="openStockChartModal('${p.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">${p.symbol}</button>
+            </td>
+            <td class="p-3 text-[11px] text-cyan-300">${(p.portfolio_type || '').includes('NIFTY') ? 'P2 (Nifty 500)' : 'P1 (6-Pillar)'}</td>
+            <td class="p-3 text-slate-200 text-[11px] font-mono">${p.entry_date || '-'}</td>
+            <td class="p-3 text-cyan-300 text-[11px] font-mono">LTP @ ${updTime}</td>
+            <td class="p-3">₹${(p.entry_price || 0).toFixed(2)}</td>
+            <td class="p-3 font-bold text-white">₹${ltp.toFixed(2)} <span class="text-[10px] text-emerald-400">(LIVE)</span></td>
+            <td class="p-3">${p.quantity || 0}</td>
+            <td class="p-3 ${pnlClass} font-bold font-mono">${pnlSign}₹${pnl.toFixed(2)}</td>
+            <td class="p-3 ${pnlClass} font-bold font-mono">${pnlSign}${retPct.toFixed(2)}%</td>
+            <td class="p-3 ${rMult >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">
+              ${rMult >= 0 ? '+' : ''}${rMult.toFixed(2)} R
+            </td>
+            <td class="p-3">${p.hold_days || 1}d</td>
+            <td class="p-3 flex items-center justify-end gap-1.5 whitespace-nowrap">
+              <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono font-bold">🟢 ACTIVE • ☁️ SYNCED #${msgId}</span>
+              <button onclick="openStockChartModal('${p.symbol}')" class="px-1.5 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[10px]">📈</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      const closedRowsHtml = closedHistory.map(t => {
         const pnl = t.pnl || 0;
         const pnlClass = pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
         const pnlSign = pnl >= 0 ? '+' : '';
@@ -2270,17 +2545,19 @@
               ${(t.r_multiple || 0) >= 0 ? '+' : ''}${(t.r_multiple || 0).toFixed(2)} R
             </td>
             <td class="p-3">${t.hold_days || 1}d</td>
-            <td class="p-3 flex items-center justify-between gap-1">
-              <span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">${t.exit_reason || 'CLOSED'}</span>
+            <td class="p-3 flex items-center justify-end gap-1.5 whitespace-nowrap">
+              <span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">${t.exit_reason || 'CLOSED'} • ☁️ #${msgId}</span>
               <button onclick="openStockChartModal('${t.symbol}')" class="px-1.5 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[10px]">📈</button>
             </td>
           </tr>
         `;
       }).join('');
+
+      tbody.innerHTML = activeRowsHtml + closedRowsHtml;
     }
 
     // -------------------------------------------------------------------------
-    // SCAN EXECUTION LOGS
+    // SCAN & TRADE CLOUD SYNC EXECUTION LOGS
     // -------------------------------------------------------------------------
     async function loadScanLogs() {
       const res = await fetch('/api/scan/logs');
@@ -2296,19 +2573,22 @@
       }
 
       tbody.innerHTML = logs.map(l => {
-        const isSuccess = l.status === 'SUCCESS';
+        const isSuccess = l.status === 'SUCCESS' || l.status === 'CLOUD_SYNCED';
+        const badgeStyle = l.status === 'CLOUD_SYNCED'
+          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+          : (isSuccess ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300');
         return `
           <tr class="hover:bg-slate-800/30 transition">
-            <td class="p-3 font-mono text-slate-400">${l.timestamp}</td>
+            <td class="p-3 font-mono text-slate-300 whitespace-nowrap">${l.timestamp}</td>
             <td class="p-3 font-semibold text-white">${l.scan_type}</td>
             <td class="p-3 text-slate-400">${l.portfolio_type}</td>
             <td class="p-3">
-              <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isSuccess ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300'}">${l.status}</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold ${badgeStyle}">${l.status}</span>
             </td>
             <td class="p-3 text-slate-300">${l.execution_time_sec ? l.execution_time_sec.toFixed(1) + 's' : '-'}</td>
             <td class="p-3 text-cyan-400">${l.candidates_count || 0}</td>
             <td class="p-3 text-emerald-400 font-bold">${l.orders_count || 0}</td>
-            <td class="p-3 text-slate-400 max-w-xs truncate" title="${l.message || ''}">${l.message || '-'}</td>
+            <td class="p-3 text-slate-300 max-w-md truncate" title="${l.message || ''}">${l.message || '-'}</td>
           </tr>
         `;
       }).join('');

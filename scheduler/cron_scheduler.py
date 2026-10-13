@@ -28,7 +28,7 @@ from core.config import (
     SCHEDULE_MORNING_HOUR, SCHEDULE_MORNING_MINUTE,
     SCHEDULE_AFTERNOON_HOUR, SCHEDULE_AFTERNOON_MINUTE
 )
-from engines.institutional_engine import InstitutionalEngine
+from engines.institutional_engine import InstitutionalEngine, refresh_live_market_prices
 from engines.nifty500_engine import run_nifty500_pipeline_sync
 from execution.state_engine import state_engine
 
@@ -136,6 +136,25 @@ def scheduled_render_keepalive_job():
         logger.warning(f"Render Anti-Sleep Keep-Alive ping error ({target_url}): {e}")
 
 
+def scheduled_live_price_stream_job():
+    """
+    Runs every 5 minutes during NSE market hours (09:15 AM – 03:30 PM IST, Mon-Fri, Excl. Holidays).
+    Streams live prices for all Active Portfolio Positions and Screened Signals on the page.
+    """
+    current_dt = now_ist()
+    can_trade, _ = NSEMarketCalendar.can_execute_trades(current_dt)
+    if not can_trade:
+        return
+    try:
+        res = refresh_live_market_prices(scope="ACTIVE_AND_SIGNALS")
+        logger.info(
+            f"📡 [5m Live Price Stream] Updated {res.get('symbols_updated', 0)} stocks "
+            f"({res.get('active_positions_updated', 0)} active positions) in {res.get('elapsed_sec', 0)}s"
+        )
+    except Exception as e:
+        logger.warning(f"5m live price stream warning: {e}")
+
+
 def scheduled_morning_scan_job():
     """
     10:20 AM IST Trading Day Job:
@@ -238,6 +257,16 @@ def start_scheduler():
             misfire_grace_time=120
         )
 
+        # Job 0C: 5-Minute Live Price Stream for Active Positions & Screened Stocks (09:15 AM – 03:30 PM IST)
+        _scheduler.add_job(
+            scheduled_live_price_stream_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour="9-15", minute="*/5", timezone=IST),
+            id="job_live_price_stream_5m",
+            name="09:15 AM – 03:30 PM Live Market Price Stream (Every 5m)",
+            replace_existing=True,
+            misfire_grace_time=180
+        )
+
         # Job 1: 10:20 AM IST Monday-Friday
         trigger_morning = CronTrigger(
             day_of_week="mon-fri",
@@ -271,11 +300,12 @@ def start_scheduler():
         )
 
         _scheduler.start()
-        # Trigger an immediate keep-alive check if server booted inside 09:00-15:50 IST
+        # Trigger an immediate keep-alive check & live price refresh if server booted inside market hours
         threading.Thread(target=scheduled_render_keepalive_job, daemon=True).start()
+        threading.Thread(target=scheduled_live_price_stream_job, daemon=True).start()
         logger.info(
             "✓ Automated Scheduler active on Asia/Kolkata timezone: "
-            "08:55 AM NSE Holiday Sync, 09:00–15:50 Render Anti-Sleep Guard, 10:20 AM & 3:05 PM Scans."
+            "08:55 AM NSE Holiday Sync, 09:00–15:50 Render Anti-Sleep Guard, 5m Live Price Stream, 10:20 AM & 3:05 PM Scans."
         )
         return _scheduler
 

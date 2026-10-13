@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -20,7 +20,8 @@ from core.market_calendar import NSEMarketCalendar
 from core.telegram_vault import telegram_vault
 from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL, P2_MAX_SLOTS
 from engines.institutional_engine import (
-    InstitutionalEngine, get_institutional_status, PORTFOLIO_TYPE as P1_TYPE
+    InstitutionalEngine, get_institutional_status, refresh_live_market_prices,
+    PORTFOLIO_TYPE as P1_TYPE
 )
 from engines.nifty500_engine import (
     run_nifty500_pipeline_async, run_nifty500_pipeline_sync,
@@ -96,6 +97,14 @@ def health_check():
     }
 
 
+@app.get("/favicon.ico")
+def favicon():
+    bull_icon = STATIC_DIR / "bull-logo.jpg"
+    if bull_icon.exists():
+        return FileResponse(str(bull_icon), media_type="image/jpeg")
+    return Response(status_code=204)
+
+
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def index(request: Request):
     index_file = TEMPLATES_DIR / "index.html"
@@ -122,6 +131,7 @@ def get_system_status():
     p1_status = get_institutional_status()
     p2_status = get_nifty500_status()
     vault_info = telegram_vault.get_status()
+    last_stream = state_engine.get_kv("last_price_stream", {})
 
     return {
         "status": "ONLINE",
@@ -135,6 +145,7 @@ def get_system_status():
         "render_keepalive": scheduler_info.get("render_keepalive", {}),
         "nse_holidays_meta": scheduler_info.get("nse_holidays_meta", {}),
         "telegram_vault": vault_info,
+        "last_price_stream": last_stream,
         "portfolio_1_quick": {
             "chartink_fetched_count": p1_status.get("chartink_fetched_count", 0),
             "universe_size": p1_status.get("universe_size", 0),
@@ -242,8 +253,11 @@ def get_portfolio_summary(portfolio_type: str):
 
 @app.get("/api/portfolio/{portfolio_type}/positions")
 def get_portfolio_positions(portfolio_type: str):
-    p_type = state_engine._normalize_portfolio_type(portfolio_type)
-    positions = state_engine.get_active_positions(portfolio_type=p_type)
+    if portfolio_type.strip().upper() == "ALL":
+        positions = state_engine.get_active_positions(portfolio_type=None)
+    else:
+        p_type = state_engine._normalize_portfolio_type(portfolio_type)
+        positions = state_engine.get_active_positions(portfolio_type=p_type)
 
     for p in positions:
         ep = float(p["entry_price"])
@@ -271,6 +285,19 @@ def get_portfolio_history(portfolio_type: str, limit: int = 200):
 def get_portfolio_signals(portfolio_type: str):
     p_type = state_engine._normalize_portfolio_type(portfolio_type)
     return state_engine.get_latest_signals(portfolio_type=p_type)
+
+
+class RefreshPricesRequest(BaseModel):
+    scope: str = "ACTIVE_AND_SIGNALS"
+
+
+@app.post("/api/prices/refresh")
+def refresh_prices_endpoint(req: RefreshPricesRequest = RefreshPricesRequest()):
+    """
+    Fetches live LTP from Yahoo Finance for all Active Portfolio Positions and Screened Signals on the page,
+    updating MTM PnL, trailing stops, and signal prices immediately.
+    """
+    return refresh_live_market_prices(scope=req.scope)
 
 
 # --------------------------------------------------------------------------

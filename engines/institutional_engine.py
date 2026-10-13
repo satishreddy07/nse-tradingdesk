@@ -1345,6 +1345,134 @@ def get_institutional_status() -> Dict[str, Any]:
     state_copy["trading_gate_message"] = gate_msg
     state_copy["stats"] = state_engine.get_portfolio_stats(portfolio_type=PORTFOLIO_TYPE)
     state_copy["active_count"] = len(state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE))
+    state_copy["last_price_stream"] = state_engine.get_kv("last_price_stream", {})
     return state_copy
+
+
+def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, Any]:
+    """
+    Fast multi-threaded live price streamer & MTM updater (runs every 5 minutes during
+    NSE market hours 09:15–15:30 IST and on manual 'Refresh Live Prices' click):
+    1. Fetches live intraday quotes/bars from Yahoo Finance for all Active Positions
+       and Screened Signals on the page.
+    2. Updates `active_positions` (LTP, Unrealized PnL, Highest Price, Trailing Stops).
+    3. Updates `latest_signals` (`close`) and `ohlcv_master_store` (`last_close`, `change_pct`, live partial candle).
+    """
+    t0 = time.time()
+    fetcher = DirectYahooFinanceFetcher(max_workers=24)
+
+    active_positions = state_engine.get_active_positions()
+    pos_syms = [p["symbol"].strip().upper() for p in active_positions if p.get("symbol")]
+
+    sig_syms: List[str] = []
+    scope_up = (scope or "ACTIVE_AND_SIGNALS").strip().upper()
+    if scope_up in ("ACTIVE_AND_SIGNALS", "ALL"):
+        p1_sigs = state_engine.get_latest_signals(portfolio_type="INSTITUTIONAL_6PILLAR")
+        p2_sigs = state_engine.get_latest_signals(portfolio_type="NIFTY500_MOMENTUM")
+        if scope_up == "ALL":
+            sig_syms = [s["symbol"].strip().upper() for s in (p1_sigs + p2_sigs) if s.get("symbol")]
+        else:
+            # Refresh all actionable buckets (BUY_NOW, PRE_BREAKOUT, WAIT_PULLBACK) + P2 signals
+            actionable_p1 = [
+                s["symbol"].strip().upper()
+                for s in p1_sigs
+                if s.get("symbol") and s.get("bucket") in ("BUY_NOW", "PRE_BREAKOUT", "WAIT_PULLBACK")
+            ]
+            p2_list = [s["symbol"].strip().upper() for s in p2_sigs if s.get("symbol")]
+            sig_syms = actionable_p1 + p2_list
+
+    ordered_syms: List[str] = []
+    seen = set()
+    for s in pos_syms + sig_syms:
+        if s and s not in seen and not s.startswith("^"):
+            seen.add(s)
+            ordered_syms.append(s)
+
+    if not ordered_syms:
+        return {"status": "NO_SYMBOLS", "updated_count": 0, "timestamp": format_ist()}
+
+    def _fetch_live_tick(sym: str) -> Tuple[str, Optional[pd.DataFrame], Optional[float], Optional[float]]:
+        delta_df = fetcher._request_yahoo_df(
+            f"{sym}.NS",
+            {"range": "5d", "interval": "1d", "includePrePost": "false"},
+            max_retries=2
+        )
+        if delta_df is None or delta_df.empty:
+            return sym, None, None, None
+
+        cached_df, _ = state_engine.get_ohlcv_df(sym)
+        if cached_df is not None and not cached_df.empty:
+            if cached_df.index.tz is not None and delta_df.index.tz is None:
+                delta_df.index = delta_df.index.tz_localize(IST)
+            elif cached_df.index.tz is None and delta_df.index.tz is not None:
+                delta_df.index = delta_df.index.tz_localize(None)
+            merged = pd.concat([cached_df, delta_df]).sort_index()
+            merged = merged[~pd.Series(merged.index.date).duplicated(keep="last").values]
+            if len(merged) > 500:
+                merged = merged.iloc[-500:]
+        else:
+            merged = delta_df
+
+        ltp = round(float(merged["Close"].iloc[-1]), 2)
+        day_high = round(float(merged["High"].iloc[-1]), 2)
+        return sym, merged, ltp, day_high
+
+    updated_dfs: Dict[str, pd.DataFrame] = {}
+    live_ltp_map: Dict[str, Tuple[float, float]] = {}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
+        futures = {executor.submit(_fetch_live_tick, s): s for s in ordered_syms}
+        for fut in concurrent.futures.as_completed(futures):
+            try:
+                sym, merged_df, ltp, day_high = fut.result()
+                if merged_df is not None and ltp is not None and ltp > 0:
+                    updated_dfs[f"{sym}.NS"] = merged_df
+                    live_ltp_map[sym] = (ltp, day_high or ltp)
+            except Exception:
+                pass
+
+    if updated_dfs:
+        state_engine.save_ohlcv_batch(updated_dfs)
+
+    now_str = format_ist()
+    pos_updated = 0
+    for p in active_positions:
+        sym = p["symbol"].strip().upper()
+        if sym in live_ltp_map:
+            ltp, day_high = live_ltp_map[sym]
+            prev_high = float(p.get("highest_price") or p.get("entry_price") or ltp)
+            state_engine.update_position_price(sym, current_price=ltp, highest_price=max(prev_high, day_high, ltp))
+            pos_updated += 1
+
+    # Also update `close` in `latest_signals` so the Screener tables reflect fresh 5m LTP
+    if live_ltp_map:
+        state_engine.update_signals_live_prices(live_ltp_map, now_str)
+
+    # Reconcile stops/targets if market is open
+    can_trade, _ = NSEMarketCalendar.can_execute_trades()
+    reconciled_events = []
+    if can_trade and updated_dfs:
+        try:
+            reconciled_events = reconcile_open_institutional_positions(updated_dfs)
+        except Exception as e:
+            logger.debug(f"Reconcile during live price stream notice: {e}")
+
+    elapsed = round(time.time() - t0, 2)
+    stream_meta = {
+        "status": "OK",
+        "scope": scope_up,
+        "updated_count": len(live_ltp_map),
+        "positions_updated": pos_updated,
+        "reconciled_count": len(reconciled_events),
+        "elapsed_sec": elapsed,
+        "timestamp": now_str,
+        "prices": {k: v[0] for k, v in list(live_ltp_map.items())[:50]}
+    }
+    state_engine.set_kv("last_price_stream", stream_meta)
+    logger.info(
+        f"⚡ Live Price Stream ({scope_up}): Updated {len(live_ltp_map)} stocks & {pos_updated} active positions in {elapsed}s at {now_str}"
+    )
+    return stream_meta
+
 
 
