@@ -53,6 +53,7 @@ from core.stock_registry import get_stock_sector
 from core.telegram_vault import telegram_vault
 from execution.state_engine import state_engine
 from engines.institutional_engine import DirectYahooFinanceFetcher, _fast_ewm_array
+from engines.us_analytics_engine import us_analytics_engine
 
 logger = logging.getLogger("NiftyAnalyticsEngine")
 
@@ -324,6 +325,7 @@ class NiftyAnalyticsEngine:
                     ("t5_error_pts", "REAL"),
                     ("t5_attribution", "TEXT"),
                     ("pillar_snapshots_json", "TEXT"),
+                    ("composite_score_t5", "REAL"),
                 ]
                 for col_name, col_type in migrations:
                     if col_name not in existing_cols:
@@ -2083,7 +2085,8 @@ class NiftyAnalyticsEngine:
     def _run_walk_forward_validation_and_calibration(
         cls,
         series_map: Dict[str, pd.DataFrame],
-        current_composite_score: float
+        current_composite_score: float,
+        current_composite_score_t5: Optional[float] = None
     ) -> Dict[str, Any]:
         """
         Runs a real Walk-Forward Historical Backtest & Quantile Calibration over the last ~180 trading days
@@ -2232,17 +2235,18 @@ class NiftyAnalyticsEngine:
         p_down_t1 = round(rem_1 * (1.0 - p_up_1), 3)
         p_flat_t1 = round(1.0 - p_up_t1 - p_down_t1, 3)
 
-        # T+5 (5-Day Weekly Horizon) has stronger trend persistence
-        raw_p_up_t5 = 1.0 / (1.0 + math.exp(-current_composite_score / 22.0))
+        # T+5 (5-Day Weekly Horizon) has stronger structural trend persistence and uses target_score_t5
+        target_score_t5 = current_composite_score_t5 if current_composite_score_t5 is not None else current_composite_score
+        raw_p_up_t5 = 1.0 / (1.0 + math.exp(-target_score_t5 / 22.0))
         emp_bull_5 = (t5_up_when_pos / max(1, t5_cnt_pos)) if t5_cnt_pos >= 5 else 0.62
         emp_bear_5 = (t5_down_when_neg / max(1, t5_cnt_neg)) if t5_cnt_neg >= 5 else 0.58
 
-        if current_composite_score >= 0:
+        if target_score_t5 >= 0:
             p_up_5 = 0.50 + (raw_p_up_t5 - 0.50) * (0.65 + 0.35 * emp_bull_5)
         else:
             p_up_5 = 0.50 - (0.50 - raw_p_up_t5) * (0.65 + 0.35 * emp_bear_5)
 
-        p_flat_5 = max(0.10, 0.22 * math.exp(-abs(current_composite_score) / 40.0))
+        p_flat_5 = max(0.10, 0.22 * math.exp(-abs(target_score_t5) / 40.0))
         rem_5 = 1.0 - p_flat_5
         p_up_t5 = round(rem_5 * p_up_5, 3)
         p_down_t5 = round(rem_5 * (1.0 - p_up_5), 3)
@@ -2425,37 +2429,99 @@ class NiftyAnalyticsEngine:
 
         sectoral_score = float(np.clip(round(weighted_sec_sum / max(1.0, total_w), 1), -100.0, 100.0))
 
-        # Pillar 4: Global & US Market Cues
-        global_defs = [
-            ("S&P 500 (US)", "^GSPC", 0.30, False),
-            ("Nasdaq Composite (US Tech)", "^IXIC", 0.25, False),
-            ("Dow Jones Industrial (US)", "^DJI", 0.15, False),
-            ("CBOE Volatility Index (US VIX)", "^VIX", 0.12, True),
-            ("Nikkei 225 (Japan)", "^N225", 0.10, False),
-            ("Hang Seng (Hong Kong)", "^HSI", 0.08, False),
+        # Pillar 4: Forward-Looking US Market Intelligence & Global Cues
+        us_intel = us_analytics_engine.fetch_and_analyze_us_markets(force_refresh=False)
+        us_pred_score = float(us_intel.get("us_composite_score") or 0.0)
+        us_breadth_score = float(us_intel.get("pillar_scores", {}).get("breadth_score") or 0.0)
+        us_vix_score = float(us_intel.get("pillar_scores", {}).get("volatility_score") or 0.0)
+        futures_radar = us_intel.get("futures_relative_radar") or {}
+        es_ret1 = float(futures_radar.get("es_futures_ret_1d") or 0.0)
+        es_price = float(futures_radar.get("es_futures_price") or 0.0)
+
+        # Regional Asian Cues (Nikkei 225 & Hang Seng)
+        nikkei_m = metrics_map.get("^N225") or {}
+        hangseng_m = metrics_map.get("^HSI") or {}
+        nikkei_1d = float(nikkei_m.get("ret_1d") or 0.0)
+        hangseng_1d = float(hangseng_m.get("ret_1d") or 0.0)
+        asian_impulse = float(np.clip((nikkei_1d * 8.0) + (hangseng_1d * 8.0), -40.0, 40.0))
+
+        # Forward US Transmission: combines US Next-Day Forecast + Breadth Dispersion + VIX Term Structure + E-mini Futures
+        us_forward_signal = (
+            (us_pred_score * 0.40)
+            + (us_breadth_score * 0.25)
+            + (us_vix_score * 0.15)
+            + float(np.clip(es_ret1 * 14.0, -25.0, 25.0))
+        )
+        global_score = float(np.clip(round((us_forward_signal * 0.75) + (asian_impulse * 0.25), 1), -100.0, 100.0))
+
+        global_rows = [
+            {
+                "name": f"US T+1 Prediction: {us_intel.get('us_t1_forecast', {}).get('verdict', 'NEUTRAL')}",
+                "ticker": "SPY",
+                "ltp": float(us_intel.get("us_t1_forecast", {}).get("expected_close_spy", 0.0)),
+                "ret_1d": float(us_intel.get("us_t1_forecast", {}).get("expected_pct_spy", 0.0)),
+                "ret_5d": 0.0,
+                "ema20": 0.0,
+                "trend": "BULLISH_TAILWIND" if us_pred_score >= 10 else ("BEARISH_HEADWIND" if us_pred_score <= -10 else "NEUTRAL"),
+                "signal_score": round(us_pred_score, 1),
+                "note": f"US T+1 Model (Prob Up: {us_intel.get('us_t1_forecast', {}).get('prob_up', 0.33)*100:.0f}%, Confidence: {us_intel.get('us_t1_forecast', {}).get('confidence', 'MEDIUM')})",
+            },
+            {
+                "name": f"US Breadth: {us_intel.get('breadth_analysis', {}).get('dispersion_regime', 'BALANCED')}",
+                "ticker": "RSP-SPY",
+                "ltp": float(us_intel.get("breadth_analysis", {}).get("rsp_vs_spy_dispersion", 0.0)),
+                "ret_1d": float(us_intel.get("breadth_analysis", {}).get("rsp_vs_spy_dispersion", 0.0)),
+                "ret_5d": 0.0,
+                "ema20": 0.0,
+                "trend": "BULLISH_TAILWIND" if us_breadth_score >= 10 else ("BEARISH_HEADWIND" if us_breadth_score <= -10 else "NEUTRAL"),
+                "signal_score": round(us_breadth_score, 1),
+                "note": str(us_intel.get("breadth_analysis", {}).get("dispersion_note", "")),
+            },
+            {
+                "name": f"US VIX Term Structure: {us_intel.get('volatility_surface', {}).get('regime', 'CONTANGO')}",
+                "ticker": "^VIX",
+                "ltp": float(us_intel.get("volatility_surface", {}).get("vix_spot", 15.0)),
+                "ret_1d": 0.0,
+                "ret_5d": 0.0,
+                "ema20": 0.0,
+                "trend": "BULLISH_TAILWIND" if us_vix_score >= 10 else ("BEARISH_HEADWIND" if us_vix_score <= -10 else "NEUTRAL"),
+                "signal_score": round(us_vix_score, 1),
+                "note": str(us_intel.get("volatility_surface", {}).get("note", "")),
+            },
+            {
+                "name": "E-mini S&P Futures & Fair Value Gap",
+                "ticker": "ES=F",
+                "ltp": es_price,
+                "ret_1d": es_ret1,
+                "ret_5d": 0.0,
+                "ema20": 0.0,
+                "trend": "BULLISH_TAILWIND" if es_ret1 > 0.1 else ("BEARISH_HEADWIND" if es_ret1 < -0.1 else "NEUTRAL"),
+                "signal_score": round(float(np.clip(es_ret1 * 14.0, -50.0, 50.0)), 1),
+                "note": f"Fair Value Gap: {futures_radar.get('expected_fair_gap_pts', 0):+.1f} pts ({futures_radar.get('gap_verdict', '')})",
+            },
+            {
+                "name": "Nikkei 225 (Japan)",
+                "ticker": "^N225",
+                "ltp": float(nikkei_m.get("close") or 0.0),
+                "ret_1d": nikkei_1d,
+                "ret_5d": float(nikkei_m.get("ret_5d") or 0.0),
+                "ema20": float(nikkei_m.get("ema20") or 0.0),
+                "trend": "BULLISH_TAILWIND" if nikkei_1d > 0.2 else ("BEARISH_HEADWIND" if nikkei_1d < -0.2 else "NEUTRAL"),
+                "signal_score": round(float(np.clip(nikkei_1d * 8.0, -30.0, 30.0)), 1),
+                "note": "Regional Asian session risk sentiment",
+            },
+            {
+                "name": "Hang Seng (Hong Kong)",
+                "ticker": "^HSI",
+                "ltp": float(hangseng_m.get("close") or 0.0),
+                "ret_1d": hangseng_1d,
+                "ret_5d": float(hangseng_m.get("ret_5d") or 0.0),
+                "ema20": float(hangseng_m.get("ema20") or 0.0),
+                "trend": "BULLISH_TAILWIND" if hangseng_1d > 0.2 else ("BEARISH_HEADWIND" if hangseng_1d < -0.2 else "NEUTRAL"),
+                "signal_score": round(float(np.clip(hangseng_1d * 8.0, -30.0, 30.0)), 1),
+                "note": "China & Asian liquidity proxy",
+            },
         ]
-        global_rows = []
-        global_score = 0.0
-        for g_name, g_tk, g_w, is_inverse in global_defs:
-            gm = metrics_map.get(g_tk) or {}
-            c_val = gm.get("close") or 0.0
-            r1 = float(gm.get("ret_1d") or 0.0)
-            r5 = float(gm.get("ret_5d") or 0.0)
-            e20_val = gm.get("ema20") or c_val
-            above_20 = c_val >= e20_val if not is_inverse else c_val <= e20_val
-            raw_sig = ((-r1 * 12.0) + (-r5 * 4.0)) if is_inverse else ((r1 * 18.0) + (r5 * 5.0) + (15.0 if above_20 else -15.0))
-            sig = float(np.clip(raw_sig, -100.0, 100.0))
-            global_score += sig * g_w
-            global_rows.append({
-                "name": g_name,
-                "ticker": g_tk,
-                "ltp": c_val,
-                "ret_1d": r1,
-                "ret_5d": r5,
-                "ema20": e20_val,
-                "trend": "BULLISH_TAILWIND" if sig >= 12 else ("BEARISH_HEADWIND" if sig <= -12 else "NEUTRAL"),
-                "signal_score": round(sig, 1),
-            })
         global_score = float(np.clip(round(global_score, 1), -100.0, 100.0))
 
         # Pillar 5: Macro Cross-Asset (USD/INR, US 10Y Yield, DXY, Gold, Brent Crude, India VIX)
@@ -2543,18 +2609,68 @@ class NiftyAnalyticsEngine:
             "technical": 0.22, "breadth": 0.20, "sectoral": 0.18, "global": 0.14, "macro": 0.10, "news_deriv": 0.06, "institutional": 0.10
         })
 
-        # Multi-Factor Composite Score using Self-Trained Adaptive Pillar Weights
+        # T+1 Tactical Multi-Factor Composite Score using Self-Trained Adaptive Pillar Weights
         composite_score = sum(pillar_raw_scores.get(k, 0.0) * learned_weights_t1.get(k, 0.14) for k in pillar_raw_scores)
         composite_score = float(np.clip(round(composite_score, 1), -100.0, 100.0))
 
+        # T+5 Structural Multi-Day Weekly Score (Decoupled from 1-day noise)
+        # Institutional Weekly Framework: Evaluates structural moving averages (EMA50, EMA200),
+        # constituent medium-term breadth (% > EMA50/200), multi-day institutional cash flows,
+        # and macro/US structural trends. Small negative headlines or a single down day do NOT
+        # flip the weekly verdict when structural market breadth and moving averages remain intact.
+        tech_score_t5 = 0.0
+        tech_score_t5 += 18.0 if spot >= ema50 else -18.0
+        tech_score_t5 += 14.0 if spot >= ema200 else -14.0
+        tech_score_t5 += 14.0 if ema20 >= ema50 else -14.0
+        tech_score_t5 += float(np.clip(ret_5d * 4.0, -18.0, 18.0))
+        tech_score_t5 += 12.0 if macd_h > 0 else -12.0
+        tech_score_t5 += float(np.clip((rsi14 - 50.0) * 0.9, -12.0, 12.0))
+        tech_score_t5 = float(np.clip(round(tech_score_t5, 1), -100.0, 100.0))
+
+        pct_e50_val = float(breadth_data.get("nifty50_pct_above_ema50", 50.0))
+        pct_e200_val = float(breadth_data.get("nifty50_pct_above_ema200", 50.0))
+        breadth_score_t5 = float(np.clip(
+            round(((pct_e50_val - 50.0) * 1.6) + ((pct_e200_val - 50.0) * 0.8) + (sectoral_score * 0.3), 1),
+            -100.0, 100.0
+        ))
+
+        fii_fut_long_pct = float(inst_flow_data.get("latest_oi", {}).get("fii_fut_long_pct", 50.0))
+        inst_score_t5 = float(np.clip(
+            round(((fii_fut_long_pct - 50.0) * 1.8) + (inst_score * 0.4), 1),
+            -100.0, 100.0
+        ))
+
+        us_tech_s = float(us_intel.get("pillar_scores", {}).get("technical_score", 0.0))
+        us_breadth_s = float(us_intel.get("pillar_scores", {}).get("breadth_score", 0.0))
+        global_score_t5 = float(np.clip(
+            round((us_tech_s * 0.4) + (us_breadth_s * 0.4) + (global_score * 0.2), 1),
+            -100.0, 100.0
+        ))
+
+        macro_score_t5 = float(np.clip(round((macro_score * 0.7) + (us_vix_score * 0.3), 1), -100.0, 100.0))
+
+        learned_weights_t5 = self_training_summary.get("learned_weights_t5", {
+            "technical": 0.28, "breadth": 0.22, "sectoral": 0.18, "global": 0.14, "macro": 0.10, "institutional": 0.08
+        })
+
+        composite_score_t5 = (
+            (tech_score_t5 * learned_weights_t5.get("technical", 0.28))
+            + (breadth_score_t5 * learned_weights_t5.get("breadth", 0.22))
+            + (sectoral_score * learned_weights_t5.get("sectoral", 0.18))
+            + (global_score_t5 * learned_weights_t5.get("global", 0.14))
+            + (macro_score_t5 * learned_weights_t5.get("macro", 0.10))
+            + (inst_score_t5 * learned_weights_t5.get("institutional", 0.08))
+        )
+        composite_score_t5 = float(np.clip(round(composite_score_t5, 1), -100.0, 100.0))
+
         # Walk-Forward Historical Validation & Calibrated Probabilities
-        calibration = self._run_walk_forward_validation_and_calibration(series_map, composite_score)
+        calibration = self._run_walk_forward_validation_and_calibration(series_map, composite_score, composite_score_t5)
 
         # Compute T+1 & T+5 Expected Price Cones (using ATR14 & Realized Volatility)
         t1_probs = calibration["t1_probs"]
         t5_probs = calibration["t5_probs"]
 
-        # Expected drift scaled by composite_score and ATR(14)
+        # Expected drift scaled by respective composite score and ATR(14)
         t1_expected_pts = round((composite_score / 100.0) * (atr14 * 0.55), 2)
         t1_expected_pct = round((t1_expected_pts / max(1.0, spot)) * 100.0, 2)
         t1_expected_close = round(spot + t1_expected_pts, 2)
@@ -2564,7 +2680,7 @@ class NiftyAnalyticsEngine:
         t1_high_2s = round(t1_expected_close + atr14 * 1.65, 2)
 
         atr_5d = atr14 * math.sqrt(5.0)
-        t5_expected_pts = round((composite_score / 100.0) * (atr_5d * 0.65), 2)
+        t5_expected_pts = round((composite_score_t5 / 100.0) * (atr_5d * 0.65), 2)
         t5_expected_pct = round((t5_expected_pts / max(1.0, spot)) * 100.0, 2)
         t5_expected_close = round(spot + t5_expected_pts, 2)
         t5_low_1s = round(t5_expected_close - atr_5d * 0.85, 2)
@@ -2584,7 +2700,7 @@ class NiftyAnalyticsEngine:
             return "RANGE-BOUND / CONSOLIDATION"
 
         t1_verdict = _verdict_label(composite_score)
-        t5_verdict = _verdict_label(composite_score * 1.05)
+        t5_verdict = _verdict_label(composite_score_t5)
 
         # Log & Validate Historical Predictions in SQLite (`nifty_predictions_log`)
         pred_date = str(n50.get("last_date") or now_ist().strftime("%Y-%m-%d"))
@@ -2651,6 +2767,8 @@ class NiftyAnalyticsEngine:
             "timestamp_ist": format_ist(),
             "spot_price": spot,
             "composite_score": composite_score,
+            "composite_score_t1": composite_score,
+            "composite_score_t5": composite_score_t5,
             "pillar_scores": {
                 "technical_score": tech_score,
                 "breadth_score": breadth_score,
@@ -2685,6 +2803,8 @@ class NiftyAnalyticsEngine:
                 "range_1sigma": [t5_low_1s, t5_high_1s],
                 "range_2sigma": [t5_low_2s, t5_high_2s],
             },
+            "us_intelligence": us_intel,
+            "futures_relative_radar": futures_radar,
             "validation_and_calibration": calibration,
             "pillars": {
                 "nifty_technicals": n50,
@@ -2695,6 +2815,8 @@ class NiftyAnalyticsEngine:
                 "news_and_events": news_data,
                 "options_overlay": oc_summary,
                 "institutional_flows": inst_flow_data,
+                "us_market_analytics": us_intel,
+                "futures_relative_radar": futures_radar,
             },
             "fii_dii_and_oi": inst_flow_data,
             "quant_suggestions": quant_suggestions,

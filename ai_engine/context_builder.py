@@ -181,9 +181,18 @@ def build_prediction_context(
                     "published_at": "Live",
                 })
 
+    # US Market Intelligence & Futures Radar
+    us_intel = predictions_data.get("us_intelligence") or pillars.get("us_market_analytics") or {}
+    futures_radar = predictions_data.get("futures_relative_radar") or pillars.get("futures_relative_radar") or {}
+    us_t1_forecast = us_intel.get("us_t1_forecast")
+    us_dispersion = safe_optional_float(us_intel.get("breadth_analysis", {}).get("rsp_vs_spy_dispersion"))
+    us_vix_regime = us_intel.get("volatility_surface", {}).get("regime")
+    comp_score_t5 = safe_optional_float(predictions_data.get("composite_score_t5"))
+
     market_context = MarketContextItem(
         spot_price=spot,
         composite_score=composite_score,
+        composite_score_t5=comp_score_t5,
         regime=regime,
         event_risk=str(news_data.get("event_risk_flag") or "NORMAL"),
         data_quality="VALID",
@@ -194,6 +203,10 @@ def build_prediction_context(
         max_pain=safe_optional_float(options_overlay.get("max_pain")),
         india_vix=india_vix_val,
         atm_iv=atm_iv_val,
+        us_market_t1_forecast=us_t1_forecast if isinstance(us_t1_forecast, dict) else None,
+        us_breadth_dispersion=us_dispersion,
+        us_vix_term_structure=str(us_vix_regime) if us_vix_regime else None,
+        futures_relative_move=futures_radar if isinstance(futures_radar, dict) else None,
         recent_news_events=news_items_clean if news_items_clean else None,
     )
 

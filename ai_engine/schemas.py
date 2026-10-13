@@ -2,7 +2,7 @@
 Pydantic Schemas for AI Input & Output Contracts.
 Enforces strict machine-readable contracts and validation for the AI intelligence layer.
 """
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -37,6 +37,11 @@ class MarketContextItem(BaseModel):
     max_pain: Optional[float] = None
     india_vix: Optional[float] = Field(None, description="India VIX current market level")
     atm_iv: Optional[float] = Field(None, description="ATM implied volatility (%) from live option chain")
+    composite_score_t5: Optional[float] = Field(None, description="Decoupled structural 5-day weekly composite score")
+    us_market_t1_forecast: Optional[Dict[str, Any]] = Field(None, description="US next-day market forecast (SPY/QQQ)")
+    us_breadth_dispersion: Optional[float] = Field(None, description="US RSP vs SPY equal-weight breadth dispersion (%)")
+    us_vix_term_structure: Optional[str] = Field(None, description="US VIX term structure (CONTANGO_STABLE / BACKWARDATION)")
+    futures_relative_move: Optional[Dict[str, Any]] = Field(None, description="E-mini futures momentum & Nifty fair value gap")
     recent_news_events: Optional[List[Dict[str, str]]] = None
 
 

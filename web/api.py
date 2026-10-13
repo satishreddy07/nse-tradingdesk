@@ -598,6 +598,36 @@ def get_nifty_predictions(force_refresh: bool = False):
         return {"status": "ERROR", "message": f"Prediction service error: {str(e)}"}
 
 
+@app.get("/api/nifty/us-market-intelligence")
+def get_us_market_intelligence(force_refresh: bool = False):
+    """Returns multi-pillar US market intelligence, breadth analysis, VIX term structure & US T+1 forecast."""
+    from engines.us_analytics_engine import us_analytics_engine
+    try:
+        data = us_analytics_engine.fetch_and_analyze_us_markets(force_refresh=force_refresh)
+        return _sanitize_for_json(data)
+    except Exception as e:
+        logger.error(f"Error fetching US intelligence: {e}", exc_info=True)
+        return {"status": "ERROR", "message": f"US Analytics Engine error: {str(e)}"}
+
+
+@app.get("/api/nifty/futures-relative-radar")
+def get_futures_relative_radar(force_refresh: bool = False):
+    """Returns live E-mini futures momentum, rolling beta, and Nifty fair value gap analysis."""
+    from engines.us_analytics_engine import us_analytics_engine
+    try:
+        data = us_analytics_engine.fetch_and_analyze_us_markets(force_refresh=force_refresh)
+        return _sanitize_for_json({
+            "status": "OK",
+            "futures_relative_radar": data.get("futures_relative_radar", {}),
+            "us_t1_forecast": data.get("us_t1_forecast", {}),
+            "volatility_surface": data.get("volatility_surface", {}),
+            "breadth_analysis": data.get("breadth_analysis", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error fetching futures radar: {e}", exc_info=True)
+        return {"status": "ERROR", "message": f"Futures Radar error: {str(e)}"}
+
+
 @app.get("/api/nifty/fao-history")
 def get_nifty_fao_history():
     """

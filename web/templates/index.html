@@ -164,11 +164,6 @@
           <span id="market-status-text" class="font-medium truncate">Checking...</span>
         </div>
 
-        <div id="vault-status-pill" onclick="switchModule('module-swing'); switchTab('tab-scheduler');" class="cursor-pointer hidden 2xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/40 border border-cyan-800/60 text-cyan-300 font-mono whitespace-nowrap hover:bg-cyan-900/40 transition" title="Telegram Cloud Master Vault: Click to view backup history">
-          <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-          <span>☁️ Backup: <b id="header-vault-time" class="text-white font-bold">--</b></span>
-        </div>
-
         <div class="hidden 2xl:flex px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 font-mono text-slate-400 whitespace-nowrap">
           <span id="live-ist-clock">--:--:-- IST</span>
         </div>
@@ -176,12 +171,6 @@
 
       <!-- Right Action Buttons (Never Wrap or Overlap on Mobile) -->
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-        <!-- PWA Install App Button -->
-        <button id="btn-pwa-install" onclick="promptPWAInstall()" class="hidden items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-xs transition-all shadow-md shadow-emerald-500/20 active:scale-95 whitespace-nowrap cursor-pointer" title="Install NSE Trading Desk as an App on your phone/desktop">
-          <i data-lucide="download" class="w-3.5 h-3.5 stroke-[2.5] shrink-0"></i>
-          <span class="hidden sm:inline">Install App</span>
-          <span class="sm:hidden">Install</span>
-        </button>
 
         <!-- Quick Scan Trigger Dropdown -->
         <div class="relative">
@@ -942,6 +931,10 @@
               </p>
             </div>
             <div class="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
+              <div id="vault-card-backup-badge" class="px-3 py-1.5 rounded-xl bg-cyan-950/60 border border-cyan-800/80 text-cyan-300 font-mono text-xs flex items-center gap-1.5 shadow-sm justify-center sm:justify-start" title="Telegram Cloud Master Vault: Sync status">
+                <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0"></span>
+                <span>☁️ Last Backup: <b id="vault-card-backup-time" class="text-white font-bold">--</b></span>
+              </div>
               <button onclick="syncVaultToCloud()" class="justify-center px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
                 <i data-lucide="upload-cloud" class="w-3.5 h-3.5 shrink-0"></i>
                 <span>Sync DB + OHLCV to Cloud</span>
@@ -1548,6 +1541,120 @@
             <div class="text-[10px] text-emerald-400 uppercase">180D Walk-Forward</div>
             <div id="pred-val-hitrate" class="text-xs font-bold text-emerald-300 mt-0.5">T1: --% | T5: --%</div>
             <div id="pred-val-brier" class="text-[10px] text-slate-400">Brier: --</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- US MARKET INTELLIGENCE & FUTURES RELATIVE RADAR                     -->
+      <!-- =================================================================== -->
+      <div id="us-market-intelligence-card" class="bg-slate-900/90 border border-blue-500/40 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
+        <!-- Header Strip -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center gap-1">
+                <span>🇺🇸</span> US INTELLIGENCE & FUTURES RADAR
+              </span>
+              <span id="us-t1-badge" class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">US T+1: SYNCING...</span>
+              <span id="us-vix-term-badge" class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">VIX: CONTANGO</span>
+              <span id="us-breadth-badge" class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">RSP/SPY: BALANCED</span>
+            </div>
+            <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Wall Street Forward Predictor, Sector Breadth & Overnight Futures Lead-Lag</h3>
+            <p class="text-xs text-slate-400">Replaces stale overnight closes with active US technicals, RSP vs SPY breadth dispersion, VIX term structure, and E-mini futures fair value transmission.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-mono text-cyan-400" id="us-radar-time">--:-- IST</span>
+          </div>
+        </div>
+
+        <!-- 4-Card Intelligence Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 font-mono text-xs">
+          <!-- Card 1: US T+1 Predictor -->
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2">
+            <div class="flex items-center justify-between text-slate-400 text-[10px] uppercase">
+              <span>US Next-Day Forecast (T+1)</span>
+              <span id="us-t1-conf" class="text-cyan-400 font-bold">CONF: --</span>
+            </div>
+            <div id="us-t1-verdict-text" class="text-base sm:text-lg font-extrabold text-white">--</div>
+            <div class="flex justify-between text-[11px] text-slate-300">
+              <span>Expected SPY:</span>
+              <b id="us-spy-target" class="text-cyan-300 font-bold">--</b>
+            </div>
+            <div class="flex justify-between text-[10px] pt-1.5 border-t border-slate-800/80">
+              <span id="us-prob-up" class="text-emerald-400">Up: --%</span>
+              <span id="us-prob-flat" class="text-slate-400">Flat: --%</span>
+              <span id="us-prob-down" class="text-rose-400">Down: --%</span>
+            </div>
+          </div>
+
+          <!-- Card 2: US Breadth & RSP vs SPY -->
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2">
+            <div class="flex items-center justify-between text-slate-400 text-[10px] uppercase">
+              <span>Equal-Weight Breadth</span>
+              <span id="us-dispersion-regime" class="text-indigo-400 font-bold">--</span>
+            </div>
+            <div class="flex items-baseline gap-2">
+              <span class="text-[10px] text-slate-400">RSP vs SPY:</span>
+              <span id="us-dispersion-val" class="text-base sm:text-lg font-extrabold text-white">--%</span>
+            </div>
+            <div class="text-[10px] text-slate-400 leading-snug line-clamp-2" id="us-dispersion-note">
+              Monitoring breadth dispersion...
+            </div>
+            <div class="flex justify-between text-[10px] pt-1.5 border-t border-slate-800/80 text-slate-300">
+              <span>Sector Advances:</span>
+              <b id="us-sector-adv-ratio" class="text-white">-- / 11</b>
+            </div>
+          </div>
+
+          <!-- Card 3: Volatility Surface & VIX Term Structure -->
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2">
+            <div class="flex items-center justify-between text-slate-400 text-[10px] uppercase">
+              <span>VIX Term Structure</span>
+              <span id="us-vix-regime-tag" class="text-emerald-400 font-bold">--</span>
+            </div>
+            <div class="flex items-baseline justify-between">
+              <div>
+                <span class="text-[10px] text-slate-400">Spot VIX:</span>
+                <span id="us-vix-spot" class="text-base font-bold text-white ml-1">--</span>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-400">9D VIX:</span>
+                <span id="us-vix-9d" class="text-base font-bold text-slate-300 ml-1">--</span>
+              </div>
+            </div>
+            <div class="text-[10px] text-slate-400 leading-snug line-clamp-2" id="us-vix-note">
+              Calculating term structure roll yield...
+            </div>
+            <div class="flex justify-between text-[10px] pt-1.5 border-t border-slate-800/80 text-slate-300">
+              <span>US 10Y Yield (^TNX):</span>
+              <b id="us-10y-val" class="text-amber-300">--%</b>
+            </div>
+          </div>
+
+          <!-- Card 4: Live Futures & Nifty Fair Value Gap -->
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2">
+            <div class="flex items-center justify-between text-slate-400 text-[10px] uppercase">
+              <span>Index Futures & Fair Gap</span>
+              <span class="text-cyan-400 font-bold">β ≈ 0.52</span>
+            </div>
+            <div class="flex items-baseline justify-between">
+              <div>
+                <span class="text-[10px] text-slate-400">ES=F:</span>
+                <b id="us-es-change" class="text-sm font-bold text-white ml-1">--%</b>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-400">NQ=F:</span>
+                <b id="us-nq-change" class="text-sm font-bold text-white ml-1">--%</b>
+              </div>
+            </div>
+            <div class="flex items-baseline justify-between text-[11px]">
+              <span class="text-slate-400">Fair Nifty Gap:</span>
+              <b id="us-fair-gap-pts" class="text-sm font-extrabold text-cyan-300">-- pts</b>
+            </div>
+            <div class="text-[10px] font-bold text-slate-300 truncate pt-1.5 border-t border-slate-800/80" id="us-gap-verdict" title="Gap Verdict">
+              Evaluating transmission...
+            </div>
           </div>
         </div>
       </div>
@@ -3625,6 +3732,95 @@
       setScoreEl('pred-score-macro', ps.macro_score);
       setScoreEl('pred-score-news', ps.news_and_deriv_score);
       setScoreEl('pred-score-inst', ps.institutional_score !== undefined ? ps.institutional_score : (data.fii_dii_and_oi ? data.fii_dii_and_oi.flow_score : 0));
+
+      // Render US Market Intelligence & Futures Radar
+      const usIntel = data.us_intelligence || pillars.us_market_analytics || {};
+      const usFut = data.futures_relative_radar || pillars.futures_relative_radar || {};
+      const usT1 = usIntel.us_t1_forecast || {};
+      const usBreadth = usIntel.breadth_analysis || {};
+      const usVol = usIntel.volatility_surface || {};
+      const usMacro = usIntel.macro_rates_currency || {};
+
+      if (document.getElementById('us-radar-time')) {
+        document.getElementById('us-radar-time').innerText = usIntel.timestamp_ist || data.timestamp_ist || '--';
+      }
+
+      // Badges
+      const usT1Badge = document.getElementById('us-t1-badge');
+      if (usT1Badge) {
+        const v = usT1.verdict || 'NEUTRAL';
+        usT1Badge.innerText = `US T+1: ${v}`;
+        usT1Badge.className = `px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${v.includes('BULLISH') ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : (v.includes('BEARISH') ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-slate-800 text-slate-300 border-slate-700')}`;
+      }
+      const usVixBadge = document.getElementById('us-vix-term-badge');
+      if (usVixBadge) {
+        const reg = usVol.regime || 'CONTANGO_STABLE';
+        usVixBadge.innerText = `VIX: ${reg.replace('_', ' ')}`;
+        usVixBadge.className = `px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${reg.includes('CONTANGO') ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : (reg.includes('BACKWARD') ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-slate-800 text-slate-300 border-slate-700')}`;
+      }
+      const usBrBadge = document.getElementById('us-breadth-badge');
+      if (usBrBadge) {
+        const disp = usBreadth.dispersion_regime || 'BALANCED';
+        usBrBadge.innerText = `RSP/SPY: ${disp.replace('_', ' ')}`;
+        usBrBadge.className = `px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${disp.includes('EXPANSION') ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : (disp.includes('CONCENTRATED') ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40')}`;
+      }
+
+      // Card 1: US T+1 Predictor
+      if (document.getElementById('us-t1-conf')) document.getElementById('us-t1-conf').innerText = `CONF: ${usT1.confidence || 'MED'}`;
+      const usVerdictEl = document.getElementById('us-t1-verdict-text');
+      if (usVerdictEl) {
+        usVerdictEl.innerText = usT1.verdict || '--';
+        usVerdictEl.className = `text-base sm:text-lg font-extrabold ${formatVerdictColor(usT1.verdict)}`;
+      }
+      if (document.getElementById('us-spy-target')) {
+        const p = usT1.expected_close_spy ? `$${Number(usT1.expected_close_spy).toFixed(2)}` : '--';
+        const d = usT1.expected_pct_spy !== undefined ? ` (${usT1.expected_pct_spy >= 0 ? '+' : ''}${Number(usT1.expected_pct_spy).toFixed(2)}%)` : '';
+        document.getElementById('us-spy-target').innerText = `${p}${d}`;
+      }
+      if (document.getElementById('us-prob-up')) document.getElementById('us-prob-up').innerText = `Up: ${Math.round((usT1.prob_up || 0) * 100)}%`;
+      if (document.getElementById('us-prob-flat')) document.getElementById('us-prob-flat').innerText = `Flat: ${Math.round((usT1.prob_flat || 0) * 100)}%`;
+      if (document.getElementById('us-prob-down')) document.getElementById('us-prob-down').innerText = `Down: ${Math.round((usT1.prob_down || 0) * 100)}%`;
+
+      // Card 2: Breadth & RSP vs SPY
+      if (document.getElementById('us-dispersion-regime')) document.getElementById('us-dispersion-regime').innerText = (usBreadth.dispersion_regime || 'BALANCED').replace('_', ' ');
+      if (document.getElementById('us-dispersion-val')) {
+        const dispVal = Number(usBreadth.rsp_vs_spy_dispersion || 0);
+        document.getElementById('us-dispersion-val').innerText = `${dispVal >= 0 ? '+' : ''}${dispVal.toFixed(2)}%`;
+        document.getElementById('us-dispersion-val').className = `text-base sm:text-lg font-extrabold ${dispVal > 0.2 ? 'text-emerald-400' : (dispVal < -0.3 ? 'text-rose-400' : 'text-white')}`;
+      }
+      if (document.getElementById('us-dispersion-note')) document.getElementById('us-dispersion-note').innerText = usBreadth.dispersion_note || '--';
+      if (document.getElementById('us-sector-adv-ratio')) document.getElementById('us-sector-adv-ratio').innerText = `${usBreadth.sector_advances || 0} Adv / ${usBreadth.sector_declines || 0} Dec`;
+
+      // Card 3: Volatility Surface
+      if (document.getElementById('us-vix-regime-tag')) document.getElementById('us-vix-regime-tag').innerText = (usVol.regime || 'CONTANGO').replace('_', ' ');
+      if (document.getElementById('us-vix-spot')) document.getElementById('us-vix-spot').innerText = Number(usVol.vix_spot || 15.0).toFixed(2);
+      if (document.getElementById('us-vix-9d')) document.getElementById('us-vix-9d').innerText = Number(usVol.vix_9d || 15.0).toFixed(2);
+      if (document.getElementById('us-vix-note')) document.getElementById('us-vix-note').innerText = usVol.note || '--';
+      if (document.getElementById('us-10y-val')) document.getElementById('us-10y-val').innerText = `${Number(usMacro.us_10y_yield || 4.2).toFixed(2)}%`;
+
+      // Card 4: Live Futures & Fair Gap
+      if (document.getElementById('us-es-change')) {
+        const esChg = Number(usFut.es_futures_ret_1d || 0);
+        document.getElementById('us-es-change').innerText = `${esChg >= 0 ? '+' : ''}${esChg.toFixed(2)}%`;
+        document.getElementById('us-es-change').className = `text-sm font-bold ml-1 ${esChg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      if (document.getElementById('us-nq-change')) {
+        const nqChg = Number(usFut.nq_futures_ret_1d || 0);
+        document.getElementById('us-nq-change').innerText = `${nqChg >= 0 ? '+' : ''}${nqChg.toFixed(2)}%`;
+        document.getElementById('us-nq-change').className = `text-sm font-bold ml-1 ${nqChg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      if (document.getElementById('us-fair-gap-pts')) {
+        const fgPts = Number(usFut.expected_fair_gap_pts || 0);
+        const fgPct = Number(usFut.expected_fair_gap_pct || 0);
+        document.getElementById('us-fair-gap-pts').innerText = `${fgPts >= 0 ? '+' : ''}${fgPts.toFixed(1)} pts (${fgPct >= 0 ? '+' : ''}${fgPct.toFixed(2)}%)`;
+        document.getElementById('us-fair-gap-pts').className = `text-sm font-extrabold ${fgPts >= 0 ? 'text-cyan-300' : 'text-rose-300'}`;
+      }
+      if (document.getElementById('us-gap-verdict')) {
+        const gv = usFut.gap_verdict || 'Normal Market Absorption';
+        document.getElementById('us-gap-verdict').innerText = gv;
+        document.getElementById('us-gap-verdict').title = gv;
+        document.getElementById('us-gap-verdict').className = `text-[10px] font-bold truncate pt-1.5 border-t border-slate-800/80 ${gv.includes('BULLISH') || gv.includes('DIP') ? 'text-emerald-400' : (gv.includes('EXHAUSTION') || gv.includes('BEARISH') ? 'text-rose-400' : 'text-slate-300')}`;
+      }
 
       const vc = data.validation_and_calibration || {};
       if (document.getElementById('pred-val-hitrate')) {
@@ -6939,6 +7135,11 @@
         } else {
           headerVaultTime.innerText = "--";
         }
+      }
+      const cardVaultTime = document.getElementById('vault-card-backup-time');
+      if (cardVaultTime) {
+        cardVaultTime.innerText = (lastTs && lastTs !== "--") ? lastTs : "--";
+        cardVaultTime.title = `Master Cloud Vault Backup: ${lastTs}`;
       }
       const mobVaultTime = document.getElementById('mobile-vault-time');
       if (mobVaultTime) {
