@@ -551,3 +551,56 @@ def get_nifty_predictions(force_refresh: bool = False):
     return nifty_analytics_engine.compute_nifty_predictions(force_refresh=force_refresh)
 
 
+# --------------------------------------------------------------------------
+# OPTIONS STRATEGY BUILDER & PORTFOLIO DESK ENDPOINTS
+# --------------------------------------------------------------------------
+class DeployStrategyRequest(BaseModel):
+    strategy_name: str
+    symbol: str = "NIFTY"
+    expiry_date: str = ""
+    expiry_type: str = "WEEKLY"
+    spot_at_entry: float = 0.0
+    net_premium: float = 0.0
+    max_profit: Optional[float] = None
+    max_loss: Optional[float] = None
+    breakevens: Optional[Any] = None
+    risk_reward: Optional[str] = "--"
+    est_margin: float = 0.0
+    pop_pct: float = 0.0
+    legs: list
+
+
+class ExitStrategyRequest(BaseModel):
+    strategy_id: str
+    exit_reason: str = "MANUAL_EXIT"
+
+
+@app.get("/api/options/portfolio")
+def get_options_portfolio_endpoint():
+    """Returns Options Trading Portfolio with live MTM valuation, Greeks, and closed performance."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    return nifty_analytics_engine.get_options_portfolio()
+
+
+@app.post("/api/options/deploy-strategy")
+def deploy_options_strategy_endpoint(req: DeployStrategyRequest):
+    """Deploys a multi-leg options strategy into the Options Trading Portfolio and syncs to Telegram Cloud Vault."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    return nifty_analytics_engine.deploy_options_strategy(req.dict())
+
+
+@app.post("/api/options/exit-strategy")
+def exit_options_strategy_endpoint(req: ExitStrategyRequest):
+    """Exits a deployed multi-leg options strategy at current market prices and syncs to Telegram Cloud Vault."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    return nifty_analytics_engine.exit_options_strategy(req.strategy_id, req.exit_reason)
+
+
+@app.get("/api/portfolio/equity-curves")
+def get_portfolio_equity_curves_endpoint():
+    """Returns interactive equity curves for Options Desk, Swing Trading (P1), and Nifty 500 (P2)."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    return nifty_analytics_engine.get_all_equity_curves()
+
+
+

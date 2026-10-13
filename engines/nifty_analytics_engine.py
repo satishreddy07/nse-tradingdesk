@@ -33,6 +33,7 @@ Strictly Index & Derivatives Quantitative Analytics (Zero Hardcoded / Fake Value
 import math
 import json
 import time
+import random
 import logging
 import datetime
 import threading
@@ -43,6 +44,7 @@ from typing import Dict, List, Any, Optional, Tuple
 import requests
 import numpy as np
 import pandas as pd
+from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL
 
 from core.data_quality import IST, now_ist, format_ist
 from core.market_calendar import NSEMarketCalendar
@@ -265,6 +267,32 @@ class NiftyAnalyticsEngine:
                     client_fut_net INTEGER DEFAULT 0,
                     client_fut_long_pct REAL DEFAULT 0.0,
                     raw_json TEXT
+                );
+                """)
+                conn.execute("""
+                CREATE TABLE IF NOT EXISTS options_strategies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    strategy_id TEXT UNIQUE NOT NULL,
+                    strategy_name TEXT NOT NULL,
+                    symbol TEXT NOT NULL DEFAULT 'NIFTY',
+                    expiry_date TEXT NOT NULL,
+                    expiry_type TEXT NOT NULL DEFAULT 'WEEKLY',
+                    created_at TEXT NOT NULL,
+                    closed_at TEXT,
+                    spot_at_entry REAL NOT NULL,
+                    spot_at_exit REAL,
+                    net_premium REAL NOT NULL DEFAULT 0.0,
+                    max_profit REAL,
+                    max_loss REAL,
+                    breakevens TEXT,
+                    risk_reward TEXT,
+                    est_margin REAL DEFAULT 0.0,
+                    pop_pct REAL DEFAULT 0.0,
+                    legs_json TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    realized_pnl REAL DEFAULT 0.0,
+                    exit_reason TEXT,
+                    exit_note TEXT
                 );
                 """)
                 # Safe schema migrations for existing databases
@@ -2938,9 +2966,429 @@ class NiftyAnalyticsEngine:
                     out.append(d)
                 return out
 
+    # ==========================================================================
+    # 4. OPTIONS STRATEGY BUILDER, PORTFOLIO DESK & EQUITY CURVE TELEMETRY
+    # ==========================================================================
+    def deploy_options_strategy(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Saves a user-configured multi-leg option strategy into the Options Trading Portfolio,
+        sends an instant Telegram alert with formatted structure & Greek analytics,
+        and triggers a master vault cloud sync.
+        """
+        strategy_name = data.get("strategy_name") or "Custom Options Strategy"
+        symbol = data.get("symbol") or "NIFTY"
+        expiry_date = data.get("expiry_date") or ""
+        expiry_type = data.get("expiry_type") or "WEEKLY"
+        spot_at_entry = float(data.get("spot_at_entry") or 0.0)
+        net_premium = float(data.get("net_premium") or 0.0)
+        max_profit = data.get("max_profit")
+        max_loss = data.get("max_loss")
+        breakevens = json.dumps(data.get("breakevens") or []) if isinstance(data.get("breakevens"), list) else str(data.get("breakevens") or "[]")
+        risk_reward = str(data.get("risk_reward") or "--")
+        est_margin = float(data.get("est_margin") or 0.0)
+        pop_pct = float(data.get("pop_pct") or 0.0)
+        legs = data.get("legs") or []
 
-nifty_analytics_engine = NiftyAnalyticsEngine()
+        if not legs:
+            raise ValueError("Strategy must contain at least one leg.")
 
+        ts_now = format_ist()
+        strat_id = f"OPT-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100, 999)}"
+
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                conn.execute("""
+                INSERT INTO options_strategies (
+                    strategy_id, strategy_name, symbol, expiry_date, expiry_type,
+                    created_at, spot_at_entry, net_premium, max_profit, max_loss,
+                    breakevens, risk_reward, est_margin, pop_pct, legs_json, status, realized_pnl
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0.0)
+                """, (
+                    strat_id, strategy_name, symbol, expiry_date, expiry_type,
+                    ts_now, spot_at_entry, net_premium, max_profit, max_loss,
+                    breakevens, risk_reward, est_margin, pop_pct, json.dumps(legs)
+                ))
+                conn.commit()
+
+        # Format Telegram Alert
+        leg_bullets = []
+        for i, l in enumerate(legs, 1):
+            act = l.get("action", "BUY")
+            typ = l.get("type", "CE")
+            stk = l.get("strike", 0)
+            lots = l.get("lots", 1)
+            qty = l.get("qty", lots * 75)
+            px = l.get("entry_price", l.get("price", 0.0))
+            icon = "🟢" if act == "BUY" else "🔴"
+            leg_bullets.append(f"{icon} Leg {i}: {act} {stk} {typ} | {lots} Lots ({qty} Qty) @ ₹{px:.2f}")
+
+        prem_str = f"Net Credit +₹{abs(net_premium):,.2f}" if net_premium >= 0 else f"Net Debit -₹{abs(net_premium):,.2f}"
+        mp_str = f"₹{max_profit:,.2f}" if (max_profit is not None and max_profit != 999999) else "Unlimited"
+        ml_str = f"₹{abs(max_loss):,.2f}" if (max_loss is not None and max_loss != -999999) else "Unlimited"
+
+        telegram_msg = (
+            f"🎯 <b>NEW OPTIONS STRATEGY DEPLOYED</b>\n\n"
+            f"📊 <b>Strategy:</b> {strategy_name}\n"
+            f"🆔 <b>ID:</b> <code>{strat_id}</code>\n"
+            f"⏳ <b>Expiry:</b> {expiry_date} ({expiry_type})\n"
+            f"📌 <b>Spot at Entry:</b> ₹{spot_at_entry:,.2f}\n"
+            f"💵 <b>Premium:</b> {prem_str}\n"
+            f"🛡 <b>Max Profit:</b> {mp_str} | <b>Max Loss:</b> {ml_str}\n"
+            f"🎯 <b>R:R:</b> {risk_reward} | <b>PoP:</b> {pop_pct:.1f}%\n"
+            f"💼 <b>Est. Margin:</b> ₹{est_margin:,.0f}\n\n"
+            f"📋 <b>Legs Breakdown ({len(legs)}):</b>\n" + "\n".join(leg_bullets) + f"\n\n"
+            f"🕒 <b>Timestamp:</b> {ts_now}"
+        )
+
+        try:
+            telegram_vault.send_alert_and_sync(
+                title=f"Options Strategy: {strategy_name}",
+                message=telegram_msg,
+                sync_db=True
+            )
+        except Exception as e:
+            logger.warning(f"Telegram alert error on deploy options strategy: {e}")
+
+        return {
+            "status": "OK",
+            "strategy_id": strat_id,
+            "strategy_name": strategy_name,
+            "message": f"Strategy '{strategy_name}' deployed successfully to Options Trading Portfolio!"
+        }
+
+    def exit_options_strategy(self, strategy_id: str, exit_reason: str = "MANUAL_EXIT") -> Dict[str, Any]:
+        """
+        Exits all legs of an active strategy at current live market prices,
+        books the realized PnL in SQLite, notifies Telegram, and syncs cloud backup.
+        """
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                row = conn.execute("SELECT * FROM options_strategies WHERE strategy_id = ?", (strategy_id,)).fetchone()
+                if not row:
+                    raise ValueError(f"Strategy {strategy_id} not found.")
+                d = dict(row)
+                if d.get("status") == "CLOSED":
+                    return {"status": "ALREADY_CLOSED", "strategy_id": strategy_id, "realized_pnl": d.get("realized_pnl", 0.0)}
+
+        # Fetch live option chain
+        opt_chain_data = self.fetch_and_analyze_option_chain(force_refresh=True)
+        weekly_chain = opt_chain_data.get("weekly", {}).get("chain", [])
+        monthly_chain = opt_chain_data.get("monthly", {}).get("chain", [])
+        spot_price = opt_chain_data.get("spot_price", d.get("spot_at_entry", 0.0))
+
+        ltp_map = {}
+        for r in (weekly_chain + monthly_chain):
+            stk = r.get("strike")
+            if stk:
+                if stk not in ltp_map: ltp_map[stk] = {}
+                if "ce_ltp" in r: ltp_map[stk]["CE"] = r["ce_ltp"]
+                if "pe_ltp" in r: ltp_map[stk]["PE"] = r["pe_ltp"]
+
+        legs = json.loads(d.get("legs_json") or "[]")
+        total_pnl = 0.0
+        closed_legs = []
+        for leg in legs:
+            stk = leg.get("strike")
+            opt_type = leg.get("type", "CE")
+            action = leg.get("action", "BUY")
+            qty = leg.get("qty", 75)
+            entry_px = leg.get("entry_price", leg.get("price", 0.0))
+            cmp = ltp_map.get(stk, {}).get(opt_type, entry_px)
+            leg_pnl = ((cmp - entry_px) if action == "BUY" else (entry_px - cmp)) * qty
+            total_pnl += leg_pnl
+            closed_legs.append({
+                **leg,
+                "exit_price": round(cmp, 2),
+                "leg_pnl": round(leg_pnl, 2)
+            })
+
+        ts_close = format_ist()
+        total_pnl = round(total_pnl, 2)
+
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                conn.execute("""
+                UPDATE options_strategies SET
+                    status = 'CLOSED',
+                    closed_at = ?,
+                    spot_at_exit = ?,
+                    realized_pnl = ?,
+                    exit_reason = ?,
+                    legs_json = ?
+                WHERE strategy_id = ?
+                """, (
+                    ts_close, spot_price, total_pnl, exit_reason, json.dumps(closed_legs), strategy_id
+                ))
+                conn.commit()
+
+        capital_base = d.get("est_margin") or abs(d.get("net_premium", 1000)) or 50000.0
+        ret_pct = round((total_pnl / max(1.0, capital_base)) * 100.0, 2)
+        pnl_icon = "🟢" if total_pnl >= 0 else "🔴"
+
+        telegram_msg = (
+            f"🏁 <b>OPTIONS STRATEGY EXITED</b>\n\n"
+            f"📊 <b>Strategy:</b> {d.get('strategy_name')}\n"
+            f"🆔 <b>ID:</b> <code>{strategy_id}</code>\n"
+            f"🚪 <b>Exit Reason:</b> {exit_reason}\n"
+            f"📌 <b>Exit Spot:</b> ₹{spot_price:,.2f} (Entry: ₹{d.get('spot_at_entry'):,.2f})\n"
+            f"{pnl_icon} <b>Realized PnL:</b> {'+' if total_pnl >= 0 else ''}₹{total_pnl:,.2f} ({ret_pct:+.2f}%)\n"
+            f"🕒 <b>Closed At:</b> {ts_close} (Entry: {d.get('created_at')})"
+        )
+
+        try:
+            telegram_vault.send_alert_and_sync(
+                title=f"Strategy Closed: {d.get('strategy_name')}",
+                message=telegram_msg,
+                sync_db=True
+            )
+        except Exception as e:
+            logger.warning(f"Telegram alert error on exit options strategy: {e}")
+
+        return {
+            "status": "OK",
+            "strategy_id": strategy_id,
+            "realized_pnl": total_pnl,
+            "return_pct": ret_pct,
+            "message": f"Strategy '{d.get('strategy_name')}' closed with PnL ₹{total_pnl:,.2f}!"
+        }
+
+    def get_options_portfolio(self) -> Dict[str, Any]:
+        """
+        Retrieves all active and closed option strategies from SQLite.
+        For active strategies, recalculates live leg CMPs from the option chain
+        and provides accurate unrealized PnL, Greeks, and portfolio metrics.
+        """
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                rows = conn.execute("SELECT * FROM options_strategies ORDER BY id DESC").fetchall()
+
+        opt_chain_data = self.fetch_and_analyze_option_chain(force_refresh=False)
+        weekly_chain = opt_chain_data.get("weekly", {}).get("chain", [])
+        monthly_chain = opt_chain_data.get("monthly", {}).get("chain", [])
+        spot_price = opt_chain_data.get("spot_price", 0.0)
+
+        ltp_map = {}
+        for row in (weekly_chain + monthly_chain):
+            stk = row.get("strike")
+            if stk:
+                if stk not in ltp_map:
+                    ltp_map[stk] = {}
+                if "ce_ltp" in row:
+                    ltp_map[stk]["CE"] = row["ce_ltp"]
+                if "pe_ltp" in row:
+                    ltp_map[stk]["PE"] = row["pe_ltp"]
+
+        active_strategies = []
+        closed_strategies = []
+        total_realized_pnl = 0.0
+        total_unrealized_pnl = 0.0
+        wins = 0
+        losses = 0
+        max_win = 0.0
+        max_loss = 0.0
+
+        for r in rows:
+            d = dict(r)
+            legs = json.loads(d.get("legs_json") or "[]")
+            is_active = (d.get("status") == "ACTIVE")
+
+            strat_unrealized = 0.0
+            updated_legs = []
+            for leg in legs:
+                stk = leg.get("strike")
+                opt_type = leg.get("type", "CE")
+                action = leg.get("action", "BUY")
+                qty = leg.get("qty", 75)
+                entry_px = leg.get("entry_price", leg.get("price", 0.0))
+
+                current_px = ltp_map.get(stk, {}).get(opt_type, entry_px)
+                leg_pnl = ((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty
+                strat_unrealized += leg_pnl
+
+                updated_legs.append({
+                    **leg,
+                    "entry_price": entry_px,
+                    "current_price": round(current_px, 2),
+                    "leg_pnl": round(leg_pnl, 2)
+                })
+
+            d["legs"] = updated_legs
+            try:
+                d["breakevens_list"] = json.loads(d.get("breakevens") or "[]")
+            except Exception:
+                d["breakevens_list"] = []
+
+            if is_active:
+                d["unrealized_pnl"] = round(strat_unrealized, 2)
+                capital_base = d.get("est_margin") or abs(d.get("net_premium", 1000)) or 50000.0
+                d["roi_pct"] = round((strat_unrealized / max(1.0, capital_base)) * 100.0, 2)
+                d["current_spot"] = spot_price
+                total_unrealized_pnl += strat_unrealized
+                active_strategies.append(d)
+            else:
+                pnl = d.get("realized_pnl", 0.0)
+                total_realized_pnl += pnl
+                if pnl > 0:
+                    wins += 1
+                    if pnl > max_win: max_win = pnl
+                elif pnl < 0:
+                    losses += 1
+                    if pnl < max_loss: max_loss = pnl
+                closed_strategies.append(d)
+
+        base_capital = 200000.0
+        equity_curve = []
+        running_equity = base_capital
+
+        sorted_closed = sorted(closed_strategies, key=lambda x: x.get("closed_at") or x.get("created_at") or "")
+        equity_curve.append({
+            "timestamp": "Start",
+            "date": "Base Capital",
+            "equity": running_equity,
+            "pnl": 0.0,
+            "label": "Base ₹2,00,000"
+        })
+        peak_equity = running_equity
+        max_dd = 0.0
+        for cs in sorted_closed:
+            pnl = cs.get("realized_pnl", 0.0)
+            running_equity += pnl
+            if running_equity > peak_equity:
+                peak_equity = running_equity
+            dd = (peak_equity - running_equity) / peak_equity * 100.0 if peak_equity > 0 else 0.0
+            if dd > max_dd:
+                max_dd = dd
+            equity_curve.append({
+                "timestamp": cs.get("closed_at") or cs.get("created_at"),
+                "date": (cs.get("closed_at") or cs.get("created_at", ""))[:10],
+                "equity": round(running_equity, 2),
+                "pnl": round(pnl, 2),
+                "label": cs.get("strategy_name")
+            })
+
+        if active_strategies:
+            live_equity = running_equity + total_unrealized_pnl
+            if live_equity > peak_equity:
+                peak_equity = live_equity
+            dd = (peak_equity - live_equity) / peak_equity * 100.0 if peak_equity > 0 else 0.0
+            if dd > max_dd:
+                max_dd = dd
+            equity_curve.append({
+                "timestamp": "Live MTM",
+                "date": "Today Live",
+                "equity": round(live_equity, 2),
+                "pnl": round(total_unrealized_pnl, 2),
+                "label": f"Live MTM ({len(active_strategies)} Active)"
+            })
+
+        total_trades = wins + losses
+        win_rate = round((wins / total_trades) * 100.0, 1) if total_trades > 0 else 0.0
+
+        return {
+            "status": "OK",
+            "summary": {
+                "base_capital": base_capital,
+                "current_equity": round(running_equity + total_unrealized_pnl, 2),
+                "total_realized_pnl": round(total_realized_pnl, 2),
+                "total_unrealized_pnl": round(total_unrealized_pnl, 2),
+                "net_total_pnl": round(total_realized_pnl + total_unrealized_pnl, 2),
+                "active_count": len(active_strategies),
+                "closed_count": len(closed_strategies),
+                "total_trades": total_trades,
+                "win_rate_pct": win_rate,
+                "wins": wins,
+                "losses": losses,
+                "max_win": round(max_win, 2),
+                "max_loss": round(max_loss, 2),
+                "max_drawdown_pct": round(max_dd, 2),
+            },
+            "active_strategies": active_strategies,
+            "closed_strategies": closed_strategies,
+            "equity_curve": equity_curve,
+            "spot_price": spot_price,
+            "timestamp_ist": format_ist()
+        }
+
+    def get_all_equity_curves(self) -> Dict[str, Any]:
+        """
+        Returns equity curves for all 3 trading desks:
+        1. Options Strategy Desk (Base ₹2L)
+        2. Swing Trading Desk (P1 Base ₹5L)
+        3. Nifty 500 Compounding Desk (P2 Base ₹1L)
+        """
+        opt_port = self.get_options_portfolio()
+        opt_curve = opt_port.get("equity_curve", [])
+
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                p1_rows = conn.execute(
+                    "SELECT * FROM trade_history WHERE portfolio_type = 'P1_SWING' ORDER BY exit_date ASC"
+                ).fetchall()
+                p2_rows = conn.execute(
+                    "SELECT * FROM trade_history WHERE portfolio_type = 'P2_NIFTY500' ORDER BY exit_date ASC"
+                ).fetchall()
+                p1_active = conn.execute(
+                    "SELECT * FROM active_positions WHERE portfolio_type = 'P1_SWING'"
+                ).fetchall()
+                p2_active = conn.execute(
+                    "SELECT * FROM active_positions WHERE portfolio_type = 'P2_NIFTY500'"
+                ).fetchall()
+
+        # Build P1 curve
+        p1_base = float(P1_BASE_CAPITAL)
+        p1_running = p1_base
+        p1_curve = [{"timestamp": "Start", "date": "Base Capital", "equity": p1_base, "pnl": 0.0, "label": "Base ₹5,00,000"}]
+        for r in p1_rows:
+            pnl = float(r["pnl"] or 0.0)
+            p1_running += pnl
+            p1_curve.append({
+                "timestamp": r["exit_date"],
+                "date": str(r["exit_date"])[:10],
+                "equity": round(p1_running, 2),
+                "pnl": round(pnl, 2),
+                "label": f"{r['symbol']} ({r['return_pct']}%)"
+            })
+        p1_mtm = sum(float(r["unrealized_pnl"] or 0.0) for r in p1_active)
+        if p1_active:
+            p1_curve.append({
+                "timestamp": "Live MTM",
+                "date": "Today Live",
+                "equity": round(p1_running + p1_mtm, 2),
+                "pnl": round(p1_mtm, 2),
+                "label": f"Open Positions ({len(p1_active)} Stocks)"
+            })
+
+        # Build P2 curve
+        p2_base = float(P2_BASE_CAPITAL)
+        p2_running = p2_base
+        p2_curve = [{"timestamp": "Start", "date": "Base Capital", "equity": p2_base, "pnl": 0.0, "label": "Base ₹1,00,000"}]
+        for r in p2_rows:
+            pnl = float(r["pnl"] or 0.0)
+            p2_running += pnl
+            p2_curve.append({
+                "timestamp": r["exit_date"],
+                "date": str(r["exit_date"])[:10],
+                "equity": round(p2_running, 2),
+                "pnl": round(pnl, 2),
+                "label": f"{r['symbol']} ({r['return_pct']}%)"
+            })
+        p2_mtm = sum(float(r["unrealized_pnl"] or 0.0) for r in p2_active)
+        if p2_active:
+            p2_curve.append({
+                "timestamp": "Live MTM",
+                "date": "Today Live",
+                "equity": round(p2_running + p2_mtm, 2),
+                "pnl": round(p2_mtm, 2),
+                "label": f"Open Positions ({len(p2_active)} Stocks)"
+            })
+
+        return {
+            "status": "OK",
+            "options_curve": opt_curve,
+            "swing_curve": p1_curve,
+            "nifty500_curve": p2_curve,
+            "timestamp_ist": format_ist()
+        }
 
 
 nifty_analytics_engine = NiftyAnalyticsEngine()

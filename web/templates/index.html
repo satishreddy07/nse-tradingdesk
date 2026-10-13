@@ -89,6 +89,9 @@
       word-break: keep-all !important;
       flex-shrink: 0 !important;
     }
+    /* Option chain mobile column filtering */
+    .opt-filter-ce .col-pe { display: none !important; }
+    .opt-filter-pe .col-ce { display: none !important; }
   </style>
 </head>
 <body class="bg-[#070a13] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black overflow-x-hidden">
@@ -440,6 +443,21 @@
         </div>
       </div>
 
+      <!-- Swing Portfolio 1 Equity Curve Chart -->
+      <div class="bg-slate-900/85 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div class="flex items-center gap-2">
+            <i data-lucide="trending-up" class="w-4 h-4 text-emerald-400"></i>
+            <span class="text-xs font-bold text-white uppercase font-mono tracking-wide">Swing Desk (P1) Compounded Equity Curve</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Base ₹5,00,000</span>
+          </div>
+          <div id="swing-equity-hud" class="text-[11px] font-mono text-cyan-300">Hover / touch curve to inspect equity points</div>
+        </div>
+        <div class="relative w-full h-40 sm:h-48 bg-[#050811] rounded-xl border border-slate-800/80 overflow-hidden">
+          <canvas id="swing-portfolio-equity-canvas" class="w-full h-full block cursor-crosshair"></canvas>
+        </div>
+      </div>
+
       <!-- Active Holdings Section -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
         <div class="p-4 sm:p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
@@ -622,6 +640,21 @@
             <div>2. Trail: 5D Low @ +2R</div>
             <div>3. Cut: &lt;20 EMA | 4. 8D</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Nifty 500 Compounding Portfolio 2 Equity Curve Chart -->
+      <div class="bg-slate-900/85 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div class="flex items-center gap-2">
+            <i data-lucide="trending-up" class="w-4 h-4 text-violet-400"></i>
+            <span class="text-xs font-bold text-white uppercase font-mono tracking-wide">Nifty 500 Compounding Desk (P2) Equity Curve</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-violet-500/15 text-violet-300 border border-violet-500/30">Base ₹1,00,000</span>
+          </div>
+          <div id="nifty500-equity-hud" class="text-[11px] font-mono text-cyan-300">Hover / touch curve to inspect equity points</div>
+        </div>
+        <div class="relative w-full h-40 sm:h-48 bg-[#050811] rounded-xl border border-slate-800/80 overflow-hidden">
+          <canvas id="nifty500-portfolio-equity-canvas" class="w-full h-full block cursor-crosshair"></canvas>
         </div>
       </div>
 
@@ -1848,9 +1881,11 @@
       <!-- =================================================================== -->
       <!-- ADVANCED OPTIONS STRATEGY BUILDER & INTERACTIVE DUAL-CURVE PAYOFF GRAPH -->
       <!-- =================================================================== -->
+      <!-- ADVANCED OPTIONS STRATEGY BUILDER & SENSIBULL/OPSTRA SUITE -->
+      <!-- =================================================================== -->
       <div class="bg-slate-900/85 border border-cyan-500/40 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
         
-        <!-- Header & Presets -->
+        <!-- Header & Strategy Presets -->
         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-800">
           <div>
             <div class="flex items-center gap-2">
@@ -1861,19 +1896,48 @@
             <p class="text-xs text-slate-400">Click <span class="text-emerald-400 font-bold font-mono">+B</span> or <span class="text-rose-400 font-bold font-mono">+S</span> on any strike in the chain below, or pick 1-click institutional structures.</p>
           </div>
 
-          <!-- 1-Click Institutional Presets -->
-          <div class="flex flex-wrap items-center gap-1.5">
-            <button onclick="applyStrategyPreset('AUTO')" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-gradient-to-r from-cyan-500 to-blue-600 text-black shadow-md hover:from-cyan-400 hover:to-blue-500 transition">⚡ Auto-Pick (OI/PCR)</button>
-            <button onclick="applyStrategyPreset('BULL_CALL')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition">Bull Call</button>
-            <button onclick="applyStrategyPreset('BULL_PUT_CREDIT')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition">Bull Put Credit</button>
-            <button onclick="applyStrategyPreset('BEAR_PUT')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 transition">Bear Put</button>
-            <button onclick="applyStrategyPreset('BEAR_CALL_CREDIT')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 transition">Bear Call Credit</button>
-            <button onclick="applyStrategyPreset('SHORT_STRADDLE')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition">Short Straddle</button>
-            <button onclick="applyStrategyPreset('SHORT_STRANGLE')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition">Short Strangle</button>
-            <button onclick="applyStrategyPreset('IRON_CONDOR')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-purple-400 border border-slate-700 transition">Iron Condor</button>
-            <button onclick="applyStrategyPreset('IRON_BUTTERFLY')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-purple-400 border border-slate-700 transition">Iron Butterfly</button>
-            <button onclick="clearStrategyBuilderLegs()" class="px-2 py-1 rounded-lg text-xs font-mono bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 transition">Clear</button>
+          <!-- Strategy Name & Expiry Selection Bar -->
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-1.5 bg-slate-950/90 border border-slate-800 rounded-xl px-2.5 py-1.5">
+              <span class="text-[10px] text-slate-400 uppercase font-mono">Strategy:</span>
+              <input type="text" id="strat-name-input" value="Bull Call Spread" placeholder="Strategy Name" class="bg-transparent text-xs font-bold text-white font-mono focus:outline-none w-36 sm:w-44 border-b border-cyan-500/40 pb-0.5">
+            </div>
+
+            <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+              <button onclick="switchOptionsExpiryView('weekly')" id="btn-strat-exp-weekly" class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-black transition">Weekly</button>
+              <button onclick="switchOptionsExpiryView('monthly')" id="btn-strat-exp-monthly" class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition">Monthly</button>
+            </div>
           </div>
+        </div>
+
+        <!-- 1-Click Institutional Presets (Categorized from Indian-Option-MCP) -->
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button onclick="applyStrategyPreset('AUTO')" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-gradient-to-r from-cyan-500 to-blue-600 text-black shadow-md hover:from-cyan-400 hover:to-blue-500 transition">⚡ Auto-Pick (OI/PCR)</button>
+          
+          <span class="text-[10px] text-emerald-400 font-bold font-mono ml-1">Bullish:</span>
+          <button onclick="applyStrategyPreset('BULL_CALL')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition">Bull Call</button>
+          <button onclick="applyStrategyPreset('BULL_PUT_CREDIT')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition">Bull Put Credit</button>
+          <button onclick="applyStrategyPreset('LONG_CALL')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition">Long Call</button>
+          <button onclick="applyStrategyPreset('CALL_RATIO_BACKSPREAD')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition">Call Ratio</button>
+
+          <span class="text-[10px] text-rose-400 font-bold font-mono ml-1">Bearish:</span>
+          <button onclick="applyStrategyPreset('BEAR_PUT')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 transition">Bear Put</button>
+          <button onclick="applyStrategyPreset('BEAR_CALL_CREDIT')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 transition">Bear Call Credit</button>
+          <button onclick="applyStrategyPreset('LONG_PUT')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-rose-300 border border-slate-700 transition">Long Put</button>
+          <button onclick="applyStrategyPreset('PUT_RATIO_BACKSPREAD')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-rose-300 border border-slate-700 transition">Put Ratio</button>
+
+          <span class="text-[10px] text-amber-400 font-bold font-mono ml-1">Neutral:</span>
+          <button onclick="applyStrategyPreset('IRON_CONDOR')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-purple-400 border border-slate-700 transition">Iron Condor</button>
+          <button onclick="applyStrategyPreset('SHORT_STRADDLE')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition">Short Straddle</button>
+          <button onclick="applyStrategyPreset('SHORT_STRANGLE')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition">Short Strangle</button>
+          <button onclick="applyStrategyPreset('IRON_BUTTERFLY')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-purple-400 border border-slate-700 transition">Iron Butterfly</button>
+          <button onclick="applyStrategyPreset('JADE_LIZARD')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 transition">Jade Lizard</button>
+
+          <span class="text-[10px] text-blue-400 font-bold font-mono ml-1">Vol:</span>
+          <button onclick="applyStrategyPreset('LONG_STRADDLE')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 transition">Long Straddle</button>
+          <button onclick="applyStrategyPreset('LONG_STRANGLE')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 transition">Long Strangle</button>
+          
+          <button onclick="clearStrategyBuilderLegs()" class="px-2 py-1 rounded-lg text-xs font-mono bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 transition ml-auto">Clear</button>
         </div>
 
         <!-- 8 Live Opstra / Sensibull Key Strategy Metrics -->
@@ -1962,7 +2026,7 @@
             </div>
           </div>
 
-          <!-- Right: Strategy Legs Table -->
+          <!-- Right: Strategy Legs Table with Lots Adjuster & Deploy Button -->
           <div class="lg:col-span-5 bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col justify-between">
             <div>
               <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
@@ -1984,14 +2048,142 @@
               </div>
             </div>
 
-            <!-- Lot Size Note -->
-            <div class="mt-3 pt-2 border-t border-slate-800 text-[10px] font-mono text-slate-400 flex items-center justify-between">
-              <span>Lot Size: <b>75</b> (NIFTY)</span>
-              <span>1 Lot = 75 Contracts</span>
+            <!-- Footer: Lot Size Note & Deploy Strategy Button -->
+            <div class="mt-3 pt-2 border-t border-slate-800">
+              <div class="text-[10px] font-mono text-slate-400 flex items-center justify-between mb-2">
+                <span>Lot Size: <b>75</b> (NIFTY)</span>
+                <span>1 Lot = 75 Contracts</span>
+              </div>
+              <button onclick="deployCurrentStrategy()" id="btn-deploy-strategy" class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition cursor-pointer">
+                <i data-lucide="send" class="w-4 h-4"></i>
+                <span>Deploy Strategy to Options Portfolio</span>
+              </button>
             </div>
           </div>
         </div>
 
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- OPTIONS TRADING PORTFOLIO & EQUITY CURVE DESK (STRATEGY-WISE TRACKING) -->
+      <!-- =================================================================== -->
+      <div id="options-portfolio-desk" class="bg-slate-900/85 border border-purple-500/30 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">OPTIONS TRADING PORTFOLIO</span>
+              <span class="text-xs font-mono text-cyan-400">⚡ Strategy-Level Grouped Positions & Telegram Cloud Sync</span>
+            </div>
+            <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Options Strategies Tracker & Performance Analytics</h3>
+            <p class="text-xs text-slate-400">Track complete strategy structures with live MTM valuation, Greeks, strategy-level square-off, and cloud vault backups.</p>
+          </div>
+          <button onclick="loadOptionsPortfolioDesk()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold flex items-center gap-1.5 border border-slate-700 transition">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            <span>Refresh Portfolio</span>
+          </button>
+        </div>
+
+        <!-- Portfolio Statistics Strip (8 Key Metric Cards) -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 text-xs font-mono">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase">Realized PnL</div>
+            <div id="opt-port-kpi-realized" class="text-sm sm:text-base font-bold text-slate-200 mt-0.5">₹0.00</div>
+            <div id="opt-port-kpi-closed-count" class="text-[10px] text-slate-500">0 Closed</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-emerald-400 uppercase">Unrealized MTM</div>
+            <div id="opt-port-kpi-unrealized" class="text-sm sm:text-base font-bold text-slate-200 mt-0.5">₹0.00</div>
+            <div id="opt-port-kpi-active-count" class="text-[10px] text-slate-500">0 Active</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-cyan-400 uppercase">Net Total PnL</div>
+            <div id="opt-port-kpi-net" class="text-sm sm:text-base font-bold text-cyan-300 mt-0.5">₹0.00</div>
+            <div class="text-[10px] text-slate-500">Realized + MTM</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-purple-400 uppercase">Win Rate</div>
+            <div id="opt-port-kpi-winrate" class="text-sm sm:text-base font-bold text-purple-300 mt-0.5">0.0%</div>
+            <div id="opt-port-kpi-wl" class="text-[10px] text-slate-500">0W / 0L</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-emerald-400 uppercase">Max Win</div>
+            <div id="opt-port-kpi-maxwin" class="text-xs sm:text-sm font-bold text-emerald-400 mt-0.5">+₹0.00</div>
+            <div class="text-[10px] text-slate-500">Best Strategy</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-rose-400 uppercase">Max Loss</div>
+            <div id="opt-port-kpi-maxloss" class="text-xs sm:text-sm font-bold text-rose-400 mt-0.5">₹0.00</div>
+            <div class="text-[10px] text-slate-500">Largest Drawdown</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-amber-400 uppercase">Max Drawdown</div>
+            <div id="opt-port-kpi-maxdd" class="text-sm sm:text-base font-bold text-amber-300 mt-0.5">0.0%</div>
+            <div class="text-[10px] text-slate-500">Peak to Trough</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase">Portfolio Base</div>
+            <div id="opt-port-kpi-equity" class="text-xs sm:text-sm font-bold text-white mt-0.5">₹2,00,000</div>
+            <div class="text-[10px] text-cyan-400">Base Capital</div>
+          </div>
+        </div>
+
+        <!-- Interactive Equity Curve Canvas -->
+        <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div class="flex items-center gap-2">
+              <i data-lucide="trending-up" class="w-3.5 h-3.5 text-purple-400"></i>
+              <span class="text-xs font-bold text-white uppercase font-mono">Options Desk Compounded Equity Curve</span>
+            </div>
+            <div id="opt-equity-hud" class="text-[11px] font-mono text-cyan-300">Hover / touch curve to inspect equity points</div>
+          </div>
+          <div class="relative w-full h-44 sm:h-52 bg-[#050811] rounded-lg border border-slate-800/80 overflow-hidden">
+            <canvas id="opt-portfolio-equity-canvas" class="w-full h-full block cursor-crosshair"></canvas>
+          </div>
+        </div>
+
+        <!-- Strategy-Wise Active Positions -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 sm:p-4">
+          <div class="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <h4 class="text-xs font-bold text-white uppercase font-mono">Active Strategies (<span id="opt-active-strat-count">0</span>)</h4>
+            </div>
+            <span class="text-[10px] font-mono text-slate-400">Real-Time MTM Valued Across Legs</span>
+          </div>
+
+          <div id="opt-active-strat-list" class="space-y-3 font-mono text-xs">
+            <div class="text-slate-500 py-6 text-center font-sans">
+              No active strategies deployed yet. Build a structure in Strategy Builder above and click <b>Deploy Strategy to Options Portfolio</b>.
+            </div>
+          </div>
+        </div>
+
+        <!-- Closed Strategies History Table -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 sm:p-4 overflow-hidden">
+          <div class="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
+            <h4 class="text-xs font-bold text-slate-300 uppercase font-mono">Closed Strategies History</h4>
+            <span class="text-[10px] font-mono text-slate-400">Realized Performance Ledger</span>
+          </div>
+          <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-left text-xs text-slate-300 font-mono">
+              <thead class="bg-slate-950 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2">Strategy</th>
+                  <th class="p-2">Expiry</th>
+                  <th class="p-2">Entry Date</th>
+                  <th class="p-2">Exit Date</th>
+                  <th class="p-2">Exit Spot</th>
+                  <th class="p-2">Realized PnL</th>
+                  <th class="p-2">Return %</th>
+                  <th class="p-2 text-right">Reason</th>
+                </tr>
+              </thead>
+              <tbody id="opt-closed-strat-tbody" class="divide-y divide-slate-800/60">
+                <tr><td colspan="8" class="p-4 text-center text-slate-500 font-sans">No closed strategies yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- Strike-by-Strike Deep Option Chain Table (±12 Strikes Around ATM) -->
@@ -2003,26 +2195,34 @@
               Nifty 50 Option Chain Strike-by-Strike Deep OI Matrix (<span id="opt-table-expiry-label" class="text-emerald-400 font-mono">--</span>)
             </h3>
           </div>
-          <span id="opt-table-verdict-badge" class="text-[11px] font-mono px-2.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Mobile View Filter Toggle (Fixing Mobile Column Overflow) -->
+            <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800 text-xs font-mono">
+              <button onclick="setOptionChainMobileFilter('all')" id="btn-chain-filt-all" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500 text-black transition">Full Chain</button>
+              <button onclick="setOptionChainMobileFilter('ce')" id="btn-chain-filt-ce" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">Calls Only</button>
+              <button onclick="setOptionChainMobileFilter('pe')" id="btn-chain-filt-pe" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">Puts Only</button>
+            </div>
+            <span id="opt-table-verdict-badge" class="text-[11px] font-mono px-2.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
+          </div>
         </div>
         <div class="overflow-x-auto custom-scroll">
           <table class="w-full text-left text-[11px] sm:text-xs text-slate-300 font-mono">
             <thead class="bg-slate-950/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
-              <tr>
-                <th class="p-2.5 text-rose-300">CE Buildup</th>
-                <th class="p-2.5 text-rose-300">CE OI (Contracts)</th>
-                <th class="p-2.5 text-rose-300">CE ΔOI</th>
-                <th class="p-2.5 text-rose-300">CE Vol</th>
-                <th class="p-2.5 text-rose-300">CE IV</th>
-                <th class="p-2.5 text-rose-300">CE LTP (Chg%)</th>
-                <th class="p-2.5 text-center bg-slate-900 text-amber-300 font-bold border-x border-slate-800">STRIKE</th>
-                <th class="p-2.5 text-emerald-300">PE LTP (Chg%)</th>
-                <th class="p-2.5 text-emerald-300">PE IV</th>
-                <th class="p-2.5 text-emerald-300">PE Vol</th>
-                <th class="p-2.5 text-emerald-300">PE ΔOI</th>
-                <th class="p-2.5 text-emerald-300">PE OI (Contracts)</th>
-                <th class="p-2.5 text-emerald-300">PE Buildup</th>
-                <th class="p-2.5 text-right">Strike PCR</th>
+              <tr id="opt-chain-thead-tr">
+                <th class="p-2.5 text-rose-300 col-ce">CE Buildup</th>
+                <th class="p-2.5 text-rose-300 col-ce">CE OI (Contracts)</th>
+                <th class="p-2.5 text-rose-300 col-ce">CE ΔOI</th>
+                <th class="p-2.5 text-rose-300 col-ce">CE Vol</th>
+                <th class="p-2.5 text-rose-300 col-ce">CE IV</th>
+                <th class="p-2.5 text-rose-300 col-ce">CE LTP (Chg%)</th>
+                <th class="p-2.5 text-center bg-slate-900 text-amber-300 font-bold border-x border-slate-800 col-strike">STRIKE</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE LTP (Chg%)</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE IV</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE Vol</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE ΔOI</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE OI (Contracts)</th>
+                <th class="p-2.5 text-emerald-300 col-pe">PE Buildup</th>
+                <th class="p-2.5 text-right col-pcr">Strike PCR</th>
               </tr>
             </thead>
             <tbody id="opt-chain-tbody" class="divide-y divide-slate-800/60">
@@ -2034,6 +2234,74 @@
     </section>
 
   </main>
+
+  <!-- ===================================================================== -->
+  <!-- OPTIONS STRATEGY DETAIL & SQUARE-OFF MODAL                           -->
+  <!-- ===================================================================== -->
+  <div id="strat-detail-modal" onclick="if(event.target === this) closeStrategyDetailModal()" style="display: none;" class="hidden fixed inset-0 z-[100] bg-black/85 backdrop-blur-md items-center justify-center p-2 sm:p-4">
+    <div class="bg-[#0b0f19] border border-purple-500/40 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
+      <div class="p-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+          <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+          <div>
+            <h3 id="modal-strat-name" class="text-base font-extrabold text-white font-mono">--</h3>
+            <div id="modal-strat-meta" class="text-xs font-mono text-cyan-300">--</div>
+          </div>
+        </div>
+        <button onclick="closeStrategyDetailModal()" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-sm transition">✕</button>
+      </div>
+
+      <div class="p-4 sm:p-5 overflow-y-auto custom-scroll space-y-4 font-mono text-xs">
+        <!-- Live Strategy Metrics Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5" id="modal-strat-kpis">
+          <!-- Filled by JS -->
+        </div>
+
+        <!-- Constituent Legs Table -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl overflow-hidden">
+          <div class="p-2.5 bg-slate-950 border-b border-slate-800 font-bold text-white text-[11px]">
+            Constituent Strategy Legs
+          </div>
+          <table class="w-full text-left text-xs text-slate-300 font-mono">
+            <thead class="bg-slate-900/90 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="p-2">Leg #</th>
+                <th class="p-2">Action</th>
+                <th class="p-2">Strike & Type</th>
+                <th class="p-2">Lots (Qty)</th>
+                <th class="p-2">Entry Price</th>
+                <th class="p-2">Live CMP</th>
+                <th class="p-2 text-right">Leg MTM PnL</th>
+              </tr>
+            </thead>
+            <tbody id="modal-strat-legs-tbody" class="divide-y divide-slate-800/60">
+              <!-- Filled by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Mini Payoff Preview Canvas Container -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+          <div class="text-[11px] font-bold text-slate-300 mb-2">Strategy Payoff Structure</div>
+          <div class="relative w-full h-40 bg-[#050811] rounded-lg overflow-hidden border border-slate-800">
+            <canvas id="modal-strat-payoff-canvas" class="w-full h-full block"></canvas>
+          </div>
+        </div>
+
+        <!-- Footer Actions -->
+        <div id="modal-strat-action-footer" class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
+          <span id="modal-strat-timestamp" class="text-[11px] text-slate-500 font-mono">Deployed: --</span>
+          <div class="flex items-center gap-2">
+            <button onclick="closeStrategyDetailModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition">Close</button>
+            <button id="modal-strat-exit-btn" class="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 transition">
+              <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+              <span>Exit Strategy (Square-Off All Legs)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ===================================================================== -->
   <!-- GLOBAL INTERACTIVE CANDLESTICK CHART + SL/TARGET + OHLCV DATA MODAL    -->
@@ -2267,6 +2535,17 @@
       if (typeof drawPayoffGraph === 'function' && document.getElementById('opt-payoff-canvas')) {
         drawPayoffGraph();
       }
+      if (typeof equityCurvesCache !== 'undefined' && equityCurvesCache) {
+        if (equityCurvesCache.options_curve && document.getElementById('opt-portfolio-equity-canvas')) {
+          drawEquityCurveCanvas('opt-portfolio-equity-canvas', equityCurvesCache.options_curve, 'opt-equity-hud', '#a855f7', 'Options Desk');
+        }
+        if (equityCurvesCache.swing_curve && document.getElementById('swing-portfolio-equity-canvas')) {
+          drawEquityCurveCanvas('swing-portfolio-equity-canvas', equityCurvesCache.swing_curve, 'swing-equity-hud', '#10b981', 'Swing Desk P1');
+        }
+        if (equityCurvesCache.nifty500_curve && document.getElementById('nifty500-portfolio-equity-canvas')) {
+          drawEquityCurveCanvas('nifty500-portfolio-equity-canvas', equityCurvesCache.nifty500_curve, 'nifty500-equity-hud', '#8b5cf6', 'Nifty 500 Desk P2');
+        }
+      }
     });
 
     function isClientInMarketKeepaliveWindow() {
@@ -2438,7 +2717,9 @@
       }
 
       lucide.createIcons();
-      if (moduleId !== 'module-swing') {
+      if (moduleId === 'module-swing') {
+        loadAllEquityCurves();
+      } else {
         ensureMasterDataThenRenderModules();
       }
     }
@@ -3242,6 +3523,7 @@
         const data = await res.json();
         niftyOptionsChainCache = data;
         renderOptionsChainUI(data);
+        await loadOptionsPortfolioDesk();
         if (forceRefresh) {
           showToast(`🎯 Live NSE Nifty 50 Option Chain Refreshed (Weekly ${data.weekly?.expiry || ''} & Monthly ${data.monthly?.expiry || ''})!`, 'success');
         }
@@ -3254,15 +3536,20 @@
       selectedOptionsExpiryType = mode === 'monthly' ? 'monthly' : 'weekly';
       const btnW = document.getElementById('btn-opt-weekly');
       const btnM = document.getElementById('btn-opt-monthly');
-      if (btnW && btnM) {
+      const bStratW = document.getElementById('btn-strat-exp-weekly');
+      const bStratM = document.getElementById('btn-strat-exp-monthly');
+      
+      [[btnW, btnM], [bStratW, bStratM]].forEach(([w, m]) => {
+        if (!w || !m) return;
         if (selectedOptionsExpiryType === 'weekly') {
-          btnW.className = "px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-black transition";
-          btnM.className = "px-3 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-300 hover:text-white transition";
+          w.className = "px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-black transition";
+          m.className = "px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition";
         } else {
-          btnM.className = "px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-black transition";
-          btnW.className = "px-3 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-300 hover:text-white transition";
+          m.className = "px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-black transition";
+          w.className = "px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition";
         }
-      }
+      });
+
       if (niftyOptionsChainCache) {
         renderOptionsChainUI(niftyOptionsChainCache);
       }
@@ -3403,18 +3690,18 @@
 
         return `
           <tr class="${rowBg} transition">
-            <td class="p-2 whitespace-nowrap">${formatBuildupBadge(s.ce_buildup, true)}</td>
-            <td class="p-2">
+            <td class="p-2 whitespace-nowrap col-ce">${formatBuildupBadge(s.ce_buildup, true)}</td>
+            <td class="p-2 col-ce">
               <div class="flex items-center justify-between gap-1">
                 <span class="font-bold text-white">${(s.ce_oi || 0).toLocaleString('en-IN')}</span>
                 ${isCw1 ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[9px] bg-rose-500 text-black font-bold whitespace-nowrap">CW1</span>' : ''}
               </div>
               <div class="w-full h-1 bg-slate-800 rounded overflow-hidden mt-0.5"><div class="bg-rose-500 h-full" style="width:${ceBarPct}%"></div></div>
             </td>
-            <td class="p-2 font-bold whitespace-nowrap ${(s.ce_chg_oi || 0) >= 0 ? 'text-rose-400' : 'text-emerald-400'}">${(s.ce_chg_oi || 0) >= 0 ? '+' : ''}${(s.ce_chg_oi || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2 text-slate-400 whitespace-nowrap">${(s.ce_vol || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2 text-slate-300 whitespace-nowrap">${Number(s.ce_iv || 0).toFixed(1)}%</td>
-            <td class="p-2 whitespace-nowrap">
+            <td class="p-2 font-bold whitespace-nowrap ${(s.ce_chg_oi || 0) >= 0 ? 'text-rose-400' : 'text-emerald-400'} col-ce">${(s.ce_chg_oi || 0) >= 0 ? '+' : ''}${(s.ce_chg_oi || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 text-slate-400 whitespace-nowrap col-ce">${(s.ce_vol || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 text-slate-300 whitespace-nowrap col-ce">${Number(s.ce_iv || 0).toFixed(1)}%</td>
+            <td class="p-2 whitespace-nowrap col-ce">
               <div class="flex items-center justify-between gap-1.5">
                 <div class="flex items-center gap-1 shrink-0">
                   <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'BUY', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Buy ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition">+B</button>
@@ -3423,14 +3710,14 @@
                 <span class="font-semibold text-white whitespace-nowrap">₹${Number(s.ce_ltp || 0).toFixed(2)} <span class="text-[10px] ${(s.ce_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.ce_pchg || 0) >= 0 ? '+' : ''}${Number(s.ce_pchg || 0).toFixed(0)}%)</span></span>
               </div>
             </td>
-            <td class="p-2 text-center bg-slate-900/95 border-x border-slate-800 font-extrabold whitespace-nowrap ${isAtm ? 'text-amber-300 text-sm' : 'text-white'}">
+            <td class="p-2 text-center bg-slate-900/95 border-x border-slate-800 font-extrabold whitespace-nowrap ${isAtm ? 'text-amber-300 text-sm' : 'text-white'} col-strike">
               <div>${s.strike}</div>
               <div class="flex items-center justify-center gap-1">
                 ${isAtm ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[8px] bg-amber-500 text-black font-bold whitespace-nowrap">ATM</span>' : ''}
                 ${isMp ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[8px] bg-purple-500 text-white font-bold whitespace-nowrap">MP</span>' : ''}
               </div>
             </td>
-            <td class="p-2 whitespace-nowrap">
+            <td class="p-2 whitespace-nowrap col-pe">
               <div class="flex items-center justify-between gap-1.5">
                 <span class="font-semibold text-white whitespace-nowrap">₹${Number(s.pe_ltp || 0).toFixed(2)} <span class="text-[10px] ${(s.pe_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.pe_pchg || 0) >= 0 ? '+' : ''}${Number(s.pe_pchg || 0).toFixed(0)}%)</span></span>
                 <div class="flex items-center gap-1 shrink-0">
@@ -3439,18 +3726,18 @@
                 </div>
               </div>
             </td>
-            <td class="p-2 text-slate-300 whitespace-nowrap">${Number(s.pe_iv || 0).toFixed(1)}%</td>
-            <td class="p-2 text-slate-400 whitespace-nowrap">${(s.pe_vol || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2 font-bold whitespace-nowrap ${(s.pe_chg_oi || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${(s.pe_chg_oi || 0) >= 0 ? '+' : ''}${(s.pe_chg_oi || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2">
+            <td class="p-2 text-slate-300 whitespace-nowrap col-pe">${Number(s.pe_iv || 0).toFixed(1)}%</td>
+            <td class="p-2 text-slate-400 whitespace-nowrap col-pe">${(s.pe_vol || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 font-bold whitespace-nowrap ${(s.pe_chg_oi || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'} col-pe">${(s.pe_chg_oi || 0) >= 0 ? '+' : ''}${(s.pe_chg_oi || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 col-pe">
               <div class="flex items-center justify-between gap-1">
                 <span class="font-bold text-white">${(s.pe_oi || 0).toLocaleString('en-IN')}</span>
                 ${isPw1 ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[9px] bg-emerald-500 text-black font-bold whitespace-nowrap">PW1</span>' : ''}
               </div>
               <div class="w-full h-1 bg-slate-800 rounded overflow-hidden mt-0.5"><div class="bg-emerald-500 h-full" style="width:${peBarPct}%"></div></div>
             </td>
-            <td class="p-2 whitespace-nowrap">${formatBuildupBadge(s.pe_buildup, false)}</td>
-            <td class="p-2 text-right font-bold whitespace-nowrap ${(s.strike_pcr || 0) >= 1.1 ? 'text-emerald-400' : ((s.strike_pcr || 0) <= 0.8 ? 'text-rose-400' : 'text-slate-300')}">${Number(s.strike_pcr || 0).toFixed(2)}</td>
+            <td class="p-2 whitespace-nowrap col-pe">${formatBuildupBadge(s.pe_buildup, false)}</td>
+            <td class="p-2 text-right font-bold whitespace-nowrap ${(s.strike_pcr || 0) >= 1.1 ? 'text-emerald-400' : ((s.strike_pcr || 0) <= 0.8 ? 'text-rose-400' : 'text-slate-300')} col-pcr">${Number(s.strike_pcr || 0).toFixed(2)}</td>
           </tr>
         `;
       }).join('');
@@ -3532,9 +3819,21 @@
     function addStrategyLegQuick(strike, type, action, ltp, iv) {
       const defaultIv = (iv && iv > 0) ? Number(iv) : 13.5;
       const defaultPrice = (ltp && ltp > 0) ? Number(ltp) : 60.0;
+      const numStrike = Number(strike);
+      
+      const existing = strategyLegs.find(l => l.strike === numStrike && l.type === type && l.action === action);
+      if (existing) {
+        existing.qty += 75;
+        renderStrategyLegs();
+        recalculateStrategyMetrics();
+        drawPayoffGraph();
+        showToast(`Incremented ${action} ${numStrike} ${type} to ${Math.round(existing.qty / 75)} Lots (${existing.qty} Qty)!`, 'info');
+        return;
+      }
+
       const leg = {
         id: Date.now() + Math.floor(Math.random() * 10000),
-        strike: Number(strike),
+        strike: numStrike,
         type: type,
         action: action,
         qty: 75,
@@ -3545,7 +3844,7 @@
       renderStrategyLegs();
       recalculateStrategyMetrics();
       drawPayoffGraph();
-      showToast(`Added ${action} ${strike} ${type} (₹${defaultPrice.toFixed(1)}) to Strategy Builder!`, 'info');
+      showToast(`Added ${action} ${numStrike} ${type} (₹${defaultPrice.toFixed(1)}) 1 Lot to Strategy Builder!`, 'info');
     }
 
     function addCustomStrategyLeg() {
@@ -3558,6 +3857,17 @@
 
     function deleteStrategyLeg(id) {
       strategyLegs = strategyLegs.filter(l => l.id !== id);
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+    }
+
+    function changeStrategyLegLots(id, delta) {
+      const leg = strategyLegs.find(l => l.id === id);
+      if (!leg) return;
+      const currentLots = Math.max(1, Math.round(leg.qty / 75));
+      const newLots = Math.max(1, currentLots + delta);
+      leg.qty = newLots * 75;
       renderStrategyLegs();
       recalculateStrategyMetrics();
       drawPayoffGraph();
@@ -3624,9 +3934,10 @@
                 <span class="text-slate-400">₹</span>
                 <input type="number" step="0.5" value="${l.price}" onchange="updateStrategyLeg(${l.id}, 'price', this.value)" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-white text-right">
               </div>
-              <div class="flex items-center gap-1 text-[11px]">
-                <span class="text-slate-400">Qty</span>
-                <input type="number" step="75" min="75" value="${l.qty}" onchange="updateStrategyLeg(${l.id}, 'qty', this.value)" class="w-14 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-white text-right">
+              <div class="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5">
+                <button onclick="changeStrategyLegLots(${l.id}, -1)" class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs" title="Decrease 1 Lot">-</button>
+                <span class="text-xs font-mono font-bold text-white px-1 whitespace-nowrap">${Math.round(l.qty / 75)}L <span class="text-[10px] text-slate-400 font-normal">(${l.qty})</span></span>
+                <button onclick="changeStrategyLegLots(${l.id}, 1)" class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs" title="Increase 1 Lot">+</button>
               </div>
               <button onclick="deleteStrategyLeg(${l.id})" class="p-1 rounded bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 transition" title="Delete Leg">
                 ✕
@@ -3657,23 +3968,27 @@
       };
 
       strategyLegs = [];
+      const stratNameInput = document.getElementById('strat-name-input');
 
       if (preset === 'AUTO') {
         const comp = niftyPredictionsCache?.composite_score || 0;
         const pcr = active.pcr?.near_atm_pcr || 1.0;
         if (comp < -5 || pcr <= 0.85) {
+          if (stratNameInput) stratNameInput.value = "Bear Call Credit Spread";
           const sellC = getStrikeLtp(atm + 100, 'CE');
           const buyC = getStrikeLtp(atm + 300, 'CE');
           strategyLegs.push({ id: 1, strike: atm + 100, type: 'CE', action: 'SELL', qty: 75, price: sellC.price, iv: sellC.iv });
           strategyLegs.push({ id: 2, strike: atm + 300, type: 'CE', action: 'BUY', qty: 75, price: buyC.price, iv: buyC.iv });
           showToast(`⚡ Auto-Picked BEAR CALL CREDIT SPREAD (Score ${comp.toFixed(1)}, PCR ${pcr.toFixed(2)})`, 'info');
         } else if (comp > 5 || pcr >= 1.15) {
+          if (stratNameInput) stratNameInput.value = "Bull Put Credit Spread";
           const sellP = getStrikeLtp(atm - 100, 'PE');
           const buyP = getStrikeLtp(atm - 300, 'PE');
           strategyLegs.push({ id: 1, strike: atm - 100, type: 'PE', action: 'SELL', qty: 75, price: sellP.price, iv: sellP.iv });
           strategyLegs.push({ id: 2, strike: atm - 300, type: 'PE', action: 'BUY', qty: 75, price: buyP.price, iv: buyP.iv });
           showToast(`⚡ Auto-Picked BULL PUT CREDIT SPREAD (Score ${comp.toFixed(1)}, PCR ${pcr.toFixed(2)})`, 'info');
         } else {
+          if (stratNameInput) stratNameInput.value = "Range-Bound Iron Condor";
           const sC = getStrikeLtp(atm + 200, 'CE');
           const bC = getStrikeLtp(atm + 400, 'CE');
           const sP = getStrikeLtp(atm - 200, 'PE');
@@ -3685,36 +4000,63 @@
           showToast(`⚡ Auto-Picked RANGE-BOUND IRON CONDOR (Score ${comp.toFixed(1)}, PCR ${pcr.toFixed(2)})`, 'info');
         }
       } else if (preset === 'BULL_CALL') {
+        if (stratNameInput) stratNameInput.value = "Bull Call Spread";
         const b = getStrikeLtp(atm, 'CE');
         const s = getStrikeLtp(atm + 200, 'CE');
         strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'BUY', qty: 75, price: b.price, iv: b.iv });
         strategyLegs.push({ id: 2, strike: atm + 200, type: 'CE', action: 'SELL', qty: 75, price: s.price, iv: s.iv });
       } else if (preset === 'BULL_PUT_CREDIT') {
+        if (stratNameInput) stratNameInput.value = "Bull Put Credit Spread";
         const s = getStrikeLtp(atm - 100, 'PE');
         const b = getStrikeLtp(atm - 300, 'PE');
         strategyLegs.push({ id: 1, strike: atm - 100, type: 'PE', action: 'SELL', qty: 75, price: s.price, iv: s.iv });
         strategyLegs.push({ id: 2, strike: atm - 300, type: 'PE', action: 'BUY', qty: 75, price: b.price, iv: b.iv });
+      } else if (preset === 'LONG_CALL') {
+        if (stratNameInput) stratNameInput.value = "Long Call";
+        const b = getStrikeLtp(atm, 'CE');
+        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'BUY', qty: 75, price: b.price, iv: b.iv });
+      } else if (preset === 'CALL_RATIO_BACKSPREAD') {
+        if (stratNameInput) stratNameInput.value = "Call Ratio Backspread";
+        const s = getStrikeLtp(atm, 'CE');
+        const b = getStrikeLtp(atm + 200, 'CE');
+        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'SELL', qty: 75, price: s.price, iv: s.iv });
+        strategyLegs.push({ id: 2, strike: atm + 200, type: 'CE', action: 'BUY', qty: 150, price: b.price, iv: b.iv });
       } else if (preset === 'BEAR_PUT') {
+        if (stratNameInput) stratNameInput.value = "Bear Put Spread";
         const b = getStrikeLtp(atm, 'PE');
         const s = getStrikeLtp(atm - 200, 'PE');
         strategyLegs.push({ id: 1, strike: atm, type: 'PE', action: 'BUY', qty: 75, price: b.price, iv: b.iv });
         strategyLegs.push({ id: 2, strike: atm - 200, type: 'PE', action: 'SELL', qty: 75, price: s.price, iv: s.iv });
       } else if (preset === 'BEAR_CALL_CREDIT') {
+        if (stratNameInput) stratNameInput.value = "Bear Call Credit Spread";
         const s = getStrikeLtp(atm + 100, 'CE');
         const b = getStrikeLtp(atm + 300, 'CE');
         strategyLegs.push({ id: 1, strike: atm + 100, type: 'CE', action: 'SELL', qty: 75, price: s.price, iv: s.iv });
         strategyLegs.push({ id: 2, strike: atm + 300, type: 'CE', action: 'BUY', qty: 75, price: b.price, iv: b.iv });
+      } else if (preset === 'LONG_PUT') {
+        if (stratNameInput) stratNameInput.value = "Long Put";
+        const b = getStrikeLtp(atm, 'PE');
+        strategyLegs.push({ id: 1, strike: atm, type: 'PE', action: 'BUY', qty: 75, price: b.price, iv: b.iv });
+      } else if (preset === 'PUT_RATIO_BACKSPREAD') {
+        if (stratNameInput) stratNameInput.value = "Put Ratio Backspread";
+        const s = getStrikeLtp(atm, 'PE');
+        const b = getStrikeLtp(atm - 200, 'PE');
+        strategyLegs.push({ id: 1, strike: atm, type: 'PE', action: 'SELL', qty: 75, price: s.price, iv: s.iv });
+        strategyLegs.push({ id: 2, strike: atm - 200, type: 'PE', action: 'BUY', qty: 150, price: b.price, iv: b.iv });
       } else if (preset === 'SHORT_STRADDLE') {
+        if (stratNameInput) stratNameInput.value = "Short Straddle";
         const c = getStrikeLtp(atm, 'CE');
         const p = getStrikeLtp(atm, 'PE');
         strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'SELL', qty: 75, price: c.price, iv: c.iv });
         strategyLegs.push({ id: 2, strike: atm, type: 'PE', action: 'SELL', qty: 75, price: p.price, iv: p.iv });
       } else if (preset === 'SHORT_STRANGLE') {
+        if (stratNameInput) stratNameInput.value = "Short Strangle";
         const c = getStrikeLtp(atm + 200, 'CE');
         const p = getStrikeLtp(atm - 200, 'PE');
         strategyLegs.push({ id: 1, strike: atm + 200, type: 'CE', action: 'SELL', qty: 75, price: c.price, iv: c.iv });
         strategyLegs.push({ id: 2, strike: atm - 200, type: 'PE', action: 'SELL', qty: 75, price: p.price, iv: p.iv });
       } else if (preset === 'IRON_CONDOR') {
+        if (stratNameInput) stratNameInput.value = "Iron Condor";
         const sC = getStrikeLtp(atm + 200, 'CE');
         const bC = getStrikeLtp(atm + 400, 'CE');
         const sP = getStrikeLtp(atm - 200, 'PE');
@@ -3724,6 +4066,7 @@
         strategyLegs.push({ id: 3, strike: atm - 200, type: 'PE', action: 'SELL', qty: 75, price: sP.price, iv: sP.iv });
         strategyLegs.push({ id: 4, strike: atm - 400, type: 'PE', action: 'BUY', qty: 75, price: bP.price, iv: bP.iv });
       } else if (preset === 'IRON_BUTTERFLY') {
+        if (stratNameInput) stratNameInput.value = "Iron Butterfly";
         const sC = getStrikeLtp(atm, 'CE');
         const sP = getStrikeLtp(atm, 'PE');
         const bC = getStrikeLtp(atm + 300, 'CE');
@@ -3732,6 +4075,26 @@
         strategyLegs.push({ id: 2, strike: atm, type: 'PE', action: 'SELL', qty: 75, price: sP.price, iv: sP.iv });
         strategyLegs.push({ id: 3, strike: atm + 300, type: 'CE', action: 'BUY', qty: 75, price: bC.price, iv: bC.iv });
         strategyLegs.push({ id: 4, strike: atm - 300, type: 'PE', action: 'BUY', qty: 75, price: bP.price, iv: bP.iv });
+      } else if (preset === 'JADE_LIZARD') {
+        if (stratNameInput) stratNameInput.value = "Jade Lizard";
+        const sP = getStrikeLtp(atm - 200, 'PE');
+        const sC = getStrikeLtp(atm + 100, 'CE');
+        const bC = getStrikeLtp(atm + 200, 'CE');
+        strategyLegs.push({ id: 1, strike: atm - 200, type: 'PE', action: 'SELL', qty: 75, price: sP.price, iv: sP.iv });
+        strategyLegs.push({ id: 2, strike: atm + 100, type: 'CE', action: 'SELL', qty: 75, price: sC.price, iv: sC.iv });
+        strategyLegs.push({ id: 3, strike: atm + 200, type: 'CE', action: 'BUY', qty: 75, price: bC.price, iv: bC.iv });
+      } else if (preset === 'LONG_STRADDLE') {
+        if (stratNameInput) stratNameInput.value = "Long Straddle";
+        const c = getStrikeLtp(atm, 'CE');
+        const p = getStrikeLtp(atm, 'PE');
+        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'BUY', qty: 75, price: c.price, iv: c.iv });
+        strategyLegs.push({ id: 2, strike: atm, type: 'PE', action: 'BUY', qty: 75, price: p.price, iv: p.iv });
+      } else if (preset === 'LONG_STRANGLE') {
+        if (stratNameInput) stratNameInput.value = "Long Strangle";
+        const c = getStrikeLtp(atm + 200, 'CE');
+        const p = getStrikeLtp(atm - 200, 'PE');
+        strategyLegs.push({ id: 1, strike: atm + 200, type: 'CE', action: 'BUY', qty: 75, price: c.price, iv: c.iv });
+        strategyLegs.push({ id: 2, strike: atm - 200, type: 'PE', action: 'BUY', qty: 75, price: p.price, iv: p.iv });
       }
 
       renderStrategyLegs();
@@ -3830,19 +4193,20 @@
       document.getElementById('strat-metric-maxprofit').innerText = maxProfitText;
       document.getElementById('strat-metric-maxloss').innerText = maxLossText;
 
-      // Breakevens
+      // Breakevens (Detect genuine zero crossings to prevent dense cyan artifact lines)
       const bes = [];
       for (let i = 0; i < stepCount; i++) {
         const p1 = expiryPnls[i];
         const p2 = expiryPnls[i + 1];
-        if ((p1 <= 0 && p2 >= 0) || (p1 >= 0 && p2 <= 0)) {
+        if ((p1 < -5 && p2 > 5) || (p1 > 5 && p2 < -5)) {
           const fraction = Math.abs(p1) / (Math.abs(p1) + Math.abs(p2) || 1);
           const beSpot = Math.round(spots[i] + fraction * step);
-          if (!bes.some(b => Math.abs(b - beSpot) < 15)) {
+          if (!bes.some(b => Math.abs(b - beSpot) < 35)) {
             bes.push(beSpot);
           }
         }
       }
+      bes.sort((a, b) => a - b);
       const beStr = bes.length > 0 ? bes.join(', ') : 'None';
       document.getElementById('strat-metric-breakevens').innerText = beStr;
 
@@ -4029,8 +4393,8 @@
         ctx.fillText(`Spot ${Math.round(spot)}`, xSpot, padTop - 5);
       }
 
-      // Breakevens
-      breakevens.forEach(be => {
+      // Breakevens (max 4 distinct zero-crossing points)
+      (breakevens || []).slice(0, 4).forEach(be => {
         const xBe = xToCanvas(be);
         if (xBe >= padLeft && xBe <= padLeft + plotWidth) {
           ctx.strokeStyle = '#06b6d4';
@@ -4132,6 +4496,708 @@
       ctx.restore();
     }
 
+    // =========================================================================
+    // RESPONSIVE OPTION CHAIN FILTERING (PREVENTS MOBILE COLUMN OVERFLOW)
+    // =========================================================================
+    let currentOptionChainMobileFilter = 'all';
+
+    function setOptionChainMobileFilter(mode) {
+      currentOptionChainMobileFilter = mode || 'all';
+      const table = document.querySelector('#opt-chain-tbody')?.closest('table');
+      const bAll = document.getElementById('btn-chain-filt-all');
+      const bCe = document.getElementById('btn-chain-filt-ce');
+      const bPe = document.getElementById('btn-chain-filt-pe');
+
+      [bAll, bCe, bPe].forEach(b => {
+        if (b) b.className = "px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition";
+      });
+
+      if (mode === 'ce') {
+        if (bCe) bCe.className = "px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-500 text-white transition";
+        if (table) {
+          table.classList.remove('opt-filter-pe');
+          table.classList.add('opt-filter-ce');
+        }
+      } else if (mode === 'pe') {
+        if (bPe) bPe.className = "px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500 text-black transition";
+        if (table) {
+          table.classList.remove('opt-filter-ce');
+          table.classList.add('opt-filter-pe');
+        }
+      } else {
+        if (bAll) bAll.className = "px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500 text-black transition";
+        if (table) {
+          table.classList.remove('opt-filter-ce', 'opt-filter-pe');
+        }
+      }
+    }
+
+    // =========================================================================
+    // OPTIONS TRADING PORTFOLIO & GROUPED STRATEGY MANAGEMENT (SENSIBULL DESK)
+    // =========================================================================
+    let optionsPortfolioCache = null;
+    let equityCurvesCache = null;
+
+    async function deployCurrentStrategy() {
+      if (!strategyLegs || strategyLegs.length === 0) {
+        showToast("Please add at least 1 leg to deploy strategy.", "warning");
+        return;
+      }
+
+      const nameInput = document.getElementById('strat-name-input');
+      const stratName = (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : "Custom Options Strategy";
+
+      const active = (selectedOptionsExpiryType === 'monthly')
+        ? (niftyOptionsChainCache?.monthly || {})
+        : (niftyOptionsChainCache?.weekly || {});
+      const spot = active.spot_price || 24700;
+      const expiryDate = active.expiry || "";
+
+      const btn = document.getElementById('btn-deploy-strategy');
+      const origHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Deploying...`;
+      }
+
+      try {
+        const payload = {
+          strategy_name: stratName,
+          symbol: "NIFTY",
+          expiry_date: expiryDate,
+          expiry_type: selectedOptionsExpiryType.toUpperCase(),
+          spot_at_entry: spot,
+          legs: strategyLegs.map(l => ({
+            strike: Number(l.strike),
+            type: l.type,
+            action: l.action,
+            qty: Number(l.qty),
+            entry_price: Number(l.price),
+            iv: Number(l.iv || 13.5)
+          })),
+          notes: `Deployed from Sensibull Builder (${strategyLegs.length} legs)`
+        };
+
+        const res = await fetch('/api/options/deploy-strategy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (res.ok && data.status === 'OK') {
+          showToast(`🚀 Strategy "${stratName}" deployed to Options Portfolio & backed up to Telegram Cloud!`, "success");
+          await loadOptionsPortfolioDesk();
+          await loadAllEquityCurves();
+          const desk = document.getElementById('options-portfolio-desk');
+          if (desk) desk.scrollIntoView({ behavior: 'smooth' });
+        } else {
+          showToast(`Failed to deploy: ${data.detail || data.message || 'Server error'}`, "error");
+        }
+      } catch (err) {
+        console.error("Deploy Strategy Error:", err);
+        showToast(`Deploy failed: ${err.message}`, "error");
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
+        }
+      }
+    }
+
+    async function loadOptionsPortfolioDesk() {
+      try {
+        const res = await fetch('/api/options/portfolio');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.status === 'OK') {
+          optionsPortfolioCache = data;
+          renderOptionsPortfolioUI(data);
+          if (data.equity_curve) {
+            drawEquityCurveCanvas('opt-portfolio-equity-canvas', data.equity_curve, 'opt-equity-hud', '#a855f7', 'Options Desk');
+          }
+        }
+      } catch (err) {
+        console.error("Failed loading options portfolio desk:", err);
+      }
+    }
+
+    function renderOptionsPortfolioUI(data) {
+      if (!data || !data.summary) return;
+      const s = data.summary;
+
+      // 8 Summary KPIs
+      const realEl = document.getElementById('opt-port-kpi-realized');
+      if (realEl) {
+        realEl.innerText = `${s.total_realized_pnl >= 0 ? '+' : ''}₹${s.total_realized_pnl.toLocaleString('en-IN')}`;
+        realEl.className = `text-sm sm:text-base font-bold mt-0.5 ${s.total_realized_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      const closedCountEl = document.getElementById('opt-port-kpi-closed-count');
+      if (closedCountEl) closedCountEl.innerText = `${s.closed_count} Closed Strategies`;
+
+      const unrealEl = document.getElementById('opt-port-kpi-unrealized');
+      if (unrealEl) {
+        unrealEl.innerText = `${s.total_unrealized_pnl >= 0 ? '+' : ''}₹${s.total_unrealized_pnl.toLocaleString('en-IN')}`;
+        unrealEl.className = `text-sm sm:text-base font-bold mt-0.5 ${s.total_unrealized_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      const activeCountEl = document.getElementById('opt-port-kpi-active-count');
+      if (activeCountEl) activeCountEl.innerText = `${s.active_count} Active Strategies`;
+
+      const netEl = document.getElementById('opt-port-kpi-net');
+      if (netEl) {
+        netEl.innerText = `${s.net_total_pnl >= 0 ? '+' : ''}₹${s.net_total_pnl.toLocaleString('en-IN')}`;
+        netEl.className = `text-sm sm:text-base font-bold mt-0.5 ${s.net_total_pnl >= 0 ? 'text-cyan-300' : 'text-rose-400'}`;
+      }
+
+      const winEl = document.getElementById('opt-port-kpi-winrate');
+      if (winEl) winEl.innerText = `${s.win_rate_pct.toFixed(1)}%`;
+      const wlEl = document.getElementById('opt-port-kpi-wl');
+      if (wlEl) wlEl.innerText = `${s.wins}W / ${s.losses}L (${s.total_trades} Trades)`;
+
+      const maxWinEl = document.getElementById('opt-port-kpi-maxwin');
+      if (maxWinEl) maxWinEl.innerText = `+₹${s.max_win.toLocaleString('en-IN')}`;
+
+      const maxLossEl = document.getElementById('opt-port-kpi-maxloss');
+      if (maxLossEl) maxLossEl.innerText = `-₹${Math.abs(s.max_loss).toLocaleString('en-IN')}`;
+
+      const maxDdEl = document.getElementById('opt-port-kpi-maxdd');
+      if (maxDdEl) maxDdEl.innerText = `${s.max_drawdown_pct.toFixed(1)}%`;
+
+      const eqEl = document.getElementById('opt-port-kpi-equity');
+      if (eqEl) eqEl.innerText = `₹${s.current_equity.toLocaleString('en-IN')}`;
+
+      const activeBadgeCount = document.getElementById('opt-active-strat-count');
+      if (activeBadgeCount) activeBadgeCount.innerText = s.active_count;
+
+      // Render Active Strategies
+      const activeContainer = document.getElementById('opt-active-strat-list');
+      if (activeContainer) {
+        const activeList = data.active_strategies || [];
+        if (activeList.length === 0) {
+          activeContainer.innerHTML = `
+            <div class="text-slate-500 py-6 text-center font-sans">
+              No active strategies deployed yet. Build a structure in Strategy Builder above and click <b>Deploy Strategy to Options Portfolio</b>.
+            </div>
+          `;
+        } else {
+          activeContainer.innerHTML = activeList.map(st => {
+            const isProfit = (st.unrealized_pnl || 0) >= 0;
+            const pnlClass = isProfit ? 'text-emerald-400' : 'text-rose-400';
+            const legs = st.legs || [];
+            const g = st.greeks || {};
+
+            return `
+              <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 sm:p-4 hover:border-purple-500/40 transition space-y-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                    <h5 class="font-extrabold text-white text-sm sm:text-base">${st.strategy_name}</h5>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">${st.strategy_id}</span>
+                    <span class="text-[10px] text-slate-400">Expiry: <b class="text-slate-200">${st.expiry_date}</b> (${st.expiry_type})</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div class="text-right">
+                      <div class="text-sm sm:text-base font-extrabold font-mono ${pnlClass}">
+                        ${isProfit ? '+' : ''}₹${(st.unrealized_pnl || 0).toLocaleString('en-IN')}
+                      </div>
+                      <div class="text-[10px] font-mono text-slate-400">
+                        ROI: <b class="${pnlClass}">${(st.roi_pct || 0) >= 0 ? '+' : ''}${Number(st.roi_pct || 0).toFixed(2)}%</b>
+                      </div>
+                    </div>
+                    <button onclick="openStrategyDetailModal('${st.strategy_id}')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-mono font-bold border border-slate-700 transition" title="Inspect Full Analytics">
+                      Analytics
+                    </button>
+                    <button onclick="exitStrategyFromPortfolio('${st.strategy_id}', '${st.strategy_name}')" class="px-2.5 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 text-xs font-mono font-bold border border-rose-800/60 transition" title="Square-Off All Legs">
+                      Exit Strategy
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Greeks & Meta Strip -->
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px] font-mono bg-slate-950/70 p-2 rounded-lg">
+                  <div><span class="text-slate-500">Entry Spot:</span> <b class="text-white">${st.spot_at_entry}</b></div>
+                  <div><span class="text-slate-500">Live Spot:</span> <b class="text-amber-300">${data.spot_price || '--'}</b></div>
+                  <div><span class="text-slate-500">Net Prem:</span> <b class="${(st.net_premium || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">₹${Math.round(st.net_premium || 0).toLocaleString('en-IN')}</b></div>
+                  <div><span class="text-slate-500">Delta / Theta:</span> <b class="text-purple-300">Δ ${Number(g.delta || 0).toFixed(2)} | Θ ₹${Math.round(g.theta || 0)}/d</b></div>
+                  <div><span class="text-slate-500">Gamma / Vega:</span> <b class="text-cyan-300">Γ ${Number(g.gamma || 0).toFixed(4)} | V ₹${Math.round(g.vega || 0)}/%</b></div>
+                </div>
+
+                <!-- Constituent Legs Table -->
+                <div class="overflow-x-auto custom-scroll">
+                  <table class="w-full text-left text-[11px] font-mono text-slate-300">
+                    <thead class="bg-slate-950/60 text-[9px] uppercase text-slate-400 border-b border-slate-800/80">
+                      <tr>
+                        <th class="p-1.5">Action</th>
+                        <th class="p-1.5">Strike & Type</th>
+                        <th class="p-1.5">Qty (Lots)</th>
+                        <th class="p-1.5">Entry Price</th>
+                        <th class="p-1.5">Live CMP</th>
+                        <th class="p-1.5 text-right">Leg Unrealized PnL</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/40">
+                      ${legs.map(lg => {
+                        const isLegBuy = lg.action === 'BUY';
+                        const legPnl = lg.unrealized_pnl || 0;
+                        const legPnlCls = legPnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
+                        return `
+                          <tr class="hover:bg-slate-800/30">
+                            <td class="p-1.5 font-bold ${isLegBuy ? 'text-emerald-400' : 'text-rose-400'}">${lg.action}</td>
+                            <td class="p-1.5 text-white font-bold">${lg.strike} ${lg.type}</td>
+                            <td class="p-1.5 text-slate-300">${lg.qty} <span class="text-slate-500">(${Math.round(lg.qty / 75)}L)</span></td>
+                            <td class="p-1.5 text-slate-300">₹${Number(lg.entry_price || 0).toFixed(2)}</td>
+                            <td class="p-1.5 text-white font-semibold">₹${Number(lg.current_price || lg.entry_price || 0).toFixed(2)}</td>
+                            <td class="p-1.5 text-right font-bold ${legPnlCls}">${legPnl >= 0 ? '+' : ''}₹${Number(legPnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        `;
+                      }).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+
+      // Render Closed Strategies
+      const closedTbody = document.getElementById('opt-closed-strat-tbody');
+      if (closedTbody) {
+        const closedList = data.closed_strategies || [];
+        if (closedList.length === 0) {
+          closedTbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-500 font-sans">No closed strategies yet.</td></tr>`;
+        } else {
+          closedTbody.innerHTML = closedList.map(st => {
+            const isProfit = (st.realized_pnl || 0) >= 0;
+            const pnlCls = isProfit ? 'text-emerald-400' : 'text-rose-400';
+            return `
+              <tr class="hover:bg-slate-800/30 transition">
+                <td class="p-2 font-bold text-white">${st.strategy_name} <span class="text-[10px] text-slate-500">(${st.strategy_id})</span></td>
+                <td class="p-2 text-slate-300">${st.expiry_date || '--'}</td>
+                <td class="p-2 text-slate-400">${(st.entry_time || '').slice(0, 16)}</td>
+                <td class="p-2 text-slate-400">${(st.exit_time || '').slice(0, 16)}</td>
+                <td class="p-2 text-amber-300 font-bold">${st.exit_spot || '--'}</td>
+                <td class="p-2 font-extrabold ${pnlCls}">${isProfit ? '+' : ''}₹${Number(st.realized_pnl || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                <td class="p-2 font-bold ${pnlCls}">${(st.roi_pct || 0) >= 0 ? '+' : ''}${Number(st.roi_pct || 0).toFixed(2)}%</td>
+                <td class="p-2 text-right">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">${st.exit_reason || 'EXIT'}</span>
+                </td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+    }
+
+    async function exitStrategyFromPortfolio(strategyId, name) {
+      if (!confirm(`Are you sure you want to square off all constituent legs of strategy "${name}" at current live market prices?`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/options/exit-strategy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ strategy_id: strategyId, exit_reason: 'MANUAL_EXIT' })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'OK') {
+          showToast(`Square-off complete! Realized PnL: ₹${Number(data.realized_pnl || 0).toLocaleString('en-IN')} & Cloud Backed Up!`, 'success');
+          closeStrategyDetailModal();
+          await loadOptionsPortfolioDesk();
+          await loadAllEquityCurves();
+        } else {
+          showToast(`Exit failed: ${data.detail || data.message || 'Server error'}`, 'error');
+        }
+      } catch (err) {
+        console.error("Exit strategy error:", err);
+        showToast(`Exit failed: ${err.message}`, 'error');
+      }
+    }
+
+    function openStrategyDetailModal(strategyId) {
+      if (!optionsPortfolioCache) return;
+      const allStrats = [
+        ...(optionsPortfolioCache.active_strategies || []),
+        ...(optionsPortfolioCache.closed_strategies || [])
+      ];
+      const s = allStrats.find(item => item.strategy_id === strategyId);
+      if (!s) return;
+
+      const modal = document.getElementById('strat-detail-modal');
+      const nameEl = document.getElementById('modal-strat-name');
+      const metaEl = document.getElementById('modal-strat-meta');
+      const kpisEl = document.getElementById('modal-strat-kpis');
+      const legsTbody = document.getElementById('modal-strat-legs-tbody');
+      const actionFoot = document.getElementById('modal-strat-action-footer');
+
+      if (nameEl) nameEl.innerText = s.strategy_name;
+      if (metaEl) metaEl.innerText = `ID: ${s.strategy_id} • Expiry: ${s.expiry_date} (${s.expiry_type}) • Entry Spot: ${s.spot_at_entry} • Status: ${s.status}`;
+
+      const pnl = s.status === 'ACTIVE' ? (s.unrealized_pnl || 0) : (s.realized_pnl || 0);
+      const isProfit = pnl >= 0;
+      const pnlCls = isProfit ? 'text-emerald-400' : 'text-rose-400';
+      const g = s.greeks || {};
+
+      if (kpisEl) {
+        kpisEl.innerHTML = `
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+            <div class="text-[10px] text-slate-400 uppercase">${s.status === 'ACTIVE' ? 'Unrealized MTM' : 'Realized PnL'}</div>
+            <div class="text-base font-extrabold ${pnlCls}">${isProfit ? '+' : ''}₹${Number(pnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div class="text-[10px] text-slate-400">ROI: <b class="${pnlCls}">${(s.roi_pct || 0) >= 0 ? '+' : ''}${Number(s.roi_pct || 0).toFixed(2)}%</b></div>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+            <div class="text-[10px] text-slate-400 uppercase">Net Premium</div>
+            <div class="text-base font-extrabold text-white">₹${Math.round(s.net_premium || 0).toLocaleString('en-IN')}</div>
+            <div class="text-[10px] text-slate-500">${(s.net_premium || 0) >= 0 ? 'Credit Received' : 'Debit Paid'}</div>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+            <div class="text-[10px] text-purple-400 uppercase">Delta & Theta</div>
+            <div class="text-xs font-bold text-purple-300 mt-1">Δ ${Number(g.delta || 0).toFixed(2)} | Θ ₹${Math.round(g.theta || 0)}/d</div>
+            <div class="text-[10px] text-slate-500">Directional & Decay Risk</div>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+            <div class="text-[10px] text-cyan-400 uppercase">Gamma & Vega</div>
+            <div class="text-xs font-bold text-cyan-300 mt-1">Γ ${Number(g.gamma || 0).toFixed(4)} | V ₹${Math.round(g.vega || 0)}/%</div>
+            <div class="text-[10px] text-slate-500">Curvature & Vol Risk</div>
+          </div>
+        `;
+      }
+
+      if (legsTbody) {
+        legsTbody.innerHTML = (s.legs || []).map(lg => {
+          const isBuy = lg.action === 'BUY';
+          const lp = lg.unrealized_pnl || 0;
+          return `
+            <tr class="hover:bg-slate-900/60 transition">
+              <td class="p-2 font-bold ${isBuy ? 'text-emerald-400' : 'text-rose-400'}">${lg.action}</td>
+              <td class="p-2 font-bold text-white">${lg.strike} ${lg.type}</td>
+              <td class="p-2 text-slate-300">${lg.qty} <span class="text-slate-500">(${Math.round(lg.qty / 75)}L)</span></td>
+              <td class="p-2 text-slate-300">₹${Number(lg.entry_price || 0).toFixed(2)}</td>
+              <td class="p-2 text-white font-bold">₹${Number(lg.current_price || lg.entry_price || 0).toFixed(2)}</td>
+              <td class="p-2 text-right font-bold ${lp >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${lp >= 0 ? '+' : ''}₹${Number(lp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      if (actionFoot) {
+        if (s.status === 'ACTIVE') {
+          actionFoot.innerHTML = `
+            <button onclick="closeStrategyDetailModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs font-bold transition">Close</button>
+            <button onclick="exitStrategyFromPortfolio('${s.strategy_id}', '${s.strategy_name}')" class="px-5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white font-mono text-xs font-bold shadow-lg transition">
+              Exit Strategy (Square-Off All Legs)
+            </button>
+          `;
+        } else {
+          actionFoot.innerHTML = `
+            <div class="text-xs font-mono text-slate-400">Closed on ${(s.exit_time || '').slice(0, 16)} • Reason: <b class="text-white">${s.exit_reason || 'EXIT'}</b></div>
+            <button onclick="closeStrategyDetailModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs font-bold transition">Close</button>
+          `;
+        }
+      }
+
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+        setTimeout(() => {
+          if (s.legs && s.legs.length > 0) {
+            drawMiniStrategyPayoff(s.legs, s.spot_at_entry || 24700);
+          }
+        }, 60);
+      }
+    }
+
+    function closeStrategyDetailModal() {
+      const modal = document.getElementById('strat-detail-modal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+    }
+
+    function drawMiniStrategyPayoff(legs, spot) {
+      const canvas = document.getElementById('modal-strat-payoff-canvas');
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+
+      if (!legs || legs.length === 0) return;
+      const strikes = legs.map(l => l.strike);
+      const minK = Math.min(...strikes, spot);
+      const maxK = Math.max(...strikes, spot);
+      const buf = Math.max(600, (maxK - minK) * 0.6);
+      const sMin = minK - buf;
+      const sMax = maxK + buf;
+      const steps = 100;
+      const step = (sMax - sMin) / steps;
+
+      const spots = [];
+      const pnls = [];
+      for (let i = 0; i <= steps; i++) {
+        const s = sMin + i * step;
+        spots.push(s);
+        let pnl = 0;
+        legs.forEach(l => {
+          const sign = l.action === 'BUY' ? 1 : -1;
+          const intr = l.type === 'CE' ? Math.max(0, s - l.strike) : Math.max(0, l.strike - s);
+          pnl += sign * (intr - l.entry_price) * l.qty;
+        });
+        pnls.push(pnl);
+      }
+
+      const maxAbs = Math.max(500, Math.max(...pnls.map(Math.abs)));
+      const yZero = h / 2;
+      const xToC = (s) => ((s - sMin) / (sMax - sMin)) * w;
+      const yToC = (p) => (h / 2) - (p / maxAbs) * (h * 0.42);
+
+      // Zero line
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, yZero);
+      ctx.lineTo(w, yZero);
+      ctx.stroke();
+
+      // Shaded area
+      ctx.beginPath();
+      ctx.moveTo(xToC(spots[0]), yZero);
+      for (let i = 0; i < spots.length; i++) {
+        ctx.lineTo(xToC(spots[i]), yToC(pnls[i]));
+      }
+      ctx.lineTo(xToC(spots[spots.length - 1]), yZero);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, 'rgba(16, 185, 129, 0.25)');
+      grad.addColorStop(1, 'rgba(244, 63, 94, 0.25)');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Curve line
+      ctx.beginPath();
+      for (let i = 0; i < spots.length; i++) {
+        const x = xToC(spots[i]);
+        const y = yToC(pnls[i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Spot line
+      const xSpot = xToC(spot);
+      if (xSpot >= 0 && xSpot <= w) {
+        ctx.strokeStyle = '#f59e0b';
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(xSpot, 0);
+        ctx.lineTo(xSpot, h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // =========================================================================
+    // MULTI-DESK INTERACTIVE COMPOUNDED EQUITY CURVES ENGINE
+    // =========================================================================
+    const equityCurveHoverState = {};
+
+    function drawEquityCurveCanvas(canvasId, curveData, hudId, strokeColor = '#06b6d4', deskLabel = 'Desk') {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const width = rect.width;
+      const height = rect.height;
+
+      ctx.clearRect(0, 0, width, height);
+
+      if (!curveData || curveData.length === 0) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '12px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`No closed trades yet to plot ${deskLabel} equity curve`, width / 2, height / 2);
+        return;
+      }
+
+      const equities = curveData.map(d => d.equity);
+      const baseEq = curveData[0].equity || 200000;
+      const minEq = Math.min(...equities, baseEq * 0.95);
+      const maxEq = Math.max(...equities, baseEq * 1.05);
+      const padY = Math.max(5000, (maxEq - minEq) * 0.15);
+      const yMin = minEq - padY;
+      const yMax = maxEq + padY;
+
+      const padLeft = 65;
+      const padRight = 20;
+      const padTop = 18;
+      const padBottom = 26;
+      const plotWidth = width - padLeft - padRight;
+      const plotHeight = height - padTop - padBottom;
+
+      const xToCanvas = (idx) => padLeft + (curveData.length > 1 ? (idx / (curveData.length - 1)) * plotWidth : plotWidth / 2);
+      const yToCanvas = (eq) => padTop + plotHeight - ((eq - yMin) / (yMax - yMin)) * plotHeight;
+
+      // Base Capital Dashed Line
+      const yBase = yToCanvas(baseEq);
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(padLeft, yBase);
+      ctx.lineTo(padLeft + plotWidth, yBase);
+      ctx.stroke();
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = '9px JetBrains Mono, monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`Base ₹${(baseEq / 1000).toFixed(0)}k`, padLeft - 6, yBase + 3);
+
+      // Y-axis Peak & Trough Labels
+      const yTop = yToCanvas(maxEq);
+      ctx.fillStyle = '#10b981';
+      ctx.fillText(`₹${(maxEq / 1000).toFixed(1)}k`, padLeft - 6, yTop + 3);
+
+      const yBot = yToCanvas(minEq);
+      ctx.fillStyle = minEq < baseEq ? '#f43f5e' : '#94a3b8';
+      ctx.fillText(`₹${(minEq / 1000).toFixed(1)}k`, padLeft - 6, yBot + 3);
+
+      // Gradient Fill Area
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(padLeft, padTop, plotWidth, plotHeight);
+      ctx.clip();
+
+      ctx.beginPath();
+      ctx.moveTo(xToCanvas(0), padTop + plotHeight);
+      for (let i = 0; i < curveData.length; i++) {
+        ctx.lineTo(xToCanvas(i), yToCanvas(curveData[i].equity));
+      }
+      ctx.lineTo(xToCanvas(curveData.length - 1), padTop + plotHeight);
+      ctx.closePath();
+
+      const grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotHeight);
+      grad.addColorStop(0, strokeColor + '44');
+      grad.addColorStop(1, strokeColor + '05');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Main Curve Line
+      ctx.beginPath();
+      for (let i = 0; i < curveData.length; i++) {
+        const x = xToCanvas(i);
+        const y = yToCanvas(curveData[i].equity);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2.2;
+      ctx.setLineDash([]);
+      ctx.stroke();
+
+      // Plot Points
+      curveData.forEach((pt, i) => {
+        const x = xToCanvas(i);
+        const y = yToCanvas(pt.equity);
+        ctx.fillStyle = strokeColor;
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Hover Crosshair & Tooltip
+      const hoverX = equityCurveHoverState[canvasId];
+      if (hoverX !== undefined && hoverX !== null && hoverX >= padLeft && hoverX <= padLeft + plotWidth) {
+        const frac = (hoverX - padLeft) / plotWidth;
+        const idx = Math.min(curveData.length - 1, Math.max(0, Math.round(frac * (curveData.length - 1))));
+        const pt = curveData[idx];
+        const ptX = xToCanvas(idx);
+        const ptY = yToCanvas(pt.equity);
+
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(ptX, padTop);
+        ctx.lineTo(ptX, padTop + plotHeight);
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(ptX, ptY, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        const hud = document.getElementById(hudId);
+        if (hud) {
+          const pnlSign = (pt.pnl || 0) >= 0 ? '+' : '';
+          hud.innerHTML = `Date: <b class="text-white">${pt.date}</b> • Equity: <b class="text-cyan-300">₹${pt.equity.toLocaleString('en-IN')}</b> • P&L: <b class="${(pt.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${pnlSign}₹${Number(pt.pnl || 0).toLocaleString('en-IN')}</b> • ${pt.label}`;
+        }
+      }
+
+      ctx.restore();
+
+      // Attach hover/touch listeners once
+      if (!canvas._hasEquityListeners) {
+        canvas._hasEquityListeners = true;
+        const updateHover = (clientX) => {
+          const r = canvas.getBoundingClientRect();
+          equityCurveHoverState[canvasId] = clientX - r.left;
+          drawEquityCurveCanvas(canvasId, curveData, hudId, strokeColor, deskLabel);
+        };
+        const clearHover = () => {
+          equityCurveHoverState[canvasId] = null;
+          drawEquityCurveCanvas(canvasId, curveData, hudId, strokeColor, deskLabel);
+          const hud = document.getElementById(hudId);
+          if (hud) hud.innerText = 'Hover / touch curve to inspect equity points';
+        };
+
+        canvas.addEventListener('mousemove', (e) => updateHover(e.clientX));
+        canvas.addEventListener('mouseleave', clearHover);
+        canvas.addEventListener('touchmove', (e) => {
+          if (e.touches && e.touches.length > 0) updateHover(e.touches[0].clientX);
+        }, { passive: true });
+        canvas.addEventListener('touchend', clearHover);
+      }
+    }
+
+    async function loadAllEquityCurves() {
+      try {
+        const res = await fetch('/api/portfolio/equity-curves');
+        if (!res.ok) return;
+        const data = await res.json();
+        equityCurvesCache = data;
+
+        if (data.options_curve) {
+          drawEquityCurveCanvas('opt-portfolio-equity-canvas', data.options_curve, 'opt-equity-hud', '#a855f7', 'Options Desk');
+        }
+        if (data.swing_curve) {
+          drawEquityCurveCanvas('swing-portfolio-equity-canvas', data.swing_curve, 'swing-equity-hud', '#10b981', 'Swing Desk P1');
+        }
+        if (data.nifty500_curve) {
+          drawEquityCurveCanvas('nifty500-portfolio-equity-canvas', data.nifty500_curve, 'nifty500-equity-hud', '#8b5cf6', 'Nifty 500 Desk P2');
+        }
+      } catch (err) {
+        console.error("Failed loading multi-desk equity curves:", err);
+      }
+    }
+
     function switchTab(tabId) {
       if (currentModule !== 'module-swing') {
         switchModule('module-swing');
@@ -4224,6 +5290,9 @@
         ]);
         if (currentModule === 'module-swing' && currentTab === 'tab-charts') await loadFetchedStocksData();
         if (currentModule === 'module-swing' && currentTab === 'tab-history') await loadHistoryData();
+        if (typeof loadAllEquityCurves === 'function') {
+          await loadAllEquityCurves();
+        }
         if (currentModule !== 'module-swing') {
           await ensureMasterDataThenRenderModules();
         }
