@@ -148,8 +148,8 @@
             </button>
             <div class="border-t border-slate-800 mt-1 pt-1">
               <label class="flex items-center gap-2 px-3 py-1 text-[11px] text-slate-400 cursor-pointer">
-                <input type="checkbox" id="chk-auto-exec" class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
-                <span>Auto-place orders (Market Hours Only)</span>
+                <input type="checkbox" id="chk-auto-exec" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+                <span>Auto-place BUY NOW orders (Market Hours)</span>
               </label>
             </div>
           </div>
@@ -368,11 +368,11 @@
           
           <!-- Filter Buttons -->
           <div class="flex items-center gap-1.5 overflow-x-auto custom-scroll text-xs">
-            <button onclick="filterP1Signals('ALL')" class="p1-filter-btn px-2.5 py-1 rounded bg-slate-800 text-slate-200 font-medium">All <span id="cnt-p1-all" class="font-mono text-[10px] opacity-80"></span></button>
-            <button onclick="filterP1Signals('BUY_NOW')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-emerald-400 font-medium">BUY NOW <span id="cnt-p1-buy" class="font-mono text-[10px]"></span></button>
-            <button onclick="filterP1Signals('PRE_BREAKOUT')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-cyan-400 font-medium">PRE BREAKOUT <span id="cnt-p1-pre" class="font-mono text-[10px]"></span></button>
-            <button onclick="filterP1Signals('WAIT_PULLBACK')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-amber-400 font-medium">WAIT PULLBACK <span id="cnt-p1-wait" class="font-mono text-[10px]"></span></button>
-            <button onclick="filterP1Signals('AVOID')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-rose-400 font-medium">AVOID <span id="cnt-p1-avoid" class="font-mono text-[10px]"></span></button>
+            <button data-bucket="ALL" onclick="filterP1Signals('ALL')" class="p1-filter-btn px-2.5 py-1 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold">All <span id="cnt-p1-all" class="font-mono text-[10px] opacity-80"></span></button>
+            <button data-bucket="BUY_NOW" onclick="filterP1Signals('BUY_NOW')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 border border-transparent text-emerald-400 font-medium">BUY NOW <span id="cnt-p1-buy" class="font-mono text-[10px]"></span></button>
+            <button data-bucket="PRE_BREAKOUT" onclick="filterP1Signals('PRE_BREAKOUT')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 border border-transparent text-cyan-400 font-medium">PRE BREAKOUT <span id="cnt-p1-pre" class="font-mono text-[10px]"></span></button>
+            <button data-bucket="WAIT_PULLBACK" onclick="filterP1Signals('WAIT_PULLBACK')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 border border-transparent text-amber-400 font-medium">WAIT PULLBACK <span id="cnt-p1-wait" class="font-mono text-[10px]"></span></button>
+            <button data-bucket="AVOID" onclick="filterP1Signals('AVOID')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 border border-transparent text-rose-400 font-medium">AVOID <span id="cnt-p1-avoid" class="font-mono text-[10px]"></span></button>
           </div>
         </div>
 
@@ -1153,10 +1153,13 @@
   <!-- JAVASCRIPT APP LOGIC -->
   <script>
     let currentTab = 'tab-p1';
+    let currentP1FilterBucket = 'ALL';
     let p1SignalsCache = [];
     let p2SignalsCache = [];
     let fetchedStocksCache = [];
     let allPositionsCache = [];
+    let p1ActiveSet = new Set();
+    let p2ActiveSet = new Set();
 
     let scanPollTimer = null;
     let lastLoggedStep = "";
@@ -1467,6 +1470,7 @@
       const posRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/positions');
       if (posRes.ok) {
         const positions = await posRes.json();
+        p1ActiveSet = new Set((positions || []).map(p => (p.symbol || '').toUpperCase()));
         renderP1Positions(positions);
       }
 
@@ -1485,7 +1489,7 @@
         if (document.getElementById('cnt-p1-wait')) document.getElementById('cnt-p1-wait').innerText = `(${cWait})`;
         if (document.getElementById('cnt-p1-avoid')) document.getElementById('cnt-p1-avoid').innerText = `(${cAvoid})`;
 
-        renderP1SignalsTable(p1SignalsCache);
+        filterP1Signals(currentP1FilterBucket);
       }
     }
 
@@ -1547,7 +1551,7 @@
       if (!tbody) return;
 
       if (!signals || signals.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" class="p-8 text-center text-slate-500 font-sans">No signals in current snapshot. Run a scan.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11" class="p-8 text-center text-slate-500 font-sans">No signals in current filter view.</td></tr>`;
         return;
       }
 
@@ -1556,6 +1560,15 @@
         if (s.bucket === 'BUY_NOW') bStyle = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
         else if (s.bucket === 'PRE_BREAKOUT') bStyle = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
         else if (s.bucket === 'WAIT_PULLBACK') bStyle = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+
+        const symUpper = (s.symbol || '').toUpperCase();
+        const isAlreadyOpen = p1ActiveSet.has(symUpper);
+        let actionBtnHtml = '';
+        if (isAlreadyOpen) {
+          actionBtnHtml = `<span class="px-2 py-1 rounded bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 font-bold text-[10px]">✓ IN PORTFOLIO</span>`;
+        } else if (s.bucket === 'BUY_NOW') {
+          actionBtnHtml = `<button onclick="executeSignalOrder('${s.symbol}', ${s.entry || s.close}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2}, 'INSTITUTIONAL_6PILLAR', this)" class="px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[10px] transition">Buy CNC</button>`;
+        }
 
         return `
           <tr class="hover:bg-slate-800/30 transition">
@@ -1579,7 +1592,7 @@
             <td class="p-3 text-purple-300 font-mono">₹${(s.capital_at_risk || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
             <td class="p-3 text-right space-x-1 whitespace-nowrap">
               <button onclick="openStockChartModal('${s.symbol}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[10px] transition">📈 Chart</button>
-              ${s.bucket === 'BUY_NOW' ? `<button onclick="executeSignalOrder('${s.symbol}', ${s.entry || s.close}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2}, 'INSTITUTIONAL_6PILLAR')" class="px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[10px] transition">Buy CNC</button>` : ``}
+              ${actionBtnHtml}
             </td>
           </tr>
         `;
@@ -1587,15 +1600,22 @@
     }
 
     function filterP1Signals(bucket) {
+      currentP1FilterBucket = bucket || 'ALL';
       document.querySelectorAll('.p1-filter-btn').forEach(b => {
-        b.classList.remove('bg-cyan-500', 'text-black');
-        b.classList.add('hover:bg-slate-800');
+        const bBucket = b.getAttribute('data-bucket') || 'ALL';
+        if (bBucket === currentP1FilterBucket) {
+          b.classList.add('bg-cyan-500/20', 'border-cyan-500/40', 'font-bold');
+          b.classList.remove('border-transparent', 'hover:bg-slate-800');
+        } else {
+          b.classList.remove('bg-cyan-500/20', 'border-cyan-500/40', 'font-bold');
+          b.classList.add('border-transparent', 'hover:bg-slate-800');
+        }
       });
 
-      if (bucket === 'ALL') {
+      if (currentP1FilterBucket === 'ALL') {
         renderP1SignalsTable(p1SignalsCache);
       } else {
-        const filtered = p1SignalsCache.filter(s => s.bucket === bucket);
+        const filtered = p1SignalsCache.filter(s => s.bucket === currentP1FilterBucket);
         renderP1SignalsTable(filtered);
       }
     }
@@ -1648,6 +1668,7 @@
       const posRes = await fetch('/api/portfolio/NIFTY500_MOMENTUM/positions');
       if (posRes.ok) {
         const positions = await posRes.json();
+        p2ActiveSet = new Set((positions || []).map(p => (p.symbol || '').toUpperCase()));
         renderP2Positions(positions);
       }
 
@@ -1717,6 +1738,12 @@
       }
 
       tbody.innerHTML = signals.map(s => {
+        const symUpper = (s.symbol || '').toUpperCase();
+        const isAlreadyOpen = p2ActiveSet.has(symUpper);
+        const actionHtml = isAlreadyOpen
+          ? `<span class="px-2 py-1 rounded bg-violet-950/90 border border-violet-500/40 text-violet-300 font-bold text-[10px]">✓ IN PORTFOLIO</span>`
+          : `<button onclick="executeSignalOrder('${s.symbol}', ${s.close}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2 || 0}, 'NIFTY500_MOMENTUM', this)" class="px-2 py-1 rounded bg-violet-600 hover:bg-violet-500 text-white font-bold text-[10px] transition">Execute MOC</button>`;
+
         return `
           <tr class="hover:bg-slate-800/30 transition">
             <td class="p-3 font-bold text-white">
@@ -1732,7 +1759,7 @@
             <td class="p-3 text-rose-300">₹${(s.capital_at_risk || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
             <td class="p-3 text-right space-x-1 whitespace-nowrap">
               <button onclick="openStockChartModal('${s.symbol}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-violet-300 text-[10px] transition">📈 Chart</button>
-              <button onclick="executeSignalOrder('${s.symbol}', ${s.close}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2 || 0}, 'NIFTY500_MOMENTUM')" class="px-2 py-1 rounded bg-violet-600 hover:bg-violet-500 text-white font-bold text-[10px] transition">Execute MOC</button>
+              ${actionHtml}
             </td>
           </tr>
         `;
@@ -2368,7 +2395,8 @@
 
     async function triggerScan(scanType) {
       document.getElementById('scan-dropdown').classList.add('hidden');
-      const autoExec = document.getElementById('chk-auto-exec')?.checked || false;
+      const chk = document.getElementById('chk-auto-exec');
+      const autoExec = chk ? chk.checked : true;
 
       const banner = document.getElementById('live-scan-banner');
       if (banner) banner.classList.remove('hidden');
@@ -2409,8 +2437,12 @@
         });
         const data = await res.json();
         if (res.ok && data.status === 'closed') {
-          showToast(`Position in ${symbol} closed & saved to Single Master File!`, 'success');
-          refreshAllData();
+          const symUp = (symbol || '').toUpperCase();
+          p1ActiveSet.delete(symUp);
+          p2ActiveSet.delete(symUp);
+          showToast(`Position in ${symbol} closed & saved to Telegram Cloud Master File!`, 'success');
+          await refreshAllData();
+          await loadHistoryData();
         } else {
           showToast(data.message || data.detail || "Blocked by Strict Market-Hours Trading Gate (09:15-15:30 IST).", 'error');
         }
@@ -2419,7 +2451,18 @@
       }
     }
 
-    async function executeSignalOrder(symbol, entry, shares, sl, t1, t2, pType = 'INSTITUTIONAL_6PILLAR') {
+    async function executeSignalOrder(symbol, entry, shares, sl, t1, t2, pType = 'INSTITUTIONAL_6PILLAR', btnEl = null) {
+      const symUp = (symbol || '').toUpperCase();
+      if ((pType.includes('NIFTY') && p2ActiveSet.has(symUp)) || (!pType.includes('NIFTY') && p1ActiveSet.has(symUp))) {
+        showToast(`${symbol} is already open in your portfolio!`, 'info');
+        filterP1Signals(currentP1FilterBucket);
+        return;
+      }
+      if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.innerText = 'Buying...';
+        btnEl.classList.add('opacity-60', 'cursor-not-allowed');
+      }
       try {
         const res = await fetch('/api/position/open', {
           method: 'POST',
@@ -2436,12 +2479,29 @@
         });
         const data = await res.json();
         if (res.ok && data.status === 'opened') {
-          showToast(`Trade opened for ${symbol} at ${data.timestamp} & synced to Single Master File!`, 'success');
+          if (pType.includes('NIFTY')) {
+            p2ActiveSet.add(symUp);
+          } else {
+            p1ActiveSet.add(symUp);
+          }
+          filterP1Signals(currentP1FilterBucket);
+          showToast(`Trade opened for ${symbol} (${shares} shs @ ₹${entry}) & synced to Telegram Master File!`, 'success');
           await refreshAllData();
+          if (currentTab === 'tab-signals') renderGlobalSignals();
         } else {
+          if (btnEl) {
+            btnEl.disabled = false;
+            btnEl.innerText = 'Buy CNC';
+            btnEl.classList.remove('opacity-60', 'cursor-not-allowed');
+          }
           showToast(data.detail || "Order blocked by Strict Market-Hours Trading Gate (09:15-15:30 IST).", 'error');
         }
       } catch (e) {
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.innerText = 'Buy CNC';
+          btnEl.classList.remove('opacity-60', 'cursor-not-allowed');
+        }
         showToast(`Order execution error: ${e.message}`, 'error');
       }
     }

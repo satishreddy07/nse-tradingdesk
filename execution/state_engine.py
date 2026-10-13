@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 from core.config import DB_PATH
-from core.data_quality import now_ist, format_ist
+from core.data_quality import IST, now_ist, format_ist
 
 logger = logging.getLogger("StateEngine")
 
@@ -408,7 +408,8 @@ class StateEngine:
                         df = pickle.loads(zlib.decompress(row["ohlcv_blob"]))
                         upd_str = row["updated_at"] or ""
                         try:
-                            upd_dt = datetime.datetime.strptime(upd_str[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=now_dt.tzinfo)
+                            naive_dt = datetime.datetime.strptime(upd_str[:19], "%Y-%m-%d %H:%M:%S")
+                            upd_dt = IST.localize(naive_dt) if hasattr(IST, "localize") else naive_dt.replace(tzinfo=now_dt.tzinfo)
                             age_hrs = max(0.0, (now_dt - upd_dt).total_seconds() / 3600.0)
                         except Exception:
                             upd_dt = now_dt - datetime.timedelta(hours=1)
@@ -668,6 +669,22 @@ class StateEngine:
         with self._lock:
             with self._get_connection() as conn:
                 try:
+                    existing = conn.execute(
+                        "SELECT id, quantity, entry_price FROM active_positions WHERE symbol = ?",
+                        (sym_clean,)
+                    ).fetchone()
+                    if existing:
+                        conn.execute(
+                            "UPDATE active_positions SET current_price = ?, updated_at = ? WHERE symbol = ?",
+                            (entry_price, now_str, sym_clean)
+                        )
+                        conn.commit()
+                        logger.info(
+                            f"Position for {sym_clean} is already open ({existing['quantity']} shs @ ₹{existing['entry_price']:.2f}); "
+                            "skipping duplicate open."
+                        )
+                        return True
+
                     conn.execute("""
                     INSERT INTO active_positions (
                         symbol, portfolio_type, entry_price, quantity, stop_loss, original_stop_loss,
@@ -675,10 +692,6 @@ class StateEngine:
                         t1_hit, t1_pnl, sl_reason, sector, notes, entry_reason, entry_regime,
                         metrics_json, features_json, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(symbol) DO UPDATE SET
-                        quantity = quantity + excluded.quantity,
-                        current_price = excluded.current_price,
-                        updated_at = excluded.updated_at;
                     """, (
                         sym_clean, p_type, entry_price, quantity, stop_loss, stop_loss,
                         target, target_2, entry_price, entry_price, now_str,
@@ -686,25 +699,26 @@ class StateEngine:
                         metrics_str, features_str, now_str
                     ))
                     conn.commit()
-                    logger.info(f"Opened position for {sym_clean} ({quantity} shs @ ₹{entry_price:.2f}) in {p_type} at {now_str}")
-
-                    # Immediately sync Single Master File to Telegram Cloud Vault
-                    telegram_vault.send_alert_and_sync(
-                        title=f"🚀 NEW TRADE OPENED: {sym_clean} ({p_type})",
-                        message=(
-                            f"<b>Symbol:</b> <code>{sym_clean}</code>\n"
-                            f"<b>Portfolio:</b> {p_type}\n"
-                            f"<b>Entry Price:</b> ₹{entry_price:,.2f} × {quantity} shs\n"
-                            f"<b>Stop Loss:</b> ₹{stop_loss:,.2f} | <b>Target 1:</b> ₹{target:,.2f} | <b>Target 2:</b> ₹{target_2:,.2f}\n"
-                            f"<b>Entry Timestamp:</b> {now_str}\n"
-                            f"<b>Setup:</b> {entry_reason or notes}"
-                        ),
-                        sync_db=True
-                    )
-                    return True
                 except Exception as e:
                     logger.error(f"Error opening position for {sym_clean}: {e}")
                     return False
+
+        logger.info(f"Opened position for {sym_clean} ({quantity} shs @ ₹{entry_price:.2f}) in {p_type} at {now_str}")
+
+        # Immediately sync Single Master File to Telegram Cloud Vault
+        telegram_vault.send_alert_and_sync(
+            title=f"🚀 NEW TRADE OPENED: {sym_clean} ({p_type})",
+            message=(
+                f"<b>Symbol:</b> <code>{sym_clean}</code>\n"
+                f"<b>Portfolio:</b> {p_type}\n"
+                f"<b>Entry Price:</b> ₹{entry_price:,.2f} × {quantity} shs\n"
+                f"<b>Stop Loss:</b> ₹{stop_loss:,.2f} | <b>Target 1:</b> ₹{target:,.2f} | <b>Target 2:</b> ₹{target_2:,.2f}\n"
+                f"<b>Entry Timestamp:</b> {now_str}\n"
+                f"<b>Setup:</b> {entry_reason or notes}"
+            ),
+            sync_db=True
+        )
+        return True
 
     def get_active_positions(self, portfolio_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Retrieves currently open positions, optionally filtered by portfolio."""

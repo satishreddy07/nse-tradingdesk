@@ -69,7 +69,10 @@ async def capture_public_host_middleware(request: Request, call_next):
 async def on_startup():
     logger.info("Initializing Quant Trading Desk services...")
     # Cold-boot disaster recovery from Telegram Cloud Vault (Trade DB + OHLCV Historical Cache)
-    threading.Thread(target=telegram_vault.auto_restore_on_cold_boot, daemon=True).start()
+    try:
+        telegram_vault.auto_restore_on_cold_boot()
+    except Exception as e:
+        logger.warning(f"Startup Telegram restore notice: {e}")
     start_scheduler()
 
 
@@ -275,7 +278,7 @@ def get_portfolio_signals(portfolio_type: str):
 # --------------------------------------------------------------------------
 class TriggerScanRequest(BaseModel):
     scan_type: str = "ALL"  # 'MORNING_1020AM', 'AFTERNOON_305PM', 'INSTITUTIONAL', 'NIFTY500', 'ALL'
-    auto_execute: bool = False
+    auto_execute: bool = True
 
 
 @app.get("/api/scan/progress")
@@ -309,8 +312,8 @@ def trigger_scan(req: TriggerScanRequest):
         try:
             if s_type in ("MORNING_1020AM", "INSTITUTIONAL", "ALL"):
                 inst = InstitutionalEngine()
-                mode = "morning" if "MORNING" in s_type else "afternoon"
-                inst.run(auto_execute=req.auto_execute, mode_override=mode)
+                mode_override = "morning" if "MORNING" in s_type else ("afternoon" if "AFTERNOON" in s_type else None)
+                inst.run(auto_execute=req.auto_execute, mode_override=mode_override)
 
             if s_type in ("AFTERNOON_305PM", "NIFTY500", "ALL"):
                 run_nifty500_pipeline_sync(mode="MANUAL_TRIGGER", auto_execute=req.auto_execute)

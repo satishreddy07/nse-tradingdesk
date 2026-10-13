@@ -42,6 +42,7 @@ class TelegramVaultManager:
 
     def __init__(self):
         self._lock = threading.RLock()
+        self._sync_in_progress = False
 
     def get_credentials(self) -> Dict[str, Any]:
         bot_token = os.getenv("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN).strip()
@@ -174,6 +175,7 @@ class TelegramVaultManager:
             return {"status": "ERROR", "message": "Master database file does not exist yet."}
 
         with self._lock:
+            self._sync_in_progress = True
             tmp_db = None
             tmp_gz = None
             try:
@@ -328,6 +330,7 @@ class TelegramVaultManager:
                 logger.error(f"Master Vault backup exception: {e}")
                 return {"status": "ERROR", "message": str(e)}
             finally:
+                self._sync_in_progress = False
                 if tmp_db and tmp_db.exists():
                     tmp_db.unlink(missing_ok=True)
                 if tmp_gz and tmp_gz.exists():
@@ -439,11 +442,11 @@ class TelegramVaultManager:
 
     def auto_restore_on_cold_boot(self) -> Dict[str, Any]:
         """
-        Called automatically on server startup (e.g. Render container boot):
+        Called automatically on server startup and before universe OHLCV scans:
         Always queries Telegram's pinned `#VAULT_INDEX_JSON` first so Telegram acts
-        as the 100% authoritative data manager. If Telegram has a newer `master_file_id`
-        or `updated_at` timestamp than the local working copy (or local DB is missing),
-        automatically downloads and restores the Single Master File from Telegram Cloud.
+        as the 100% authoritative data manager. If Telegram has a newer `master_file_id`,
+        more active/closed trades, or a newer `updated_at` timestamp than the local working copy
+        (and no local upload is currently in flight), automatically restores from Telegram Cloud.
         """
         from execution.state_engine import state_engine
 
@@ -451,11 +454,23 @@ class TelegramVaultManager:
         if not creds["enabled"]:
             return {"status": "DISABLED"}
 
+        if self._sync_in_progress:
+            stats = state_engine.get_ohlcv_stats()
+            return {
+                "status": "SYNC_IN_PROGRESS",
+                "stocks_count": stats.get("stocks_count", 0),
+                "latest_bar_date": stats.get("latest_bar_date", "--")
+            }
+
         cloud_idx = self.fetch_cloud_index_from_telegram()
         cloud_fid = (cloud_idx or {}).get("master_file_id") or (cloud_idx or {}).get("db_file_id")
         cloud_ts = (cloud_idx or {}).get("updated_at", "")
+        cloud_active = int((cloud_idx or {}).get("active_trades") or 0)
+        cloud_closed = int((cloud_idx or {}).get("closed_trades") or 0)
 
         stats = state_engine.get_ohlcv_stats()
+        local_active = len(state_engine.get_active_positions())
+        local_closed = len(state_engine.get_trade_history(limit=5000))
         local_manifest = self.get_manifest()
         local_last = local_manifest.get("last_master_backup") or local_manifest.get("last_db_backup") or {}
         local_fid = local_last.get("file_id", "")
@@ -467,8 +482,10 @@ class TelegramVaultManager:
         if not DB_PATH.exists() or stats.get("stocks_count", 0) < 50:
             needs_restore = True
             reason = "Local Master File missing or empty"
-        elif cloud_fid and cloud_fid != local_fid:
-            # If Telegram has a newer timestamp or local has no recorded file_id
+        elif cloud_fid and (cloud_active > local_active or cloud_closed > local_closed):
+            needs_restore = True
+            reason = f"Telegram Cloud has more trades ({cloud_active} active / {cloud_closed} closed vs local {local_active} / {local_closed})"
+        elif cloud_fid and cloud_fid != local_fid and local_active <= cloud_active:
             if not local_ts or (cloud_ts and cloud_ts[:19] >= local_ts[:19]):
                 needs_restore = True
                 reason = f"Telegram Cloud has newer Master Vault (Cloud: {cloud_ts} vs Local: {local_ts or 'None'})"
@@ -477,10 +494,12 @@ class TelegramVaultManager:
             return {
                 "status": "IN_SYNC_WITH_TELEGRAM",
                 "stocks_count": stats.get("stocks_count", 0),
+                "latest_bar_date": stats.get("latest_bar_date", "--"),
+                "active_trades": local_active,
                 "file_id": local_fid or cloud_fid
             }
 
-        logger.info(f"🔄 Telegram Cloud Sync on Boot ({reason}): Restoring Single Master File from Telegram...")
+        logger.info(f"🔄 Telegram Cloud Sync ({reason}): Restoring Single Master File from Telegram...")
         return self.restore_master_file_from_cloud(file_id=cloud_fid)
 
     def send_alert_and_sync(self, title: str, message: str, sync_db: bool = True, sync_ohlcv: bool = False):

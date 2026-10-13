@@ -137,9 +137,7 @@ async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
     Uses shared `DirectYahooFinanceFetcher` backed by the Single Master File (`data/swing_trades.db`).
     """
     fetcher = DirectYahooFinanceFetcher(max_workers=24)
-    ohlcv_stats = state_engine.get_ohlcv_stats()
-    if ohlcv_stats.get("stocks_count", 0) < 50:
-        telegram_vault.restore_master_file_from_cloud()
+    telegram_vault.auto_restore_on_cold_boot()
 
     target_date = fetcher.get_latest_expected_bar_date()
     is_mkt_open, _ = NSEMarketCalendar.can_execute_trades()

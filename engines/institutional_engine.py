@@ -363,11 +363,11 @@ class DirectYahooFinanceFetcher:
             last_bar_date = last_idx.date() if hasattr(last_idx, "date") else pd.Timestamp(last_idx).date()
             gap_days = (target_date - last_bar_date).days
 
-            # Case 1: Already up to date (outside market hours, or refreshed within the last ~1 min during live hours)
-            if gap_days <= 0 and (not is_market_open or age_hours <= 0.02):
+            # Case 1: Already up to date in Single Master File (outside market hours, or refreshed within the last 30 mins during live market hours)
+            if gap_days <= 0 and (not is_market_open or age_hours <= 0.50):
                 return ticker, cached_df, "CACHE_HIT"
 
-            # Case 2: Cached in Master File up to a past date (e.g. Oct 08 -> 20 days gap) or live intraday bar update
+            # Case 2: Cached in Master File up to a past date (e.g. Oct 08 -> 20 days gap) or live intraday bar update (>15m old)
             if 0 <= gap_days <= 300:
                 if gap_days <= 4:
                     delta_range = "5d"
@@ -413,21 +413,25 @@ class DirectYahooFinanceFetcher:
     def fetch_universe_ohlcv(self, tickers: List[str], min_bars: int = 105) -> Tuple[Dict[str, pd.DataFrame], Dict[str, int]]:
         """
         Multi-threaded universe OHLCV fetcher backed by the Single Master File (`data/swing_trades.db`):
-        1. If Master File has < 50 stocks cached, restores the Single Master File from Telegram Cloud first.
-        2. Processes all tickers across 24 threads using Smart Incremental Gap-Filling.
+        1. Always checks & syncs with the Telegram Cloud Master Vault first (`auto_restore_on_cold_boot`).
+        2. Processes all tickers across 24 threads using Smart Incremental Gap-Filling (reusing Master File cache).
         3. Commits all updated/new OHLCV DataFrames into the Single Master File in one batch transaction.
         """
         total_tickers = len(tickers)
+        vault_sync = telegram_vault.auto_restore_on_cold_boot()
         ohlcv_stats = state_engine.get_ohlcv_stats()
-        if ohlcv_stats.get("stocks_count", 0) < 50:
-            state_engine.update_scan_progress(
-                stage="Step 2b/6: Restoring Single Master File from Telegram Cloud Vault...",
-                percent=19,
-                stocks_total=total_tickers,
-                stocks_done=0,
-                add_log=True
-            )
-            telegram_vault.restore_master_file_from_cloud()
+        vault_stocks = ohlcv_stats.get("stocks_count", 0)
+        vault_bar = ohlcv_stats.get("latest_bar_date", "--")
+        state_engine.update_scan_progress(
+            stage=(
+                f"Step 2b/6: Checked Telegram Master File ({vault_stocks} stocks in Vault, "
+                f"Latest Bar: {vault_bar}, Status: {vault_sync.get('status', 'READY')})..."
+            ),
+            percent=20,
+            stocks_total=total_tickers,
+            stocks_done=0,
+            add_log=True
+        )
 
         target_date = self.get_latest_expected_bar_date()
         is_mkt_open, _ = NSEMarketCalendar.can_execute_trades()
@@ -443,7 +447,7 @@ class DirectYahooFinanceFetcher:
         }
 
         state_engine.update_scan_progress(
-            stage=f"Step 3/6: Multi-threaded Incremental OHLCV Sync across {total_tickers} Chartink stocks (24 threads)...",
+            stage=f"Step 3/6: Multi-threaded Incremental OHLCV Sync across {total_tickers} Chartink stocks (reading Telegram Master Vault cache first)...",
             percent=22,
             stocks_total=total_tickers,
             stocks_done=0,
@@ -485,7 +489,7 @@ class DirectYahooFinanceFetcher:
                     state_engine.update_scan_progress(
                         stage=(
                             f"Step 3/6: OHLCV Sync ({completed}/{total_tickers} Chartink stocks) • "
-                            f"Cached: {stats['cache_hits']} | Gap-Filled: {stats['gap_filled']} | New 2Y: {stats['full_downloads']} | "
+                            f"Master Vault Hit: {stats['cache_hits']} | Intraday Delta: {stats['gap_filled']} | New 2Y: {stats['full_downloads']} | "
                             f"Liquid: {stats['eligible']}"
                         ),
                         percent=pct,
@@ -1086,7 +1090,7 @@ class InstitutionalEngine:
     def run(
         self,
         custom_tickers: Optional[List[str]] = None,
-        auto_execute: bool = False,
+        auto_execute: bool = True,
         mode_override: Optional[str] = None
     ) -> pd.DataFrame:
         start_time = time.time()
@@ -1259,7 +1263,7 @@ class InstitutionalEngine:
                 buy_now_candidates = signals_df[(signals_df['bucket'] == 'BUY_NOW') & (~signals_df['ticker'].isin(active_syms))]
 
                 for _, r in buy_now_candidates.iterrows():
-                    if r['shares'] > 0 and orders_placed < 3:
+                    if r['shares'] > 0 and orders_placed < 5:
                         opened = state_engine.open_position(
                             symbol=r['ticker'],
                             entry_price=r['entry'],
@@ -1278,14 +1282,19 @@ class InstitutionalEngine:
                         )
                         if opened:
                             orders_placed += 1
+                            state_engine.update_scan_progress(
+                                stage=f"✅ Auto-Executed BUY_NOW: {r['ticker']} ({r['shares']} shs @ ₹{r['entry']:.2f})",
+                                percent=96,
+                                add_log=True
+                            )
 
         _institutional_engine_state["orders_executed"] = orders_placed
 
         elapsed = time.time() - start_time
         summary_msg = (
             f"Chartink Live Scan Complete in {elapsed:.1f}s: {len(tickers)} Chartink stocks fetched "
-            f"(Cached: {dl_stats['cache_hits']}, Gap-Filled: {dl_stats['gap_filled']}, New: {dl_stats['full_downloads']}) -> "
-            f"{len(signals_df)} liquid stocks analyzed -> BUY NOW: {b_now} | PRE BREAKOUT: {p_brk} | WAIT PULLBACK: {w_pb}{gate_notice}"
+            f"(Master Vault Hit: {dl_stats['cache_hits']}, Intraday Delta: {dl_stats['gap_filled']}, New 2Y: {dl_stats['full_downloads']}) -> "
+            f"{len(signals_df)} liquid stocks analyzed -> BUY NOW: {b_now} (Auto-Executed: {orders_placed}) | PRE BREAKOUT: {p_brk} | WAIT PULLBACK: {w_pb}{gate_notice}"
         )
         state_engine.log_scan_run(
             scan_type=f"INSTITUTIONAL_{mode.upper()}",
