@@ -327,6 +327,11 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
                                 (trailing_sl, sym)
                             )
                     logger.info(f"📈 [P2 Priority 2: TRAILING_SL] Ratcheted stop for {sym} to ₹{trailing_sl:.2f}")
+                    telegram_vault.send_alert_and_sync(
+                        title=f"📈 P2 TRAILING STOP RATCHETED: {sym}",
+                        message=f"Stop-Loss raised from ₹{current_sl:,.2f} to 5D Low <b>₹{trailing_sl:,.2f}</b> (LTP: ₹{c:,.2f}).",
+                        sync_db=True
+                    )
                 else:
                     state_engine.update_position_price(sym, current_price=c, stop_loss=current_sl, highest_price=highest_seen)
 

@@ -981,6 +981,11 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
             trail_sl = round(max(entry_px, highest_seen - 1.5 * atr14), 2)
             if trail_sl > sl:
                 state_engine.update_position_price(sym, current_price=c, stop_loss=trail_sl, highest_price=highest_seen)
+                telegram_vault.send_alert_and_sync(
+                    title=f"📈 P1 TRAILING STOP RATCHETED: {sym}",
+                    message=f"Stop-Loss raised from ₹{sl:,.2f} to <b>₹{trail_sl:,.2f}</b> (LTP: ₹{c:,.2f}).",
+                    sync_db=True
+                )
             else:
                 state_engine.update_position_price(sym, current_price=c, highest_price=highest_seen)
         else:
@@ -1036,13 +1041,8 @@ class InstitutionalEngine:
         else:
             tickers = self.chartink.fetch_tickers()
             if not tickers:
-                cached_files = list(self.yahoo.storage_dir.glob("*.pkl"))
-                seen_syms = set()
-                for f in cached_files:
-                    stem = f.stem.upper()
-                    if stem not in seen_syms and not stem.startswith("^"):
-                        seen_syms.add(stem)
-                        tickers.append(f"{stem}.NS")
+                meta_rows = state_engine.get_all_ohlcv_metadata(limit=2000)
+                tickers = [f"{r['symbol']}.NS" for r in meta_rows if r.get("symbol") and not str(r["symbol"]).startswith("^")]
             _institutional_engine_state["chartink_fetched_count"] = len(tickers)
             state_engine.update_scan_progress(
                 stage=f"Step 1/6: Connected to Chartink! Fetched {len(tickers)} live NSE stocks.",

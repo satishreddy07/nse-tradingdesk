@@ -843,8 +843,10 @@ class StateEngine:
     def reset_portfolio_trades(self, portfolio_type: Optional[str] = None) -> Dict[str, Any]:
         """
         Resets active_positions and trade_history (either for a specific portfolio or all portfolios)
-        so Realized & Unrealized PnL start cleanly at ₹0.00.
+        so Realized & Unrealized PnL start cleanly at ₹0.00, and immediately syncs to Telegram Cloud.
         """
+        from core.telegram_vault import telegram_vault
+
         with self._lock:
             with self._get_connection() as conn:
                 if portfolio_type:
@@ -855,8 +857,14 @@ class StateEngine:
                     conn.execute("DELETE FROM active_positions")
                     conn.execute("DELETE FROM trade_history")
                 conn.commit()
-        logger.info(f"Reset trades completed (portfolio={portfolio_type or 'ALL'}).")
-        return {"status": "SUCCESS", "portfolio": portfolio_type or "ALL", "timestamp": format_ist()}
+        now_str = format_ist()
+        logger.info(f"Reset trades completed (portfolio={portfolio_type or 'ALL'}) at {now_str}.")
+        telegram_vault.send_alert_and_sync(
+            title=f"🔄 PORTFOLIO TRADES RESET ({portfolio_type or 'ALL'})",
+            message=f"Active positions & trade history cleared for <b>{portfolio_type or 'ALL'}</b> at {now_str}. Master Vault synced.",
+            sync_db=True
+        )
+        return {"status": "SUCCESS", "portfolio": portfolio_type or "ALL", "timestamp": now_str}
 
     # --------------------------------------------------------------------------
     # TRADE HISTORY & PORTFOLIO METRICS
