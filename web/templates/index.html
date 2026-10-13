@@ -85,6 +85,11 @@
     .pb-safe {
       padding-bottom: env(safe-area-inset-bottom, 0.75rem);
     }
+    /* Hardware-accelerated smooth touch scrolling on mobile */
+    .overflow-x-auto {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
+    }
     /* Strictly non-wrapping badges across all tables and devices */
     .quant-badge {
       display: inline-flex !important;
@@ -102,7 +107,7 @@
 
   <!-- TOP HEADER -->
   <header class="sticky top-0 z-40 bg-[#0b0f19]/95 backdrop-blur-md border-b border-slate-800/90">
-    <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-2">
+    <div class="w-full max-w-[1920px] mx-auto px-3 sm:px-4 md:px-6 2xl:px-8 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-3">
       
       <!-- Brand Logo & Title (Shrink-proof & Non-overlapping on Mobile) -->
       <div class="flex items-center gap-2.5 min-w-0 shrink-0">
@@ -140,17 +145,17 @@
       </div>
 
       <!-- Desktop Telemetry Pills -->
-      <div class="hidden xl:flex items-center gap-2 text-[11px] shrink-0">
+      <div class="hidden xl:flex items-center gap-1.5 2xl:gap-2 text-[11px] shrink-0">
         <div id="market-status-pill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 whitespace-nowrap">
           <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
           <span id="market-status-text" class="font-medium">Checking...</span>
         </div>
 
-        <div id="trading-gate-pill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/50 border border-rose-800/60 text-rose-300 font-mono whitespace-nowrap" title="Orders can only execute during NSE Regular Trading Hours (09:15 AM - 03:30 PM IST, Mon-Fri)">
-          <span id="trading-gate-text">🔒 Gate</span>
+        <div id="trading-gate-pill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/60 border border-rose-800/60 text-rose-300 font-mono text-xs whitespace-nowrap" title="Orders can only execute during NSE Regular Trading Hours (09:15 AM - 03:30 PM IST, Mon-Fri)">
+          <span id="trading-gate-text">🔒 GATE LOCKED</span>
         </div>
 
-        <div id="vault-status-pill" onclick="switchModule('module-swing'); switchTab('tab-scheduler');" class="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/40 border border-cyan-800/60 text-cyan-300 font-mono whitespace-nowrap hover:bg-cyan-900/40 transition" title="Telegram Cloud Master Vault: Click to view backup history">
+        <div id="vault-status-pill" onclick="switchModule('module-swing'); switchTab('tab-scheduler');" class="cursor-pointer hidden 2xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/40 border border-cyan-800/60 text-cyan-300 font-mono whitespace-nowrap hover:bg-cyan-900/40 transition" title="Telegram Cloud Master Vault: Click to view backup history">
           <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
           <span>☁️ Backup: <b id="header-vault-time" class="text-white font-bold">--</b></span>
         </div>
@@ -225,7 +230,7 @@
   </header>
 
   <!-- MAIN VIEWPORT CONTAINER -->
-  <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 lg:pb-10 space-y-4 sm:space-y-6">
+  <main class="flex-1 w-full max-w-[1920px] mx-auto px-3 sm:px-4 md:px-6 2xl:px-8 py-4 sm:py-6 pb-24 lg:pb-10 space-y-4 sm:space-y-6">
 
     <!-- LIVE SCAN PROGRESS & NOTIFICATION PANEL (GLOBAL ACROSS ALL MODULES) -->
     <div id="live-scan-banner" class="hidden bg-slate-900/95 border border-cyan-500/50 rounded-2xl p-3.5 sm:p-5 shadow-2xl shadow-cyan-500/10 transition-all">
@@ -485,7 +490,7 @@
 
         <!-- Desktop Table / Mobile Cards for Holdings -->
         <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left text-xs text-slate-300">
+          <table class="w-full text-left text-xs text-slate-300 min-w-[980px]">
             <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
               <tr>
                 <th class="p-3.5">Symbol</th>
@@ -532,7 +537,7 @@
 
 
         <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left text-xs text-slate-300">
+          <table class="w-full text-left text-xs text-slate-300 min-w-[1050px]">
             <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
               <tr>
                 <th class="p-3">Stock / Sector</th>
@@ -684,7 +689,7 @@
         </div>
 
         <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left text-xs text-slate-300">
+          <table class="w-full text-left text-xs text-slate-300 min-w-[980px]">
             <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
               <tr>
                 <th class="p-3.5">Symbol</th>
@@ -721,7 +726,7 @@
         </div>
 
         <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left text-xs text-slate-300">
+          <table class="w-full text-left text-xs text-slate-300 min-w-[1000px]">
             <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
               <tr>
                 <th class="p-3">Stock Symbol</th>
@@ -838,7 +843,7 @@
           </div>
 
           <div class="overflow-x-auto custom-scroll mt-4">
-            <table class="w-full text-left text-xs text-slate-300">
+            <table class="w-full text-left text-xs text-slate-300 min-w-[1100px]">
               <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
                 <tr>
                   <th class="p-3">Symbol</th>
@@ -1172,7 +1177,7 @@
           </div>
 
           <div class="overflow-x-auto custom-scroll">
-            <table class="w-full text-left border-collapse text-xs">
+            <table class="w-full text-left border-collapse text-xs min-w-[1100px]">
               <thead class="bg-slate-950">
                 <tr class="border-b border-slate-800 text-[11px] font-mono uppercase text-slate-400">
                   <th class="p-3">Symbol</th>
@@ -1344,7 +1349,7 @@
           <span class="text-[11px] font-mono text-slate-400">Stored in Single Master File (data/swing_trades.db) • Synced to Telegram Cloud</span>
         </div>
         <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left text-xs text-slate-300 font-mono">
+          <table class="w-full text-left text-xs text-slate-300 font-mono min-w-[1200px]">
             <thead class="bg-slate-950/70 text-[10px] sm:text-[11px] uppercase text-slate-400 border-b border-slate-800">
               <tr>
                 <th class="p-3">50m Slot</th>
@@ -1659,7 +1664,7 @@
             <span id="pred-news-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">--</span>
           </div>
           <div id="pred-live-catalysts-tags" class="flex flex-wrap gap-1.5 my-2.5"></div>
-          <div id="pred-cb-events" class="grid grid-cols-1 sm:grid-cols-2 gap-2 my-2 text-xs font-mono"></div>
+          <div id="pred-cb-events" class="grid grid-cols-1 md:grid-cols-2 gap-3 my-2.5 text-xs font-mono"></div>
           <div id="pred-news-list" class="space-y-2 max-h-56 overflow-y-auto custom-scroll pr-1 text-xs mt-2">
             <div class="text-slate-500 py-3 text-center">Fetching live financial & macro headlines...</div>
           </div>
@@ -1942,7 +1947,7 @@
           </div>
         </div>
         <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left text-[11px] sm:text-xs text-slate-300 font-mono">
+          <table class="w-full text-left text-[11px] sm:text-xs text-slate-300 font-mono min-w-[1150px]">
             <thead class="bg-slate-950/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
               <tr id="opt-chain-thead-tr">
                 <th class="p-2.5 text-rose-300 col-ce">CE Buildup</th>
@@ -2354,7 +2359,7 @@
   <!-- GLOBAL INTERACTIVE CANDLESTICK CHART + SL/TARGET + OHLCV DATA MODAL    -->
   <!-- ===================================================================== -->
   <div id="chart-modal" onclick="if(event.target === this) closeStockChartModal()" style="display: none;" class="hidden fixed inset-0 z-[100] bg-black/85 backdrop-blur-md items-center justify-center p-2 sm:p-4">
-    <div id="chart-modal-box" class="bg-[#0b0f19] border border-slate-700/90 rounded-2xl w-full max-w-6xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
+    <div id="chart-modal-box" class="bg-[#0b0f19] border border-slate-700/90 rounded-2xl w-full max-w-7xl 2xl:max-w-[1680px] shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
       
       <!-- Modal Sticky Top Header with Prev/Next Navigation & Always-Pinned Top-Right Close Button -->
       <div class="sticky top-0 z-30 p-3 sm:p-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2">
@@ -2528,7 +2533,7 @@
   <!-- 1-WEEK OFFICIAL NSE F&O PARTICIPANT OPEN INTEREST (FAO DATA) MODAL    -->
   <!-- ===================================================================== -->
   <div id="fao-history-modal" onclick="if(event.target === this) closeFaoHistoryModal()" style="display: none;" class="hidden fixed inset-0 z-[110] bg-black/85 backdrop-blur-md items-center justify-center p-2 sm:p-4">
-    <div class="bg-[#0b0f19] border border-purple-500/40 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
+    <div class="bg-[#0b0f19] border border-purple-500/40 rounded-2xl w-full max-w-7xl 2xl:max-w-[1600px] shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
       
       <!-- Modal Top Sticky Header -->
       <div class="sticky top-0 z-30 p-3 sm:p-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-3">
@@ -3093,20 +3098,20 @@
             const netLakhs = ((Number(s.net_pe_oi_chg || 0) - Number(s.net_ce_oi_chg || 0)) / 100000.0);
             return `
               <tr class="hover:bg-slate-800/40 transition">
-                <td class="p-3 font-bold text-amber-300">${s.slot_time} IST</td>
-                <td class="p-3 text-slate-400 text-[11px]">${s.timestamp_ist || '--'}</td>
-                <td class="p-3 font-bold text-white">₹${Number(s.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td class="p-3 font-bold text-cyan-300">${s.atm_strike}</td>
-                <td class="p-3 text-slate-200">${Number(s.atm_ce_ltp || 0).toFixed(1)}C / ${Number(s.atm_pe_ltp || 0).toFixed(1)}P</td>
-                <td class="p-3 font-bold text-cyan-300">₹${Number(s.straddle_premium || 0).toFixed(2)} <span class="text-[10px] ${decay <= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${decay >= 0 ? '+' : ''}${decay.toFixed(1)}%)</span></td>
-                <td class="p-3 font-bold ${pcrCol}">${npcr.toFixed(2)}</td>
-                <td class="p-3 text-slate-300">${Number(s.overall_pcr || 0).toFixed(2)} / ${Number(s.atm_pcr || 0).toFixed(2)}</td>
-                <td class="p-3 font-bold ${Number(s.chg_oi_pcr || 1) >= 1.05 ? 'text-emerald-400' : 'text-rose-400'}">${Number(s.chg_oi_pcr || 0).toFixed(2)}</td>
-                <td class="p-3"><span class="text-emerald-400">${s.put_wall}P</span> / <span class="text-rose-400">${s.call_wall}C</span></td>
-                <td class="p-3 text-purple-300 font-bold">${s.max_pain}</td>
-                <td class="p-3 font-bold ${netLakhs >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${netLakhs >= 0 ? '+' : ''}${netLakhs.toFixed(2)}L</td>
-                <td class="p-3 text-slate-300">${Number(s.atm_iv || 0).toFixed(1)}% (${Number(s.iv_skew || 0) >= 0 ? '+' : ''}${Number(s.iv_skew || 0).toFixed(2)})</td>
-                <td class="p-3 text-right"><span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30">${(s.market_state || '').replace(/_/g, ' ')}</span></td>
+                <td class="p-3 font-bold text-amber-300 whitespace-nowrap">${s.slot_time} IST</td>
+                <td class="p-3 text-slate-400 text-[11px] whitespace-nowrap">${s.timestamp_ist || '--'}</td>
+                <td class="p-3 font-bold text-white whitespace-nowrap">₹${Number(s.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="p-3 font-bold text-cyan-300 whitespace-nowrap">${s.atm_strike}</td>
+                <td class="p-3 text-slate-200 whitespace-nowrap">${Number(s.atm_ce_ltp || 0).toFixed(1)}C / ${Number(s.atm_pe_ltp || 0).toFixed(1)}P</td>
+                <td class="p-3 font-bold text-cyan-300 whitespace-nowrap">₹${Number(s.straddle_premium || 0).toFixed(2)} <span class="text-[10px] ${decay <= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${decay >= 0 ? '+' : ''}${decay.toFixed(1)}%)</span></td>
+                <td class="p-3 font-bold ${pcrCol} whitespace-nowrap">${npcr.toFixed(2)}</td>
+                <td class="p-3 text-slate-300 whitespace-nowrap">${Number(s.overall_pcr || 0).toFixed(2)} / ${Number(s.atm_pcr || 0).toFixed(2)}</td>
+                <td class="p-3 font-bold ${Number(s.chg_oi_pcr || 1) >= 1.05 ? 'text-emerald-400' : 'text-rose-400'} whitespace-nowrap">${Number(s.chg_oi_pcr || 0).toFixed(2)}</td>
+                <td class="p-3 whitespace-nowrap"><span class="text-emerald-400 font-bold">${s.put_wall}P</span> / <span class="text-rose-400 font-bold">${s.call_wall}C</span></td>
+                <td class="p-3 text-purple-300 font-bold whitespace-nowrap">${s.max_pain}</td>
+                <td class="p-3 font-bold ${netLakhs >= 0 ? 'text-emerald-400' : 'text-rose-400'} whitespace-nowrap">${netLakhs >= 0 ? '+' : ''}${netLakhs.toFixed(2)}L</td>
+                <td class="p-3 text-slate-300 whitespace-nowrap">${Number(s.atm_iv || 0).toFixed(1)}% (${Number(s.iv_skew || 0) >= 0 ? '+' : ''}${Number(s.iv_skew || 0).toFixed(2)})</td>
+                <td class="p-3 text-right whitespace-nowrap"><span class="quant-badge px-2.5 py-1 rounded text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 whitespace-nowrap font-bold">${(s.market_state || '').replace(/_/g, ' ')}</span></td>
               </tr>
             `;
           }).join('');
@@ -3485,20 +3490,25 @@
           const statusBadge = isDone
             ? `<span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold shrink-0 whitespace-nowrap">✓ ${ev.status_label || 'COMPLETED'}</span>`
             : `<span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-800 text-amber-300 font-bold shrink-0 whitespace-nowrap">${ev.status_label}</span>`;
-          const outcomeHtml = ev.outcome_print ? `<div class="text-[10px] text-emerald-300 font-mono mt-0.5"><b>Outcome Print:</b> ${ev.outcome_print}</div>` : '';
-          const impactHtml = ev.market_impact ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono border border-slate-700">${ev.market_impact}</span>` : '';
+          const outcomeHtml = ev.outcome_print ? `<div class="text-[10px] text-emerald-300 font-mono mt-1"><b>Outcome Print:</b> ${ev.outcome_print}</div>` : '';
+          const impactHtml = ev.market_impact ? `<span class="quant-badge text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono border border-slate-700 whitespace-nowrap shrink-0">${ev.market_impact}</span>` : '';
           const consHtml = ev.consensus ? `<span class="text-[10px] text-slate-400 font-mono">(${ev.consensus})</span>` : '';
           return `
-            <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <div class="text-[10px] text-purple-400 font-bold flex items-center gap-2">
-                  <span>${ev.bank} • ${ev.date}</span>
-                  ${impactHtml}
+            <div class="bg-slate-950/80 border border-slate-800 hover:border-slate-700/80 rounded-xl p-3 flex flex-col justify-between gap-2 transition">
+              <div class="space-y-1.5 min-w-0">
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <div class="text-xs text-purple-300 font-bold font-mono tracking-tight flex items-center gap-1.5 flex-wrap">
+                    <span>📅 ${ev.bank}</span>
+                    <span class="text-slate-400 font-normal">• ${ev.date}</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
+                    ${impactHtml}
+                    ${statusBadge}
+                  </div>
                 </div>
-                <div class="text-[11px] text-slate-200 font-semibold">${ev.title} ${consHtml}</div>
+                <div class="text-xs text-slate-200 font-semibold leading-relaxed">${ev.title} ${consHtml}</div>
                 ${outcomeHtml}
               </div>
-              ${statusBadge}
             </div>
           `;
         }).join('');
@@ -5914,9 +5924,9 @@
 
     function renderVaultSyncHistory(v) {
       const hist = (v && Array.isArray(v.history)) ? v.history : [];
-      const pinnedId = v?.master_file_message_id || (v?.last_master_backup || {}).message_id || 666;
+      const pinnedId = v?.master_file_message_id || (v?.last_master_backup || {}).message_id;
       const pinnedBadge = document.getElementById('vault-pinned-msg-badge');
-      if (pinnedBadge) pinnedBadge.innerText = `Pinned Msg #${pinnedId}`;
+      if (pinnedBadge) pinnedBadge.innerText = pinnedId ? `Pinned Msg #${pinnedId}` : 'Cloud Synced';
 
       const lastTs = v?.last_db_backup_ist || (v?.last_master_backup || {}).timestamp || (hist[0] || {}).timestamp || "--";
       const headerVaultTime = document.getElementById('header-vault-time');
@@ -5997,11 +6007,11 @@
       const gateText = document.getElementById('trading-gate-text');
       if (gateText) {
         if (data.trading_gate_open || mStatus.can_trade) {
-          gateText.innerText = "GATE OPEN (09:15-15:30 IST)";
-          if (gatePill) gatePill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-xs font-mono text-emerald-300";
+          gateText.innerHTML = `<span>🔓</span> <b class="tracking-wide">GATE OPEN</b><span class="hidden 2xl:inline text-emerald-400/80 font-normal"> (09:15-15:30)</span>`;
+          if (gatePill) gatePill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-xs font-mono text-emerald-300 whitespace-nowrap";
         } else {
-          gateText.innerText = "GATE LOCKED (NO TRADES OUTSIDE 09:15-15:30)";
-          if (gatePill) gatePill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/60 border border-rose-500/40 text-xs font-mono text-rose-300";
+          gateText.innerHTML = `<span>🔒</span> <b class="tracking-wide">GATE LOCKED</b><span class="hidden 2xl:inline text-rose-400/80 font-normal"> (09:15-15:30)</span>`;
+          if (gatePill) gatePill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/60 border border-rose-500/40 text-xs font-mono text-rose-300 whitespace-nowrap";
         }
       }
 
@@ -6239,16 +6249,17 @@
         return;
       }
 
-      const msgId = lastVaultStatusCache?.master_file_message_id || 666;
+      const msgId = lastVaultStatusCache?.master_file_message_id;
       tbody.innerHTML = positions.map(p => {
         const pnl = p.unrealized_pnl || 0;
         const pnlClass = pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
         const pnlSign = pnl >= 0 ? '+' : '';
         const ltp = p.current_price || p.entry_price;
         const ltpTime = (p.price_updated_at || p.updated_at || p.entry_date || '').slice(11, 19);
+        const syncTitle = msgId ? `Synced to Cloud Master File (Msg #${msgId})` : `Synced to Telegram Cloud Master Vault`;
         const t1Badge = p.t1_hit
-          ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-300">T1 BOOKED • ☁️ #${msgId}</span>`
-          : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-700/40 text-emerald-300">🟢 OPEN • ☁️ #${msgId}</span>`;
+          ? `<span title="${syncTitle}" class="quant-badge inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-medium whitespace-nowrap"><span>☁️</span> <span>Synced (T1 Hit)</span></span>`
+          : `<span title="${syncTitle}" class="quant-badge inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 font-medium whitespace-nowrap"><span>☁️</span> <span>Vault Synced</span></span>`;
 
         return `
           <tr class="hover:bg-slate-800/30 transition">
@@ -7148,7 +7159,7 @@
         return;
       }
 
-      const msgId = lastVaultStatusCache?.master_file_message_id || 666;
+      const msgId = lastVaultStatusCache?.master_file_message_id;
 
       const activeRowsHtml = activePositions.map(p => {
         const pnl = p.unrealized_pnl || 0;
@@ -7158,6 +7169,7 @@
         const rMult = p.current_r || 0;
         const retPct = p.return_pct || 0;
         const updTime = p.price_updated_at || p.updated_at || p.entry_date || '-';
+        const syncTitle = msgId ? `Synced to Cloud Master File (Msg #${msgId})` : `Synced to Telegram Cloud Master Vault`;
 
         return `
           <tr class="bg-emerald-950/15 hover:bg-slate-800/40 transition border-l-2 border-l-emerald-400">
@@ -7177,7 +7189,7 @@
             </td>
             <td class="p-3">${p.hold_days || 1}d</td>
             <td class="p-3 flex items-center justify-end gap-1.5 whitespace-nowrap">
-              <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono font-bold">🟢 ACTIVE • ☁️ SYNCED #${msgId}</span>
+              <span title="${syncTitle}" class="quant-badge px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono font-bold whitespace-nowrap">🟢 ACTIVE • ☁️ VAULT SYNCED</span>
               <button onclick="openStockChartModal('${p.symbol}')" class="px-1.5 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[10px]">📈</button>
             </td>
           </tr>
