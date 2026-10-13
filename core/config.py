@@ -6,6 +6,24 @@ from pathlib import Path
 
 # Base Paths (Single Master File Architecture: only `data/swing_trades.db` is created on disk)
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Automatically load local .env if present (without external dependencies)
+_env_path = BASE_DIR / ".env"
+if _env_path.exists():
+    try:
+        with open(_env_path, "r", encoding="utf-8") as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line or _line.startswith("#") or "=" not in _line:
+                    continue
+                _k, _v = _line.split("=", 1)
+                _k = _k.strip()
+                _v = _v.strip().strip("'\"")
+                if _k and _k not in os.environ:
+                    os.environ[_k] = _v
+    except Exception:
+        pass
+
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
