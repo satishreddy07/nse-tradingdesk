@@ -4,9 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Quant Trading Desk | Institutional NSE & Nifty 500 Momentum</title>
-  <link rel="icon" type="image/jpeg" href="/static/bull-logo.jpg">
-  <link rel="shortcut icon" type="image/jpeg" href="/static/bull-logo.jpg">
-  <link rel="apple-touch-icon" href="/static/bull-logo.jpg">
+  
+  <!-- PWA Progressive Web App Manifest & Mobile Meta Tags -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="NSE Desk">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="NSE Desk">
+
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+  <link rel="shortcut icon" type="image/png" href="/static/icon-192.png">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
   
   <!-- Tailwind CSS CDN with dark mode -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -167,6 +178,13 @@
 
       <!-- Right Action Buttons (Never Wrap or Overlap on Mobile) -->
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <!-- PWA Install App Button -->
+        <button id="btn-pwa-install" onclick="promptPWAInstall()" class="hidden items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-xs transition-all shadow-md shadow-emerald-500/20 active:scale-95 whitespace-nowrap cursor-pointer" title="Install NSE Trading Desk as an App on your phone/desktop">
+          <i data-lucide="download" class="w-3.5 h-3.5 stroke-[2.5] shrink-0"></i>
+          <span class="hidden sm:inline">Install App</span>
+          <span class="sm:hidden">Install</span>
+        </button>
+
         <!-- Quick Scan Trigger Dropdown -->
         <div class="relative">
           <button id="btn-scan-menu" onclick="toggleScanMenu()" class="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-black font-bold text-xs transition-all shadow-md shadow-cyan-500/20 active:scale-95 whitespace-nowrap">
@@ -6075,11 +6093,12 @@
                 </div>
 
                 <!-- Greeks & Meta Strip -->
-                <div class="grid grid-cols-2 sm:grid-cols-6 gap-2 text-[11px] font-mono bg-slate-950/70 p-2 rounded-lg">
+                <div class="grid grid-cols-2 sm:grid-cols-7 gap-2 text-[11px] font-mono bg-slate-950/70 p-2 rounded-lg">
                   <div><span class="text-slate-500">Entry Spot:</span> <b class="text-white">${st.spot_at_entry}</b></div>
                   <div><span class="text-slate-500">Live Spot:</span> <b class="text-amber-300">${data.spot_price || '--'}</b></div>
                   <div><span class="text-slate-500">Net Prem:</span> <b class="${(st.net_premium || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">₹${Math.round(st.net_premium || 0).toLocaleString('en-IN')}</b></div>
-                  <div><span class="text-slate-500">Target / SL:</span> <b class="text-emerald-400">+₹${Math.round(st.target_pnl || 0).toLocaleString('en-IN')}</b> / <b class="text-rose-400">-₹${Math.abs(Math.round(st.stoploss_pnl || 0)).toLocaleString('en-IN')}</b></div>
+                  <div><span class="text-slate-500">Target / Init SL:</span> <b class="text-emerald-400">+₹${Math.round(st.target_pnl || 0).toLocaleString('en-IN')}</b> / <b class="text-rose-400">-₹${Math.abs(Math.round(st.stoploss_pnl || 0)).toLocaleString('en-IN')}</b></div>
+                  <div><span class="text-slate-500">🛡️ Trailing SL:</span> <b class="${(st.trailing_stop_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-amber-400'}">${(st.trailing_stop_pnl || 0) >= 0 ? '+' : ''}₹${Math.round(st.trailing_stop_pnl != null ? st.trailing_stop_pnl : (st.stoploss_pnl || 0)).toLocaleString('en-IN')}</b> ${st.trailing_status && st.trailing_status !== 'INACTIVE' ? `<span class="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">${st.trailing_status}</span>` : ''}</div>
                   <div><span class="text-slate-500">Delta / Theta:</span> <b class="text-purple-300">Δ ${Number(g.delta || 0).toFixed(2)} | Θ ₹${Math.round(g.theta || 0)}/d</b></div>
                   <div><span class="text-slate-500">Gamma / Vega:</span> <b class="text-cyan-300">Γ ${Number(g.gamma || 0).toFixed(4)} | V ₹${Math.round(g.vega || 0)}/%</b></div>
                 </div>
@@ -8475,6 +8494,73 @@
       } catch (e) {
         showToast(`Reset error: ${e.message}`, "error");
       }
+    }
+
+    // -------------------------------------------------------------------------
+    // PROGRESSIVE WEB APP (PWA) INSTALL & SERVICE WORKER CONTROLLER
+    // -------------------------------------------------------------------------
+    let deferredPWAInstallPrompt = null;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPWAInstallPrompt = e;
+      const btn = document.getElementById('btn-pwa-install');
+      if (btn) {
+        btn.classList.remove('hidden');
+        btn.classList.add('flex');
+      }
+    });
+
+    async function promptPWAInstall() {
+      if (deferredPWAInstallPrompt) {
+        deferredPWAInstallPrompt.prompt();
+        const choice = await deferredPWAInstallPrompt.userChoice;
+        if (choice && choice.outcome === 'accepted') {
+          showToast('🎉 Trading Desk installed to your device!', 'success');
+        }
+        deferredPWAInstallPrompt = null;
+        const btn = document.getElementById('btn-pwa-install');
+        if (btn) btn.classList.add('hidden');
+      } else {
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        if (isIOS) {
+          showToast('📱 To install on iPhone/iPad: Tap the Share button in Safari, then tap "Add to Home Screen".', 'info', 7000);
+        } else {
+          showToast('📱 Tap your browser menu (⋮) and select "Install app" or "Add to Home screen".', 'info', 5000);
+        }
+      }
+    }
+
+    window.addEventListener('appinstalled', () => {
+      showToast('🚀 Trading Desk installed successfully as a native App!', 'success');
+      const btn = document.getElementById('btn-pwa-install');
+      if (btn) btn.classList.add('hidden');
+    });
+
+    // Auto-display install button on supported touch mobile devices if not already running standalone
+    window.addEventListener('DOMContentLoaded', () => {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+      const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (!isStandalone && isMobile) {
+        const btn = document.getElementById('btn-pwa-install');
+        if (btn) {
+          btn.classList.remove('hidden');
+          btn.classList.add('flex');
+        }
+      }
+    });
+
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+          .then((reg) => {
+            console.log('✅ PWA Service Worker registered with root scope:', reg.scope);
+          })
+          .catch((err) => {
+            console.warn('PWA Service Worker registration notice:', err);
+          });
+      });
     }
   </script>
 </body>

@@ -122,10 +122,24 @@ def index(request: Request):
     return HTMLResponse("<h1>Quant Trading Desk</h1><p>index.html not found</p>")
 
 
-@app.get("/sw.js")
-def service_worker_cleanup():
-    js = "self.addEventListener('install', () => self.skipWaiting()); self.addEventListener('activate', () => self.registration.unregister());"
-    return Response(content=js, media_type="application/javascript")
+@app.get("/manifest.json", include_in_schema=False)
+def get_manifest():
+    manifest_path = STATIC_DIR / "manifest.json"
+    if manifest_path.exists():
+        return FileResponse(manifest_path, media_type="application/manifest+json")
+    raise HTTPException(status_code=404, detail="Manifest not found")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def get_service_worker():
+    sw_path = STATIC_DIR / "sw.js"
+    if sw_path.exists():
+        return FileResponse(
+            sw_path,
+            media_type="application/javascript",
+            headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"}
+        )
+    raise HTTPException(status_code=404, detail="Service worker not found")
 
 
 # --------------------------------------------------------------------------

@@ -335,6 +335,9 @@ class NiftyAnalyticsEngine:
                     ("stoploss_pnl", "REAL DEFAULT 0.0"),
                     ("auto_trade_mode", "TEXT DEFAULT 'MANUAL'"),
                     ("market_condition", "TEXT DEFAULT ''"),
+                    ("trailing_stop_pnl", "REAL DEFAULT 0.0"),
+                    ("highest_pnl_reached", "REAL DEFAULT 0.0"),
+                    ("trailing_status", "TEXT DEFAULT 'INACTIVE'"),
                 ]
                 for col_name, col_type in opt_migrations:
                     if col_name not in existing_opt_cols:
@@ -1493,16 +1496,21 @@ class NiftyAnalyticsEngine:
         with secondary low weight (15%) on Nifty 500 broader market participation.
         Strictly prevents mid/small cap swing scan caching from distorting the Nifty index breadth!
         """
-        import yfinance as yf
+        yf = None
+        try:
+            import yfinance as yf
+        except ImportError:
+            yf = None
 
         # 1. PRIMARY: Fetch 50 Nifty 50 Constituents batch daily prices
         n50_df = None
-        try:
-            raw_dl = yf.download(NIFTY_50_CONSTITUENTS, period="3mo", interval="1d", progress=False)
-            if raw_dl is not None and not raw_dl.empty and "Close" in raw_dl.columns:
-                n50_df = raw_dl["Close"]
-        except Exception as e:
-            logger.warning(f"Nifty 50 batch download fallback warning: {e}")
+        if yf is not None:
+            try:
+                raw_dl = yf.download(NIFTY_50_CONSTITUENTS, period="3mo", interval="1d", progress=False)
+                if raw_dl is not None and not raw_dl.empty and "Close" in raw_dl.columns:
+                    n50_df = raw_dl["Close"]
+            except Exception as e:
+                logger.warning(f"Nifty 50 batch download fallback warning: {e}")
 
         # Resilient fallback: pull from Single Master DB ohlcv_master_store if live download was rate-limited
         if n50_df is None or len(n50_df) < 2:
@@ -3137,13 +3145,15 @@ class NiftyAnalyticsEngine:
                     strategy_id, strategy_name, symbol, expiry_date, expiry_type,
                     created_at, spot_at_entry, net_premium, max_profit, max_loss,
                     breakevens, risk_reward, est_margin, pop_pct, legs_json, status, realized_pnl,
-                    target_pnl, stoploss_pnl, auto_trade_mode, market_condition
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0.0, ?, ?, ?, ?)
+                    target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
+                    trailing_stop_pnl, highest_pnl_reached, trailing_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0.0, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     strat_id, strategy_name, symbol, expiry_date, expiry_type,
                     ts_now, spot_at_entry, net_premium, max_profit, max_loss,
                     breakevens, risk_reward, est_margin, pop_pct, json.dumps(legs),
-                    target_pnl, stoploss_pnl, auto_trade_mode, market_condition
+                    target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
+                    stoploss_pnl, 0.0, 'INACTIVE'
                 ))
                 conn.commit()
 
@@ -3981,14 +3991,62 @@ class NiftyAnalyticsEngine:
             strat_name = d.get("strategy_name", "")
             target_pnl = float(d.get("target_pnl") or 0.0)
             stoploss_pnl = float(d.get("stoploss_pnl") or 0.0)
+            trailing_stop_pnl = float(d.get("trailing_stop_pnl") if d.get("trailing_stop_pnl") is not None else stoploss_pnl)
+            highest_pnl = float(d.get("highest_pnl_reached") or 0.0)
+            trailing_status = str(d.get("trailing_status") or "INACTIVE")
             mode = str(d.get("auto_trade_mode") or "MANUAL").upper()
 
             live_info = active_strats.get(strat_id)
             unrealized_pnl = float(live_info.get("unrealized_pnl", 0.0)) if live_info else 0.0
 
+            # Dynamic Multi-Tier Trailing Stop-Loss calculation
+            updated_highest = max(highest_pnl, unrealized_pnl)
+            new_trail_sl = trailing_stop_pnl
+            new_status = trailing_status
+
+            if target_pnl > 0:
+                # Tier 1: Peak reached >= 50% of target -> Trail SL to Breakeven (₹0)
+                if updated_highest >= (0.50 * target_pnl):
+                    if new_trail_sl < 0.0:
+                        new_trail_sl = 0.0
+                        new_status = "LOCKED_BREAKEVEN (₹0)"
+
+                # Tier 2: Peak reached >= 75% of target -> Lock in 50% profit
+                if updated_highest >= (0.75 * target_pnl):
+                    lock_50 = round(0.50 * target_pnl, 2)
+                    if new_trail_sl < lock_50:
+                        new_trail_sl = lock_50
+                        new_status = f"LOCKED_50PCT (+₹{lock_50:,.0f})"
+
+                # Tier 3: Peak reached >= 85% of target -> Dynamic trail 20% below peak
+                if updated_highest >= (0.85 * target_pnl):
+                    peak_trail = round(updated_highest - (0.20 * target_pnl), 2)
+                    if peak_trail > new_trail_sl:
+                        new_trail_sl = peak_trail
+                        new_status = f"TRAILING_PEAK (+₹{new_trail_sl:,.0f})"
+
+            # If trailing stop advanced or peak rose, persist state
+            if updated_highest != highest_pnl or new_trail_sl != trailing_stop_pnl or new_status != trailing_status:
+                try:
+                    with state_engine._lock:
+                        with state_engine._get_connection() as conn:
+                            conn.execute("""
+                            UPDATE options_strategies SET
+                                highest_pnl_reached = ?,
+                                trailing_stop_pnl = ?,
+                                trailing_status = ?
+                            WHERE strategy_id = ?
+                            """, (updated_highest, new_trail_sl, new_status, strat_id))
+                            conn.commit()
+                except Exception as db_ex:
+                    logger.debug(f"Trailing SL DB update warning: {db_ex}")
+
             exit_reason = None
             if target_pnl > 0 and unrealized_pnl >= target_pnl:
                 exit_reason = f"TARGET_REACHED (+₹{unrealized_pnl:,.0f} >= Target ₹{target_pnl:,.0f})"
+            elif new_trail_sl > stoploss_pnl and unrealized_pnl <= new_trail_sl:
+                # Trailing stop hit (protects locked profits or breakeven)
+                exit_reason = f"TRAILING_STOP_HIT (PnL: {'+' if unrealized_pnl >= 0 else ''}₹{unrealized_pnl:,.0f} <= Trailed SL ₹{new_trail_sl:,.0f} | Peak: +₹{updated_highest:,.0f})"
             elif stoploss_pnl < 0 and unrealized_pnl <= stoploss_pnl:
                 exit_reason = f"STOPLOSS_HIT (-₹{abs(unrealized_pnl):,.0f} <= SL -₹{abs(stoploss_pnl):,.0f})"
             elif mode == "INTRADAY" and is_moc_time:
