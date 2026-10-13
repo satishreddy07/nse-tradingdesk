@@ -143,6 +143,11 @@
           <span id="trading-gate-text">🔒 Gate</span>
         </div>
 
+        <div id="vault-status-pill" onclick="switchModule('module-swing'); switchTab('tab-scheduler');" class="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/40 border border-cyan-800/60 text-cyan-300 font-mono whitespace-nowrap hover:bg-cyan-900/40 transition" title="Telegram Cloud Master Vault: Click to view backup history">
+          <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+          <span>☁️ Backup: <b id="header-vault-time" class="text-white font-bold">--</b></span>
+        </div>
+
         <div class="px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 font-mono text-slate-400 whitespace-nowrap">
           <span id="live-ist-clock">--:--:-- IST</span>
         </div>
@@ -199,6 +204,9 @@
       <div id="mobile-market-status" class="flex items-center gap-1.5 text-slate-300 shrink-0">
         <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
         <span>Checking Market...</span>
+      </div>
+      <div id="mobile-vault-status" onclick="switchModule('module-swing'); switchTab('tab-scheduler');" class="cursor-pointer text-cyan-300 font-mono shrink-0 flex items-center gap-1" title="Telegram Cloud Master Vault">
+        <span>☁️ <span id="mobile-vault-time">--</span></span>
       </div>
       <div class="text-cyan-400 font-mono shrink-0" id="mobile-next-scan">
         Next: Syncing...
@@ -3924,6 +3932,26 @@
       const pinnedBadge = document.getElementById('vault-pinned-msg-badge');
       if (pinnedBadge) pinnedBadge.innerText = `Pinned Msg #${pinnedId}`;
 
+      const lastTs = v?.last_db_backup_ist || (v?.last_master_backup || {}).timestamp || (hist[0] || {}).timestamp || "--";
+      const headerVaultTime = document.getElementById('header-vault-time');
+      if (headerVaultTime) {
+        if (lastTs && lastTs !== "--") {
+          headerVaultTime.innerText = lastTs.includes(' ') ? lastTs.split(' ')[1] : lastTs;
+          headerVaultTime.title = `Master Cloud Vault Backup: ${lastTs}`;
+        } else {
+          headerVaultTime.innerText = "--";
+        }
+      }
+      const mobVaultTime = document.getElementById('mobile-vault-time');
+      if (mobVaultTime) {
+        if (lastTs && lastTs !== "--") {
+          mobVaultTime.innerText = lastTs.includes(' ') ? lastTs.split(' ')[1] : lastTs;
+          mobVaultTime.title = `Master Cloud Vault Backup: ${lastTs}`;
+        } else {
+          mobVaultTime.innerText = "--";
+        }
+      }
+
       const rowsHtml = hist.length === 0
         ? `<tr><td colspan="7" class="p-4 text-center text-slate-500 font-sans">Master File synced to Telegram Pinned Msg #${pinnedId}.</td></tr>`
         : hist.map(h => {
@@ -4066,7 +4094,11 @@
       if (vChat) vChat.innerText = `Chat ID: ${v.chat_id || '--'} • Pinned Msg #${v.master_file_message_id || '--'}`;
       if (vCount) vCount.innerText = `${totalStocks} Stocks`;
       if (vDate) vDate.innerText = `Latest Bar: ${v.latest_bar_date || 'N/A'}`;
-      if (vDbTime) vDbTime.innerText = v.last_db_backup_ist || "Synced";
+      if (vDbTime) {
+        vDbTime.innerHTML = (v.last_db_backup_ist && v.last_db_backup_ist !== "Synced")
+          ? `<span class="text-emerald-400 font-bold">✅ ${v.last_db_backup_ist}</span>`
+          : "Synced";
+      }
       if (badgeMaster && totalStocks > 0) badgeMaster.innerText = totalStocks;
       if (masterLbl && totalStocks > 0) masterLbl.innerText = totalStocks.toLocaleString('en-IN');
 

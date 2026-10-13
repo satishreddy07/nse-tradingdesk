@@ -158,12 +158,28 @@ class TelegramVaultManager:
     # --------------------------------------------------------------------------
     # SINGLE MASTER FILE BACKUP & RESTORE (IN-PLACE UPDATE ON TELEGRAM)
     # --------------------------------------------------------------------------
-    def backup_master_file_to_cloud(self, custom_note: str = "Auto Master File Sync") -> Dict[str, Any]:
+    def sync_master_vault_async(self, note: str = "Auto Master File Sync", send_notification: bool = True) -> None:
+        """
+        Asynchronously backs up the Single Master File (`data/swing_trades.db`) to Telegram Cloud
+        in a background thread to prevent blocking live trading engine execution.
+        """
+        threading.Thread(
+            target=self.backup_master_file_to_cloud,
+            kwargs={"custom_note": note, "send_notification": send_notification},
+            daemon=True
+        ).start()
+
+    def backup_master_file_to_cloud(
+        self,
+        custom_note: str = "Auto Master File Sync",
+        send_notification: bool = True
+    ) -> Dict[str, Any]:
         """
         Creates an ACID-safe SQLite snapshot of the Single Master File (`data/swing_trades.db`),
         compresses it with gzip (`quant_master_vault.db.gz`), and UPDATES THE EXISTING PINNED
         MASTER FILE IN-PLACE in Telegram using `editMessageMedia` (or replaces & deletes the old
         message if >48h old), ensuring ONLY ONE `quant_master_vault.db.gz` file ever exists in Telegram!
+        Sends a timestamped confirmation notification to Telegram on every successful backup.
         """
         from execution.state_engine import state_engine
 
@@ -184,6 +200,22 @@ class TelegramVaultManager:
                 latest_bar = ohlcv_stats.get("latest_bar_date", "--")
                 active_cnt = len(state_engine.get_active_positions())
                 closed_cnt = len(state_engine.get_trade_history(limit=5000))
+
+                # Count intraday snapshots and predictions log entries
+                intra_cnt = 0
+                pred_cnt = 0
+                try:
+                    with state_engine._lock:
+                        with state_engine._get_connection() as conn:
+                            intra_row = conn.execute("SELECT count(*) FROM intraday_option_snapshots").fetchone()
+                            if intra_row:
+                                intra_cnt = int(intra_row[0])
+                            pred_row = conn.execute("SELECT count(*) FROM nifty_predictions_log").fetchone()
+                            if pred_row:
+                                pred_cnt = int(pred_row[0])
+                except Exception:
+                    pass
+
                 ts_str = format_ist()
 
                 # Check if we already have a pinned document message in Telegram to update in-place
@@ -205,6 +237,8 @@ class TelegramVaultManager:
                     "latest_bar_date": latest_bar,
                     "active_trades": active_cnt,
                     "closed_trades": closed_cnt,
+                    "intraday_snapshots_count": intra_cnt,
+                    "predictions_count": pred_cnt,
                     "size_kb": est_size_kb,
                     "note": custom_note,
                     "timestamp": ts_str
@@ -227,6 +261,14 @@ class TelegramVaultManager:
                 dst_conn.close()
                 src_conn.close()
 
+                # Integrity verification before compressing and uploading
+                verif_conn = sqlite3.connect(str(tmp_db))
+                integrity_res = verif_conn.execute("PRAGMA integrity_check;").fetchone()
+                verif_conn.close()
+                if not integrity_res or integrity_res[0] != "ok":
+                    logger.error("Master DB integrity check failed before compression.")
+                    return {"status": "ERROR", "message": "Database failed integrity check."}
+
                 tmp_gz = Path(str(tmp_db) + ".gz")
                 with open(tmp_db, "rb") as f_in, gzip.open(tmp_gz, "wb", compresslevel=6) as f_out:
                     shutil.copyfileobj(f_in, f_out)
@@ -238,70 +280,85 @@ class TelegramVaultManager:
                     "latest_bar_date": latest_bar,
                     "active_trades": active_cnt,
                     "closed_trades": closed_cnt,
+                    "intraday_snapshots_count": intra_cnt,
+                    "predictions_count": pred_cnt,
                     "note": custom_note,
                     "updated_at": ts_str
                 }
 
                 caption = (
                     f"📌 <b>QUANT SINGLE MASTER VAULT (DO NOT DELETE)</b>\n"
-                    f"📝 <b>Last Update:</b> {custom_note}\n"
-                    f"📊 <b>Trades:</b> {active_cnt} Active | {closed_cnt} Closed\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🕒 <b>SUCCESSFUL BACKUP TIMESTAMP:</b> <code>{ts_str}</code>\n"
+                    f"📝 <b>Run Trigger / Note:</b> {custom_note}\n"
+                    f"📊 <b>Trades:</b> {active_cnt} Active Open | {closed_cnt} Closed History\n"
                     f"📦 <b>OHLCV Universe:</b> {stocks_cnt} Stocks (Latest Bar: {latest_bar})\n"
-                    f"💾 <b>Master Size:</b> {size_kb} KB | 🕒 <b>Synced:</b> {ts_str}\n"
+                    f"⚡ <b>Option Telemetry:</b> {intra_cnt} Snapshots | <b>AI Predictions:</b> {pred_cnt} Sessions\n"
+                    f"💾 <b>Master Size:</b> {size_kb} KB (ACID Integrity Passed)\n"
                     f"<code>#VAULT_INDEX_JSON:{json.dumps(index_meta)}</code>"
                 )
 
                 resp = None
                 updated_in_place = False
 
-                if pinned_msg_id and pinned_has_doc:
-                    media_payload = json.dumps({
-                        "type": "document",
-                        "media": "attach://document",
-                        "caption": caption,
-                        "parse_mode": "HTML"
-                    })
-                    with open(tmp_gz, "rb") as doc_file:
-                        edit_resp = requests.post(
-                            f"https://api.telegram.org/bot{creds['bot_token']}/editMessageMedia",
-                            data={
-                                "chat_id": creds["chat_id"],
-                                "message_id": int(pinned_msg_id),
-                                "media": media_payload
-                            },
-                            files={"document": ("quant_master_vault.db.gz", doc_file, "application/gzip")},
-                            timeout=90
-                        ).json()
-                    if edit_resp.get("ok"):
-                        resp = edit_resp
-                        updated_in_place = True
+                # Retry loop (up to 2 attempts) for network resilience
+                for attempt in range(1, 3):
+                    try:
+                        if pinned_msg_id and pinned_has_doc:
+                            media_payload = json.dumps({
+                                "type": "document",
+                                "media": "attach://document",
+                                "caption": caption,
+                                "parse_mode": "HTML"
+                            })
+                            with open(tmp_gz, "rb") as doc_file:
+                                edit_resp = requests.post(
+                                    f"https://api.telegram.org/bot{creds['bot_token']}/editMessageMedia",
+                                    data={
+                                        "chat_id": creds["chat_id"],
+                                        "message_id": int(pinned_msg_id),
+                                        "media": media_payload
+                                    },
+                                    files={"document": ("quant_master_vault.db.gz", doc_file, "application/gzip")},
+                                    timeout=90
+                                ).json()
+                            if edit_resp.get("ok"):
+                                resp = edit_resp
+                                updated_in_place = True
+                                break
 
-                # If no pinned document existed yet (or edit window expired), send once, pin it, and delete old message
-                if not updated_in_place:
-                    with open(tmp_gz, "rb") as doc_file:
-                        resp = requests.post(
-                            f"https://api.telegram.org/bot{creds['bot_token']}/sendDocument",
-                            data={"chat_id": creds["chat_id"], "caption": caption, "parse_mode": "HTML"},
-                            files={"document": ("quant_master_vault.db.gz", doc_file, "application/gzip")},
-                            timeout=90
-                        ).json()
+                        # If no pinned document existed yet (or edit window expired), send once, pin it, and delete old message
+                        if not updated_in_place:
+                            with open(tmp_gz, "rb") as doc_file:
+                                resp = requests.post(
+                                    f"https://api.telegram.org/bot{creds['bot_token']}/sendDocument",
+                                    data={"chat_id": creds["chat_id"], "caption": caption, "parse_mode": "HTML"},
+                                    files={"document": ("quant_master_vault.db.gz", doc_file, "application/gzip")},
+                                    timeout=90
+                                ).json()
 
-                    if not resp or not resp.get("ok"):
-                        err = (resp or {}).get("description", "Unknown Telegram error")
-                        logger.warning(f"Telegram Master Vault upload failed: {err}")
-                        return {"status": "ERROR", "message": err}
+                            if resp and resp.get("ok"):
+                                new_msg_id = resp["result"]["message_id"]
+                                requests.post(
+                                    f"https://api.telegram.org/bot{creds['bot_token']}/pinChatMessage",
+                                    data={"chat_id": creds["chat_id"], "message_id": new_msg_id, "disable_notification": True},
+                                    timeout=10
+                                )
+                                # Delete previous message so only ONE master file remains in Telegram
+                                if pinned_msg_id and int(pinned_msg_id) != int(new_msg_id):
+                                    self._delete_telegram_message(creds, int(pinned_msg_id))
+                                if prev_msg_id and int(prev_msg_id) not in (int(new_msg_id), int(pinned_msg_id or 0)):
+                                    self._delete_telegram_message(creds, int(prev_msg_id))
+                                break
+                    except Exception as upload_err:
+                        logger.warning(f"Telegram upload attempt {attempt} error: {upload_err}")
+                        if attempt == 1:
+                            time.sleep(1.5)
 
-                    new_msg_id = resp["result"]["message_id"]
-                    requests.post(
-                        f"https://api.telegram.org/bot{creds['bot_token']}/pinChatMessage",
-                        data={"chat_id": creds["chat_id"], "message_id": new_msg_id, "disable_notification": True},
-                        timeout=10
-                    )
-                    # Delete previous message so only ONE master file remains in Telegram
-                    if pinned_msg_id and int(pinned_msg_id) != int(new_msg_id):
-                        self._delete_telegram_message(creds, int(pinned_msg_id))
-                    if prev_msg_id and int(prev_msg_id) not in (int(new_msg_id), int(pinned_msg_id or 0)):
-                        self._delete_telegram_message(creds, int(prev_msg_id))
+                if not resp or not resp.get("ok"):
+                    err = (resp or {}).get("description", "Unknown Telegram upload error")
+                    logger.warning(f"Telegram Master Vault upload failed: {err}")
+                    return {"status": "ERROR", "message": err}
 
                 file_id = resp["result"]["document"]["file_id"]
                 msg_id = resp["result"]["message_id"]
@@ -315,6 +372,8 @@ class TelegramVaultManager:
                     "latest_bar_date": latest_bar,
                     "active_trades": active_cnt,
                     "closed_trades": closed_cnt,
+                    "intraday_snapshots_count": intra_cnt,
+                    "predictions_count": pred_cnt,
                     "size_kb": size_kb,
                     "note": custom_note,
                     "timestamp": ts_str
@@ -333,9 +392,34 @@ class TelegramVaultManager:
                 manifest["history"] = hist[:30]
                 self._save_manifest(manifest)
 
+                # Send explicit timestamped notification on successful backup
+                if send_notification:
+                    try:
+                        backup_alert = (
+                            f"✅ <b>MASTER CLOUD BACKUP SUCCESSFUL • ZERO DATA LOSS</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"🕒 <b>Backup Timestamp:</b> <code>{ts_str}</code>\n"
+                            f"📝 <b>Run Trigger:</b> {custom_note}\n"
+                            f"💾 <b>Master File:</b> <code>quant_master_vault.db.gz</code> ({size_kb} KB)\n"
+                            f"📊 <b>Master Database Preserved:</b>\n"
+                            f"  • {active_cnt} Active Positions | {closed_cnt} Closed Trades\n"
+                            f"  • {stocks_cnt} Stocks OHLCV Master Store (Bar: {latest_bar})\n"
+                            f"  • {intra_cnt} Weekly Option Intraday Snapshots\n"
+                            f"  • {pred_cnt} Nifty T+1 & T+5 Prediction Sessions\n"
+                            f"🛡️ <b>Integrity Check:</b> SQLite ACID Snapshot Verified (No Data Loss)\n"
+                            f"📌 <b>Cloud Reference:</b> Telegram Msg #{msg_id}"
+                        )
+                        requests.post(
+                            f"https://api.telegram.org/bot{creds['bot_token']}/sendMessage",
+                            data={"chat_id": creds["chat_id"], "text": backup_alert, "parse_mode": "HTML"},
+                            timeout=12
+                        )
+                    except Exception as notif_err:
+                        logger.debug(f"Backup notification delivery warning: {notif_err}")
+
                 logger.info(
                     f"☁️ Single Master File {'UPDATED IN-PLACE' if updated_in_place else 'PINNED'} in Telegram Cloud "
-                    f"(msg_id={msg_id}, {stocks_cnt} stocks, {active_cnt} open trades, {closed_cnt} closed trades, {size_kb} KB)"
+                    f"(msg_id={msg_id}, {stocks_cnt} stocks, {active_cnt} open trades, {closed_cnt} closed trades, {size_kb} KB at {ts_str})"
                 )
                 return record
 
@@ -350,11 +434,11 @@ class TelegramVaultManager:
                     tmp_gz.unlink(missing_ok=True)
 
     # Aliases so existing callers all write to the Single Master File backup
-    def backup_db_to_cloud(self, custom_note: str = "Trade Update Sync") -> Dict[str, Any]:
-        return self.backup_master_file_to_cloud(custom_note=custom_note)
+    def backup_db_to_cloud(self, custom_note: str = "Trade Update Sync", send_notification: bool = True) -> Dict[str, Any]:
+        return self.backup_master_file_to_cloud(custom_note=custom_note, send_notification=send_notification)
 
-    def backup_ohlcv_to_cloud(self, custom_note: str = "OHLCV Gap-Fill Sync") -> Dict[str, Any]:
-        return self.backup_master_file_to_cloud(custom_note=custom_note)
+    def backup_ohlcv_to_cloud(self, custom_note: str = "OHLCV Gap-Fill Sync", send_notification: bool = True) -> Dict[str, Any]:
+        return self.backup_master_file_to_cloud(custom_note=custom_note, send_notification=send_notification)
 
     def restore_master_file_from_cloud(self, file_id: Optional[str] = None) -> Dict[str, Any]:
         """Restores the Single Master File (`data/swing_trades.db`) from Telegram Cloud."""

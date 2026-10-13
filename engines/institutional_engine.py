@@ -1641,6 +1641,14 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
         "prices": {k: v[0] for k, v in list(live_ltp_map.items())[:50]}
     }
     state_engine.set_kv("last_price_stream", stream_meta)
+    if pos_updated > 0 or len(reconciled_events) > 0:
+        try:
+            telegram_vault.sync_master_vault_async(
+                note=f"Live Price Stream MTM Sync ({pos_updated} positions updated, {len(reconciled_events)} reconciled)",
+                send_notification=False
+            )
+        except Exception:
+            pass
     logger.info(
         f"⚡ Live Price Stream ({scope_up}): Updated {len(live_ltp_map)} stocks & {pos_updated} active positions in {elapsed}s at {now_str}"
     )

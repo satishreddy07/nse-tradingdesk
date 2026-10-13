@@ -2039,6 +2039,10 @@ class NiftyAnalyticsEngine:
             self._predictions_mem_cache = payload
             self._predictions_cache_ts = now_ts
         state_engine.set_kv("latest_nifty_predictions", payload)
+        try:
+            telegram_vault.sync_master_vault_async(note=f"Nifty Predictions Forecast & Attribution Sync ({pred_date})", send_notification=True)
+        except Exception:
+            pass
         return payload
 
     def _seed_and_grade_forward_testing_ledger(
