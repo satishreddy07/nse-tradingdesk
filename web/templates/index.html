@@ -730,6 +730,62 @@
         </div>
       </div>
       
+      <!-- Render Anti-Sleep Guard (09:00 AM - 03:50 PM IST) & Dynamic NSE Holiday Calendar -->
+      <div class="bg-slate-900/80 border border-cyan-500/30 rounded-2xl p-5 shadow-lg">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+          <div>
+            <div class="flex items-center gap-2">
+              <span id="keepalive-badge" class="px-2 py-0.5 text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/40">Render Anti-Sleep Guard</span>
+              <span class="text-xs text-slate-400 font-mono">Strictly 09:00 AM – 03:50 PM IST (Mon–Fri, Excl. NSE Holidays)</span>
+            </div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2 mt-1">
+              <i data-lucide="activity" class="w-5 h-5 text-cyan-400"></i>
+              <span>Smart Render Anti-Sleep Engine & Live NSE Holiday Sync</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">
+              Prevents Render from spinning down between <b>09:00 AM and 03:50 PM IST</b> on active NSE trading days via 4-minute external health pings. Automatically stops pinging after 03:50 PM IST, on weekends, and on official NSE holidays fetched dynamically from <code class="text-cyan-300">nseindia.com</code>.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="syncNseHolidaysLive()" class="px-3.5 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition">
+              <i data-lucide="calendar" class="w-4 h-4"></i>
+              <span>Sync NSE Holidays Live</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 text-xs font-mono">
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+            <div class="text-slate-400 text-[11px] uppercase">Render Keep-Alive State</div>
+            <div id="keepalive-state-text" class="text-emerald-400 font-bold text-sm mt-1">CHECKING...</div>
+            <div id="keepalive-reason-text" class="text-slate-400 text-[11px] mt-1">Window: 09:00 AM – 03:50 PM IST</div>
+          </div>
+
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+            <div class="text-slate-400 text-[11px] uppercase">Keep-Alive Heartbeat Telemetry</div>
+            <div id="keepalive-pings-count" class="text-cyan-400 font-bold text-sm mt-1">0 Pings Today (Every 4m)</div>
+            <div id="keepalive-last-ping" class="text-slate-400 text-[11px] mt-1">Last Ping: --</div>
+          </div>
+
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+            <div class="text-slate-400 text-[11px] uppercase">Dynamic NSE Holiday Calendar</div>
+            <div id="nse-holiday-source" class="text-violet-400 font-bold text-sm mt-1">Syncing from nseindia.com...</div>
+            <div id="nse-holiday-sync-time" class="text-slate-400 text-[11px] mt-1">Last Synced: --</div>
+          </div>
+        </div>
+
+        <!-- Dynamically Fetched Current Year NSE Holidays Grid -->
+        <div class="mt-4 pt-3 border-t border-slate-800/80">
+          <div class="text-[11px] font-mono uppercase text-slate-400 mb-2 flex items-center justify-between">
+            <span>Official NSE Capital Market Holidays (<span id="nse-holiday-year-label">--</span>) — Server Sleep Allowed on Holidays</span>
+            <span id="nse-holiday-count-label" class="text-cyan-400">-- Holidays</span>
+          </div>
+          <div id="nse-holidays-badges" class="flex flex-wrap gap-1.5 text-[11px] font-mono">
+            <span class="text-slate-500">Loading dynamic NSE holidays...</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Automated Timeline Card -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
         <h2 class="text-lg font-bold text-white flex items-center gap-2 mb-2">
@@ -1105,11 +1161,33 @@
     let scanPollTimer = null;
     let lastLoggedStep = "";
     let wasScanRunning = false;
+    let isKeepaliveWindowActive = true;
 
     // Lightweight Chart instances
     let tvChart = null;
     let currentChartSymbol = "RELIANCE";
     let currentChartPayload = null;
+
+    function isClientInMarketKeepaliveWindow() {
+      // Checks if current IST time is Mon-Fri between 09:00 and 15:50 IST
+      try {
+        const now = new Date();
+        const istParts = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Kolkata',
+          weekday: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        }).formatToParts(now);
+        const map = {};
+        istParts.forEach(p => { map[p.type] = p.value; });
+        if (map.weekday === 'Sat' || map.weekday === 'Sun') return false;
+        const mins = parseInt(map.hour, 10) * 60 + parseInt(map.minute, 10);
+        return mins >= (9 * 60) && mins <= (15 * 60 + 50);
+      } catch (e) {
+        return true;
+      }
+    }
 
     // Initialize Lucide Icons & Clocks
     document.addEventListener("DOMContentLoaded", () => {
@@ -1117,8 +1195,18 @@
       setInterval(updateClock, 1000);
       refreshAllData();
       pollScanProgress();
-      setInterval(pollScanProgress, 2000); // Continuously monitor live or scheduled scans
-      setInterval(refreshAllData, 30000);  // Poll portfolio status every 30s
+      // Smart Polling: Only poll automatically during 09:00 AM – 03:50 PM IST trading days (or when a manual scan is running)
+      // so an idle open browser tab never prevents Render from sleeping after 03:50 PM IST or on weekends/holidays.
+      setInterval(() => {
+        if (wasScanRunning || (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow())) {
+          pollScanProgress();
+        }
+      }, 2500);
+      setInterval(() => {
+        if (wasScanRunning || (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow())) {
+          refreshAllData();
+        }
+      }, 30000);
     });
 
 
@@ -1221,7 +1309,7 @@
     }
 
     // -------------------------------------------------------------------------
-    // SYSTEM STATUS, TRADING GATE & TELEGRAM VAULT TELEMETRY
+    // SYSTEM STATUS, TRADING GATE, RENDER ANTI-SLEEP & DYNAMIC NSE HOLIDAYS
     // -------------------------------------------------------------------------
     async function loadSystemStatus() {
       const res = await fetch('/api/status');
@@ -1241,7 +1329,7 @@
       const gatePill = document.getElementById('trading-gate-pill');
       const gateText = document.getElementById('trading-gate-text');
       if (gateText) {
-        if (mStatus.can_trade) {
+        if (data.trading_gate_open || mStatus.can_trade) {
           gateText.innerText = "GATE OPEN (09:15-15:30 IST)";
           if (gatePill) gatePill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-xs font-mono text-emerald-300";
         } else {
@@ -1252,11 +1340,62 @@
 
       // Next Scan
       const nextScan = data.next_scan || {};
-      const nextText = nextScan.label ? `${nextScan.label}` : "Next: Scheduled";
+      const nextText = nextScan.label ? `${nextScan.label}` : "Scheduled";
       const nextScanEl = document.getElementById('next-scan-text');
       const mobNextEl = document.getElementById('mobile-next-scan');
       if (nextScanEl) nextScanEl.innerText = `Next: ${nextText}`;
       if (mobNextEl) mobNextEl.innerText = `Next: ${nextText}`;
+
+      // Render Anti-Sleep Guard (09:00 AM - 03:50 PM IST)
+      const ka = data.render_keepalive || {};
+      isKeepaliveWindowActive = Boolean(ka.is_active_now);
+      const kaStateEl = document.getElementById('keepalive-state-text');
+      const kaReasonEl = document.getElementById('keepalive-reason-text');
+      const kaPingsEl = document.getElementById('keepalive-pings-count');
+      const kaLastEl = document.getElementById('keepalive-last-ping');
+      const kaBadge = document.getElementById('keepalive-badge');
+
+      if (kaStateEl) {
+        kaStateEl.innerText = ka.is_active_now ? "AWAKE GUARD ACTIVE (09:00 – 15:50 IST)" : "SLEEP ALLOWED (OUTSIDE 09:00 – 15:50 IST)";
+        kaStateEl.className = ka.is_active_now ? "text-emerald-400 font-bold text-sm mt-1" : "text-amber-400 font-bold text-sm mt-1";
+      }
+      if (kaBadge) {
+        kaBadge.innerText = ka.is_active_now ? "Render Anti-Sleep: ACTIVE" : "Render Anti-Sleep: STANDBY";
+        kaBadge.className = ka.is_active_now
+          ? "px-2 py-0.5 text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/40"
+          : "px-2 py-0.5 text-[10px] font-mono uppercase bg-amber-500/20 text-amber-300 rounded border border-amber-500/40";
+      }
+      if (kaReasonEl) kaReasonEl.innerText = ka.current_state_reason || "09:00 AM – 03:50 PM IST (Mon-Fri)";
+      if (kaPingsEl) kaPingsEl.innerText = `${ka.pings_today || 0} Pings Today (Every ${ka.interval_minutes || 4}m)`;
+      if (kaLastEl) kaLastEl.innerText = `Last Ping: ${ka.last_ping_ist || 'Waiting for next 4m cycle'}`;
+
+      // Dynamic NSE Holidays Telemetry
+      const hm = data.nse_holidays_meta || {};
+      const hSourceEl = document.getElementById('nse-holiday-source');
+      const hSyncEl = document.getElementById('nse-holiday-sync-time');
+      const hYearEl = document.getElementById('nse-holiday-year-label');
+      const hCountEl = document.getElementById('nse-holiday-count-label');
+      const hBadgesEl = document.getElementById('nse-holidays-badges');
+
+      if (hSourceEl) hSourceEl.innerText = `${hm.source || 'NSE_OFFICIAL_API'} (${hm.current_year_holidays_count || 0} Holidays)`;
+      if (hSyncEl) hSyncEl.innerText = `Last Synced: ${hm.last_synced_ist || 'Synced'}`;
+      if (hYearEl) hYearEl.innerText = hm.current_year || new Date().getFullYear();
+      if (hCountEl) hCountEl.innerText = `${hm.current_year_holidays_count || 0} Official NSE Holidays`;
+
+      if (hBadgesEl && hm.current_year_holidays) {
+        const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        const entries = Object.entries(hm.current_year_holidays);
+        if (entries.length > 0) {
+          hBadgesEl.innerHTML = entries.map(([dt, desc]) => {
+            const isToday = dt === todayIso;
+            const isUpcoming = dt >= todayIso;
+            const cls = isToday
+              ? "bg-rose-500/20 border-rose-500/50 text-rose-300 font-bold"
+              : (isUpcoming ? "bg-slate-950 border-cyan-800/50 text-slate-200" : "bg-slate-950/40 border-slate-800 text-slate-500");
+            return `<span class="px-2.5 py-1 rounded-lg border ${cls}">${dt}: ${desc}</span>`;
+          }).join('');
+        }
+      }
 
       // Telegram Cloud Vault Telemetry (Single Master File)
       const v = data.telegram_vault || {};
@@ -1276,6 +1415,22 @@
       if (vDbTime) vDbTime.innerText = v.last_db_backup_ist || "Synced";
       if (badgeMaster && totalStocks > 0) badgeMaster.innerText = totalStocks;
       if (masterLbl && totalStocks > 0) masterLbl.innerText = totalStocks.toLocaleString('en-IN');
+    }
+
+    async function syncNseHolidaysLive() {
+      showToast("Fetching live NSE Trading Holiday Calendar from nseindia.com...", "info");
+      try {
+        const res = await fetch('/api/calendar/sync-holidays', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.status === 'OK') {
+          showToast(data.message, "success");
+          await loadSystemStatus();
+        } else {
+          showToast(data.message || "Failed to sync NSE holidays", "error");
+        }
+      } catch (e) {
+        showToast(`Holiday sync error: ${e.message}`, "error");
+      }
     }
 
     // -------------------------------------------------------------------------

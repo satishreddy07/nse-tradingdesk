@@ -1,40 +1,33 @@
 """
-NSE Market Calendar & Trading Session Detector
-Manages National Stock Exchange (NSE) trading hours, holidays, and schedule checks.
+NSE Market Calendar, Dynamic NSE Holiday Fetcher & Render Anti-Sleep Window Detector
+Manages National Stock Exchange (NSE) trading hours, live holiday syncing from nseindia.com,
+and the strict 09:00 AM – 03:50 PM IST Render Anti-Sleep Guard window.
 """
 import datetime
-from typing import Dict, Any, Tuple
-from core.data_quality import IST, now_ist
+import logging
+import threading
+from typing import Dict, Any, Tuple, Optional
+import requests
+
+from core.data_quality import IST, now_ist, format_ist
+
+logger = logging.getLogger("NSEMarketCalendar")
+
 
 class NSEMarketCalendar:
     """
     Standard NSE Indian Equities Market Calendar:
-    Normal Trading Hours: 09:15 to 15:30 IST (Monday - Friday)
-    Pre-Market: 09:00 to 09:08 IST
-    Muhurat Trading: Scheduled separately on Diwali
+    - Normal Trading Hours: 09:15 to 15:30 IST (Monday - Friday, excluding NSE holidays)
+    - Pre-Market: 09:00 to 09:15 IST
+    - Render Anti-Sleep Active Window: Strictly 09:00 to 15:50 IST (Trading Days Only)
+    - Dynamic Holiday Source: https://www.nseindia.com/api/holiday-master?type=trading (Segment: CM)
     """
-    
-    # Official NSE Holidays (YYYY-MM-DD)
-    NSE_HOLIDAYS = {
-        # 2024
-        "2024-01-22": "Special Holiday (Ayodhya Pran Pratishtha)",
-        "2024-01-26": "Republic Day",
-        "2024-03-08": "Mahashivratri",
-        "2024-03-25": "Holi",
-        "2024-03-29": "Good Friday",
-        "2024-04-11": "Id-Ul-Fitr (Ramzan Id)",
-        "2024-04-17": "Shri Ram Navami",
-        "2024-05-01": "Maharashtra Day",
-        "2024-05-20": "General Elections",
-        "2024-06-17": "Bakri Id",
-        "2024-07-17": "Muharram",
-        "2024-08-15": "Independence Day",
-        "2024-10-02": "Mahatma Gandhi Jayanti",
-        "2024-11-01": "Diwali Laxmi Pujan (Muhurat session evening)",
-        "2024-11-15": "Gurunanak Jayanti",
-        "2024-11-20": "Maharashtra Assembly Election",
-        "2024-12-25": "Christmas",
-        
+
+    NSE_HOLIDAY_API_URL = "https://www.nseindia.com/api/holiday-master?type=trading"
+    NSE_HOME_URL = "https://www.nseindia.com"
+
+    # Verified Baseline NSE Holidays (YYYY-MM-DD) — automatically merged with live NSE API response
+    NSE_HOLIDAYS: Dict[str, str] = {
         # 2025
         "2025-01-26": "Republic Day",
         "2025-02-26": "Mahashivratri",
@@ -44,7 +37,6 @@ class NSEMarketCalendar:
         "2025-04-14": "Dr. Ambedkar Jayanti",
         "2025-04-18": "Good Friday",
         "2025-05-01": "Maharashtra Day",
-        "2025-06-07": "Bakri Id",
         "2025-08-15": "Independence Day",
         "2025-08-27": "Ganesh Chaturthi",
         "2025-10-02": "Mahatma Gandhi Jayanti",
@@ -53,25 +45,29 @@ class NSEMarketCalendar:
         "2025-11-05": "Gurunanak Jayanti",
         "2025-12-25": "Christmas",
 
-        # 2026
+        # 2026 (Synced with Official NSE Capital Market Holiday Master)
+        "2026-01-15": "Municipal Corporation Election - Maharashtra",
         "2026-01-26": "Republic Day",
         "2026-02-15": "Mahashivratri",
         "2026-03-03": "Holi",
-        "2026-03-20": "Id-Ul-Fitr",
+        "2026-03-21": "Id-Ul-Fitr (Ramadan Eid)",
+        "2026-03-26": "Shri Ram Navami",
+        "2026-03-31": "Shri Mahavir Jayanti",
         "2026-04-03": "Good Friday",
-        "2026-04-14": "Dr. Ambedkar Jayanti",
+        "2026-04-14": "Dr. Baba Saheb Ambedkar Jayanti",
         "2026-05-01": "Maharashtra Day",
-        "2026-05-27": "Bakri Id",
-        "2026-06-25": "Muharram",
+        "2026-05-28": "Bakri Id",
+        "2026-06-26": "Muharram",
         "2026-08-15": "Independence Day",
         "2026-09-14": "Ganesh Chaturthi",
         "2026-10-02": "Mahatma Gandhi Jayanti",
         "2026-10-20": "Dussehra",
-        "2026-11-08": "Diwali Laxmi Pujan",
-        "2026-11-24": "Gurunanak Jayanti",
+        "2026-11-08": "Diwali Laxmi Pujan*",
+        "2026-11-10": "Diwali-Balipratipada",
+        "2026-11-24": "Prakash Gurpurb Sri Guru Nanak Dev",
         "2026-12-25": "Christmas",
 
-        # 2027
+        # 2027 Baseline
         "2027-01-26": "Republic Day",
         "2027-03-22": "Holi",
         "2027-03-26": "Good Friday",
@@ -82,27 +78,195 @@ class NSEMarketCalendar:
         "2027-12-25": "Christmas",
     }
 
+    _sync_lock = threading.Lock()
+    _holiday_meta: Dict[str, Any] = {
+        "source": "BASELINE_INIT",
+        "last_synced_ist": None,
+        "last_synced_date": None,
+        "live_fetched_count": 0,
+        "total_holidays_loaded": len(NSE_HOLIDAYS),
+        "last_error": None
+    }
+    _db_loaded: bool = False
+
+    @classmethod
+    def _parse_nse_date(cls, raw_date: str) -> Optional[str]:
+        """Converts NSE date strings like '26-Jan-2026' into '2026-01-26'."""
+        if not raw_date:
+            return None
+        raw_date = str(raw_date).strip()
+        for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d-%B-%Y", "%d/%m/%Y"):
+            try:
+                return datetime.datetime.strptime(raw_date, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+        return None
+
+    @classmethod
+    def _load_cached_holidays_from_db(cls):
+        """Loads previously synced NSE holidays from the Single Master File (swing_trades.db)."""
+        if cls._db_loaded:
+            return
+        try:
+            from execution.state_engine import state_engine
+            cached = state_engine.get_engine_state("NSE_HOLIDAYS_VAULT")
+            if cached and isinstance(cached, dict):
+                holidays_dict = cached.get("holidays") or {}
+                if isinstance(holidays_dict, dict) and holidays_dict:
+                    # Replace current year dates with authoritative NSE synced dates if present
+                    synced_years = {k[:4] for k in holidays_dict.keys() if len(k) >= 4}
+                    for yr in synced_years:
+                        for k in list(cls.NSE_HOLIDAYS.keys()):
+                            if k.startswith(f"{yr}-"):
+                                cls.NSE_HOLIDAYS.pop(k, None)
+                    cls.NSE_HOLIDAYS.update(holidays_dict)
+                    cls._holiday_meta.update({
+                        "source": cached.get("source", "MASTER_DB_CACHE"),
+                        "last_synced_ist": cached.get("last_synced_ist"),
+                        "last_synced_date": cached.get("last_synced_date"),
+                        "live_fetched_count": cached.get("live_fetched_count", len(holidays_dict)),
+                        "total_holidays_loaded": len(cls.NSE_HOLIDAYS),
+                    })
+            cls._db_loaded = True
+        except Exception as e:
+            logger.debug(f"Could not load cached NSE holidays from DB: {e}")
+
+    @classmethod
+    def sync_holidays_from_nse(cls, force: bool = False) -> Dict[str, Any]:
+        """
+        Dynamically fetches the official NSE Trading Holidays from:
+        https://www.nseindia.com/api/holiday-master?type=trading (Capital Market 'CM' segment).
+        Updates in-memory NSE_HOLIDAYS and persists to the Single Master File (swing_trades.db).
+        """
+        cls._load_cached_holidays_from_db()
+        today_str = now_ist().strftime("%Y-%m-%d")
+
+        if not force and cls._holiday_meta.get("last_synced_date") == today_str:
+            return cls.get_holiday_metadata()
+
+        with cls._sync_lock:
+            if not force and cls._holiday_meta.get("last_synced_date") == today_str:
+                return cls.get_holiday_metadata()
+
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://www.nseindia.com/resources/exchange-communication-holidays",
+                "Connection": "keep-alive",
+            }
+
+            try:
+                session = requests.Session()
+                # Step 1: Warm up NSE cookies from homepage
+                session.get(cls.NSE_HOME_URL, headers=headers, timeout=10)
+                # Step 2: Query official NSE Holiday Master API
+                resp = session.get(cls.NSE_HOLIDAY_API_URL, headers=headers, timeout=12)
+                resp.raise_for_status()
+                payload = resp.json()
+
+                # Extract Capital Market (CM / Equities) segment, fallback to FO or CBM
+                cm_entries = payload.get("CM") or payload.get("FO") or []
+                fetched_holidays: Dict[str, str] = {}
+
+                for item in cm_entries:
+                    if not isinstance(item, dict):
+                        continue
+                    parsed_date = cls._parse_nse_date(item.get("tradingDate", ""))
+                    desc = str(item.get("description") or "NSE Trading Holiday").strip()
+                    if parsed_date:
+                        fetched_holidays[parsed_date] = desc
+
+                if fetched_holidays:
+                    # Replace dates for the years returned by NSE so any date corrections from NSE take effect
+                    fetched_years = {d[:4] for d in fetched_holidays.keys()}
+                    for yr in fetched_years:
+                        for existing_date in list(cls.NSE_HOLIDAYS.keys()):
+                            if existing_date.startswith(f"{yr}-"):
+                                cls.NSE_HOLIDAYS.pop(existing_date, None)
+
+                    cls.NSE_HOLIDAYS.update(fetched_holidays)
+                    sync_ts = format_ist()
+                    cls._holiday_meta = {
+                        "source": "NSE_OFFICIAL_WEBSITE_LIVE",
+                        "api_url": cls.NSE_HOLIDAY_API_URL,
+                        "last_synced_ist": sync_ts,
+                        "last_synced_date": today_str,
+                        "live_fetched_count": len(fetched_holidays),
+                        "total_holidays_loaded": len(cls.NSE_HOLIDAYS),
+                        "last_error": None
+                    }
+
+                    # Persist into Single Master File (swing_trades.db)
+                    try:
+                        from execution.state_engine import state_engine
+                        state_engine.save_engine_state("NSE_HOLIDAYS_VAULT", {
+                            "source": "NSE_OFFICIAL_WEBSITE_LIVE",
+                            "last_synced_ist": sync_ts,
+                            "last_synced_date": today_str,
+                            "live_fetched_count": len(fetched_holidays),
+                            "holidays": cls.NSE_HOLIDAYS
+                        })
+                    except Exception as db_err:
+                        logger.debug(f"Failed saving NSE holidays to master DB: {db_err}")
+
+                    logger.info(
+                        f"✓ Synced {len(fetched_holidays)} official NSE holidays dynamically from nseindia.com "
+                        f"(Total calendar entries: {len(cls.NSE_HOLIDAYS)})."
+                    )
+                else:
+                    cls._holiday_meta["last_error"] = "Empty CM holiday list from NSE API"
+                    logger.warning("NSE holiday API returned empty CM list; using cached/baseline holidays.")
+
+            except Exception as e:
+                cls._holiday_meta["last_error"] = str(e)
+                logger.warning(f"Dynamic NSE holiday fetch warning (using cached/baseline calendar): {e}")
+
+            return cls.get_holiday_metadata()
+
+    @classmethod
+    def get_holiday_metadata(cls) -> Dict[str, Any]:
+        """Returns metadata about the dynamically synced NSE holiday calendar."""
+        cls._load_cached_holidays_from_db()
+        curr_year = str(now_ist().year)
+        curr_year_holidays = {
+            k: v for k, v in sorted(cls.NSE_HOLIDAYS.items())
+            if k.startswith(f"{curr_year}-")
+        }
+        return {
+            **cls._holiday_meta,
+            "current_year": int(curr_year),
+            "current_year_holidays_count": len(curr_year_holidays),
+            "current_year_holidays": curr_year_holidays,
+        }
+
     @classmethod
     def is_trading_day(cls, dt: datetime.date = None) -> bool:
-        """Returns True if the date is a Monday-Friday and not an NSE official holiday."""
+        """Returns True if the date is Monday-Friday and not an official NSE holiday."""
+        cls._load_cached_holidays_from_db()
         if dt is None:
             dt = now_ist().date()
         elif isinstance(dt, datetime.datetime):
             dt = dt.date()
-            
+
         # 0 = Monday, ..., 4 = Friday, 5 = Saturday, 6 = Sunday
         if dt.weekday() >= 5:
             return False
-            
+
         date_str = dt.strftime("%Y-%m-%d")
         if date_str in cls.NSE_HOLIDAYS:
             return False
-            
+
         return True
 
     @classmethod
     def get_holiday_reason(cls, dt: datetime.date = None) -> str:
-        """Returns holiday reason if applicable."""
+        """Returns holiday or weekend reason if applicable."""
+        cls._load_cached_holidays_from_db()
         if dt is None:
             dt = now_ist().date()
         elif isinstance(dt, datetime.datetime):
@@ -112,19 +276,50 @@ class NSEMarketCalendar:
             return "Saturday (Weekend)"
         if dt.weekday() == 6:
             return "Sunday (Weekend)"
-            
+
         date_str = dt.strftime("%Y-%m-%d")
         return cls.NSE_HOLIDAYS.get(date_str, "Trading Day")
+
+    @classmethod
+    def is_render_keepalive_window(cls, dt: datetime.datetime = None) -> Tuple[bool, str]:
+        """
+        Strict Render Anti-Sleep Guard Window:
+        Returns (True, reason) ONLY between 09:00:00 AM and 03:50:00 PM IST
+        on active NSE trading days (Monday-Friday, excluding NSE holidays).
+        Outside 09:00–15:50 IST or on weekends/holidays, returns (False, reason)
+        so Render is allowed to sleep and conserve resources.
+        """
+        cls._load_cached_holidays_from_db()
+        if dt is None:
+            dt = now_ist()
+        elif dt.tzinfo is None:
+            dt = IST.localize(dt)
+
+        curr_date = dt.date()
+        curr_time = dt.time()
+
+        if not cls.is_trading_day(curr_date):
+            reason = cls.get_holiday_reason(curr_date)
+            return False, f"SLEEP ALLOWED — Non-trading day ({reason})"
+
+        t_wake = datetime.time(9, 0, 0)
+        t_sleep = datetime.time(15, 50, 0)
+
+        if t_wake <= curr_time <= t_sleep:
+            return True, f"NO-SLEEP GUARD ACTIVE (09:00 AM – 03:50 PM IST Trading Window • Now {curr_time.strftime('%H:%M:%S')} IST)"
+
+        return False, f"SLEEP ALLOWED — Outside 09:00 AM – 03:50 PM IST window (Now {curr_time.strftime('%H:%M:%S')} IST)"
 
     @classmethod
     def get_market_status(cls, dt: datetime.datetime = None) -> Dict[str, Any]:
         """
         Returns full market status dictionary:
         - is_open: bool
-        - session_phase: 'CLOSED', 'PRE_MARKET', 'REGULAR_HOURS', 'POST_MARKET', 'WEEKEND', 'HOLIDAY'
-        - next_open: str
+        - session_phase: 'PRE_SESSION', 'PRE_MARKET', 'REGULAR_HOURS', 'POST_MARKET', 'WEEKEND', 'HOLIDAY'
         - holiday_reason: str
+        - keepalive_active: bool (True strictly 09:00–15:50 IST on trading days)
         """
+        cls._load_cached_holidays_from_db()
         if dt is None:
             dt = now_ist()
         elif dt.tzinfo is None:
@@ -132,6 +327,7 @@ class NSEMarketCalendar:
 
         current_date = dt.date()
         current_time = dt.time()
+        keepalive_active, keepalive_msg = cls.is_render_keepalive_window(dt)
 
         if current_date.weekday() >= 5:
             return {
@@ -139,7 +335,9 @@ class NSEMarketCalendar:
                 "session_phase": "WEEKEND",
                 "holiday_reason": "Saturday" if current_date.weekday() == 5 else "Sunday",
                 "message": "Market is closed for the weekend.",
-                "ist_time": dt.strftime("%H:%M:%S")
+                "ist_time": dt.strftime("%H:%M:%S"),
+                "keepalive_active": False,
+                "keepalive_message": keepalive_msg
             }
 
         date_str = current_date.strftime("%Y-%m-%d")
@@ -150,7 +348,9 @@ class NSEMarketCalendar:
                 "session_phase": "HOLIDAY",
                 "holiday_reason": reason,
                 "message": f"Market is closed today ({reason}).",
-                "ist_time": dt.strftime("%H:%M:%S")
+                "ist_time": dt.strftime("%H:%M:%S"),
+                "keepalive_active": False,
+                "keepalive_message": keepalive_msg
             }
 
         t_pre = datetime.time(9, 0)
@@ -162,24 +362,30 @@ class NSEMarketCalendar:
                 "is_open": False,
                 "session_phase": "PRE_SESSION",
                 "holiday_reason": None,
-                "message": "Market opens at 09:15 AM IST.",
-                "ist_time": dt.strftime("%H:%M:%S")
+                "message": "Market opens at 09:15 AM IST (Render Anti-Sleep activates at 09:00 AM).",
+                "ist_time": dt.strftime("%H:%M:%S"),
+                "keepalive_active": keepalive_active,
+                "keepalive_message": keepalive_msg
             }
         elif current_time < t_open:
             return {
                 "is_open": False,
                 "session_phase": "PRE_MARKET",
                 "holiday_reason": None,
-                "message": "Pre-Market Order Matching (09:00 - 09:15 IST).",
-                "ist_time": dt.strftime("%H:%M:%S")
+                "message": "Pre-Market Session (09:00 - 09:15 IST) • Render Awake.",
+                "ist_time": dt.strftime("%H:%M:%S"),
+                "keepalive_active": keepalive_active,
+                "keepalive_message": keepalive_msg
             }
         elif current_time <= t_close:
             return {
                 "is_open": True,
                 "session_phase": "REGULAR_HOURS",
                 "holiday_reason": None,
-                "message": "Live Trading Session active.",
-                "ist_time": dt.strftime("%H:%M:%S")
+                "message": "Live NSE Trading Session active (09:15 - 15:30 IST).",
+                "ist_time": dt.strftime("%H:%M:%S"),
+                "keepalive_active": keepalive_active,
+                "keepalive_message": keepalive_msg
             }
         else:
             return {
@@ -187,7 +393,9 @@ class NSEMarketCalendar:
                 "session_phase": "POST_MARKET",
                 "holiday_reason": None,
                 "message": "Market closed at 03:30 PM IST.",
-                "ist_time": dt.strftime("%H:%M:%S")
+                "ist_time": dt.strftime("%H:%M:%S"),
+                "keepalive_active": keepalive_active,
+                "keepalive_message": keepalive_msg
             }
 
     @classmethod
@@ -195,6 +403,7 @@ class NSEMarketCalendar:
         """
         Determines the next upcoming automated scan (10:20 AM or 3:05 PM IST).
         """
+        cls._load_cached_holidays_from_db()
         if dt is None:
             dt = now_ist()
         elif dt.tzinfo is None:
@@ -206,28 +415,24 @@ class NSEMarketCalendar:
         curr_date = dt.date()
         curr_time = dt.time()
 
-        # If today is a trading day:
         if cls.is_trading_day(curr_date):
             if curr_time < t_1020:
                 target_dt = IST.localize(datetime.datetime.combine(curr_date, t_1020))
-                scan_type = "MORNING_1020AM"
                 return {
-                    "scan_type": scan_type,
+                    "scan_type": "MORNING_1020AM",
                     "target_time": target_dt.strftime("%Y-%m-%d %H:%M:%S IST"),
                     "seconds_remaining": int((target_dt - dt).total_seconds()),
                     "label": "10:20 AM Morning Intraday Scan"
                 }
             elif curr_time < t_1505:
                 target_dt = IST.localize(datetime.datetime.combine(curr_date, t_1505))
-                scan_type = "AFTERNOON_305PM"
                 return {
-                    "scan_type": scan_type,
+                    "scan_type": "AFTERNOON_305PM",
                     "target_time": target_dt.strftime("%Y-%m-%d %H:%M:%S IST"),
                     "seconds_remaining": int((target_dt - dt).total_seconds()),
                     "label": "3:05 PM MOC & Daily Close Swing Scan"
                 }
 
-        # Otherwise, search for the next trading day's 10:20 AM
         next_date = curr_date + datetime.timedelta(days=1)
         while not cls.is_trading_day(next_date):
             next_date += datetime.timedelta(days=1)
@@ -246,7 +451,6 @@ class NSEMarketCalendar:
         Strict Market-Hours Trading Gate:
         Returns (True, reason) ONLY if current IST time is between 09:15:00 and 15:30:00 IST
         on an active NSE trading day (Monday-Friday, excluding NSE holidays).
-        Otherwise returns (False, strict_gate_reason).
         """
         status = cls.get_market_status(dt)
         if status.get("is_open") and status.get("session_phase") == "REGULAR_HOURS":
@@ -257,4 +461,3 @@ class NSEMarketCalendar:
             f"NSE Regular Trading Hours (09:15 AM – 03:30 PM IST, Mon–Fri)."
         )
         return False, reason
-

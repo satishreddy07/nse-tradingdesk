@@ -29,7 +29,8 @@ from engines.nifty500_engine import (
 )
 from execution.state_engine import state_engine
 from scheduler.cron_scheduler import (
-    start_scheduler, shutdown_scheduler, get_scheduler_status
+    start_scheduler, shutdown_scheduler, get_scheduler_status,
+    register_external_request_origin
 )
 
 logger = logging.getLogger("WebAPI")
@@ -48,6 +49,16 @@ STATIC_DIR = BASE_DIR / "web" / "static"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.middleware("http")
+async def capture_public_host_middleware(request: Request, call_next):
+    """Automatically detects the public Render URL from incoming HTTP headers for Anti-Sleep Guard."""
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
+    if host:
+        register_external_request_origin(proto, host)
+    return await call_next(request)
 
 
 @app.on_event("startup")
@@ -69,7 +80,13 @@ async def on_shutdown():
 # --------------------------------------------------------------------------
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "timestamp": format_ist()}
+    keepalive_active, keepalive_reason = NSEMarketCalendar.is_render_keepalive_window()
+    return {
+        "status": "ok",
+        "timestamp": format_ist(),
+        "render_keepalive_active": keepalive_active,
+        "render_keepalive_reason": keepalive_reason
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -108,6 +125,8 @@ def get_system_status():
         "next_scan": scheduler_info["next_scan"],
         "scheduler_running": scheduler_info["scheduler_running"],
         "jobs": scheduler_info["jobs"],
+        "render_keepalive": scheduler_info.get("render_keepalive", {}),
+        "nse_holidays_meta": scheduler_info.get("nse_holidays_meta", {}),
         "telegram_vault": vault_info,
         "portfolio_1_quick": {
             "chartink_fetched_count": p1_status.get("chartink_fetched_count", 0),
@@ -129,13 +148,28 @@ def get_system_status():
 @app.get("/api/calendar")
 def get_market_calendar():
     can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
+    keepalive_active, keepalive_msg = NSEMarketCalendar.is_render_keepalive_window()
     return {
         "current_date": now_ist().strftime("%Y-%m-%d"),
         "is_trading_day": NSEMarketCalendar.is_trading_day(),
         "market_status": NSEMarketCalendar.get_market_status(),
         "trading_gate_open": can_trade,
         "trading_gate_message": gate_msg,
+        "render_keepalive_active": keepalive_active,
+        "render_keepalive_message": keepalive_msg,
+        "nse_holidays_meta": NSEMarketCalendar.get_holiday_metadata(),
         "holidays": NSEMarketCalendar.NSE_HOLIDAYS
+    }
+
+
+@app.post("/api/calendar/sync-holidays")
+def sync_nse_holidays_endpoint():
+    """Manually triggers a live sync of official NSE trading holidays from nseindia.com."""
+    meta = NSEMarketCalendar.sync_holidays_from_nse(force=True)
+    return {
+        "status": "OK",
+        "message": f"Synced {meta.get('current_year_holidays_count', 0)} NSE holidays for {meta.get('current_year')} from {meta.get('source')}.",
+        "nse_holidays_meta": meta
     }
 
 
