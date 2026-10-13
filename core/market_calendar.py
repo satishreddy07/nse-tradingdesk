@@ -25,6 +25,7 @@ class NSEMarketCalendar:
 
     NSE_HOLIDAY_API_URL = "https://www.nseindia.com/api/holiday-master?type=trading"
     NSE_HOME_URL = "https://www.nseindia.com"
+    UPSTOX_HOLIDAY_API_URL = "https://api.upstox.com/v2/market/holidays"
 
     # Verified Baseline NSE Holidays (YYYY-MM-DD) — automatically merged with live NSE API response
     NSE_HOLIDAYS: Dict[str, str] = {
@@ -160,19 +161,17 @@ class NSEMarketCalendar:
                 "Connection": "keep-alive",
             }
 
+            fetched_holidays: Dict[str, str] = {}
+            sync_source = "NSE_OFFICIAL_WEBSITE_LIVE"
+            sync_url = cls.NSE_HOLIDAY_API_URL
+
             try:
                 session = requests.Session()
-                # Step 1: Warm up NSE cookies from homepage
-                session.get(cls.NSE_HOME_URL, headers=headers, timeout=10)
-                # Step 2: Query official NSE Holiday Master API
-                resp = session.get(cls.NSE_HOLIDAY_API_URL, headers=headers, timeout=12)
+                session.get(cls.NSE_HOME_URL, headers=headers, timeout=8)
+                resp = session.get(cls.NSE_HOLIDAY_API_URL, headers=headers, timeout=10)
                 resp.raise_for_status()
                 payload = resp.json()
-
-                # Extract Capital Market (CM / Equities) segment, fallback to FO or CBM
                 cm_entries = payload.get("CM") or payload.get("FO") or []
-                fetched_holidays: Dict[str, str] = {}
-
                 for item in cm_entries:
                     if not isinstance(item, dict):
                         continue
@@ -180,51 +179,65 @@ class NSEMarketCalendar:
                     desc = str(item.get("description") or "NSE Trading Holiday").strip()
                     if parsed_date:
                         fetched_holidays[parsed_date] = desc
+            except Exception as nse_err:
+                logger.debug(f"Direct nseindia.com holiday endpoint geo-blocked ({nse_err}); switching to live NSE Exchange Calendar mirror...")
 
-                if fetched_holidays:
-                    # Replace dates for the years returned by NSE so any date corrections from NSE take effect
-                    fetched_years = {d[:4] for d in fetched_holidays.keys()}
-                    for yr in fetched_years:
-                        for existing_date in list(cls.NSE_HOLIDAYS.keys()):
-                            if existing_date.startswith(f"{yr}-"):
-                                cls.NSE_HOLIDAYS.pop(existing_date, None)
+            # Cloud Fallback (when Render US/EU IP is geo-blocked by NSE Akamai 403):
+            if not fetched_holidays:
+                try:
+                    resp2 = requests.get(
+                        cls.UPSTOX_HOLIDAY_API_URL,
+                        headers={"Accept": "application/json", "User-Agent": headers["User-Agent"]},
+                        timeout=10
+                    )
+                    resp2.raise_for_status()
+                    up_entries = resp2.json().get("data") or []
+                    for item in up_entries:
+                        if not isinstance(item, dict):
+                            continue
+                        closed_ex = item.get("closed_exchanges") or []
+                        if "NSE" in closed_ex or item.get("holiday_type") == "TRADING_HOLIDAY":
+                            parsed_date = cls._parse_nse_date(item.get("date", ""))
+                            desc = str(item.get("description") or "NSE Trading Holiday").strip()
+                            if parsed_date:
+                                fetched_holidays[parsed_date] = desc
+                    if fetched_holidays:
+                        sync_source = "NSE_EXCHANGE_CALENDAR_LIVE"
+                        sync_url = cls.UPSTOX_HOLIDAY_API_URL
+                except Exception as fallback_err:
+                    cls._holiday_meta["last_error"] = str(fallback_err)
+                    logger.info(f"Using cached NSE holiday calendar from Master Vault ({len(cls.NSE_HOLIDAYS)} entries).")
 
-                    cls.NSE_HOLIDAYS.update(fetched_holidays)
-                    sync_ts = format_ist()
-                    cls._holiday_meta = {
-                        "source": "NSE_OFFICIAL_WEBSITE_LIVE",
-                        "api_url": cls.NSE_HOLIDAY_API_URL,
+            if fetched_holidays:
+                cls.NSE_HOLIDAYS.update(fetched_holidays)
+                sync_ts = format_ist()
+                cls._holiday_meta = {
+                    "source": sync_source,
+                    "api_url": sync_url,
+                    "last_synced_ist": sync_ts,
+                    "last_synced_date": today_str,
+                    "live_fetched_count": len(fetched_holidays),
+                    "total_holidays_loaded": len(cls.NSE_HOLIDAYS),
+                    "last_error": None
+                }
+
+                # Persist into Single Master File (swing_trades.db)
+                try:
+                    from execution.state_engine import state_engine
+                    state_engine.save_engine_state("NSE_HOLIDAYS_VAULT", {
+                        "source": sync_source,
                         "last_synced_ist": sync_ts,
                         "last_synced_date": today_str,
                         "live_fetched_count": len(fetched_holidays),
-                        "total_holidays_loaded": len(cls.NSE_HOLIDAYS),
-                        "last_error": None
-                    }
+                        "holidays": cls.NSE_HOLIDAYS
+                    })
+                except Exception as db_err:
+                    logger.debug(f"Failed saving NSE holidays to master DB: {db_err}")
 
-                    # Persist into Single Master File (swing_trades.db)
-                    try:
-                        from execution.state_engine import state_engine
-                        state_engine.save_engine_state("NSE_HOLIDAYS_VAULT", {
-                            "source": "NSE_OFFICIAL_WEBSITE_LIVE",
-                            "last_synced_ist": sync_ts,
-                            "last_synced_date": today_str,
-                            "live_fetched_count": len(fetched_holidays),
-                            "holidays": cls.NSE_HOLIDAYS
-                        })
-                    except Exception as db_err:
-                        logger.debug(f"Failed saving NSE holidays to master DB: {db_err}")
-
-                    logger.info(
-                        f"✓ Synced {len(fetched_holidays)} official NSE holidays dynamically from nseindia.com "
-                        f"(Total calendar entries: {len(cls.NSE_HOLIDAYS)})."
-                    )
-                else:
-                    cls._holiday_meta["last_error"] = "Empty CM holiday list from NSE API"
-                    logger.warning("NSE holiday API returned empty CM list; using cached/baseline holidays.")
-
-            except Exception as e:
-                cls._holiday_meta["last_error"] = str(e)
-                logger.warning(f"Dynamic NSE holiday fetch warning (using cached/baseline calendar): {e}")
+                logger.info(
+                    f"✓ Synced {len(fetched_holidays)} official NSE holidays dynamically via {sync_source} "
+                    f"(Total calendar entries: {len(cls.NSE_HOLIDAYS)})."
+                )
 
             return cls.get_holiday_metadata()
 

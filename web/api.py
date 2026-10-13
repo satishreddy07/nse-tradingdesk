@@ -82,7 +82,7 @@ async def on_shutdown():
 # --------------------------------------------------------------------------
 # HEALTH & FRONTEND ROUTES
 # --------------------------------------------------------------------------
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health_check():
     keepalive_active, keepalive_reason = NSEMarketCalendar.is_render_keepalive_window()
     return {
@@ -93,7 +93,7 @@ def health_check():
     }
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def index(request: Request):
     index_file = TEMPLATES_DIR / "index.html"
     if index_file.exists():
