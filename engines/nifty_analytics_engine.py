@@ -3007,6 +3007,20 @@ class NiftyAnalyticsEngine:
             "status": "TRAINED_ON_REAL_MARKET_WALK_FORWARD_DATA",
         }
         state_engine.set_kv("nifty_self_trained_weights", training_result)
+        try:
+            telegram_vault.send_alert_and_sync(
+                title="🎯 Nifty Daily Prediction Outcomes & Online Training Report",
+                message=(
+                    f"Sessions Graded: {t1_evaluated} trading sessions\n"
+                    f"T+1 Hit Rate: {t1_rate}%\n"
+                    f"T+5 Hit Rate: {t5_rate}%\n"
+                    f"Avg T+1 Error: {avg_err_1} pts\n"
+                    f"Attribution Ledger Synced & Online Weights Updated."
+                ),
+                sync_db=True
+            )
+        except Exception as te:
+            logger.debug(f"Telegram vault sync for prediction training note: {te}")
         return training_result
 
     def _record_and_validate_predictions_log(

@@ -694,4 +694,53 @@ def get_portfolio_equity_curves_endpoint():
     return nifty_analytics_engine.get_all_equity_curves()
 
 
+# ==============================================================================
+# AI INTELLIGENCE LAYER ENDPOINTS (GROQ + OPENROUTER FREE TIER)
+# ==============================================================================
+class AIAnalyzeRequest(BaseModel):
+    force_refresh: bool = False
+    model_override: Optional[str] = None
+
+
+@app.get("/api/ai/status")
+def get_ai_status_endpoint():
+    """Returns configuration status, active provider, candidate models, and cache info."""
+    from ai_engine.service import ai_service
+    return ai_service.get_status().model_dump()
+
+
+@app.get("/api/ai/analysis")
+def get_ai_analysis_endpoint():
+    """Returns the latest valid AI analysis (from cache or newly evaluated)."""
+    from ai_engine.service import ai_service
+    analysis = ai_service.analyze_predictions(force_refresh=False)
+    return analysis.model_dump()
+
+
+@app.post("/api/ai/analyze")
+def trigger_ai_analysis_endpoint(payload: Optional[AIAnalyzeRequest] = None):
+    """Triggers an on-demand AI analysis from current verified ML predictions."""
+    from ai_engine.service import ai_service
+    req = payload or AIAnalyzeRequest()
+    analysis = ai_service.analyze_predictions(
+        force_refresh=req.force_refresh,
+        model_override=req.model_override
+    )
+    return analysis.model_dump()
+
+
+@app.post("/api/ai/benchmark")
+def run_ai_benchmark_endpoint():
+    """Protected benchmark workflow comparing all 5 candidate models against standardized input."""
+    from ai_engine.service import ai_service
+    reports = ai_service.run_model_benchmark()
+    return {
+        "status": "OK",
+        "timestamp_ist": format_ist(),
+        "models_evaluated": len(reports),
+        "results": [r.model_dump() for r in reports]
+    }
+
+
+
 

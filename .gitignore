@@ -8,6 +8,11 @@ venv/
 .venv/
 env/
 
+# Environment secrets
+.env
+*.env
+.env.local
+
 # Historical data cache (regenerated on fly)
 data/historical_data/*.pkl
 data/historical_data/*.csv

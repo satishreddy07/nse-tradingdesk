@@ -178,6 +178,13 @@ def scheduled_live_price_stream_job():
         nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
         # 3. Evaluate and deploy intraday auto-strategies if active < 2
         nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["INTRADAY"])
+        # 4. Periodically evaluate AI intelligence analysis (respecting cache TTL)
+        if config.AI_ENABLED:
+            try:
+                from ai_engine.service import ai_service
+                ai_service.analyze_predictions(force_refresh=False)
+            except Exception as aie:
+                logger.debug(f"5m AI analysis evaluation warning: {aie}")
     except Exception as e:
         logger.warning(f"5m option chain sync & auto-trade warning: {e}")
 
@@ -370,6 +377,29 @@ def _intraday_collector_watchdog():
         time.sleep(40)
 
 
+def scheduled_daily_prediction_training_job():
+    """
+    03:45 PM IST Trading Day Job:
+    - Runs EOD prediction outcome evaluation and online training.
+    - Updates adaptive pillar weights based on day's actual close.
+    - Backs up prediction attribution ledger to Telegram Cloud Vault.
+    """
+    current_dt = now_ist()
+    NSEMarketCalendar.sync_holidays_from_nse(force=False)
+    if not NSEMarketCalendar.is_trading_day(current_dt.date()):
+        return
+    try:
+        from engines.nifty_analytics_engine import nifty_analytics_engine
+        preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True)
+        st = preds.get("self_training_engine", {})
+        logger.info(
+            f"🎯 [03:45 PM EOD Training Job] Nifty Predictions Trained & Synced. "
+            f"Hit Rates: {st.get('t1_hit_rate_pct')}%, {st.get('t5_hit_rate_pct')}%. Cloud Vault Backed Up."
+        )
+    except Exception as e:
+        logger.warning(f"03:45 PM Daily Prediction Training Job error: {e}")
+
+
 def start_scheduler():
     """Initializes and starts the BackgroundScheduler with IST triggers & Render Anti-Sleep Guard."""
     global _scheduler
@@ -482,6 +512,16 @@ def start_scheduler():
             name="3:05 PM Afternoon Close-of-Day Swing Scan",
             replace_existing=True,
             misfire_grace_time=300
+        )
+
+        # Job 3: 03:45 PM Daily Prediction Outcomes & Online Training (Mon-Fri)
+        _scheduler.add_job(
+            scheduled_daily_prediction_training_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=15, minute=45, timezone=IST),
+            id="job_daily_prediction_training_1545",
+            name="03:45 PM Daily Prediction Outcomes & Online Training Sync",
+            replace_existing=True,
+            misfire_grace_time=600
         )
 
         _scheduler.start()

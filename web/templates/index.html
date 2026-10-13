@@ -1535,6 +1535,163 @@
         </div>
       </div>
 
+      <!-- =================================================================== -->
+      <!-- AI INTELLIGENCE LAYER (GROQ & OPENROUTER FREE TIER)                 -->
+      <!-- =================================================================== -->
+      <div id="ai-intelligence-card" class="bg-slate-900/90 border border-purple-500/40 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
+        <!-- Header Strip -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1">
+                <span>🤖</span> AI INTELLIGENCE LAYER
+              </span>
+              <span id="ai-status-pill" class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700">INITIALIZING...</span>
+              <span id="ai-active-model-badge" class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">Groq: openai/gpt-oss-120b</span>
+            </div>
+            <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Multi-Horizon ML Prediction Interpretation & Risk Synthesis</h3>
+            <p class="text-xs text-slate-400">Interprets T+1 & T+5 quantitative ML forecasts, explains regime conflicts, identifies event risks, and flags trade caution.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <button onclick="triggerAiAnalysis(true)" id="btn-ai-analyze" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-mono text-xs font-bold flex items-center gap-1.5 transition shadow-sm">
+              <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+              <span>⚡ Run AI Analysis</span>
+            </button>
+            <button onclick="openAiBenchmarkModal()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-mono text-xs font-semibold flex items-center gap-1.5 transition">
+              <i data-lucide="flask-conical" class="w-3.5 h-3.5"></i>
+              <span>🧪 5-Model Benchmark</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Executive Summary Banner -->
+        <div class="bg-slate-950/90 border border-purple-500/25 rounded-xl p-3.5 sm:p-4">
+          <div class="text-[10px] font-mono uppercase tracking-wider text-purple-400 font-bold mb-1 flex items-center gap-1.5">
+            <span>📋</span> EXECUTIVE SUMMARY & SYNTHESIS
+          </div>
+          <p id="ai-summary-text" class="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans">
+            Loading AI prediction interpretation... Click "⚡ Run AI Analysis" or recompute the forecast.
+          </p>
+        </div>
+
+        <!-- Horizon-by-Horizon Analysis Grid (T+1 vs T+5) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- T+1 AI Horizon Card -->
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 space-y-2">
+            <div class="flex items-center justify-between pb-1.5 border-b border-slate-800/80">
+              <span class="text-xs font-mono font-bold text-purple-300 uppercase flex items-center gap-1.5">
+                <span>⏱️</span> T+1 Next-Session Interpretation
+              </span>
+              <span class="text-[10px] font-mono text-slate-500">Day Trade / Drift</span>
+            </div>
+            <p id="ai-t1-interpretation" class="text-xs text-slate-300 leading-relaxed font-sans">--</p>
+            <div>
+              <span class="text-[10px] font-mono text-slate-400 uppercase font-semibold">T+1 Uncertainties:</span>
+              <ul id="ai-t1-uncertainties" class="list-disc list-inside text-[11px] text-slate-400 mt-1 space-y-0.5">
+                <li>--</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- T+5 AI Horizon Card -->
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 space-y-2">
+            <div class="flex items-center justify-between pb-1.5 border-b border-slate-800/80">
+              <span class="text-xs font-mono font-bold text-cyan-300 uppercase flex items-center gap-1.5">
+                <span>📅</span> T+5 Weekly Trend Interpretation
+              </span>
+              <span class="text-[10px] font-mono text-slate-500">Swing / 5-Day Cone</span>
+            </div>
+            <p id="ai-t5-interpretation" class="text-xs text-slate-300 leading-relaxed font-sans">--</p>
+            <div>
+              <span class="text-[10px] font-mono text-slate-400 uppercase font-semibold">T+5 Uncertainties:</span>
+              <ul id="ai-t5-uncertainties" class="list-disc list-inside text-[11px] text-slate-400 mt-1 space-y-0.5">
+                <li>--</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Multi-Factor Triad: Conflicts, Evidence & Event Risks -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <!-- Conflicts Card -->
+          <div class="bg-rose-950/15 border border-rose-500/25 rounded-xl p-3 space-y-1.5">
+            <div class="text-[11px] font-mono font-bold text-rose-400 flex items-center gap-1.5">
+              <span>⚠️</span> Directional & Regime Conflicts
+            </div>
+            <ul id="ai-conflicts-list" class="text-[11px] text-slate-300 space-y-1">
+              <li class="text-slate-500">Evaluating multi-horizon alignment...</li>
+            </ul>
+          </div>
+
+          <!-- Supporting Evidence Card -->
+          <div class="bg-emerald-950/15 border border-emerald-500/25 rounded-xl p-3 space-y-1.5">
+            <div class="text-[11px] font-mono font-bold text-emerald-400 flex items-center gap-1.5">
+              <span>🛡️</span> Supporting Evidence
+            </div>
+            <ul id="ai-evidence-list" class="text-[11px] text-slate-300 space-y-1">
+              <li class="text-slate-500">Analyzing quantitative pillar backing...</li>
+            </ul>
+          </div>
+
+          <!-- Event Risks Card -->
+          <div class="bg-amber-950/15 border border-amber-500/25 rounded-xl p-3 space-y-1.5">
+            <div class="text-[11px] font-mono font-bold text-amber-400 flex items-center gap-1.5">
+              <span>💥</span> Economic & Macro Event Risks
+            </div>
+            <ul id="ai-event-risks-list" class="text-[11px] text-slate-300 space-y-1">
+              <li class="text-slate-500">Checking central bank & earnings schedule...</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Bottom Grid: Reasons to Avoid Trade, Missing Data, Approved Strategies -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <!-- Reasons to Avoid Trade -->
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-1.5">
+            <div class="text-[11px] font-mono font-bold text-rose-300 flex items-center gap-1.5">
+              <span>🛑</span> Reasons to Avoid Trade
+            </div>
+            <ul id="ai-avoid-trade-list" class="text-[11px] text-slate-400 space-y-1">
+              <li>--</li>
+            </ul>
+          </div>
+
+          <!-- Missing or Stale Data -->
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-1.5">
+            <div class="text-[11px] font-mono font-bold text-slate-400 flex items-center gap-1.5">
+              <span>🧩</span> Missing / Stale Data Audits
+            </div>
+            <ul id="ai-missing-data-list" class="text-[11px] text-slate-400 space-y-1">
+              <li>--</li>
+            </ul>
+          </div>
+
+          <!-- Strategy Considerations -->
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-1.5">
+            <div class="text-[11px] font-mono font-bold text-cyan-300 flex items-center gap-1.5">
+              <span>♟️</span> Strategy Matrix Alignment
+            </div>
+            <ul id="ai-strategy-considerations-list" class="text-[11px] text-slate-300 space-y-1">
+              <li>--</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Telemetry & Disclaimer Footer -->
+        <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800 text-[10px] font-mono text-slate-500">
+          <div class="flex items-center gap-2">
+            <span>Latency: <b id="ai-latency-lbl" class="text-slate-400">-- ms</b></span>
+            <span>•</span>
+            <span>Provider: <b id="ai-provider-lbl" class="text-slate-400">--</b></span>
+            <span>•</span>
+            <span>Generated: <b id="ai-timestamp-lbl" class="text-slate-400">--</b></span>
+          </div>
+          <div class="text-cyan-400 font-semibold">
+            ⚖️ Decision Status: ANALYSIS_ONLY • Orders are governed strictly by deterministic risk safeguards
+          </div>
+        </div>
+      </div>
+
       <!-- Quant Desk Playbook & Suggestions Strip -->
       <div id="pred-suggestions-grid" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 text-xs text-slate-400">Loading Nifty T+1 & T+5 quant playbook suggestions...</div>
@@ -2773,6 +2930,57 @@
     </div>
   </div>
 
+  <!-- ===================================================================== -->
+  <!-- AI MODEL BENCHMARK MODAL (Groq & OpenRouter Free Tier Comparison)     -->
+  <!-- ===================================================================== -->
+  <div id="ai-benchmark-modal" onclick="if(event.target === this) closeAiBenchmarkModal()" style="display: none;" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5">
+    <div class="bg-[#0b0f19] border border-purple-500/40 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">5-MODEL BENCHMARK</span>
+            <span class="text-xs font-mono text-cyan-400">Groq & OpenRouter Free-Tier Evaluation</span>
+          </div>
+          <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Multi-Model Performance & Schema Validation Benchmarking</h3>
+        </div>
+        <button onclick="closeAiBenchmarkModal()" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition">✕</button>
+      </div>
+
+      <div class="p-4 sm:p-5 overflow-y-auto space-y-4 custom-scroll">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <p class="text-xs text-slate-400">Compares all 5 configured candidate models against an identical prediction contract with conflicting horizons (T+1 Bullish vs T+5 Bearish) to evaluate latency, schema validity, and conflict detection.</p>
+          <button onclick="runAiBenchmark()" id="btn-run-benchmark" class="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-mono text-xs font-bold shrink-0 transition flex items-center gap-1.5 shadow-sm">
+            <span>🚀</span> Run Full Benchmark
+          </button>
+        </div>
+
+        <div class="border border-slate-800 rounded-xl overflow-hidden overflow-x-auto">
+          <table class="w-full text-left text-xs font-mono border-collapse min-w-[700px]">
+            <thead class="bg-slate-900 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="p-2.5">Model ID</th>
+                <th class="p-2.5">Provider</th>
+                <th class="p-2.5 text-center">Status</th>
+                <th class="p-2.5 text-right">Latency</th>
+                <th class="p-2.5 text-center">Valid JSON</th>
+                <th class="p-2.5 text-center">Schema Valid</th>
+                <th class="p-2.5 text-center">Conflicts Found</th>
+                <th class="p-2.5">Summary Preview / Error</th>
+              </tr>
+            </thead>
+            <tbody id="ai-benchmark-tbody" class="divide-y divide-slate-800/60">
+              <tr><td colspan="8" class="p-6 text-center text-slate-500 font-sans">Click "Run Full Benchmark" to test all 5 candidate models simultaneously.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-slate-800 bg-slate-950/80 flex justify-end">
+        <button onclick="closeAiBenchmarkModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs font-bold transition">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MOBILE & TABLET PRIMARY MODULE BOTTOM NAVIGATION BAR (Zero Duplication with Swing Sub-Tabs) -->
   <nav class="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0b0f19]/95 backdrop-blur-md border-t border-slate-800/90 z-40 px-2 py-1.5 flex items-center justify-around text-[10px] pb-safe font-semibold shadow-2xl">
     <button onclick="switchModule('module-swing')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-cyan-400 bg-cyan-500/10" id="mob-mod-swing">
@@ -3840,6 +4048,279 @@
               </tr>
             `;
           }).join('');
+        }
+      }
+
+      // Automatically sync AI analysis alongside ML prediction rendering
+      if (typeof loadAiAnalysis === 'function') {
+        loadAiAnalysis(false);
+      }
+    }
+
+    // =========================================================================
+    // AI INTELLIGENCE LAYER ENGINE (GROQ & OPENROUTER FREE TIER)
+    // =========================================================================
+    let aiAnalysisCache = null;
+    let aiStatusCache = null;
+
+    async function loadAiStatus() {
+      try {
+        const res = await fetch('/api/ai/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        aiStatusCache = data;
+        const pill = document.getElementById('ai-status-pill');
+        const badge = document.getElementById('ai-active-model-badge');
+
+        if (pill) {
+          if (!data.enabled) {
+            pill.innerText = 'AI DISABLED';
+            pill.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700';
+          } else if (data.groq_configured || data.openrouter_configured) {
+            pill.innerText = 'ONLINE';
+            pill.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+          } else {
+            pill.innerText = 'API KEY REQUIRED';
+            pill.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40';
+          }
+        }
+
+        if (badge) {
+          badge.innerText = `${data.active_provider.toUpperCase()}: ${data.primary_model}`;
+        }
+      } catch (err) {
+        console.error("Failed loading AI status:", err);
+      }
+    }
+
+    async function loadAiAnalysis(forceRefresh = false) {
+      await loadAiStatus();
+      try {
+        const url = forceRefresh ? '/api/ai/analyze' : '/api/ai/analysis';
+        const options = forceRefresh ? {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force_refresh: true })
+        } : { method: 'GET' };
+
+        const res = await fetch(url, options);
+        if (!res.ok) return;
+        const data = await res.json();
+        aiAnalysisCache = data;
+        renderAiAnalysisUI(data);
+      } catch (err) {
+        console.error("Failed loading AI analysis:", err);
+      }
+    }
+
+    async function triggerAiAnalysis(force = true) {
+      const btn = document.getElementById('btn-ai-analyze');
+      const origHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Interpreting ML Predictions...`;
+      }
+
+      try {
+        const res = await fetch('/api/ai/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force_refresh: force })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          aiAnalysisCache = data;
+          renderAiAnalysisUI(data);
+          if (data.status === 'OK' || data.status === 'FALLBACK_OK') {
+            showToast(`🤖 AI Analysis Complete (${data.provider}/${data.model} in ${data.latency_ms || 0}ms)!`, 'success');
+          } else if (data.status === 'AI_DISABLED') {
+            showToast("AI is disabled via configuration. Quantitative ML predictions remain active.", "info");
+          } else {
+            showToast(`AI Status: ${data.status} - ${data.summary.slice(0, 80)}...`, "warning");
+          }
+        } else {
+          showToast(`AI analysis error: ${data.detail || data.message || 'Server error'}`, 'error');
+        }
+      } catch (err) {
+        console.error("Trigger AI error:", err);
+        showToast(`AI analysis failed: ${err.message}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
+          lucide.createIcons();
+        }
+      }
+    }
+
+    function renderAiAnalysisUI(data) {
+      if (!data) return;
+
+      const pill = document.getElementById('ai-status-pill');
+      if (pill) {
+        if (data.status === 'OK') {
+          pill.innerText = 'ONLINE (PRIMARY)';
+          pill.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+        } else if (data.status === 'FALLBACK_OK') {
+          pill.innerText = 'ONLINE (FALLBACK USED)';
+          pill.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40';
+        } else if (data.status === 'AI_DISABLED') {
+          pill.innerText = 'DISABLED';
+          pill.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700';
+        } else {
+          pill.innerText = data.status || 'UNAVAILABLE';
+          pill.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40';
+        }
+      }
+
+      const badge = document.getElementById('ai-active-model-badge');
+      if (badge && data.model) {
+        badge.innerText = `${(data.provider || 'AI').toUpperCase()}: ${data.model}`;
+      }
+
+      const sumEl = document.getElementById('ai-summary-text');
+      if (sumEl) sumEl.innerText = data.summary || 'No summary available.';
+
+      // Horizon Analysis (T+1 vs T+5)
+      const horizons = data.horizon_analysis || [];
+      const t1Data = horizons.find(h => h.horizon === 'T+1') || {};
+      const t5Data = horizons.find(h => h.horizon === 'T+5') || {};
+
+      const t1Interp = document.getElementById('ai-t1-interpretation');
+      if (t1Interp) t1Interp.innerText = t1Data.interpretation || '--';
+
+      const t1Uncert = document.getElementById('ai-t1-uncertainties');
+      if (t1Uncert) {
+        const u = t1Data.uncertainties || [];
+        t1Uncert.innerHTML = u.length ? u.map(x => `<li>${x}</li>`).join('') : '<li class="text-slate-500">None specified</li>';
+      }
+
+      const t5Interp = document.getElementById('ai-t5-interpretation');
+      if (t5Interp) t5Interp.innerText = t5Data.interpretation || '--';
+
+      const t5Uncert = document.getElementById('ai-t5-uncertainties');
+      if (t5Uncert) {
+        const u = t5Data.uncertainties || [];
+        t5Uncert.innerHTML = u.length ? u.map(x => `<li>${x}</li>`).join('') : '<li class="text-slate-500">None specified</li>';
+      }
+
+      // Triad: Conflicts, Evidence & Event Risks
+      const confList = document.getElementById('ai-conflicts-list');
+      if (confList) {
+        const c = data.conflicts || [];
+        confList.innerHTML = c.length ? c.map(x => `<li class="flex items-start gap-1.5"><span class="text-rose-400 shrink-0">⚠️</span><span>${x}</span></li>`).join('') : '<li class="text-slate-500">No directional or regime conflicts detected.</li>';
+      }
+
+      const evList = document.getElementById('ai-evidence-list');
+      if (evList) {
+        const e = data.supporting_evidence || [];
+        evList.innerHTML = e.length ? e.map(x => `<li class="flex items-start gap-1.5"><span class="text-emerald-400 shrink-0">✓</span><span>${x}</span></li>`).join('') : '<li class="text-slate-500">Evidence documented in multi-pillar scores.</li>';
+      }
+
+      const erList = document.getElementById('ai-event-risks-list');
+      if (erList) {
+        const r = data.event_risks || [];
+        erList.innerHTML = r.length ? r.map(x => `<li class="flex items-start gap-1.5"><span class="text-amber-400 shrink-0">⚡</span><span>${x}</span></li>`).join('') : '<li class="text-slate-500">No immediate high-impact event risks noted.</li>';
+      }
+
+      // Bottom Row: Reasons to Avoid, Missing Data, Strategy Matrix
+      const avoidList = document.getElementById('ai-avoid-trade-list');
+      if (avoidList) {
+        const a = data.reasons_to_avoid_trade || [];
+        avoidList.innerHTML = a.length ? a.map(x => `<li>${x}</li>`).join('') : '<li class="text-slate-500">Normal trading conditions.</li>';
+      }
+
+      const missList = document.getElementById('ai-missing-data-list');
+      if (missList) {
+        const m = data.missing_or_stale_data || [];
+        missList.innerHTML = m.length ? m.map(x => `<li>${x}</li>`).join('') : '<li class="text-slate-500">All required inputs verified fresh.</li>';
+      }
+
+      const stratList = document.getElementById('ai-strategy-considerations-list');
+      if (stratList) {
+        const s = data.strategy_considerations || [];
+        stratList.innerHTML = s.length ? s.map(x => `<li class="text-cyan-300 font-semibold">• ${x}</li>`).join('') : '<li class="text-slate-500">Standard strategy matrix rules apply.</li>';
+      }
+
+      // Telemetry
+      const latEl = document.getElementById('ai-latency-lbl');
+      if (latEl) latEl.innerText = `${data.latency_ms || '--'} ms`;
+
+      const provEl = document.getElementById('ai-provider-lbl');
+      if (provEl) provEl.innerText = `${data.provider || '--'} (${data.model || '--'})`;
+
+      const tsEl = document.getElementById('ai-timestamp-lbl');
+      if (tsEl) tsEl.innerText = (data.generated_at || '').slice(0, 19).replace('T', ' ') || '--';
+    }
+
+    // Benchmark Modal Handlers
+    function openAiBenchmarkModal() {
+      const modal = document.getElementById('ai-benchmark-modal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+      }
+    }
+
+    function closeAiBenchmarkModal() {
+      const modal = document.getElementById('ai-benchmark-modal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+    }
+
+    async function runAiBenchmark() {
+      const btn = document.getElementById('btn-run-benchmark');
+      const tbody = document.getElementById('ai-benchmark-tbody');
+      const origHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Testing 5 Models...`;
+      }
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400 font-mono">Running standardized inference tests across all 5 Groq & OpenRouter models... Please wait ~10-20s.</td></tr>`;
+      }
+
+      try {
+        const res = await fetch('/api/ai/benchmark', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.status === 'OK' && Array.isArray(data.results)) {
+          showToast(`🧪 Benchmark Complete! Evaluated ${data.models_evaluated} candidate models.`, 'success');
+          tbody.innerHTML = data.results.map(r => {
+            const passBadge = r.success
+              ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">PASS</span>'
+              : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">FAIL</span>';
+
+            const boolBadge = (val) => val
+              ? '<span class="text-emerald-400 font-bold">YES</span>'
+              : '<span class="text-rose-400 font-bold">NO</span>';
+
+            return `
+              <tr class="hover:bg-slate-900/60 transition">
+                <td class="p-2.5 font-bold text-white font-mono">${r.model_id}</td>
+                <td class="p-2.5 uppercase text-slate-400">${r.provider}</td>
+                <td class="p-2.5 text-center">${passBadge}</td>
+                <td class="p-2.5 text-right font-bold text-cyan-300">${r.latency_ms} ms</td>
+                <td class="p-2.5 text-center">${boolBadge(r.valid_json)}</td>
+                <td class="p-2.5 text-center">${boolBadge(r.schema_valid)}</td>
+                <td class="p-2.5 text-center">${boolBadge(r.conflicts_detected)}</td>
+                <td class="p-2.5 text-xs text-slate-400 max-w-xs truncate">${r.summary_preview || r.error_message || '--'}</td>
+              </tr>
+            `;
+          }).join('');
+        } else {
+          showToast(`Benchmark failed: ${data.detail || data.message || 'Error'}`, 'error');
+          if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-rose-400">Benchmark error: ${data.detail || data.message || 'Error'}</td></tr>`;
+        }
+      } catch (err) {
+        console.error("Benchmark error:", err);
+        showToast(`Benchmark error: ${err.message}`, 'error');
+        if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-rose-400">Benchmark failed: ${err.message}</td></tr>`;
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
         }
       }
     }

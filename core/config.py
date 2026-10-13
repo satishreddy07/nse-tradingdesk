@@ -48,3 +48,23 @@ TELEGRAM_CHAT_ID = os.environ.get(
 VAULT_MANIFEST_PATH = DATA_DIR / "vault_manifest.json"
 VAULT_CONFIG_PATH = DATA_DIR / "vault_config.json"
 
+# ==============================================================================
+# AI Intelligence Layer Configuration (Groq & OpenRouter Free Tier)
+# ==============================================================================
+AI_ENABLED = os.environ.get("AI_ENABLED", "true").lower() in ("true", "1", "yes")
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "groq").lower()
+AI_PRIMARY_MODEL = os.environ.get("AI_PRIMARY_MODEL", "openai/gpt-oss-120b")
+AI_FALLBACK_MODEL = os.environ.get("AI_FALLBACK_MODEL", "openai/gpt-oss-20b")
+AI_TIMEOUT_SECONDS = int(os.environ.get("AI_TIMEOUT_SECONDS", 20))
+AI_MAX_RETRIES = int(os.environ.get("AI_MAX_RETRIES", 1))
+
+# Groq Free Tier
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_BASE_URL = os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+
+# OpenRouter Free Tier
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
+
