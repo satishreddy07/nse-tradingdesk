@@ -339,17 +339,37 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     _nifty500_engine_state["last_run_mode"] = mode
     _nifty500_engine_state["last_run_timestamp"] = today_str
 
+    state_engine.start_scan_progress(
+        scan_type="NIFTY500_MOMENTUM (3:05 PM MOC)",
+        initial_stage="Step 1/5: Ingesting live Nifty 500 constituent list from NSE..."
+    )
     logger.info(f"=== 🚀 Starting Nifty 500 Momentum Pipeline ({mode}) at {today_str} ===")
 
     symbols = get_nifty500_symbols()
     if not symbols:
         _nifty500_engine_state["status"] = "FAILED"
+        state_engine.finish_scan_progress("Scan failed: Could not load Nifty 500 constituent symbols.")
         return {"status": "ERROR", "message": "Failed to load Nifty 500 constituent symbols."}
+
+    state_engine.update_scan_progress(
+        stage=f"Step 2/5: Downloading 6-month daily candles for {len(symbols)} Nifty 500 stocks + ^CRSLDX benchmark...",
+        percent=25,
+        stocks_total=len(symbols),
+        stocks_done=0
+    )
 
     df_all = await run_batch_download(symbols)
     if df_all.empty:
         _nifty500_engine_state["status"] = "FAILED"
+        state_engine.finish_scan_progress("Scan failed: No chart data retrieved from Yahoo Finance.")
         return {"status": "ERROR", "message": "No chart data retrieved."}
+
+    state_engine.update_scan_progress(
+        stage=f"Step 3/5: Auditing Macro Regime Gate (^CRSLDX > 50-EMA) & reconciling 4-Tier Strategy Exits...",
+        percent=60,
+        stocks_total=len(symbols),
+        stocks_done=len(df_all["symbol"].unique())
+    )
 
     # Macro Regime Gate Audit on ^CRSLDX
     b_df = df_all[df_all["symbol"] == "^CRSLDX"].copy()
@@ -389,6 +409,11 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     logger.info(f"Benchmark LTP: {bench_ltp:.2f} | 50-EMA: {bench_ema:.2f} | Regime: {macro_regime_label}")
     logger.info(f"Compounded Equity: ₹{current_equity:,.2f} | Open Slots: {active_slots}/{P2_MAX_SLOTS} | Available: {available_slots}")
 
+    state_engine.update_scan_progress(
+        stage=f"Step 4/5: Evaluating 7-Point Entry Criteria Matrix & Relative Strength spread vs Nifty 500...",
+        percent=80
+    )
+
     # Vectorized Indicators
     stocks = df_all[df_all["symbol"] != "^CRSLDX"].copy()
     stocks = stocks.sort_values(["symbol", "date"]).reset_index(drop=True)
@@ -396,6 +421,7 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     stocks = pd.merge(stocks, b_df[["date", "bull_regime", "bench_ret_63"]], on="date", how="left")
     stocks["bull_regime"] = stocks["bull_regime"].ffill().fillna(False)
     stocks["bench_ret_63"] = stocks["bench_ret_63"].ffill().fillna(0.0)
+
 
     stocks["ema_20"] = stocks.groupby("symbol")["close"].transform(lambda s: s.ewm(span=20, adjust=False).mean())
     stocks["ema_50"] = stocks.groupby("symbol")["close"].transform(lambda s: s.ewm(span=50, adjust=False).mean())
@@ -568,6 +594,10 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     _nifty500_engine_state["status"] = "COMPLETED"
 
     elapsed = time.time() - start_time
+    summary_msg = (
+        f"Nifty 500 Scan Complete in {elapsed:.1f}s: {len(stocks['symbol'].unique())} stocks analyzed -> "
+        f"{len(candidates)} RS Candidates | {executed_count} orders placed ({macro_regime_label})"
+    )
     state_engine.log_scan_run(
         scan_type="NIFTY500_MOMENTUM",
         portfolio_type=PORTFOLIO_TYPE,
@@ -576,11 +606,13 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
         candidates_count=len(candidates),
         orders_count=executed_count,
         reconciled_count=len(reconciled_trades),
-        message=f"Analyzed {len(stocks['symbol'].unique())} stocks. Candidates: {len(candidates)}, Executed: {executed_count}"
+        message=summary_msg
     )
+    state_engine.finish_scan_progress(summary_msg)
 
-    logger.info(f"=== 🎯 Pipeline Completed: {executed_count} orders executed into Portfolio 2 ===")
+    logger.info(f"=== 🎯 {summary_msg} ===")
     return {
+
         "status": "SUCCESS",
         "macro_regime": macro_regime_label,
         "bench_ltp": bench_ltp,

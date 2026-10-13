@@ -202,38 +202,67 @@ class TriggerScanRequest(BaseModel):
     auto_execute: bool = False
 
 
-@app.post("/api/scan/trigger")
-async def trigger_scan(req: TriggerScanRequest, background_tasks: BackgroundTasks):
-    s_type = req.scan_type.upper()
+@app.get("/sw.js")
+def service_worker_cleanup():
+    from fastapi.responses import Response
+    js = "self.addEventListener('install', () => self.skipWaiting()); self.addEventListener('activate', () => self.registration.unregister());"
+    return Response(content=js, media_type="application/javascript")
 
-    async def run_scan_task():
-        logger.info(f"⚡ Manual scan triggered: {s_type} (Auto-Execute: {req.auto_execute})")
-        if s_type in ("MORNING_1020AM", "INSTITUTIONAL", "ALL"):
-            try:
+
+@app.get("/api/scan/progress")
+def get_scan_progress():
+    return state_engine.get_scan_progress()
+
+
+@app.post("/api/scan/trigger")
+def trigger_scan(req: TriggerScanRequest):
+    import threading
+    from engines.nifty500_engine import run_nifty500_pipeline_sync
+
+    s_type = req.scan_type.upper()
+    curr_prog = state_engine.get_scan_progress()
+    if curr_prog.get("is_running"):
+        return {
+            "status": "ALREADY_RUNNING",
+            "message": f"Scan is currently in progress: {curr_prog.get('stage')}",
+            "progress": curr_prog
+        }
+
+    state_engine.start_scan_progress(
+        scan_type=s_type,
+        initial_stage=f"Initiating live {s_type} scan..."
+    )
+
+    def run_scan_worker():
+        logger.info(f"⚡ Live scan started: {s_type} (Auto-Execute: {req.auto_execute})")
+        try:
+            if s_type in ("MORNING_1020AM", "INSTITUTIONAL", "ALL"):
                 inst = InstitutionalEngine()
                 mode = "morning" if "MORNING" in s_type else "afternoon"
                 inst.run(auto_execute=req.auto_execute, mode_override=mode)
-            except Exception as e:
-                logger.error(f"Error in manual Institutional scan: {e}")
 
-        if s_type in ("AFTERNOON_305PM", "NIFTY500", "ALL"):
-            try:
-                await run_nifty500_pipeline_async(mode="MANUAL_TRIGGER", auto_execute=req.auto_execute)
-            except Exception as e:
-                logger.error(f"Error in manual Nifty 500 scan: {e}")
+            if s_type in ("AFTERNOON_305PM", "NIFTY500", "ALL"):
+                run_nifty500_pipeline_sync(mode="MANUAL_TRIGGER", auto_execute=req.auto_execute)
+        except Exception as e:
+            logger.error(f"Error during live scan {s_type}: {e}", exc_info=True)
+            state_engine.finish_scan_progress(f"Scan encountered error: {str(e)}")
 
-    background_tasks.add_task(run_scan_task)
+    t = threading.Thread(target=run_scan_worker, daemon=True)
+    t.start()
+
     return {
-        "status": "QUEUED",
-        "message": f"Scan '{s_type}' has been queued for background execution.",
+        "status": "STARTED",
+        "message": f"Live scan '{s_type}' started! Fetching latest stocks...",
         "auto_execute": req.auto_execute,
-        "timestamp": format_ist()
+        "timestamp": format_ist(),
+        "progress": state_engine.get_scan_progress()
     }
 
 
 @app.get("/api/scan/logs")
 def get_scan_logs(limit: int = 50):
     return state_engine.get_recent_scan_logs(limit=limit)
+
 
 
 # --------------------------------------------------------------------------

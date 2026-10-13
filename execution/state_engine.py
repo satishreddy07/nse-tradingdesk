@@ -515,6 +515,78 @@ class StateEngine:
                     result.append(item)
                 return result
 
+    # --------------------------------------------------------------------------
+    # LIVE REAL-TIME SCAN PROGRESS TRACKER
+    # --------------------------------------------------------------------------
+    def init_progress_tracker(self):
+        if not hasattr(self, "_live_progress"):
+            self._live_progress = {
+                "is_running": False,
+                "scan_type": None,
+                "stage": "Idle",
+                "percent": 0,
+                "stocks_total": 0,
+                "stocks_done": 0,
+                "started_at": None,
+                "updated_at": None,
+                "logs": []
+            }
+
+    def start_scan_progress(self, scan_type: str, initial_stage: str = "Initializing live scan..."):
+        with self._lock:
+            self.init_progress_tracker()
+            now_str = format_ist()
+            self._live_progress = {
+                "is_running": True,
+                "scan_type": scan_type,
+                "stage": initial_stage,
+                "percent": 5,
+                "stocks_total": 0,
+                "stocks_done": 0,
+                "started_at": now_str,
+                "updated_at": now_str,
+                "logs": [f"[{now_str[11:19]}] 🚀 {initial_stage}"]
+            }
+
+    def update_scan_progress(
+        self,
+        stage: str,
+        percent: int,
+        stocks_total: Optional[int] = None,
+        stocks_done: Optional[int] = None,
+        add_log: bool = True
+    ):
+        with self._lock:
+            self.init_progress_tracker()
+            now_str = format_ist()
+            self._live_progress["stage"] = stage
+            self._live_progress["percent"] = max(0, min(100, int(percent)))
+            self._live_progress["updated_at"] = now_str
+            if stocks_total is not None:
+                self._live_progress["stocks_total"] = int(stocks_total)
+            if stocks_done is not None:
+                self._live_progress["stocks_done"] = int(stocks_done)
+            if add_log:
+                self._live_progress["logs"].append(f"[{now_str[11:19]}] {stage}")
+                if len(self._live_progress["logs"]) > 25:
+                    self._live_progress["logs"] = self._live_progress["logs"][-25:]
+
+    def finish_scan_progress(self, final_stage: str = "Scan completed successfully."):
+        with self._lock:
+            self.init_progress_tracker()
+            now_str = format_ist()
+            self._live_progress["is_running"] = False
+            self._live_progress["stage"] = final_stage
+            self._live_progress["percent"] = 100
+            self._live_progress["updated_at"] = now_str
+            self._live_progress["logs"].append(f"[{now_str[11:19]}] ✅ {final_stage}")
+
+    def get_scan_progress(self) -> Dict[str, Any]:
+        with self._lock:
+            self.init_progress_tracker()
+            return dict(self._live_progress)
+
 
 # Global Singleton Instance
 state_engine = StateEngine()
+

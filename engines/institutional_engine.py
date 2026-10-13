@@ -253,8 +253,9 @@ class DirectYahooFinanceFetcher:
     def fetch_universe_ohlcv(self, tickers: List[str], min_bars: int = 105) -> Dict[str, pd.DataFrame]:
         results = {}
         tickers_to_download = []
+        total_tickers = len(tickers)
 
-        for t in tickers:
+        for idx, t in enumerate(tickers):
             cached_df = self.load_from_storage(t)
             if cached_df is not None and len(cached_df) >= min_bars:
                 last_close = float(cached_df['Close'].iloc[-1])
@@ -264,12 +265,23 @@ class DirectYahooFinanceFetcher:
             else:
                 tickers_to_download.append(t)
 
-        logger.info(f"Loaded {len(results)} cached stocks. Fetching {len(tickers_to_download)} missing via Yahoo...")
+        cached_count = len(results)
+        to_dl_count = len(tickers_to_download)
+        logger.info(f"Loaded {cached_count} cached stocks. Fetching {to_dl_count} live via Yahoo Finance...")
+        state_engine.update_scan_progress(
+            stage=f"Step 3/6: {cached_count} cached locally, downloading {to_dl_count} stocks from Yahoo Finance...",
+            percent=22,
+            stocks_total=total_tickers,
+            stocks_done=cached_count,
+            add_log=True
+        )
 
         if tickers_to_download:
+            completed_dl = 0
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 future_to_ticker = {executor.submit(self.fetch_ticker_chart, t): t for t in tickers_to_download}
                 for future in concurrent.futures.as_completed(future_to_ticker):
+                    completed_dl += 1
                     try:
                         sym, df = future.result()
                         if df is not None and len(df) >= min_bars:
@@ -281,8 +293,20 @@ class DirectYahooFinanceFetcher:
                     except Exception:
                         pass
 
+                    if completed_dl % 25 == 0 or completed_dl == to_dl_count:
+                        done_so_far = cached_count + completed_dl
+                        pct = 22 + int((completed_dl / max(1, to_dl_count)) * 43)
+                        state_engine.update_scan_progress(
+                            stage=f"Step 3/6: Downloading Yahoo Finance 2-Yr OHLCV ({done_so_far} / {total_tickers} stocks)...",
+                            percent=pct,
+                            stocks_total=total_tickers,
+                            stocks_done=done_so_far,
+                            add_log=(completed_dl % 100 == 0 or completed_dl == to_dl_count)
+                        )
+
         logger.info(f"Total eligible universe for TA analysis: {len(results)} stocks.")
         return results
+
 
     def fetch_benchmarks(self) -> Dict[str, pd.DataFrame]:
         benchmarks = {
@@ -851,15 +875,24 @@ class InstitutionalEngine:
         _institutional_engine_state["last_run_mode"] = mode
         _institutional_engine_state["last_run_timestamp"] = format_ist()
 
+        state_engine.start_scan_progress(
+            scan_type=f"INSTITUTIONAL_6PILLAR ({mode.upper()})",
+            initial_stage=f"Step 1/6: Connecting live to Chartink Screener ({self.chartink.url})..."
+        )
         logger.info(f"=== Institutional 6-Pillar Engine Run ({mode.upper()}) at {format_ist()} ===")
 
-        # Step 1: Ingest Universe
+        # Step 1: Ingest Universe Live from Chartink
         if custom_tickers and len(custom_tickers) > 0:
             tickers = [format_nse_ticker(t) for t in custom_tickers]
+            state_engine.update_scan_progress(
+                stage=f"Step 1/6: Using {len(tickers)} specified tickers...",
+                percent=10,
+                stocks_total=len(tickers),
+                stocks_done=0
+            )
         else:
             tickers = self.chartink.fetch_tickers()
             if not tickers:
-                # Load from historical data or seed
                 cached_files = list(self.yahoo.storage_dir.glob("*.pkl")) + list(self.yahoo.storage_dir.glob("*.csv"))
                 seen_syms = set()
                 for f in cached_files:
@@ -867,20 +900,32 @@ class InstitutionalEngine:
                     if stem not in seen_syms and not stem.startswith("^"):
                         seen_syms.add(stem)
                         tickers.append(f"{stem}.NS")
-                if not tickers:
-                    # Fallback to key liquid stocks
-                    tickers = [f"{s}.NS" for s in ["RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "BHARTIARTL", "SBIN", "LT", "BAJFINANCE", "HCLTECH", "KOTAKBANK", "AXISBANK", "SUNPHARMA", "MARUTI", "M&M", "TATAMOTORS", "NTPC", "POWERGRID", "TITAN", "TATASTEEL", "ADANIENT", "BEL", "DIXON", "POLYCAB", "PERSISTENT", "COFORGE"]]
+            state_engine.update_scan_progress(
+                stage=f"Step 1/6: Fetched {len(tickers)} live stocks from Chartink Screener!",
+                percent=12,
+                stocks_total=len(tickers),
+                stocks_done=0
+            )
 
         # Step 2: Benchmarks
+        state_engine.update_scan_progress(
+            stage="Step 2/6: Fetching NSE Market & Sector Benchmarks (^NSEI, ^CRSLDX, Bank, IT, Auto, Pharma)...",
+            percent=18
+        )
         benchmarks = self.yahoo.fetch_benchmarks()
 
         # Step 3: Fetch OHLCV
         ohlcv_dict = self.yahoo.fetch_universe_ohlcv(tickers, min_bars=105)
         if not ohlcv_dict:
             _institutional_engine_state["status"] = "FAILED"
+            state_engine.finish_scan_progress("Scan aborted: No valid OHLCV data retrieved.")
             return pd.DataFrame()
 
         # Step 4: Reconcile active positions
+        state_engine.update_scan_progress(
+            stage=f"Step 4/6: Reconciling active positions & computing 30 raw technical features across {len(ohlcv_dict)} liquid stocks...",
+            percent=70
+        )
         reconciled = reconcile_open_institutional_positions(ohlcv_dict)
         _institutional_engine_state["reconciled_trades"] = len(reconciled)
 
@@ -893,14 +938,23 @@ class InstitutionalEngine:
 
         if not raw_records:
             _institutional_engine_state["status"] = "NO_CANDIDATES"
+            state_engine.finish_scan_progress("Scan finished: 0 stocks passed raw feature extraction.")
             return pd.DataFrame()
 
         raw_df = pd.DataFrame(raw_records)
 
         # Step 6: 6-Pillar Percentile Scoring
+        state_engine.update_scan_progress(
+            stage=f"Step 5/6: Constructing 6-Pillars & Ranking Universe Percentiles ({len(raw_df)} stocks)...",
+            percent=82
+        )
         scored_df = PercentileScoringEngine.score_universe(raw_df, run_mode=mode)
 
         # Step 7: ML Re-Ranking
+        state_engine.update_scan_progress(
+            stage="Step 6/6: Applying Calibrated ML Meta-Classifier Re-Ranker & Score-Weighted Sizing...",
+            percent=92
+        )
         reranked_df = MLReRanker.apply_reranking(scored_df)
 
         # Step 8: Classification & Position Sizing
@@ -959,7 +1013,7 @@ class InstitutionalEngine:
         _institutional_engine_state["pre_breakout_count"] = p_brk
         _institutional_engine_state["wait_pullback_count"] = w_pb
         _institutional_engine_state["avoid_count"] = avoid
-        _institutional_engine_state["signals"] = records_list[:50]
+        _institutional_engine_state["signals"] = records_list[:100]
         _institutional_engine_state["status"] = "COMPLETED"
 
         # Auto-execution if enabled
@@ -992,6 +1046,10 @@ class InstitutionalEngine:
         _institutional_engine_state["orders_executed"] = orders_placed
 
         elapsed = time.time() - start_time
+        summary_msg = (
+            f"Chartink Live Scan Complete in {elapsed:.1f}s: {len(tickers)} fetched -> "
+            f"{len(signals_df)} analyzed -> BUY NOW: {b_now} | PRE BREAKOUT: {p_brk} | WAIT PULLBACK: {w_pb}"
+        )
         state_engine.log_scan_run(
             scan_type=f"INSTITUTIONAL_{mode.upper()}",
             portfolio_type=PORTFOLIO_TYPE,
@@ -1000,11 +1058,13 @@ class InstitutionalEngine:
             candidates_count=b_now + p_brk,
             orders_count=orders_placed,
             reconciled_count=len(reconciled),
-            message=f"Analyzed {len(signals_df)} stocks. BUY_NOW: {b_now}, PRE_BREAKOUT: {p_brk}. {orders_placed} orders placed."
+            message=summary_msg
         )
+        state_engine.finish_scan_progress(summary_msg)
 
-        logger.info(f"Scan complete in {elapsed:.1f}s. {len(signals_df)} analyzed. BUY_NOW: {b_now}, Orders: {orders_placed}")
+        logger.info(summary_msg)
         return signals_df
+
 
 
 def get_institutional_status() -> Dict[str, Any]:

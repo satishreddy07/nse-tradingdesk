@@ -205,7 +205,36 @@
   </div>
 
   <!-- MAIN VIEWPORT CONTAINER -->
-  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-8">
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-8 space-y-6">
+
+    <!-- LIVE SCAN PROGRESS & NOTIFICATION PANEL -->
+    <div id="live-scan-banner" class="hidden bg-slate-900/95 border border-cyan-500/50 rounded-2xl p-4 sm:p-5 shadow-2xl shadow-cyan-500/10 transition-all">
+      <div class="flex items-center justify-between gap-3 mb-2.5">
+        <div class="flex items-center gap-2.5">
+          <span id="scan-pulse-dot" class="w-3 h-3 rounded-full bg-cyan-400 animate-ping"></span>
+          <span id="scan-banner-title" class="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">LIVE SCAN IN PROGRESS</span>
+          <span id="scan-stock-counter" class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">Connecting...</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span id="scan-pct-text" class="text-sm font-mono font-extrabold text-white">0%</span>
+          <button onclick="document.getElementById('live-scan-banner').classList.add('hidden')" class="text-slate-400 hover:text-white text-xs px-1.5 py-0.5 rounded hover:bg-slate-800" title="Hide Panel">✕</button>
+        </div>
+      </div>
+
+      <!-- Current Stage Text -->
+      <div id="scan-stage-text" class="text-xs sm:text-sm font-semibold text-slate-100 mb-2.5">
+        Connecting live to Chartink Screener...
+      </div>
+
+      <!-- Progress Bar -->
+      <div class="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800 mb-3">
+        <div id="scan-progress-bar" class="h-full bg-gradient-to-r from-cyan-500 via-emerald-400 to-violet-500 transition-all duration-300" style="width: 5%"></div>
+      </div>
+
+      <!-- Live Step-by-Step Notification Log Feed -->
+      <div id="scan-log-feed" class="bg-slate-950/90 border border-slate-800/80 rounded-xl p-2.5 max-h-28 overflow-y-auto custom-scroll font-mono text-[11px] text-slate-300 space-y-1">
+      </div>
+    </div>
 
     <!-- ================================================================= -->
     <!-- TAB 1: PORTFOLIO 1 — INSTITUTIONAL 6-PILLAR ENGINE                -->
@@ -224,12 +253,13 @@
           </p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-center">
-          <button onclick="triggerScan('INSTITUTIONAL')" class="px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-black font-semibold text-xs flex items-center gap-1.5 transition">
+          <button id="btn-p1-scan" onclick="triggerScan('INSTITUTIONAL')" class="px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-black font-semibold text-xs flex items-center gap-1.5 transition">
             <i data-lucide="play" class="w-3.5 h-3.5 stroke-[2.5]"></i>
-            <span>Scan P1 Universe</span>
+            <span id="btn-p1-scan-text">Scan P1 Universe (Chartink Live)</span>
           </button>
         </div>
       </div>
+
 
       <!-- KPI Metric Cards Grid -->
       <div class="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
@@ -318,12 +348,14 @@
           
           <!-- Filter Buttons -->
           <div class="flex items-center gap-1.5 overflow-x-auto custom-scroll text-xs">
-            <button onclick="filterP1Signals('ALL')" class="p1-filter-btn px-2.5 py-1 rounded bg-slate-800 text-slate-200 font-medium">All</button>
-            <button onclick="filterP1Signals('BUY_NOW')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-emerald-400 font-medium">BUY NOW</button>
-            <button onclick="filterP1Signals('PRE_BREAKOUT')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-cyan-400 font-medium">PRE BREAKOUT</button>
-            <button onclick="filterP1Signals('WAIT_PULLBACK')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-amber-400 font-medium">WAIT PULLBACK</button>
+            <button onclick="filterP1Signals('ALL')" class="p1-filter-btn px-2.5 py-1 rounded bg-slate-800 text-slate-200 font-medium">All <span id="cnt-p1-all" class="font-mono text-[10px] opacity-80"></span></button>
+            <button onclick="filterP1Signals('BUY_NOW')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-emerald-400 font-medium">BUY NOW <span id="cnt-p1-buy" class="font-mono text-[10px]"></span></button>
+            <button onclick="filterP1Signals('PRE_BREAKOUT')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-cyan-400 font-medium">PRE BREAKOUT <span id="cnt-p1-pre" class="font-mono text-[10px]"></span></button>
+            <button onclick="filterP1Signals('WAIT_PULLBACK')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-amber-400 font-medium">WAIT PULLBACK <span id="cnt-p1-wait" class="font-mono text-[10px]"></span></button>
+            <button onclick="filterP1Signals('AVOID')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 text-rose-400 font-medium">AVOID <span id="cnt-p1-avoid" class="font-mono text-[10px]"></span></button>
           </div>
         </div>
+
 
         <div class="overflow-x-auto custom-scroll">
           <table class="w-full text-left text-xs text-slate-300">
@@ -751,13 +783,20 @@
     let p2SignalsCache = [];
     let allPositionsCache = [];
 
+    let scanPollTimer = null;
+    let lastLoggedStep = "";
+    let wasScanRunning = false;
+
     // Initialize Lucide Icons & Clocks
     document.addEventListener("DOMContentLoaded", () => {
       lucide.createIcons();
       setInterval(updateClock, 1000);
       refreshAllData();
-      setInterval(refreshAllData, 30000); // Poll status every 30s
+      pollScanProgress();
+      setInterval(pollScanProgress, 2000); // Continuously monitor live or scheduled scans
+      setInterval(refreshAllData, 30000);  // Poll portfolio status every 30s
     });
+
 
     function updateClock() {
       const now = new Date();
@@ -922,9 +961,22 @@
       const sigRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/signals');
       if (sigRes.ok) {
         p1SignalsCache = await sigRes.json();
+        const cAll = p1SignalsCache.length;
+        const cBuy = p1SignalsCache.filter(s => s.bucket === 'BUY_NOW').length;
+        const cPre = p1SignalsCache.filter(s => s.bucket === 'PRE_BREAKOUT').length;
+        const cWait = p1SignalsCache.filter(s => s.bucket === 'WAIT_PULLBACK').length;
+        const cAvoid = p1SignalsCache.filter(s => s.bucket === 'AVOID').length;
+
+        if (document.getElementById('cnt-p1-all')) document.getElementById('cnt-p1-all').innerText = `(${cAll})`;
+        if (document.getElementById('cnt-p1-buy')) document.getElementById('cnt-p1-buy').innerText = `(${cBuy})`;
+        if (document.getElementById('cnt-p1-pre')) document.getElementById('cnt-p1-pre').innerText = `(${cPre})`;
+        if (document.getElementById('cnt-p1-wait')) document.getElementById('cnt-p1-wait').innerText = `(${cWait})`;
+        if (document.getElementById('cnt-p1-avoid')) document.getElementById('cnt-p1-avoid').innerText = `(${cAvoid})`;
+
         renderP1SignalsTable(p1SignalsCache);
       }
     }
+
 
     function renderP1Positions(positions) {
       const tbody = document.getElementById('p1-positions-tbody');
@@ -1303,12 +1355,89 @@
     }
 
     // -------------------------------------------------------------------------
-    // ACTION TRIGGERS
+    // LIVE SCAN PROGRESS & ACTION TRIGGERS
     // -------------------------------------------------------------------------
+    async function pollScanProgress() {
+      try {
+        const res = await fetch('/api/scan/progress');
+        if (!res.ok) return;
+        const prog = await res.json();
+
+        const banner = document.getElementById('live-scan-banner');
+        const titleEl = document.getElementById('scan-banner-title');
+        const counterEl = document.getElementById('scan-stock-counter');
+        const pctEl = document.getElementById('scan-pct-text');
+        const stageEl = document.getElementById('scan-stage-text');
+        const barEl = document.getElementById('scan-progress-bar');
+        const logFeedEl = document.getElementById('scan-log-feed');
+        const pulseDot = document.getElementById('scan-pulse-dot');
+        const btnP1Text = document.getElementById('btn-p1-scan-text');
+
+        if (prog.is_running) {
+          wasScanRunning = true;
+          if (banner) banner.classList.remove('hidden');
+          if (titleEl) {
+            titleEl.innerText = `LIVE SCAN RUNNING: ${prog.scan_type || 'ENGINE'}`;
+            titleEl.className = "text-xs font-mono font-bold uppercase tracking-wider text-cyan-400";
+          }
+          if (pulseDot) pulseDot.className = "w-3 h-3 rounded-full bg-cyan-400 animate-ping";
+          if (pctEl) pctEl.innerText = `${prog.percent || 5}%`;
+          if (stageEl) stageEl.innerText = prog.stage || "Scanning...";
+          if (barEl) barEl.style.width = `${prog.percent || 5}%`;
+          if (counterEl) {
+            if (prog.stocks_total > 0) {
+              counterEl.innerText = `${prog.stocks_done || 0} / ${prog.stocks_total} Stocks`;
+            } else {
+              counterEl.innerText = "Connecting to Screener...";
+            }
+          }
+          if (btnP1Text) btnP1Text.innerText = `Scanning Live... (${prog.percent || 5}%)`;
+
+          if (logFeedEl && Array.isArray(prog.logs)) {
+            logFeedEl.innerHTML = prog.logs.map(line => `<div>${line}</div>`).join('');
+            logFeedEl.scrollTop = logFeedEl.scrollHeight;
+          }
+
+          if (prog.stage && prog.stage !== lastLoggedStep) {
+            lastLoggedStep = prog.stage;
+            showToast(prog.stage, 'info');
+          }
+        } else {
+          if (btnP1Text) btnP1Text.innerText = "Scan P1 Universe (Chartink Live)";
+          if (wasScanRunning) {
+            wasScanRunning = false;
+            if (titleEl) {
+              titleEl.innerText = "SCAN COMPLETED SUCCESSFULLY";
+              titleEl.className = "text-xs font-mono font-bold uppercase tracking-wider text-emerald-400";
+            }
+            if (pulseDot) pulseDot.className = "w-3 h-3 rounded-full bg-emerald-400";
+            if (pctEl) pctEl.innerText = "100%";
+            if (barEl) barEl.style.width = "100%";
+            if (stageEl && prog.stage) stageEl.innerText = prog.stage;
+            if (logFeedEl && Array.isArray(prog.logs)) {
+              logFeedEl.innerHTML = prog.logs.map(line => `<div>${line}</div>`).join('');
+              logFeedEl.scrollTop = logFeedEl.scrollHeight;
+            }
+            showToast(prog.stage || "Scan completed! Updating dashboard...", 'success');
+            await refreshAllData();
+            if (currentTab === 'tab-scheduler') loadScanLogs();
+          }
+        }
+      } catch (err) {
+        console.error("Poll progress error:", err);
+      }
+    }
+
     async function triggerScan(scanType) {
       document.getElementById('scan-dropdown').classList.add('hidden');
       const autoExec = document.getElementById('chk-auto-exec')?.checked || false;
-      showToast(`Initiating ${scanType} scan in background...`, 'info');
+
+      // Immediately show live scan banner
+      const banner = document.getElementById('live-scan-banner');
+      if (banner) banner.classList.remove('hidden');
+      document.getElementById('scan-stage-text').innerText = `Connecting live to screener for ${scanType}...`;
+      document.getElementById('scan-progress-bar').style.width = '5%';
+      document.getElementById('scan-pct-text').innerText = '5%';
 
       try {
         const res = await fetch('/api/scan/trigger', {
@@ -1317,12 +1446,14 @@
           body: JSON.stringify({ scan_type: scanType, auto_execute: autoExec })
         });
         const data = await res.json();
-        showToast(data.message || "Scan queued successfully.", 'success');
-        setTimeout(refreshAllData, 3000);
+        showToast(data.message || `Live scan ${scanType} started!`, 'info');
+        wasScanRunning = true;
+        pollScanProgress();
       } catch (e) {
-        showToast(`Failed to trigger scan: ${e.message}`, 'error');
+        showToast(`Failed to start scan: ${e.message}`, 'error');
       }
     }
+
 
     async function reconcilePortfolio(pType) {
       showToast("Reconciling stops and target levels...", "info");
