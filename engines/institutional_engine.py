@@ -1487,6 +1487,20 @@ class InstitutionalEngine:
             })
             state_engine.finish_scan_progress(summary_msg)
 
+            # Record scheduled/manual 6-pillar run telemetry for morning (10:20 AM) or afternoon (3:05 PM)
+            curr_hour = now_ist().hour
+            is_morning = (mode_override == "morning") or (curr_hour < 13)
+            run_key = "morning_1020" if is_morning else "afternoon_305"
+            state_engine.record_scheduled_scan_outcome(
+                run_key=run_key,
+                status="SUCCESS",
+                buy_now_count=b_now,
+                total_scanned=len(signals_df),
+                pre_breakout_count=p_brk,
+                wait_pullback_count=w_pb,
+                note=f"{b_now} BUY NOW stocks found out of {len(signals_df)} analyzed"
+            )
+
             # Backup Single Master File to Telegram Cloud Vault in background
             threading.Thread(
                 target=telegram_vault.backup_master_file_to_cloud,
@@ -1501,6 +1515,15 @@ class InstitutionalEngine:
             err_msg = f"Scan encountered error: {err}"
             logger.exception(err_msg)
             state_engine.finish_scan_progress(err_msg)
+            curr_hour = now_ist().hour
+            is_morning = (mode_override == "morning") or (curr_hour < 13)
+            run_key = "morning_1020" if is_morning else "afternoon_305"
+            state_engine.record_scheduled_scan_outcome(
+                run_key=run_key,
+                status="FAILED",
+                error=str(err),
+                note=f"Scan error: {err}"
+            )
             return pd.DataFrame()
 
 

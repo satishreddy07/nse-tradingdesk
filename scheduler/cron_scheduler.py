@@ -53,6 +53,7 @@ def register_external_request_origin(scheme: str, host: str):
     """
     Dynamically records the public external URL (e.g. https://quant-trading-desk.onrender.com)
     from incoming HTTP requests when RENDER_EXTERNAL_URL is not explicitly set.
+    Persists to SQLite state_engine so it survives reboots and container idling.
     """
     global _detected_external_url
     if not host:
@@ -63,6 +64,10 @@ def register_external_request_origin(scheme: str, host: str):
     candidate = f"{scheme or 'https'}://{host.strip()}"
     if _detected_external_url != candidate:
         _detected_external_url = candidate
+        try:
+            state_engine.set_kv("RENDER_PUBLIC_URL", candidate)
+        except Exception:
+            pass
         logger.info(f"🌐 Auto-detected public service URL for Render Anti-Sleep Guard: {_detected_external_url}")
 
 
@@ -72,12 +77,20 @@ def get_keepalive_target_url() -> str:
     Priority:
     1. RENDER_EXTERNAL_URL (Automatically injected by Render on all web services)
     2. PUBLIC_APP_URL (Optional user env override)
-    3. Auto-detected external Host header from live traffic
+    3. Auto-detected external Host header from live traffic (persisted in DB)
     4. Localhost fallback (for local verification)
     """
+    global _detected_external_url
     env_url = (os.getenv("RENDER_EXTERNAL_URL") or os.getenv("PUBLIC_APP_URL") or "").strip().rstrip("/")
     if env_url:
         return f"{env_url}/health?source=render_keepalive"
+    if not _detected_external_url:
+        try:
+            saved = state_engine.get_kv("RENDER_PUBLIC_URL")
+            if saved and isinstance(saved, str):
+                _detected_external_url = saved
+        except Exception:
+            pass
     if _detected_external_url:
         return f"{_detected_external_url.rstrip('/')}/health?source=render_keepalive"
     port = os.getenv("PORT", "8000")
@@ -179,11 +192,32 @@ def scheduled_morning_scan_job():
         return
 
     try:
+        t0 = time.time()
         inst_engine = InstitutionalEngine()
         signals = inst_engine.run(auto_execute=True, mode_override="morning")
-        logger.info(f"✓ 10:20 AM Morning Institutional Scan completed. {len(signals)} stocks evaluated.")
+        elapsed = time.time() - t0
+        b_now = int((signals["bucket"] == "BUY_NOW").sum()) if not signals.empty and "bucket" in signals.columns else 0
+        p_brk = int((signals["bucket"] == "PRE_BREAKOUT").sum()) if not signals.empty and "bucket" in signals.columns else 0
+        w_pb = int((signals["bucket"] == "WAIT_PULLBACK").sum()) if not signals.empty and "bucket" in signals.columns else 0
+        state_engine.record_scheduled_scan_outcome(
+            run_key="morning_1020",
+            status="SUCCESS",
+            buy_now_count=b_now,
+            total_scanned=len(signals),
+            pre_breakout_count=p_brk,
+            wait_pullback_count=w_pb,
+            execution_time_sec=elapsed,
+            note=f"{b_now} BUY NOW stocks found out of {len(signals)} analyzed"
+        )
+        logger.info(f"✓ 10:20 AM Morning Institutional Scan completed. {len(signals)} stocks evaluated, {b_now} BUY_NOW.")
     except Exception as e:
         logger.error(f"Error in 10:20 AM Institutional scan: {e}", exc_info=True)
+        state_engine.record_scheduled_scan_outcome(
+            run_key="morning_1020",
+            status="FAILED",
+            error=str(e),
+            note=f"Scan error: {e}"
+        )
 
 
 def scheduled_afternoon_scan_job():
@@ -211,11 +245,32 @@ def scheduled_afternoon_scan_job():
 
     # 1. Run Institutional 6-Pillar Engine (Afternoon Mode with Intraday Confirmation)
     try:
+        t0 = time.time()
         inst_engine = InstitutionalEngine()
         signals_p1 = inst_engine.run(auto_execute=True, mode_override="afternoon")
-        logger.info(f"✓ 3:05 PM Afternoon Institutional Scan completed. {len(signals_p1)} stocks evaluated.")
+        elapsed = time.time() - t0
+        b_now = int((signals_p1["bucket"] == "BUY_NOW").sum()) if not signals_p1.empty and "bucket" in signals_p1.columns else 0
+        p_brk = int((signals_p1["bucket"] == "PRE_BREAKOUT").sum()) if not signals_p1.empty and "bucket" in signals_p1.columns else 0
+        w_pb = int((signals_p1["bucket"] == "WAIT_PULLBACK").sum()) if not signals_p1.empty and "bucket" in signals_p1.columns else 0
+        state_engine.record_scheduled_scan_outcome(
+            run_key="afternoon_305",
+            status="SUCCESS",
+            buy_now_count=b_now,
+            total_scanned=len(signals_p1),
+            pre_breakout_count=p_brk,
+            wait_pullback_count=w_pb,
+            execution_time_sec=elapsed,
+            note=f"{b_now} BUY NOW stocks found out of {len(signals_p1)} analyzed"
+        )
+        logger.info(f"✓ 3:05 PM Afternoon Institutional Scan completed. {len(signals_p1)} stocks evaluated, {b_now} BUY_NOW.")
     except Exception as e:
         logger.error(f"Error in 3:05 PM Institutional scan: {e}", exc_info=True)
+        state_engine.record_scheduled_scan_outcome(
+            run_key="afternoon_305",
+            status="FAILED",
+            error=str(e),
+            note=f"Scan error: {e}"
+        )
 
     # 2. Run Nifty 500 Momentum Compounded Engine (7-Point Matrix + 4-Tier Exits)
     try:
@@ -227,9 +282,9 @@ def scheduled_afternoon_scan_job():
 
 def scheduled_nifty_intraday_50min_job(slot_label: Optional[str] = None):
     """
-    Runs at every 50-minute interval from 09:30 AM to 03:30 PM IST (09:30, 10:20, 11:10, 12:00, 12:50, 13:40, 14:30, 15:20/15:30).
+    Runs at every 15m/30m/50m interval from 09:30 AM to 03:30 PM IST.
     Collects live Nifty 50 Current Weekly Option Chain data, stores the snapshot in SQLite (`data/swing_trades.db`),
-    refreshes Nifty T+1/T+5 predictions on opening/closing slots, and syncs to Telegram Cloud Vault.
+    reconciles any missing past slots, refreshes Nifty predictions on key slots, and syncs to Telegram Cloud Vault.
     """
     current_dt = now_ist()
     if not NSEMarketCalendar.is_trading_day(current_dt.date()):
@@ -237,16 +292,49 @@ def scheduled_nifty_intraday_50min_job(slot_label: Optional[str] = None):
     try:
         from engines.nifty_analytics_engine import nifty_analytics_engine
         dash = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override=slot_label, sync_cloud=True)
+        # Auto-gapfill any missed earlier slots so the dashboard is 100% complete
+        nifty_analytics_engine.auto_gapfill_missed_intraday_slots(interval_mode="30m")
         snap = dash.get("latest_snapshot") or {}
         logger.info(
-            f"⚡ [50m Intraday Option Expiry Collector] Captured slot {snap.get('slot_time')} | "
+            f"⚡ [Intraday Option Expiry Collector] Captured slot {snap.get('slot_time')} | "
             f"Nifty Spot: {snap.get('spot_price')} | Straddle: {snap.get('straddle_premium')} | "
             f"Near-ATM PCR: {snap.get('near_atm_pcr')} | State: {snap.get('market_state')}"
         )
-        if slot_label in ("09:30", "12:00", "15:20", None):
+        if slot_label in ("09:30", "12:00", "15:20", "15:30", None):
             nifty_analytics_engine.compute_nifty_predictions(force_refresh=True)
     except Exception as e:
-        logger.warning(f"50m Nifty intraday option snapshot job warning: {e}")
+        logger.warning(f"Intraday option snapshot job warning: {e}")
+
+
+def _intraday_collector_watchdog():
+    """
+    Continuous background watchdog thread running every 40 seconds:
+    Guarantees that even if frontend tabs are closed, Render was idling, or a container woke up:
+    1. During NSE trading hours (09:15–15:35 IST), ensures active slot is captured.
+    2. Auto-gapfills any missed past slots for today so the schedule is 100% complete with zero blanks.
+    """
+    time.sleep(10)
+    while True:
+        try:
+            dt_now = now_ist()
+            if NSEMarketCalendar.is_trading_day(dt_now.date()):
+                mins = dt_now.hour * 60 + dt_now.minute
+                # Active market window: 09:15 to 15:35 IST
+                if 555 <= mins <= 935:
+                    from engines.nifty_analytics_engine import nifty_analytics_engine
+                    nifty_analytics_engine.auto_gapfill_missed_intraday_slots(interval_mode="30m")
+                    active_slot = nifty_analytics_engine._determine_current_slot(dt_now, interval_mode="30m")
+                    today_str = dt_now.strftime("%Y-%m-%d")
+                    snaps = nifty_analytics_engine._get_snapshots_for_date(today_str)
+                    existing_slots = {s["slot_time"] for s in snaps}
+                    if active_slot not in existing_slots:
+                        logger.info(f"🛡️ [Watchdog] Capturing active slot {active_slot}...")
+                        nifty_analytics_engine.capture_intraday_50min_snapshot(
+                            slot_override=active_slot, sync_cloud=True, interval_mode="30m"
+                        )
+        except Exception as e:
+            logger.debug(f"Watchdog notice: {e}")
+        time.sleep(40)
 
 
 def start_scheduler():
@@ -358,10 +446,12 @@ def start_scheduler():
         threading.Thread(target=scheduled_render_keepalive_job, daemon=True).start()
         threading.Thread(target=scheduled_live_price_stream_job, daemon=True).start()
         threading.Thread(target=scheduled_nifty_intraday_50min_job, daemon=True).start()
+        # Launch dedicated continuous Intraday Watchdog
+        threading.Thread(target=_intraday_collector_watchdog, daemon=True, name="IntradayWatchdog").start()
         logger.info(
             "✓ Automated Scheduler active on Asia/Kolkata timezone: "
             "08:55 AM NSE Holiday Sync, 09:00–15:50 Render Anti-Sleep Guard, 5m Live Price Stream, "
-            "50m Nifty Weekly Option Expiry Collector (09:30–15:30), 10:20 AM & 3:05 PM Scans."
+            "30m/50m Nifty Weekly Option Expiry Collector (09:30–15:30), 10:20 AM & 3:05 PM Scans, with Continuous Auto-Gapfill Watchdog."
         )
         return _scheduler
 

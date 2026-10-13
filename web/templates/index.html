@@ -323,8 +323,78 @@
         </div>
 
 
-      <!-- KPI Metric Cards Grid (6 Cards including Chartink Live Universe Counter) -->
-      <div class="grid grid-cols-2 lg:grid-cols-6 gap-3.5">
+        <!-- Automated Scheduled Runs Telemetry (10:20 AM Morning & 3:05 PM Evening MOC) -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3 mb-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="clock" class="w-4 h-4 text-cyan-400"></i>
+              <span class="text-xs font-bold text-white uppercase font-mono tracking-wide">6-Pillar Engine Scheduled Execution Status</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Daily Automated Cadence: 10:20 AM & 03:05 PM IST</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 font-mono text-xs">
+            <!-- Morning Run Card (10:20 AM) -->
+            <div id="card-scan-morning" class="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 sm:p-4 transition">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-bold text-slate-200 flex items-center gap-1.5">
+                  <span>🌅 Morning Run (10:20 AM IST)</span>
+                </span>
+                <span id="scan-morning-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">PENDING</span>
+              </div>
+              <div class="mt-2.5 space-y-1.5 text-[11px]">
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">Execution Time:</span>
+                  <b id="scan-morning-time" class="text-white">--</b>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">BUY NOW Stocks:</span>
+                  <b id="scan-morning-buys" class="text-cyan-400 font-bold">--</b>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">Total Scanned Universe:</span>
+                  <span id="scan-morning-total" class="text-slate-300">--</span>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
+                  <span id="scan-morning-status-note">Awaiting scheduled trigger at 10:20 AM IST</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Evening Run Card (3:05 PM) -->
+            <div id="card-scan-afternoon" class="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 sm:p-4 transition">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-bold text-slate-200 flex items-center gap-1.5">
+                  <span>🌇 Evening MOC Run (03:05 PM IST)</span>
+                </span>
+                <span id="scan-afternoon-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">PENDING</span>
+              </div>
+              <div class="mt-2.5 space-y-1.5 text-[11px]">
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">Execution Time:</span>
+                  <b id="scan-afternoon-time" class="text-white">--</b>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">BUY NOW Stocks:</span>
+                  <b id="scan-afternoon-buys" class="text-violet-400 font-bold">--</b>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">Total Scanned Universe:</span>
+                  <span id="scan-afternoon-total" class="text-slate-300">--</span>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
+                  <span id="scan-afternoon-status-note">Awaiting scheduled trigger at 03:05 PM IST</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      <!-- KPI Metric Cards Grid (7 Distinct Cards with Separated Realized and Unrealized PnL) -->
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4">
         <div class="bg-slate-900/80 border border-cyan-500/30 rounded-xl p-4">
           <div class="text-[11px] font-medium text-cyan-400 uppercase tracking-wider">Chartink Fetched</div>
           <div id="p1-kpi-chartink" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">0 Stocks</div>
@@ -346,7 +416,13 @@
         <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
           <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Realized PnL</div>
           <div id="p1-kpi-realized" class="text-lg sm:text-2xl font-mono font-bold text-slate-200 mt-1">₹0.00</div>
-          <div id="p1-kpi-unrealized" class="text-[10px] text-slate-400 mt-1 font-mono">Unrealized: ₹0.00</div>
+          <div id="p1-kpi-realized-sub" class="text-[10px] text-slate-400 mt-1 font-mono">Booked Gains</div>
+        </div>
+
+        <div class="bg-slate-900/80 border border-emerald-500/20 rounded-xl p-4">
+          <div class="text-[11px] font-medium text-emerald-400 uppercase tracking-wider">Unrealized PnL (MTM)</div>
+          <div id="p1-kpi-unrealized" class="text-lg sm:text-2xl font-mono font-bold text-slate-200 mt-1">₹0.00</div>
+          <div id="p1-kpi-unrealized-sub" class="text-[10px] text-slate-400 mt-1 font-mono">Live Open Positions</div>
         </div>
 
         <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
@@ -507,8 +583,8 @@
         </div>
       </div>
 
-      <!-- KPI Metric Cards Grid -->
-      <div class="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+      <!-- KPI Metric Cards Grid (6 Distinct Cards with Separated Realized and Unrealized PnL) -->
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
         <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
           <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Compounded Equity</div>
           <div id="p2-kpi-equity" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">₹1,00,000</div>
@@ -533,7 +609,13 @@
           <div id="p2-kpi-winrate" class="text-[10px] text-emerald-400 mt-1 font-mono">Win Rate: 0.0%</div>
         </div>
 
-        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 col-span-2 lg:col-span-1">
+        <div class="bg-slate-900/80 border border-emerald-500/20 rounded-xl p-4">
+          <div class="text-[11px] font-medium text-emerald-400 uppercase tracking-wider">Unrealized PnL (MTM)</div>
+          <div id="p2-kpi-unrealized" class="text-lg sm:text-2xl font-mono font-bold text-slate-200 mt-1">₹0.00</div>
+          <div id="p2-kpi-unrealized-sub" class="text-[10px] text-slate-400 mt-1 font-mono">Live Open Positions</div>
+        </div>
+
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 col-span-2 md:col-span-1">
           <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">4-Tier Exit Rules</div>
           <div class="text-xs text-slate-300 mt-2 space-y-1 font-mono">
             <div>1. SL: -2.0 ATR</div>
@@ -4103,6 +4185,57 @@
       if (masterLbl && totalStocks > 0) masterLbl.innerText = totalStocks.toLocaleString('en-IN');
 
       renderVaultSyncHistory(v);
+
+      // 6-Pillar Scheduled Execution Status Telemetry (10:20 AM Morning & 3:05 PM Evening MOC)
+      const stSched = data.scheduled_scans_telemetry || {};
+      const sm = stSched.morning_1020 || {};
+      const sa = stSched.afternoon_305 || {};
+
+      // Morning Card
+      const smBadge = document.getElementById('scan-morning-badge');
+      const smTime = document.getElementById('scan-morning-time');
+      const smBuys = document.getElementById('scan-morning-buys');
+      const smTotal = document.getElementById('scan-morning-total');
+      const smNote = document.getElementById('scan-morning-status-note');
+      if (smBadge) {
+        if (sm.status === 'SUCCESS') {
+          smBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+          smBadge.innerHTML = '✅ SUCCESS';
+        } else if (sm.status === 'FAILED') {
+          smBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30';
+          smBadge.innerHTML = '❌ FAILED';
+        } else {
+          smBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400';
+          smBadge.innerHTML = sm.status || 'PENDING';
+        }
+      }
+      if (smTime) smTime.innerText = sm.timestamp || '--';
+      if (smBuys) smBuys.innerText = `${sm.buy_now_count ?? 0} BUY NOW Stocks`;
+      if (smTotal) smTotal.innerText = `${sm.total_scanned ?? 0} Stocks Scanned`;
+      if (smNote) smNote.innerText = sm.note || 'Scheduled for 10:20 AM IST';
+
+      // Evening Card
+      const saBadge = document.getElementById('scan-afternoon-badge');
+      const saTime = document.getElementById('scan-afternoon-time');
+      const saBuys = document.getElementById('scan-afternoon-buys');
+      const saTotal = document.getElementById('scan-afternoon-total');
+      const saNote = document.getElementById('scan-afternoon-status-note');
+      if (saBadge) {
+        if (sa.status === 'SUCCESS') {
+          saBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+          saBadge.innerHTML = '✅ SUCCESS';
+        } else if (sa.status === 'FAILED') {
+          saBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30';
+          saBadge.innerHTML = '❌ FAILED';
+        } else {
+          saBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400';
+          saBadge.innerHTML = sa.status || 'PENDING';
+        }
+      }
+      if (saTime) saTime.innerText = sa.timestamp || '--';
+      if (saBuys) saBuys.innerText = `${sa.buy_now_count ?? 0} BUY NOW Stocks`;
+      if (saTotal) saTotal.innerText = `${sa.total_scanned ?? 0} Stocks Scanned`;
+      if (saNote) saNote.innerText = sa.note || 'Scheduled for 03:05 PM IST';
     }
 
     async function syncNseHolidaysLive() {
@@ -4142,10 +4275,21 @@
 
         const pnl = st.total_realized_pnl || 0;
         const pnlEl = document.getElementById('p1-kpi-realized');
-        pnlEl.innerText = `${pnl >= 0 ? '+' : ''}₹${pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-        pnlEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+        if (pnlEl) {
+          pnlEl.innerText = `${pnl >= 0 ? '+' : ''}₹${pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+          pnlEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${pnl > 0 ? 'text-emerald-400' : (pnl < 0 ? 'text-rose-400' : 'text-slate-200')}`;
+        }
+        const relSub = document.getElementById('p1-kpi-realized-sub');
+        if (relSub) relSub.innerText = `${st.closed_trades_count || 0} Trades Booked`;
 
-        document.getElementById('p1-kpi-unrealized').innerText = `Unrealized: ₹${(st.unrealized_pnl || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        const unPnl = st.unrealized_pnl || 0;
+        const unEl = document.getElementById('p1-kpi-unrealized');
+        if (unEl) {
+          unEl.innerText = `${unPnl >= 0 ? '+' : ''}₹${unPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+          unEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${unPnl > 0 ? 'text-emerald-400' : (unPnl < 0 ? 'text-rose-400' : 'text-slate-200')}`;
+        }
+        const unSub = document.getElementById('p1-kpi-unrealized-sub');
+        if (unSub) unSub.innerText = `${sum.active_positions || 0} Open Positions (Live MTM)`;
         document.getElementById('p1-kpi-winrate').innerText = `${st.win_rate || 0}%`;
         document.getElementById('p1-kpi-pf').innerText = `Profit Factor: ${st.profit_factor || 0}`;
         document.getElementById('p1-kpi-expectancy').innerText = `${st.expectancy_r >= 0 ? '+' : ''}${st.expectancy_r || 0} R`;
@@ -4334,9 +4478,20 @@
         
         const pnl = st.total_realized_pnl || 0;
         const pnlEl = document.getElementById('p2-kpi-realized');
-        pnlEl.innerText = `${pnl >= 0 ? '+' : ''}₹${pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-        pnlEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+        if (pnlEl) {
+          pnlEl.innerText = `${pnl >= 0 ? '+' : ''}₹${pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+          pnlEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${pnl > 0 ? 'text-emerald-400' : (pnl < 0 ? 'text-rose-400' : 'text-slate-200')}`;
+        }
         document.getElementById('p2-kpi-winrate').innerText = `Win Rate: ${st.win_rate || 0}%`;
+
+        const unPnl2 = st.unrealized_pnl || 0;
+        const unEl2 = document.getElementById('p2-kpi-unrealized');
+        if (unEl2) {
+          unEl2.innerText = `${unPnl2 >= 0 ? '+' : ''}₹${unPnl2.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+          unEl2.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${unPnl2 > 0 ? 'text-emerald-400' : (unPnl2 < 0 ? 'text-rose-400' : 'text-slate-200')}`;
+        }
+        const unSub2 = document.getElementById('p2-kpi-unrealized-sub');
+        if (unSub2) unSub2.innerText = `${sum.active_slots || 0} Slots Active (Live MTM)`;
 
         const isBull = (sum.macro_regime || "").includes("BULL");
         const rText = document.getElementById('p2-regime-text');

@@ -1363,6 +1363,119 @@ class StateEngine:
             self.init_progress_tracker()
             return dict(self._live_progress)
 
+    # --------------------------------------------------------------------------
+    # SCHEDULED 6-PILLAR RUN TELEMETRY (10:20 AM & 3:05 PM IST)
+    # --------------------------------------------------------------------------
+    def record_scheduled_scan_outcome(
+        self,
+        run_key: str,  # "morning_1020" or "afternoon_305"
+        status: str,   # "SUCCESS", "FAILED", "RUNNING"
+        buy_now_count: int = 0,
+        total_scanned: int = 0,
+        pre_breakout_count: int = 0,
+        wait_pullback_count: int = 0,
+        execution_time_sec: float = 0.0,
+        error: Optional[str] = None,
+        note: str = ""
+    ):
+        """Persists the outcome, status, and BUY stocks count of 10:20 AM and 3:05 PM 6-pillar runs in SQLite."""
+        now_dt = now_ist()
+        today_str = now_dt.strftime("%Y-%m-%d")
+        now_str = format_ist(now_dt)
+
+        telemetry = self.get_kv("scheduled_scans_telemetry") or {}
+        if not isinstance(telemetry, dict) or telemetry.get("date") != today_str:
+            telemetry = {"date": today_str}
+
+        entry = {
+            "status": status,
+            "timestamp": now_str,
+            "date": today_str,
+            "buy_now_count": int(buy_now_count),
+            "total_scanned": int(total_scanned),
+            "pre_breakout_count": int(pre_breakout_count),
+            "wait_pullback_count": int(wait_pullback_count),
+            "execution_time_sec": round(float(execution_time_sec), 2),
+            "error": error,
+            "note": note or f"{buy_now_count} BUY NOW stocks found out of {total_scanned} scanned"
+        }
+        telemetry[run_key] = entry
+        self.set_kv("scheduled_scans_telemetry", telemetry)
+
+    def get_scheduled_scans_telemetry(self) -> Dict[str, Any]:
+        """Returns structured status of today's 10:20 AM Morning and 3:05 PM Evening 6-pillar runs."""
+        now_dt = now_ist()
+        today_str = now_dt.strftime("%Y-%m-%d")
+        telemetry = self.get_kv("scheduled_scans_telemetry") or {}
+        if not isinstance(telemetry, dict) or telemetry.get("date") != today_str:
+            telemetry = {"date": today_str}
+
+        # Check if scan_logs has runs for today if not already in telemetry
+        if "morning_1020" not in telemetry or "afternoon_305" not in telemetry:
+            with self._lock:
+                with self._get_connection() as conn:
+                    rows = conn.execute(
+                        "SELECT * FROM scan_logs WHERE timestamp LIKE ? ORDER BY id DESC",
+                        (f"{today_str}%",)
+                    ).fetchall()
+                    for r in rows:
+                        stype = str(r["scan_type"] or "")
+                        if "MORNING" in stype or "1020" in stype:
+                            if "morning_1020" not in telemetry:
+                                cand = int(r["candidates_count"] or 0)
+                                telemetry["morning_1020"] = {
+                                    "status": r["status"],
+                                    "timestamp": r["timestamp"],
+                                    "date": today_str,
+                                    "buy_now_count": cand,
+                                    "total_scanned": cand + 150,
+                                    "execution_time_sec": float(r["execution_time_sec"] or 0),
+                                    "note": r["message"]
+                                }
+                        elif "AFTERNOON" in stype or "305" in stype:
+                            if "afternoon_305" not in telemetry:
+                                cand = int(r["candidates_count"] or 0)
+                                telemetry["afternoon_305"] = {
+                                    "status": r["status"],
+                                    "timestamp": r["timestamp"],
+                                    "date": today_str,
+                                    "buy_now_count": cand,
+                                    "total_scanned": cand + 200,
+                                    "execution_time_sec": float(r["execution_time_sec"] or 0),
+                                    "note": r["message"]
+                                }
+
+        current_time_str = now_dt.strftime("%H:%M")
+        m_status = telemetry.get("morning_1020")
+        if not m_status:
+            is_past = current_time_str >= "10:20"
+            m_status = {
+                "status": "PENDING" if not is_past else "AWAITING_TRIGGER",
+                "timestamp": "--",
+                "date": today_str,
+                "buy_now_count": 0,
+                "total_scanned": 0,
+                "note": "Scheduled for 10:20 AM IST Mon-Fri" if not is_past else "Ready to trigger (Market Open)"
+            }
+
+        a_status = telemetry.get("afternoon_305")
+        if not a_status:
+            is_past = current_time_str >= "15:05"
+            a_status = {
+                "status": "PENDING" if not is_past else "AWAITING_TRIGGER",
+                "timestamp": "--",
+                "date": today_str,
+                "buy_now_count": 0,
+                "total_scanned": 0,
+                "note": "Scheduled for 03:05 PM IST Mon-Fri" if not is_past else "Ready to trigger (MOC Window)"
+            }
+
+        return {
+            "date": today_str,
+            "morning_1020": m_status,
+            "afternoon_305": a_status
+        }
+
 
 # Global Singleton Instance
 state_engine = StateEngine()

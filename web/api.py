@@ -146,6 +146,7 @@ def get_system_status():
         "nse_holidays_meta": scheduler_info.get("nse_holidays_meta", {}),
         "telegram_vault": vault_info,
         "last_price_stream": last_stream,
+        "scheduled_scans_telemetry": state_engine.get_scheduled_scans_telemetry(),
         "portfolio_1_quick": {
             "chartink_fetched_count": p1_status.get("chartink_fetched_count", 0),
             "universe_size": p1_status.get("universe_size", 0),
