@@ -1562,7 +1562,13 @@ class NiftyAnalyticsEngine:
                 elif rsi_val <= 45.0:
                     n50_rsi_bear += 1
 
-                n50_gainers_list.append({"symbol": clean_sym, "ltp": round(c, 2), "chg_pct": round(chg, 2)})
+                clean_chg = round(float(chg), 2) if not (math.isnan(float(chg)) or math.isinf(float(chg))) else 0.0
+                n50_gainers_list.append({
+                    "symbol": clean_sym,
+                    "ltp": round(float(c), 2),
+                    "chg_pct": clean_chg,
+                    "change_pct": clean_chg
+                })
 
                 sec = get_stock_sector(clean_sym)
                 if sec and sec not in ("UNKNOWN", "OTHER", "EQUITY"):
@@ -1739,9 +1745,12 @@ class NiftyAnalyticsEngine:
         except Exception as e:
             logger.debug(f"NSE FII/DII cash fetch warning: {e}")
 
-        # 2. Fetch Rolling 1-Week F&O Participant Open Interest from NSE Archives
+        # 2. Fetch Rolling 1-Week F&O Participant Open Interest from NSE Archives (Non-blocking)
         today_dt = now_ist().date()
-        for back_day in range(0, 10):
+        is_after_market_oi = (now_ist().hour > 18 or (now_ist().hour == 18 and now_ist().minute >= 30))
+        check_range = range(0, 3) if is_after_market_oi else range(1, 4)
+
+        for back_day in check_range:
             cand_dt = today_dt - datetime.timedelta(days=back_day)
             if cand_dt.weekday() >= 5:
                 continue
@@ -1758,7 +1767,7 @@ class NiftyAnalyticsEngine:
             if not has_record:
                 url_csv = f"https://nsearchives.nseindia.com/content/nsccl/fao_participant_oi_{d_str}.csv"
                 try:
-                    r_oi = session.get(url_csv, timeout=5)
+                    r_oi = session.get(url_csv, timeout=3)
                     if r_oi.status_code == 200 and "Participant wise Open Interest" in r_oi.text:
                         reader = csv.reader(io.StringIO(r_oi.text))
                         rows_list = list(reader)
@@ -1805,6 +1814,7 @@ class NiftyAnalyticsEngine:
                                 conn.commit()
                 except Exception as e:
                     logger.debug(f"Participant OI fetch warning for {iso_d}: {e}")
+                    break  # Avoid repetitive blocking timeouts if archives are unreachable
 
         # 3. Read 1-Week Rolling History from SQLite
         with state_engine._lock:
@@ -1819,6 +1829,14 @@ class NiftyAnalyticsEngine:
                         "SELECT * FROM fao_participant_oi_history ORDER BY trade_date DESC LIMIT 7"
                     ).fetchall()
                 ]
+
+        # Parse raw_json into structured participants map for frontend
+        for item in oi_history:
+            if "raw_json" in item and item["raw_json"]:
+                try:
+                    item["participants"] = json.loads(item["raw_json"])
+                except Exception:
+                    item["participants"] = {}
 
         latest_cash = cash_history[0] if cash_history else {}
         latest_oi = oi_history[0] if oi_history else {}
@@ -2626,6 +2644,21 @@ class NiftyAnalyticsEngine:
             "quant_suggestions": quant_suggestions,
             "prediction_ledger": prediction_ledger,
         }
+
+        def _clean_payload_json(obj):
+            if isinstance(obj, float):
+                if math.isnan(obj) or math.isinf(obj):
+                    return 0.0
+                return obj
+            elif isinstance(obj, dict):
+                return {k: _clean_payload_json(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [_clean_payload_json(x) for x in obj]
+            elif isinstance(obj, np.generic):
+                return _clean_payload_json(obj.item())
+            return obj
+
+        payload = _clean_payload_json(payload)
 
         with self._lock:
             self._predictions_mem_cache = payload

@@ -1388,9 +1388,13 @@
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2 shrink-0">
-            <button onclick="loadPredictionsDesk(true)" id="btn-pred-refresh" class="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+            <button onclick="loadPredictionsDesk(true)" id="btn-pred-refresh" class="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap shadow-sm">
               <i data-lucide="cpu" class="w-3.5 h-3.5 shrink-0"></i>
               <span>Recompute Live Forecast</span>
+            </button>
+            <button onclick="openFaoHistoryModal()" class="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-purple-500/40 text-purple-300 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="bar-chart-2" class="w-3.5 h-3.5 shrink-0"></i>
+              <span>📊 F&O / FAO Data (1-Week)</span>
             </button>
             <button onclick="openStockChartModal('^NSEI')" class="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
               <i data-lucide="candlestick-chart" class="w-3.5 h-3.5 shrink-0"></i>
@@ -1676,10 +1680,13 @@
               Official NSE Cash Turnover & F&O Clearing Corporation Participant Wise Open Interest (Client, DII, FII, Pro). Real contracts & ₹ Crores — Zero synthetic estimates.
             </p>
           </div>
-          <div class="flex items-center gap-2" id="pred-inst-regime-pill">
+          <div class="flex items-center gap-2 flex-wrap" id="pred-inst-regime-pill">
             <span class="px-2.5 py-1 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold">
               FII OI: LOADING...
             </span>
+            <button onclick="openFaoHistoryModal()" class="px-2.5 py-1 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/50 text-purple-200 text-xs font-mono font-bold flex items-center gap-1 transition cursor-pointer shadow-sm">
+              <span>🔍 1-Week FAO History</span>
+            </button>
           </div>
         </div>
 
@@ -1723,7 +1730,9 @@
               <span class="text-[11px] font-bold text-purple-300 font-mono flex items-center gap-1.5">
                 <span>📊</span> F&O Participant Open Interest (Contracts)
               </span>
-              <span class="text-[10px] text-slate-400 font-mono">FII vs Retail Index Futures</span>
+              <button onclick="openFaoHistoryModal()" class="text-[10px] text-purple-300 hover:text-purple-200 font-mono underline decoration-purple-500/40 cursor-pointer flex items-center gap-1">
+                <span>View Full 1-Week Breakdown →</span>
+              </button>
             </div>
             <div class="overflow-x-auto custom-scroll">
               <table class="w-full text-left text-xs text-slate-300 font-mono">
@@ -2515,6 +2524,119 @@
     </div>
   </div>
 
+  <!-- ===================================================================== -->
+  <!-- 1-WEEK OFFICIAL NSE F&O PARTICIPANT OPEN INTEREST (FAO DATA) MODAL    -->
+  <!-- ===================================================================== -->
+  <div id="fao-history-modal" onclick="if(event.target === this) closeFaoHistoryModal()" style="display: none;" class="hidden fixed inset-0 z-[110] bg-black/85 backdrop-blur-md items-center justify-center p-2 sm:p-4">
+    <div class="bg-[#0b0f19] border border-purple-500/40 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
+      
+      <!-- Modal Top Sticky Header -->
+      <div class="sticky top-0 z-30 p-3 sm:p-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0 font-extrabold text-sm">
+            📊
+          </div>
+          <div class="min-w-0">
+            <h3 class="text-sm sm:text-base font-extrabold text-white truncate flex items-center gap-2">
+              <span>Official NSE F&O Participant Open Interest History</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 hidden sm:inline-block">1-Week Rolling</span>
+            </h3>
+            <p class="text-[11px] text-slate-400 mt-0.5 truncate">
+              FII vs Retail (Client) vs Pro Desks vs DII Index Futures & Options contracts from official NSE Clearing files
+            </p>
+          </div>
+        </div>
+
+        <button onclick="closeFaoHistoryModal()" title="Close F&O Modal (ESC)" class="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs sm:text-sm font-extrabold flex items-center gap-1 shadow-lg shadow-rose-600/30 transition shrink-0 cursor-pointer">
+          <span>✕</span>
+          <span>Close</span>
+        </button>
+      </div>
+
+      <!-- Scrollable Modal Body -->
+      <div class="flex-1 overflow-y-auto custom-scroll p-3 sm:p-4 space-y-4">
+        
+        <!-- Timeline Day Chips Bar (Latest to 1-Week Back) -->
+        <div>
+          <div class="text-[10px] font-mono uppercase text-slate-400 mb-1.5 flex items-center justify-between">
+            <span>📅 Select Trading Session (Latest to 1-Week Back)</span>
+            <span id="fao-modal-active-date-badge" class="text-purple-300 font-bold">--</span>
+          </div>
+          <div class="flex items-center gap-1.5 overflow-x-auto pb-1" id="fao-modal-date-chips">
+            <div class="text-xs text-slate-500 py-1 font-mono">Loading dates...</div>
+          </div>
+        </div>
+
+        <!-- Selected Session Participant Deep Dive Cards (FII, Client, Pro, DII) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="fao-modal-participant-cards">
+          <div class="col-span-full text-center text-slate-500 py-6 font-mono text-xs">Loading session data...</div>
+        </div>
+
+        <!-- Cash Market Flows on Selected Date -->
+        <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 text-xs font-mono">
+          <div class="text-[10px] font-bold text-cyan-300 uppercase mb-2 flex items-center justify-between">
+            <span>💰 Corresponding Cash Market Turnover on <span id="fao-cash-date-tag">--</span></span>
+            <span class="text-[10px] text-slate-400">NSE + BSE Provisional</span>
+          </div>
+          <div class="grid grid-cols-3 gap-2 text-center" id="fao-modal-cash-kpis">
+            <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+              <div class="text-[10px] text-slate-400">FII Cash Net</div>
+              <div class="font-bold mt-0.5 text-white" id="fao-kpi-fii-cash">--</div>
+            </div>
+            <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+              <div class="text-[10px] text-slate-400">DII Cash Net</div>
+              <div class="font-bold mt-0.5 text-white" id="fao-kpi-dii-cash">--</div>
+            </div>
+            <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+              <div class="text-[10px] text-slate-400">Total Net</div>
+              <div class="font-bold mt-0.5 text-white" id="fao-kpi-tot-cash">--</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Full 1-Week Rolling Comparison Table (All 7 Sessions) -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl overflow-hidden">
+          <div class="p-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+            <span class="text-xs font-bold text-white font-mono flex items-center gap-1.5">
+              <span>📈</span> 1-Week Rolling Trend Table (Latest to 1-Week History)
+            </span>
+            <span class="text-[10px] text-purple-300 font-mono">7 Recorded Sessions</span>
+          </div>
+          <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-left text-xs text-slate-300 font-mono">
+              <thead class="bg-slate-950 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2.5">Date</th>
+                  <th class="p-2.5">FII Fut Net</th>
+                  <th class="p-2.5">FII Long %</th>
+                  <th class="p-2.5">Retail Fut Net</th>
+                  <th class="p-2.5">Retail Long %</th>
+                  <th class="p-2.5">Pro Fut Net</th>
+                  <th class="p-2.5">FII CE Net</th>
+                  <th class="p-2.5">FII PE Net</th>
+                  <th class="p-2.5 text-right">FII Cash Net</th>
+                </tr>
+              </thead>
+              <tbody id="fao-modal-history-tbody" class="divide-y divide-slate-800/60">
+                <tr><td colspan="9" class="p-4 text-center text-slate-500 font-sans">Loading 1-week history...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Sticky Modal Footer -->
+      <div class="sticky bottom-0 z-30 px-4 py-2.5 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between text-xs font-mono">
+        <span class="text-slate-400 text-[11px]">Source: NSE Clearing F&O Participant OI (`fao_participant_oi_DDMMYYYY.csv`)</span>
+        <button onclick="closeFaoHistoryModal()" class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition">
+          ✕ Close
+        </button>
+      </div>
+
+    </div>
+  </div>
+
   <!-- MOBILE & TABLET PRIMARY MODULE BOTTOM NAVIGATION BAR (Zero Duplication with Swing Sub-Tabs) -->
   <nav class="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0b0f19]/95 backdrop-blur-md border-t border-slate-800/90 z-40 px-2 py-1.5 flex items-center justify-around text-[10px] pb-safe font-semibold shadow-2xl">
     <button onclick="switchModule('module-swing')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-cyan-400 bg-cyan-500/10" id="mob-mod-swing">
@@ -3216,7 +3338,11 @@
                   <span>📈</span> Top Nifty 50 Gainers
                 </div>
                 <div class="flex flex-wrap gap-1.5">
-                  ${gList.map(g => `<span class="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono text-[11px] font-semibold">${g.symbol} <b>+${Number(g.change_pct).toFixed(2)}%</b></span>`).join('')}
+                  ${gList.map(g => {
+                    const p = Number(g.change_pct ?? g.chg_pct ?? 0);
+                    const safeP = isNaN(p) ? 0 : p;
+                    return `<span class="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono text-[11px] font-semibold">${g.symbol} <b>+${safeP.toFixed(2)}%</b></span>`;
+                  }).join('')}
                 </div>
               </div>
               <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
@@ -3224,7 +3350,11 @@
                   <span>📉</span> Top Nifty 50 Decliners
                 </div>
                 <div class="flex flex-wrap gap-1.5">
-                  ${lList.map(l => `<span class="px-2 py-0.5 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono text-[11px] font-semibold">${l.symbol} <b>${Number(l.change_pct).toFixed(2)}%</b></span>`).join('')}
+                  ${lList.map(l => {
+                    const p = Number(l.change_pct ?? l.chg_pct ?? 0);
+                    const safeP = isNaN(p) ? 0 : p;
+                    return `<span class="px-2 py-0.5 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono text-[11px] font-semibold">${l.symbol} <b>${safeP >= 0 ? '+' : ''}${safeP.toFixed(2)}%</b></span>`;
+                  }).join('')}
                 </div>
               </div>
             </div>
@@ -3478,8 +3608,11 @@
             const pNet = Number(r.pro_fut_net ?? r.pro_net ?? 0);
             const rowDate = r.date || r.trade_date || '--';
             return `
-              <tr class="hover:bg-slate-800/40 transition">
-                <td class="p-2 font-bold text-white">${rowDate}</td>
+              <tr onclick="openFaoHistoryModal('${rowDate}')" class="hover:bg-purple-950/40 cursor-pointer transition" title="Click to view full participant F&O breakdown for ${rowDate}">
+                <td class="p-2 font-bold text-white flex items-center gap-1.5">
+                  <span class="text-purple-400">🔍</span>
+                  <span>${rowDate}</span>
+                </td>
                 <td class="p-2 font-bold ${fNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${fNet >= 0 ? '+' : ''}${fNet.toLocaleString()}</td>
                 <td class="p-2 font-bold ${fPct <= 15 ? 'text-rose-400' : (fPct >= 50 ? 'text-emerald-400' : 'text-amber-300')}">${fPct.toFixed(1)}%</td>
                 <td class="p-2 font-bold ${cNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${cNet >= 0 ? '+' : ''}${cNet.toLocaleString()}</td>
@@ -3565,6 +3698,376 @@
             `;
           }).join('');
         }
+      }
+    }
+
+    // =========================================================================
+    // 1-WEEK FAO (F&O PARTICIPANT OPEN INTEREST) MODAL & HISTORY HANDLERS
+    // =========================================================================
+    let faoHistoryCache = null;
+    let currentSelectedFaoDate = null;
+
+    async function openFaoHistoryModal(targetDate = null) {
+      const modal = document.getElementById('fao-history-modal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+      }
+
+      // If we don't have cache yet, fetch from /api/nifty/fao-history
+      try {
+        if (!faoHistoryCache) {
+          const res = await fetch('/api/nifty/fao-history');
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.status === 'OK') {
+              faoHistoryCache = data;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Error fetching fao-history:', e);
+      }
+
+      // Fallback to niftyPredictionsCache if available
+      if (!faoHistoryCache && niftyPredictionsCache && niftyPredictionsCache.fii_dii_and_oi) {
+        const fi = niftyPredictionsCache.fii_dii_and_oi;
+        faoHistoryCache = {
+          status: 'OK',
+          latest_cash: fi.latest_cash || {},
+          latest_oi: fi.latest_oi || {},
+          cash_history: fi.one_week_cash_history || [],
+          oi_history: fi.one_week_participant_oi_history || []
+        };
+      }
+
+      renderFaoHistoryModalUI(targetDate);
+    }
+
+    function closeFaoHistoryModal() {
+      const modal = document.getElementById('fao-history-modal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        modal.style.display = 'none';
+      }
+      document.body.style.overflow = '';
+    }
+
+    function formatFaoDate(dStr) {
+      if (!dStr) return '--';
+      const parts = dStr.split('-');
+      if (parts.length === 3) {
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const m = months[parseInt(parts[1], 10) - 1] || parts[1];
+        return `${parts[2]} ${m} '${parts[0].slice(2)}`;
+      }
+      return dStr;
+    }
+
+    function renderFaoHistoryModalUI(targetDate = null) {
+      const cache = faoHistoryCache || {};
+      const oiList = cache.oi_history || [];
+      const cashList = cache.cash_history || [];
+
+      if (oiList.length === 0) {
+        const cardsEl = document.getElementById('fao-modal-participant-cards');
+        if (cardsEl) cardsEl.innerHTML = `<div class="col-span-full text-center text-slate-500 py-6 font-mono text-xs">No F&O participant history recorded yet.</div>`;
+        return;
+      }
+
+      // Determine active date (default to latest if null or not found)
+      let activeRow = oiList[0];
+      if (targetDate) {
+        const found = oiList.find(r => r.trade_date === targetDate || r.date === targetDate);
+        if (found) activeRow = found;
+      }
+      currentSelectedFaoDate = activeRow.trade_date || activeRow.date;
+
+      // Update Active Date Badge
+      const dateBadge = document.getElementById('fao-modal-active-date-badge');
+      if (dateBadge) {
+        dateBadge.innerText = `${formatFaoDate(currentSelectedFaoDate)} (${currentSelectedFaoDate === oiList[0].trade_date ? 'Latest Session' : 'Historical'})`;
+      }
+
+      // Render Date Selector Chips Bar
+      const chipsEl = document.getElementById('fao-modal-date-chips');
+      if (chipsEl) {
+        chipsEl.innerHTML = oiList.map((r, idx) => {
+          const rDate = r.trade_date || r.date;
+          const isSelected = (rDate === currentSelectedFaoDate);
+          const isLatest = (idx === 0);
+          const btnCls = isSelected
+            ? 'bg-purple-600 text-white font-bold border-purple-500 shadow-md'
+            : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800';
+          return `
+            <button onclick="renderFaoHistoryModalUI('${rDate}')" class="px-3 py-1.5 rounded-xl border text-xs font-mono transition shrink-0 flex items-center gap-1.5 ${btnCls}">
+              <span>${isLatest ? '🟢' : '📅'}</span>
+              <span>${formatFaoDate(rDate)}</span>
+              ${isLatest ? '<span class="text-[9px] opacity-80 uppercase">(Now)</span>' : ''}
+            </button>
+          `;
+        }).join('');
+      }
+
+      // Parse participants map for activeRow
+      let pMap = activeRow.participants || {};
+      if (typeof pMap === 'string') {
+        try { pMap = JSON.parse(pMap); } catch (e) { pMap = {}; }
+      }
+      const fii = pMap.FII || {
+        fut_long: activeRow.fii_fut_long || 0,
+        fut_short: activeRow.fii_fut_short || 0,
+        fut_net: activeRow.fii_fut_net || 0,
+        fut_long_pct: activeRow.fii_fut_long_pct || 0,
+        opt_ce_net: activeRow.fii_opt_ce_net || 0,
+        opt_pe_net: activeRow.fii_opt_pe_net || 0
+      };
+      const client = pMap.CLIENT || {
+        fut_long: 0,
+        fut_short: 0,
+        fut_net: activeRow.client_fut_net || 0,
+        fut_long_pct: activeRow.client_fut_long_pct || 0,
+        opt_ce_net: 0,
+        opt_pe_net: 0
+      };
+      const pro = pMap.PRO || {
+        fut_long: 0,
+        fut_short: 0,
+        fut_net: activeRow.pro_fut_net || 0,
+        fut_long_pct: 50,
+        opt_ce_net: 0,
+        opt_pe_net: 0
+      };
+      const dii = pMap.DII || {
+        fut_long: 0,
+        fut_short: 0,
+        fut_net: activeRow.dii_fut_net || 0,
+        fut_long_pct: 50,
+        opt_ce_net: 0,
+        opt_pe_net: 0
+      };
+
+      const fiiLongPct = Number(fii.fut_long_pct || 0);
+      const fiiFutNet = Number(fii.fut_net || 0);
+      const fiiCeNet = Number(fii.opt_ce_net || 0);
+      const fiiPeNet = Number(fii.opt_pe_net || 0);
+
+      const clientLongPct = Number(client.fut_long_pct || 0);
+      const clientFutNet = Number(client.fut_net || 0);
+      const clientCeNet = Number(client.opt_ce_net || 0);
+      const clientPeNet = Number(client.opt_pe_net || 0);
+
+      const proFutNet = Number(pro.fut_net || 0);
+      const proCeNet = Number(pro.opt_ce_net || 0);
+      const proPeNet = Number(pro.opt_pe_net || 0);
+
+      const diiFutNet = Number(dii.fut_net || 0);
+      const diiCeNet = Number(dii.opt_ce_net || 0);
+      const diiPeNet = Number(dii.opt_pe_net || 0);
+
+      const fiiBias = fiiLongPct <= 12
+        ? 'EXTREME SHORT CLUSTERING • CONTRARIAN SQUEEZE ALERT'
+        : (fiiLongPct <= 25 ? 'HEAVILY SHORT INDEX FUTURES' : (fiiLongPct >= 70 ? 'OVERBOUGHT / PROFIT BOOKING RISK' : 'BALANCED POSITIONING'));
+      const fiiBadgeCol = fiiLongPct <= 15 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : (fiiLongPct >= 50 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40');
+
+      // Render 4 Participant Cards
+      const cardsEl = document.getElementById('fao-modal-participant-cards');
+      if (cardsEl) {
+        cardsEl.innerHTML = `
+          <!-- Card 1: FII (Foreign Institutional Investors) -->
+          <div class="bg-slate-950/90 border border-purple-500/40 rounded-xl p-3.5 space-y-2.5">
+            <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+              <span class="text-xs font-bold text-purple-300 font-mono flex items-center gap-1.5">
+                <span>🏦</span> FII (Foreign Institutions)
+              </span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded border font-bold ${fiiBadgeCol}">
+                ${fiiBias}
+              </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                <div class="text-[10px] text-slate-400">Index Futures Net</div>
+                <div class="font-bold text-sm mt-0.5 ${fiiFutNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                  ${fiiFutNet >= 0 ? '+' : ''}${fiiFutNet.toLocaleString()}
+                </div>
+                <div class="text-[10px] text-slate-400 mt-1">Long Ratio: <b class="${fiiLongPct <= 15 ? 'text-rose-400' : 'text-slate-200'}">${fiiLongPct.toFixed(1)}%</b></div>
+              </div>
+              <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                <div class="text-[10px] text-slate-400">Options Positioning</div>
+                <div class="text-[11px] mt-0.5">Call Net: <b class="${fiiCeNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${fiiCeNet >= 0 ? '+' : ''}${fiiCeNet.toLocaleString()}</b></div>
+                <div class="text-[11px] mt-0.5">Put Net: <b class="${fiiPeNet >= 0 ? 'text-rose-400' : 'text-emerald-400'}">${fiiPeNet >= 0 ? '+' : ''}${fiiPeNet.toLocaleString()}</b></div>
+              </div>
+            </div>
+            <div class="text-[10px] text-slate-400 font-mono flex items-center justify-between">
+              <span>Long: ${Number(fii.fut_long || 0).toLocaleString()} contracts</span>
+              <span>Short: ${Number(fii.fut_short || 0).toLocaleString()} contracts</span>
+            </div>
+          </div>
+
+          <!-- Card 2: Client (Retail Investors) -->
+          <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+            <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+              <span class="text-xs font-bold text-cyan-300 font-mono flex items-center gap-1.5">
+                <span>👤</span> Client (Retail Investors)
+              </span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded border ${clientLongPct >= 75 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-slate-800 text-slate-300 border-slate-700'}">
+                ${clientLongPct >= 75 ? 'RETAIL HEAVILY LONG (CONTRARIAN CAUTION)' : 'MODERATE PARTICIPATION'}
+              </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                <div class="text-[10px] text-slate-400">Index Futures Net</div>
+                <div class="font-bold text-sm mt-0.5 ${clientFutNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                  ${clientFutNet >= 0 ? '+' : ''}${clientFutNet.toLocaleString()}
+                </div>
+                <div class="text-[10px] text-slate-400 mt-1">Long Ratio: <b class="${clientLongPct >= 75 ? 'text-rose-400 font-bold' : 'text-slate-200'}">${clientLongPct.toFixed(1)}%</b></div>
+              </div>
+              <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                <div class="text-[10px] text-slate-400">Options Positioning</div>
+                <div class="text-[11px] mt-0.5">Call Net: <b class="${clientCeNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${clientCeNet >= 0 ? '+' : ''}${clientCeNet.toLocaleString()}</b></div>
+                <div class="text-[11px] mt-0.5">Put Net: <b class="${clientPeNet >= 0 ? 'text-rose-400' : 'text-emerald-400'}">${clientPeNet >= 0 ? '+' : ''}${clientPeNet.toLocaleString()}</b></div>
+              </div>
+            </div>
+            <div class="text-[10px] text-slate-400 font-mono flex items-center justify-between">
+              <span>Long: ${Number(client.fut_long || 0).toLocaleString()} contracts</span>
+              <span>Short: ${Number(client.fut_short || 0).toLocaleString()} contracts</span>
+            </div>
+          </div>
+
+          <!-- Card 3: Pro (Proprietary Desks) -->
+          <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+            <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+              <span class="text-xs font-bold text-amber-300 font-mono flex items-center gap-1.5">
+                <span>🏢</span> Pro (Broker Proprietary Desks)
+              </span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                MARKET MAKERS & ARBITRAGE
+              </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                <div class="text-[10px] text-slate-400">Index Futures Net</div>
+                <div class="font-bold text-sm mt-0.5 ${proFutNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                  ${proFutNet >= 0 ? '+' : ''}${proFutNet.toLocaleString()}
+                </div>
+              </div>
+              <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                <div class="text-[10px] text-slate-400">Options Positioning</div>
+                <div class="text-[11px] mt-0.5">Call Net: <b class="${proCeNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${proCeNet >= 0 ? '+' : ''}${proCeNet.toLocaleString()}</b></div>
+                <div class="text-[11px] mt-0.5">Put Net: <b class="${proPeNet >= 0 ? 'text-rose-400' : 'text-emerald-400'}">${proPeNet >= 0 ? '+' : ''}${proPeNet.toLocaleString()}</b></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4: DII (Domestic Institutional Investors) -->
+          <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+            <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+              <span class="text-xs font-bold text-emerald-300 font-mono flex items-center gap-1.5">
+                <span>🇮🇳</span> DII (Mutual Funds & Domestic Desks)
+              </span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                SYSTEMATIC DOMESTIC SIP FLOW
+              </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                <div class="text-[10px] text-slate-400">Index Futures Net</div>
+                <div class="font-bold text-sm mt-0.5 ${diiFutNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                  ${diiFutNet >= 0 ? '+' : ''}${diiFutNet.toLocaleString()}
+                </div>
+              </div>
+              <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                <div class="text-[10px] text-slate-400">Options Positioning</div>
+                <div class="text-[11px] mt-0.5">Call Net: <b class="${diiCeNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${diiCeNet >= 0 ? '+' : ''}${diiCeNet.toLocaleString()}</b></div>
+                <div class="text-[11px] mt-0.5">Put Net: <b class="${diiPeNet >= 0 ? 'text-rose-400' : 'text-emerald-400'}">${diiPeNet >= 0 ? '+' : ''}${diiPeNet.toLocaleString()}</b></div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // Update Cash Turnover on Selected Date
+      const cashRow = cashList.find(c => (c.trade_date === currentSelectedFaoDate || c.date === currentSelectedFaoDate)) || {};
+      const cashDateTag = document.getElementById('fao-cash-date-tag');
+      if (cashDateTag) cashDateTag.innerText = formatFaoDate(currentSelectedFaoDate);
+
+      const fiiCashNet = Number(cashRow.fii_net || 0);
+      const diiCashNet = Number(cashRow.dii_net || 0);
+      const totCashNet = Number(cashRow.total_net || (fiiCashNet + diiCashNet));
+
+      const kpiFii = document.getElementById('fao-kpi-fii-cash');
+      const kpiDii = document.getElementById('fao-kpi-dii-cash');
+      const kpiTot = document.getElementById('fao-kpi-tot-cash');
+      if (kpiFii) {
+        kpiFii.innerText = `${fiiCashNet >= 0 ? '+' : ''}₹${fiiCashNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`;
+        kpiFii.className = `font-bold mt-0.5 ${fiiCashNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      if (kpiDii) {
+        kpiDii.innerText = `${diiCashNet >= 0 ? '+' : ''}₹${diiCashNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`;
+        kpiDii.className = `font-bold mt-0.5 ${diiCashNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      if (kpiTot) {
+        kpiTot.innerText = `${totCashNet >= 0 ? '+' : ''}₹${totCashNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`;
+        kpiTot.className = `font-bold mt-0.5 ${totCashNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+
+      // Render 1-Week Rolling Trend Table
+      const histTbody = document.getElementById('fao-modal-history-tbody');
+      if (histTbody) {
+        histTbody.innerHTML = oiList.map(r => {
+          const rDate = r.trade_date || r.date;
+          const isSelected = (rDate === currentSelectedFaoDate);
+          const cRow = cashList.find(c => (c.trade_date === rDate || c.date === rDate)) || {};
+          const cNet = Number(cRow.fii_net || 0);
+
+          let pMapRow = r.participants || {};
+          if (typeof pMapRow === 'string') {
+            try { pMapRow = JSON.parse(pMapRow); } catch (e) { pMapRow = {}; }
+          }
+          const fObj = pMapRow.FII || {};
+          const fNet = Number(r.fii_fut_net ?? fObj.fut_net ?? 0);
+          const fPct = Number(r.fii_fut_long_pct ?? fObj.fut_long_pct ?? 0);
+          const retNet = Number(r.client_fut_net ?? pMapRow.CLIENT?.fut_net ?? 0);
+          const retPct = Number(r.client_fut_long_pct ?? pMapRow.CLIENT?.fut_long_pct ?? 0);
+          const pNet = Number(r.pro_fut_net ?? pMapRow.PRO?.fut_net ?? 0);
+          const fCe = Number(r.fii_opt_ce_net ?? fObj.opt_ce_net ?? 0);
+          const fPe = Number(r.fii_opt_pe_net ?? fObj.opt_pe_net ?? 0);
+
+          return `
+            <tr onclick="renderFaoHistoryModalUI('${rDate}')" class="cursor-pointer transition ${isSelected ? 'bg-purple-950/50 border-l-4 border-purple-500' : 'hover:bg-slate-800/40'}">
+              <td class="p-2.5 font-bold ${isSelected ? 'text-purple-300' : 'text-white'}">
+                ${formatFaoDate(rDate)} ${isSelected ? '👈' : ''}
+              </td>
+              <td class="p-2.5 font-bold ${fNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                ${fNet >= 0 ? '+' : ''}${fNet.toLocaleString()}
+              </td>
+              <td class="p-2.5 font-bold ${fPct <= 15 ? 'text-rose-400' : (fPct >= 50 ? 'text-emerald-400' : 'text-amber-300')}">
+                ${fPct.toFixed(1)}%
+              </td>
+              <td class="p-2.5 font-bold ${retNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                ${retNet >= 0 ? '+' : ''}${retNet.toLocaleString()}
+              </td>
+              <td class="p-2.5 font-bold ${retPct >= 75 ? 'text-rose-400' : 'text-slate-300'}">
+                ${retPct.toFixed(1)}%
+              </td>
+              <td class="p-2.5 font-bold ${pNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                ${pNet >= 0 ? '+' : ''}${pNet.toLocaleString()}
+              </td>
+              <td class="p-2.5 font-mono ${fCe >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                ${fCe >= 0 ? '+' : ''}${fCe.toLocaleString()}
+              </td>
+              <td class="p-2.5 font-mono ${fPe >= 0 ? 'text-rose-400' : 'text-emerald-400'}">
+                ${fPe >= 0 ? '+' : ''}${fPe.toLocaleString()}
+              </td>
+              <td class="p-2.5 text-right font-bold ${cNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                ${cNet !== 0 ? (cNet >= 0 ? '+' : '') + '₹' + cNet.toLocaleString('en-IN', { maximumFractionDigits: 1 }) : '--'}
+              </td>
+            </tr>
+          `;
+        }).join('');
       }
     }
 
@@ -6257,6 +6760,13 @@
     }
 
     document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const faoModal = document.getElementById('fao-history-modal');
+        if (faoModal && faoModal.style.display !== 'none' && !faoModal.classList.contains('hidden')) {
+          closeFaoHistoryModal();
+          return;
+        }
+      }
       const modal = document.getElementById('chart-modal');
       if (!modal || modal.style.display === 'none' || modal.classList.contains('hidden')) return;
       if (e.key === 'Escape') {

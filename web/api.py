@@ -6,8 +6,11 @@ FastAPI REST API & Web Application
 import asyncio
 import logging
 import threading
+import math
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+import numpy as np
 
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
@@ -549,11 +552,57 @@ def capture_nifty_intraday_snapshot(slot_override: Optional[str] = None, interva
     return nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override=slot_override, sync_cloud=True, interval_mode=interval_mode)
 
 
+def _sanitize_for_json(obj):
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return 0.0
+        return obj
+    elif isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(x) for x in obj]
+    elif hasattr(obj, "item"):  # numpy scalar
+        try:
+            return _sanitize_for_json(obj.item())
+        except Exception:
+            return str(obj)
+    return obj
+
+
 @app.get("/api/nifty/predictions")
 def get_nifty_predictions(force_refresh: bool = False):
     """Computes live 6-pillar Nifty 50 T+1 & T+5 predictions with forward-testing attribution & self-learning weights."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
-    return nifty_analytics_engine.compute_nifty_predictions(force_refresh=force_refresh)
+    try:
+        data = nifty_analytics_engine.compute_nifty_predictions(force_refresh=force_refresh)
+        return _sanitize_for_json(data)
+    except Exception as e:
+        logger.error(f"Error computing live predictions: {e}", exc_info=True)
+        cached = state_engine.get_kv("latest_nifty_predictions")
+        if cached and isinstance(cached, dict) and cached.get("status") == "OK":
+            return _sanitize_for_json(cached)
+        return {"status": "ERROR", "message": f"Prediction service error: {str(e)}"}
+
+
+@app.get("/api/nifty/fao-history")
+def get_nifty_fao_history():
+    """
+    Returns rolling 1-Week Official NSE F&O Clearing Corporation Participant Wise Open Interest History
+    (Client, DII, FII, Pro) from latest trading session to 1-week back with contract breakdowns.
+    """
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    try:
+        flow_data = nifty_analytics_engine.fetch_fii_dii_cash_and_participant_oi(force_refresh=False)
+        return _sanitize_for_json({
+            "status": "OK",
+            "latest_cash": flow_data.get("latest_cash", {}),
+            "latest_oi": flow_data.get("latest_oi", {}),
+            "cash_history": flow_data.get("one_week_cash_history", []),
+            "oi_history": flow_data.get("one_week_participant_oi_history", []),
+        })
+    except Exception as e:
+        logger.error(f"Error reading F&O history: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e), "cash_history": [], "oi_history": []}
 
 
 # --------------------------------------------------------------------------
