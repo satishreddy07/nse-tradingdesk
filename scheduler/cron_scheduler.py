@@ -152,7 +152,10 @@ def scheduled_render_keepalive_job():
 def scheduled_live_price_stream_job():
     """
     Runs every 5 minutes during NSE market hours (09:15 AM – 03:30 PM IST, Mon-Fri, Excl. Holidays).
-    Streams live prices for all Active Portfolio Positions and Screened Signals on the page.
+    1. Streams live prices for all Active Portfolio Positions and Screened Signals.
+    2. Updates complete NSE Option Chain (Weekly + Monthly) synchronously every 5 minutes.
+    3. Reconciles all active options strategies against their Targets, Stop Losses, and 15:15 MOC cutoff.
+    4. Evaluates and deploys intraday automated options strategies based on intraday progression (max 2 limit & diversity).
     """
     current_dt = now_ist()
     can_trade, _ = NSEMarketCalendar.can_execute_trades(current_dt)
@@ -166,6 +169,36 @@ def scheduled_live_price_stream_job():
         )
     except Exception as e:
         logger.warning(f"5m live price stream warning: {e}")
+
+    try:
+        from engines.nifty_analytics_engine import nifty_analytics_engine
+        # 1. Update complete option chains along with stock prices every 5 minutes
+        nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=True)
+        # 2. Reconcile stops and targets for all active options strategies
+        nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
+        # 3. Evaluate and deploy intraday auto-strategies if active < 2
+        nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["INTRADAY"])
+    except Exception as e:
+        logger.warning(f"5m option chain sync & auto-trade warning: {e}")
+
+
+def scheduled_options_premarket_job():
+    """
+    09:00 AM IST Weekday Job:
+    Evaluates ML predictions and deploys weekly & monthly automated strategies
+    before market open if new expiry cycle has begun.
+    """
+    current_dt = now_ist()
+    NSEMarketCalendar.sync_holidays_from_nse(force=False)
+    if not NSEMarketCalendar.is_trading_day(current_dt.date()):
+        logger.info("⏸️ Today is not an active trading day. 09:00 AM options auto-deploy skipped.")
+        return
+    try:
+        from engines.nifty_analytics_engine import nifty_analytics_engine
+        res = nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["WEEKLY", "MONTHLY"])
+        logger.info(f"🤖 [09:00 AM Options Pre-Market Job] Deployed: {res.get('deployed_count', 0)} strategies")
+    except Exception as e:
+        logger.warning(f"09:00 AM Options Pre-Market Job error: {e}")
 
 
 def scheduled_morning_scan_job():
@@ -377,6 +410,16 @@ def start_scheduler():
             name="09:15 AM – 03:30 PM Live Market Price Stream (Every 5m)",
             replace_existing=True,
             misfire_grace_time=180
+        )
+
+        # Job 0C-2: 09:00 AM Pre-Market Options Weekly & Monthly Auto-Deploy (Mon-Fri)
+        _scheduler.add_job(
+            scheduled_options_premarket_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=9, minute=0, timezone=IST),
+            id="job_options_premarket_0900",
+            name="09:00 AM Options Pre-Market Auto-Deploy (Weekly & Monthly)",
+            replace_existing=True,
+            misfire_grace_time=300
         )
 
         # Job 0D: Multi-Interval (15m / 30m / 50m) Nifty Weekly Option Expiry Telemetry Collector (09:30 AM to 03:30 PM IST)

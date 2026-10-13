@@ -622,11 +622,19 @@ class DeployStrategyRequest(BaseModel):
     est_margin: float = 0.0
     pop_pct: float = 0.0
     legs: list
+    target_pnl: Optional[float] = 0.0
+    stoploss_pnl: Optional[float] = 0.0
+    auto_trade_mode: Optional[str] = "MANUAL"
+    market_condition: Optional[str] = ""
 
 
 class ExitStrategyRequest(BaseModel):
     strategy_id: str
     exit_reason: str = "MANUAL_EXIT"
+
+
+class AutoDeployOptionsRequest(BaseModel):
+    modes: Optional[list] = ["WEEKLY", "MONTHLY", "INTRADAY"]
 
 
 @app.get("/api/options/portfolio")
@@ -648,6 +656,35 @@ def exit_options_strategy_endpoint(req: ExitStrategyRequest):
     """Exits a deployed multi-leg options strategy at current market prices and syncs to Telegram Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     return nifty_analytics_engine.exit_options_strategy(req.strategy_id, req.exit_reason)
+
+
+@app.post("/api/options/auto-deploy")
+def auto_deploy_options_endpoint(req: Optional[AutoDeployOptionsRequest] = None):
+    """Evaluates ML predictions & intraday progression to auto-deploy weekly, monthly, and intraday strategies according to the matrix."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    modes = req.modes if req and req.modes else ["WEEKLY", "MONTHLY", "INTRADAY"]
+    return nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=modes)
+
+
+@app.get("/api/options/chain-compact")
+def get_options_chain_compact_endpoint(expiry_type: str = "WEEKLY"):
+    """Returns compact scrollable option chain data (strikes, LTPs, OIs) for weekly and monthly expiries."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    chain = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
+    if chain.get("status") != "OK":
+        return chain
+    exp_key = "monthly" if expiry_type.upper() == "MONTHLY" else "weekly"
+    sub_data = chain.get(exp_key, {})
+    return {
+        "status": "OK",
+        "symbol": chain.get("symbol", "NIFTY 50"),
+        "spot_price": chain.get("spot_price", 0.0),
+        "expiry_date": sub_data.get("expiry", "--"),
+        "expiry_type": expiry_type.upper(),
+        "atm_strike": sub_data.get("atm_strike"),
+        "strikes": sub_data.get("strikes", []),
+        "timestamp": chain.get("nse_timestamp") or chain.get("fetched_at_ist")
+    }
 
 
 @app.get("/api/portfolio/equity-curves")

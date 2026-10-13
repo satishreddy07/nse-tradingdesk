@@ -2157,6 +2157,52 @@
           </div>
         </div>
 
+        <!-- Compact Scrollable Option Chain Card Embedded in Strategy Builder -->
+        <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4 mt-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-800/80">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+              <span class="text-xs font-extrabold text-white font-mono uppercase tracking-wider">⚡ Compact Option Chain (Quick Strike Picker)</span>
+              <span id="builder-compact-chain-exp-lbl" class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">Weekly Expiry</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
+                <button onclick="switchBuilderCompactChainExpiry('weekly')" id="btn-builder-compact-w" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-cyan-500 text-black transition">Weekly</button>
+                <button onclick="switchBuilderCompactChainExpiry('monthly')" id="btn-builder-compact-m" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold text-slate-400 hover:text-white transition">Monthly</button>
+              </div>
+              <span id="builder-compact-spot-lbl" class="text-xs font-mono font-bold text-amber-400">Spot: ₹--</span>
+            </div>
+          </div>
+          <div class="text-[11px] text-slate-400 font-sans mb-2">
+            Click <span class="text-emerald-400 font-bold font-mono">+B</span> (Buy) or <span class="text-rose-400 font-bold font-mono">+S</span> (Sell) on Call or Put to add directly to builder legs.
+          </div>
+
+          <!-- Scrollable Table Box -->
+          <div class="max-h-72 overflow-y-auto custom-scroll border border-slate-800/80 rounded-xl overflow-x-auto">
+            <table class="w-full text-center text-xs font-mono border-collapse min-w-[620px]">
+              <thead class="bg-slate-900/90 sticky top-0 z-10 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th colspan="3" class="p-1.5 text-rose-400/90 border-r border-slate-800 bg-rose-950/20">CALLS (CE)</th>
+                  <th class="p-1.5 text-cyan-300 bg-slate-950 font-black">STRIKE</th>
+                  <th colspan="3" class="p-1.5 text-emerald-400/90 border-l border-slate-800 bg-emerald-950/20">PUTS (PE)</th>
+                </tr>
+                <tr class="text-[9px] text-slate-500 border-b border-slate-800/80">
+                  <th class="p-1">Trade</th>
+                  <th class="p-1">CE LTP</th>
+                  <th class="p-1 border-r border-slate-800">CE OI</th>
+                  <th class="p-1 bg-slate-950 text-slate-400">ATM</th>
+                  <th class="p-1 border-l border-slate-800">PE OI</th>
+                  <th class="p-1">PE LTP</th>
+                  <th class="p-1">Trade</th>
+                </tr>
+              </thead>
+              <tbody id="builder-compact-chain-tbody" class="divide-y divide-slate-800/50 text-[11px]">
+                <tr><td colspan="7" class="p-4 text-slate-500">Loading live option chain...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div> <!-- Close Builder inner card -->
     </div> <!-- Close Sub-Tab 2: opt-sub-builder -->
 
@@ -2174,10 +2220,16 @@
             <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Options Strategies Tracker & Performance Analytics</h3>
             <p class="text-xs text-slate-400">Track complete strategy structures with live MTM valuation, Greeks, strategy-level square-off, and cloud vault backups.</p>
           </div>
-          <button onclick="loadOptionsPortfolioDesk()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold flex items-center gap-1.5 border border-slate-700 transition">
-            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-            <span>Refresh Portfolio</span>
-          </button>
+          <div class="flex items-center gap-2">
+            <button onclick="triggerAutoDeployOptions()" id="btn-auto-deploy-options" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black text-xs font-mono font-extrabold flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition cursor-pointer">
+              <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+              <span>🤖 Run ML Auto-Trader</span>
+            </button>
+            <button onclick="loadOptionsPortfolioDesk()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold flex items-center gap-1.5 border border-slate-700 transition">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <span>Refresh Portfolio</span>
+            </button>
+          </div>
         </div>
 
         <!-- Portfolio Statistics Strip (8 Key Metric Cards) -->
@@ -2291,7 +2343,7 @@
   <!-- OPTIONS STRATEGY DETAIL & SQUARE-OFF MODAL                           -->
   <!-- ===================================================================== -->
   <div id="strat-detail-modal" onclick="if(event.target === this) closeStrategyDetailModal()" style="display: none;" class="hidden fixed inset-0 z-[100] bg-black/85 backdrop-blur-md items-center justify-center p-2 sm:p-4">
-    <div class="bg-[#0b0f19] border border-purple-500/40 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
+    <div class="bg-[#0b0f19] border border-purple-500/40 rounded-2xl w-full max-w-6xl 2xl:max-w-7xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
       <div class="p-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2">
         <div class="flex items-center gap-2.5">
           <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
@@ -2332,11 +2384,90 @@
           </table>
         </div>
 
-        <!-- Mini Payoff Preview Canvas Container -->
-        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
-          <div class="text-[11px] font-bold text-slate-300 mb-2">Strategy Payoff Structure</div>
-          <div class="relative w-full h-40 bg-[#050811] rounded-lg overflow-hidden border border-slate-800">
-            <canvas id="modal-strat-payoff-canvas" class="w-full h-full block"></canvas>
+        <!-- Strategy Full Payoff Structure Canvas Container -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 sm:p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+              <span class="text-xs font-bold text-white font-mono uppercase">Full Strategy Payoff Analysis</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Expiry Curve</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">Breakevens & Max Profit/Loss</span>
+            </div>
+            <div id="modal-payoff-hud" class="text-[11px] font-mono text-cyan-300">Hover payoff curve to inspect P&L at spot</div>
+          </div>
+          <div class="relative w-full h-60 sm:h-72 bg-[#050811] rounded-lg overflow-hidden border border-slate-800">
+            <canvas id="modal-strat-payoff-canvas" class="w-full h-full block cursor-crosshair"></canvas>
+          </div>
+        </div>
+
+        <!-- Dual Option Chains Container: Weekly and Monthly in Medium Size Boxes with Scroll Option -->
+        <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-white font-mono uppercase">Option Chains Analysis Desk</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30">Weekly & Monthly Dual Chains</span>
+            </div>
+            <div class="text-[11px] font-mono text-slate-400">
+              Constituent strategy strikes are <span class="text-cyan-300 font-bold bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/40">highlighted in cyan</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- Medium Box 1: Weekly Option Chain (Scrollable) -->
+            <div class="bg-slate-900/80 border border-slate-800/90 rounded-xl p-3 flex flex-col">
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                  <span class="text-xs font-bold text-white font-mono uppercase">Weekly Option Chain</span>
+                  <span id="modal-weekly-exp-lbl" class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">--</span>
+                </div>
+                <span id="modal-weekly-spot-lbl" class="text-[11px] font-mono font-bold text-amber-400">Spot: ₹--</span>
+              </div>
+              <div class="max-h-64 overflow-y-auto custom-scroll border border-slate-800/80 rounded-lg overflow-x-auto">
+                <table class="w-full text-center text-[11px] font-mono border-collapse min-w-[340px]">
+                  <thead class="bg-slate-950 sticky top-0 z-10 text-[9px] uppercase text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th class="p-1.5 text-rose-400">CE LTP</th>
+                      <th class="p-1.5 text-rose-400 border-r border-slate-800">CE OI</th>
+                      <th class="p-1.5 text-cyan-300 bg-slate-900 font-black">STRIKE</th>
+                      <th class="p-1.5 text-emerald-400 border-l border-slate-800">PE OI</th>
+                      <th class="p-1.5 text-emerald-400">PE LTP</th>
+                    </tr>
+                  </thead>
+                  <tbody id="modal-weekly-chain-tbody" class="divide-y divide-slate-800/50">
+                    <tr><td colspan="5" class="p-4 text-slate-500 text-center">Loading weekly option chain...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Medium Box 2: Monthly Option Chain (Scrollable) -->
+            <div class="bg-slate-900/80 border border-slate-800/90 rounded-xl p-3 flex flex-col">
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                  <span class="text-xs font-bold text-white font-mono uppercase">Monthly Option Chain</span>
+                  <span id="modal-monthly-exp-lbl" class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">--</span>
+                </div>
+                <span id="modal-monthly-spot-lbl" class="text-[11px] font-mono font-bold text-amber-400">Spot: ₹--</span>
+              </div>
+              <div class="max-h-64 overflow-y-auto custom-scroll border border-slate-800/80 rounded-lg overflow-x-auto">
+                <table class="w-full text-center text-[11px] font-mono border-collapse min-w-[340px]">
+                  <thead class="bg-slate-950 sticky top-0 z-10 text-[9px] uppercase text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th class="p-1.5 text-rose-400">CE LTP</th>
+                      <th class="p-1.5 text-rose-400 border-r border-slate-800">CE OI</th>
+                      <th class="p-1.5 text-cyan-300 bg-slate-900 font-black">STRIKE</th>
+                      <th class="p-1.5 text-emerald-400 border-l border-slate-800">PE OI</th>
+                      <th class="p-1.5 text-emerald-400">PE LTP</th>
+                    </tr>
+                  </thead>
+                  <tbody id="modal-monthly-chain-tbody" class="divide-y divide-slate-800/50">
+                    <tr><td colspan="5" class="p-4 text-slate-500 text-center">Loading monthly option chain...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2784,10 +2915,12 @@
           refreshAllData();
         }
       }, 30000);
-      // 5-Minute Live Price Stream for all Active Positions & Screened Stocks on the page
+      // 5-Minute Live Price Stream for all Active Positions, Screened Stocks, and Options Chains
       setInterval(() => {
         if (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
           refreshLivePrices(true);
+          loadOptionsChainDesk(false);
+          loadOptionsPortfolioDesk();
         }
       }, 300000);
     });
@@ -4117,6 +4250,9 @@
         setTimeout(() => {
           recalculateStrategyMetrics();
           drawPayoffGraph();
+          if (typeof renderBuilderCompactChain === 'function') {
+            renderBuilderCompactChain();
+          }
         }, 60);
       } else if (tab === 'portfolio') {
         setTimeout(() => {
@@ -4133,6 +4269,9 @@
         const data = await res.json();
         niftyOptionsChainCache = data;
         renderOptionsChainUI(data);
+        if (typeof renderBuilderCompactChain === 'function') {
+          renderBuilderCompactChain();
+        }
         await loadOptionsPortfolioDesk();
         if (forceRefresh) {
           showToast(`🎯 Live NSE Nifty 50 Option Chain Refreshed (Weekly ${data.weekly?.expiry || ''} & Monthly ${data.monthly?.expiry || ''})!`, 'success');
@@ -4352,13 +4491,12 @@
         `;
       }).join('');
 
-      // Auto-populate Strategy Builder with intelligent structure if empty
-      if (strategyLegs.length === 0) {
-        applyStrategyPreset('AUTO');
-      } else {
-        recalculateStrategyMetrics();
-        drawPayoffGraph();
+      // Synchronize strategy builder state without overwriting reset/cleared builder
+      if (typeof renderBuilderCompactChain === 'function') {
+        renderBuilderCompactChain();
       }
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
     }
 
     // =========================================================================
@@ -4498,10 +4636,130 @@
 
     function clearStrategyBuilderLegs() {
       strategyLegs = [];
+      const nameInput = document.getElementById('strat-name-input');
+      if (nameInput) nameInput.value = '';
       renderStrategyLegs();
       recalculateStrategyMetrics();
       drawPayoffGraph();
+      if (typeof renderBuilderCompactChain === 'function') {
+        renderBuilderCompactChain();
+      }
       showToast("Strategy Builder legs cleared.", "info");
+    }
+
+    // =========================================================================
+    // BUILDER COMPACT OPTION CHAIN & QUICK STRIKE PICKER
+    // =========================================================================
+    let builderCompactChainMode = 'weekly';
+
+    function formatCompactOi(v) {
+      if (!v || v <= 0) return '--';
+      if (v >= 100000) return (v / 100000).toFixed(1) + 'L';
+      if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
+      return String(v);
+    }
+
+    function switchBuilderCompactChainExpiry(mode) {
+      builderCompactChainMode = mode === 'monthly' ? 'monthly' : 'weekly';
+      const btnW = document.getElementById('btn-builder-compact-w');
+      const btnM = document.getElementById('btn-builder-compact-m');
+      const lbl = document.getElementById('builder-compact-chain-exp-lbl');
+      if (btnW && btnM) {
+        if (builderCompactChainMode === 'weekly') {
+          btnW.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-cyan-500 text-black transition";
+          btnM.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold text-slate-400 hover:text-white transition";
+        } else {
+          btnM.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-cyan-500 text-black transition";
+          btnW.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold text-slate-400 hover:text-white transition";
+        }
+      }
+      if (lbl) {
+        const active = builderCompactChainMode === 'monthly' ? (niftyOptionsChainCache?.monthly || {}) : (niftyOptionsChainCache?.weekly || {});
+        lbl.innerText = `${builderCompactChainMode.toUpperCase()} (${active.expiry || '--'})`;
+      }
+      renderBuilderCompactChain();
+    }
+
+    function renderBuilderCompactChain() {
+      const tbody = document.getElementById('builder-compact-chain-tbody');
+      if (!tbody) return;
+
+      const active = builderCompactChainMode === 'monthly'
+        ? (niftyOptionsChainCache?.monthly || {})
+        : (niftyOptionsChainCache?.weekly || {});
+
+      const strikes = active.strikes || [];
+      const atm = active.atm_strike || 0;
+      const spot = active.spot_price || 0;
+
+      const spotLbl = document.getElementById('builder-compact-spot-lbl');
+      if (spotLbl) spotLbl.innerText = `Spot: ₹${Number(spot).toLocaleString('en-IN')}`;
+
+      const expLbl = document.getElementById('builder-compact-chain-exp-lbl');
+      if (expLbl) expLbl.innerText = `${builderCompactChainMode.toUpperCase()} (${active.expiry || '--'})`;
+
+      if (strikes.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-500">Loading live option chain...</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = strikes.map(s => {
+        const isAtm = s.strike === atm;
+        const matchedCeLeg = strategyLegs.find(l => l.strike === s.strike && l.type === 'CE');
+        const matchedPeLeg = strategyLegs.find(l => l.strike === s.strike && l.type === 'PE');
+        const isStrikeInLegs = matchedCeLeg || matchedPeLeg;
+
+        const isCeBuy = matchedCeLeg && matchedCeLeg.action === 'BUY';
+        const isCeSell = matchedCeLeg && matchedCeLeg.action === 'SELL';
+        const isPeBuy = matchedPeLeg && matchedPeLeg.action === 'BUY';
+        const isPeSell = matchedPeLeg && matchedPeLeg.action === 'SELL';
+
+        const rowBg = isStrikeInLegs ? 'bg-cyan-950/25' : (isAtm ? 'bg-amber-950/20' : 'hover:bg-slate-900/60');
+
+        return `
+          <tr class="transition ${rowBg}">
+            <td class="p-1 whitespace-nowrap">
+              <button onclick="addLegFromCompactChain(${s.strike}, 'CE', 'BUY', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCeBuy ? 'bg-emerald-500 text-black shadow font-extrabold' : 'bg-slate-800 hover:bg-emerald-950/60 text-emerald-400 border border-slate-700'} mr-1" title="Buy Call">+B</button>
+              <button onclick="addLegFromCompactChain(${s.strike}, 'CE', 'SELL', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCeSell ? 'bg-rose-500 text-white shadow font-extrabold' : 'bg-slate-800 hover:bg-rose-950/60 text-rose-400 border border-slate-700'}" title="Sell Call">+S</button>
+            </td>
+            <td class="p-1 font-bold ${matchedCeLeg ? 'text-amber-300' : 'text-slate-200'}">₹${Number(s.ce_ltp || 0).toFixed(1)}</td>
+            <td class="p-1 text-slate-400 border-r border-slate-800">${formatCompactOi(s.ce_oi)}</td>
+            <td class="p-1 font-bold ${isAtm ? 'text-amber-400 bg-amber-950/30' : (isStrikeInLegs ? 'text-cyan-300 bg-cyan-950/30 font-extrabold' : 'text-white')} bg-slate-950/80">
+              ${s.strike}${isAtm ? ' <span class="text-[8px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-normal">ATM</span>' : ''}
+            </td>
+            <td class="p-1 text-slate-400 border-l border-slate-800">${formatCompactOi(s.pe_oi)}</td>
+            <td class="p-1 font-bold ${matchedPeLeg ? 'text-amber-300' : 'text-slate-200'}">₹${Number(s.pe_ltp || 0).toFixed(1)}</td>
+            <td class="p-1 whitespace-nowrap">
+              <button onclick="addLegFromCompactChain(${s.strike}, 'PE', 'BUY', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isPeBuy ? 'bg-emerald-500 text-black shadow font-extrabold' : 'bg-slate-800 hover:bg-emerald-950/60 text-emerald-400 border border-slate-700'} mr-1" title="Buy Put">+B</button>
+              <button onclick="addLegFromCompactChain(${s.strike}, 'PE', 'SELL', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isPeSell ? 'bg-rose-500 text-white shadow font-extrabold' : 'bg-slate-800 hover:bg-rose-950/60 text-rose-400 border border-slate-700'}" title="Sell Put">+S</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function addLegFromCompactChain(strike, type, action, price, iv) {
+      const existing = strategyLegs.find(l => l.strike === strike && l.type === type && l.action === action);
+      if (existing) {
+        existing.qty += 75;
+        showToast(`Increased ${action} ${strike} ${type} to ${Math.round(existing.qty / 75)} Lots`, 'info');
+      } else {
+        const newId = strategyLegs.length > 0 ? Math.max(...strategyLegs.map(l => l.id)) + 1 : 1;
+        strategyLegs.push({
+          id: newId,
+          strike: Number(strike),
+          type: type,
+          action: action,
+          qty: 75,
+          price: Math.max(0.05, Number(price || 50)),
+          iv: Math.max(3, Number(iv || 13.5))
+        });
+        showToast(`Added Leg: ${action} ${strike} ${type} @ ₹${Number(price).toFixed(2)}`, 'success');
+      }
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+      renderBuilderCompactChain();
     }
 
     function renderStrategyLegs() {
@@ -5203,6 +5461,8 @@
         const data = await res.json();
         if (res.ok && data.status === 'OK') {
           showToast(`🚀 Strategy "${stratName}" deployed to Options Portfolio & backed up to Telegram Cloud!`, "success");
+          clearStrategyBuilderLegs();
+          if (nameInput) nameInput.value = '';
           switchOptionsSubTab('portfolio');
           await loadOptionsPortfolioDesk();
           await loadAllEquityCurves();
@@ -5307,10 +5567,12 @@
             return `
               <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 sm:p-4 hover:border-purple-500/40 transition space-y-3">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
-                  <div class="flex items-center gap-2">
+                  <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
                     <h5 class="font-extrabold text-white text-sm sm:text-base">${st.strategy_name}</h5>
                     <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">${st.strategy_id}</span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold ${st.auto_trade_mode === 'INTRADAY' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : (st.auto_trade_mode === 'WEEKLY' || st.auto_trade_mode === 'MONTHLY' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700')}">${st.auto_trade_mode || 'MANUAL'}</span>
+                    ${st.market_condition ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">${st.market_condition.replace(/_/g, ' ')}</span>` : ''}
                     <span class="text-[10px] text-slate-400">Expiry: <b class="text-slate-200">${st.expiry_date}</b> (${st.expiry_type})</span>
                   </div>
                   <div class="flex items-center gap-2">
@@ -5332,10 +5594,11 @@
                 </div>
 
                 <!-- Greeks & Meta Strip -->
-                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px] font-mono bg-slate-950/70 p-2 rounded-lg">
+                <div class="grid grid-cols-2 sm:grid-cols-6 gap-2 text-[11px] font-mono bg-slate-950/70 p-2 rounded-lg">
                   <div><span class="text-slate-500">Entry Spot:</span> <b class="text-white">${st.spot_at_entry}</b></div>
                   <div><span class="text-slate-500">Live Spot:</span> <b class="text-amber-300">${data.spot_price || '--'}</b></div>
                   <div><span class="text-slate-500">Net Prem:</span> <b class="${(st.net_premium || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">₹${Math.round(st.net_premium || 0).toLocaleString('en-IN')}</b></div>
+                  <div><span class="text-slate-500">Target / SL:</span> <b class="text-emerald-400">+₹${Math.round(st.target_pnl || 0).toLocaleString('en-IN')}</b> / <b class="text-rose-400">-₹${Math.abs(Math.round(st.stoploss_pnl || 0)).toLocaleString('en-IN')}</b></div>
                   <div><span class="text-slate-500">Delta / Theta:</span> <b class="text-purple-300">Δ ${Number(g.delta || 0).toFixed(2)} | Θ ₹${Math.round(g.theta || 0)}/d</b></div>
                   <div><span class="text-slate-500">Gamma / Vega:</span> <b class="text-cyan-300">Γ ${Number(g.gamma || 0).toFixed(4)} | V ₹${Math.round(g.vega || 0)}/%</b></div>
                 </div>
@@ -5518,10 +5781,14 @@
       if (modal) {
         modal.classList.remove('hidden');
         modal.style.display = 'flex';
+        currentModalLegs = s.legs || [];
+        currentModalSpot = s.spot_at_entry || 24700;
         setTimeout(() => {
+          setupModalPayoffListeners();
           if (s.legs && s.legs.length > 0) {
-            drawMiniStrategyPayoff(s.legs, s.spot_at_entry || 24700);
+            drawMiniStrategyPayoff(s.legs, currentModalSpot, null);
           }
+          renderModalOptionChains(s.legs || []);
         }, 60);
       }
     }
@@ -5532,9 +5799,53 @@
         modal.classList.add('hidden');
         modal.style.display = 'none';
       }
+      modalPayoffHoverX = null;
+      currentModalLegs = null;
     }
 
-    function drawMiniStrategyPayoff(legs, spot) {
+    let modalPayoffHoverX = null;
+    let currentModalLegs = null;
+    let currentModalSpot = 24700;
+
+    function setupModalPayoffListeners() {
+      const canvas = document.getElementById('modal-strat-payoff-canvas');
+      if (!canvas || canvas.dataset.listenersAttached) return;
+      canvas.dataset.listenersAttached = 'true';
+
+      canvas.addEventListener('mousemove', (e) => {
+        if (!currentModalLegs || currentModalLegs.length === 0) return;
+        const rect = canvas.getBoundingClientRect();
+        modalPayoffHoverX = e.clientX - rect.left;
+        drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, modalPayoffHoverX);
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        modalPayoffHoverX = null;
+        if (currentModalLegs && currentModalLegs.length > 0) {
+          drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, null);
+        }
+        const hud = document.getElementById('modal-payoff-hud');
+        if (hud) hud.innerText = 'Hover payoff curve to inspect P&L at spot';
+      });
+
+      canvas.addEventListener('touchmove', (e) => {
+        if (!currentModalLegs || currentModalLegs.length === 0) return;
+        if (e.touches && e.touches.length > 0) {
+          const rect = canvas.getBoundingClientRect();
+          modalPayoffHoverX = e.touches[0].clientX - rect.left;
+          drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, modalPayoffHoverX);
+        }
+      }, { passive: true });
+
+      canvas.addEventListener('touchend', () => {
+        modalPayoffHoverX = null;
+        if (currentModalLegs && currentModalLegs.length > 0) {
+          drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, null);
+        }
+      });
+    }
+
+    function drawMiniStrategyPayoff(legs, spot, hoverX = null) {
       const canvas = document.getElementById('modal-strat-payoff-canvas');
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -5554,7 +5865,7 @@
       const buf = Math.max(600, (maxK - minK) * 0.6);
       const sMin = minK - buf;
       const sMax = maxK + buf;
-      const steps = 100;
+      const steps = 120;
       const step = (sMax - sMin) / steps;
 
       const spots = [];
@@ -5566,7 +5877,7 @@
         legs.forEach(l => {
           const sign = l.action === 'BUY' ? 1 : -1;
           const intr = l.type === 'CE' ? Math.max(0, s - l.strike) : Math.max(0, l.strike - s);
-          pnl += sign * (intr - l.entry_price) * l.qty;
+          pnl += sign * (intr - (l.entry_price || 0)) * l.qty;
         });
         pnls.push(pnl);
       }
@@ -5610,6 +5921,32 @@
       ctx.lineWidth = 2;
       ctx.stroke();
 
+      // Breakevens
+      const bes = [];
+      for (let i = 0; i < steps; i++) {
+        if ((pnls[i] < -5 && pnls[i + 1] > 5) || (pnls[i] > 5 && pnls[i + 1] < -5)) {
+          const frac = Math.abs(pnls[i]) / (Math.abs(pnls[i]) + Math.abs(pnls[i + 1]) || 1);
+          bes.push(Math.round(spots[i] + frac * step));
+        }
+      }
+      bes.forEach(be => {
+        const xBe = xToC(be);
+        if (xBe >= 0 && xBe <= w) {
+          ctx.strokeStyle = '#06b6d4';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath();
+          ctx.moveTo(xBe, 0);
+          ctx.lineTo(xBe, h);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = '#06b6d4';
+          ctx.font = '9px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(`BE ${be}`, xBe, h - 4);
+        }
+      });
+
       // Spot line
       const xSpot = xToC(spot);
       if (xSpot >= 0 && xSpot <= w) {
@@ -5620,6 +5957,155 @@
         ctx.lineTo(xSpot, h);
         ctx.stroke();
         ctx.setLineDash([]);
+        ctx.fillStyle = '#f59e0b';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Spot ${Math.round(spot)}`, xSpot, 12);
+      }
+
+      // Interactive Crosshair & HUD
+      if (hoverX !== null && hoverX >= 0 && hoverX <= w) {
+        const hoverSpot = sMin + (hoverX / w) * (sMax - sMin);
+        let hoverPnl = 0;
+        legs.forEach(l => {
+          const sign = l.action === 'BUY' ? 1 : -1;
+          const intr = l.type === 'CE' ? Math.max(0, hoverSpot - l.strike) : Math.max(0, l.strike - hoverSpot);
+          hoverPnl += sign * (intr - (l.entry_price || 0)) * l.qty;
+        });
+
+        const yHover = yToC(hoverPnl);
+
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(hoverX, 0);
+        ctx.lineTo(hoverX, h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = hoverPnl >= 0 ? '#10b981' : '#f43f5e';
+        ctx.beginPath();
+        ctx.arc(hoverX, yHover, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        const hud = document.getElementById('modal-payoff-hud');
+        if (hud) {
+          hud.innerHTML = `Spot: <b class="text-white">₹${Math.round(hoverSpot).toLocaleString('en-IN')}</b> | Payoff P&L: <b class="${hoverPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${hoverPnl >= 0 ? '+' : ''}₹${Math.round(hoverPnl).toLocaleString('en-IN')}</b>`;
+        }
+      }
+    }
+
+    async function renderModalOptionChains(legs = []) {
+      if (!niftyOptionsChainCache) {
+        try {
+          const res = await fetch('/api/nifty/options-chain');
+          if (res.ok) {
+            niftyOptionsChainCache = await res.json();
+          }
+        } catch (e) {
+          console.error("Failed to load options chain for modal:", e);
+        }
+      }
+      if (!niftyOptionsChainCache) return;
+
+      const w = niftyOptionsChainCache.weekly || {};
+      const m = niftyOptionsChainCache.monthly || {};
+
+      const wExpEl = document.getElementById('modal-weekly-exp-lbl');
+      const wSpotEl = document.getElementById('modal-weekly-spot-lbl');
+      if (wExpEl) wExpEl.innerText = w.expiry || '--';
+      if (wSpotEl) wSpotEl.innerText = `Spot: ₹${Number(w.spot_price || 0).toLocaleString('en-IN')}`;
+
+      const mExpEl = document.getElementById('modal-monthly-exp-lbl');
+      const mSpotEl = document.getElementById('modal-monthly-spot-lbl');
+      if (mExpEl) mExpEl.innerText = m.expiry || '--';
+      if (mSpotEl) mSpotEl.innerText = `Spot: ₹${Number(m.spot_price || 0).toLocaleString('en-IN')}`;
+
+      const constituentLegs = legs || [];
+
+      const renderChainTable = (tbodyId, strikesData, atmStrike) => {
+        const tbody = document.getElementById(tbodyId);
+        if (!tbody) return;
+        const strikes = strikesData || [];
+        if (strikes.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-500 font-sans">No strike data available</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = strikes.map(s => {
+          const isAtm = s.strike === atmStrike;
+          const matchedCe = constituentLegs.find(l => l.strike === s.strike && l.type === 'CE');
+          const matchedPe = constituentLegs.find(l => l.strike === s.strike && l.type === 'PE');
+          const isConstituent = matchedCe || matchedPe;
+
+          let rowBg = isConstituent ? 'bg-cyan-950/30 font-bold' : (isAtm ? 'bg-amber-950/20' : 'hover:bg-slate-800/40');
+
+          const ceLtpContent = matchedCe
+            ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-black ${matchedCe.action === 'BUY' ? 'bg-emerald-500 text-black shadow' : 'bg-rose-500 text-white shadow'}">${matchedCe.action} ₹${Number(s.ce_ltp || 0).toFixed(1)}</span>`
+            : `<span class="text-white">₹${Number(s.ce_ltp || 0).toFixed(1)}</span>`;
+
+          const peLtpContent = matchedPe
+            ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-black ${matchedPe.action === 'BUY' ? 'bg-emerald-500 text-black shadow' : 'bg-rose-500 text-white shadow'}">${matchedPe.action} ₹${Number(s.pe_ltp || 0).toFixed(1)}</span>`
+            : `<span class="text-white">₹${Number(s.pe_ltp || 0).toFixed(1)}</span>`;
+
+          return `
+            <tr class="transition ${rowBg}">
+              <td class="p-1.5">${ceLtpContent}</td>
+              <td class="p-1.5 text-slate-400 border-r border-slate-800/80">${formatCompactOi(s.ce_oi)}</td>
+              <td class="p-1.5 font-bold ${isConstituent ? 'text-cyan-300' : (isAtm ? 'text-amber-400' : 'text-slate-200')} bg-slate-950/80">
+                ${s.strike}${isAtm ? ' <span class="text-[8px] text-amber-400 block font-normal">ATM</span>' : ''}
+              </td>
+              <td class="p-1.5 text-slate-400 border-l border-slate-800/80">${formatCompactOi(s.pe_oi)}</td>
+              <td class="p-1.5">${peLtpContent}</td>
+            </tr>
+          `;
+        }).join('');
+      };
+
+      renderChainTable('modal-weekly-chain-tbody', w.strikes || [], w.atm_strike);
+      renderChainTable('modal-monthly-chain-tbody', m.strikes || [], m.atm_strike);
+    }
+
+    async function triggerAutoDeployOptions() {
+      const btn = document.getElementById('btn-auto-deploy-options');
+      const origHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Evaluating ML Desk...`;
+      }
+
+      try {
+        const res = await fetch('/api/options/auto-deploy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ run_category: 'ALL' })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'OK') {
+          const depCount = data.deployed_count || 0;
+          if (depCount > 0) {
+            const names = (data.deployed_strategies || []).map(s => `${s.name} [${s.category}]`).join(', ');
+            showToast(`🤖 Auto-Trader: Successfully deployed ${depCount} strategy(s) with Stop Loss & Target: ${names}`, 'success');
+          } else {
+            showToast(`🤖 Auto-Trader: Limit reached (Max 2 strategies per category active). Active strategies monitored live.`, 'info');
+          }
+          await loadOptionsPortfolioDesk();
+          await loadAllEquityCurves();
+        } else {
+          showToast(`Auto-Trader failed: ${data.detail || data.message || 'Server error'}`, 'error');
+        }
+      } catch (err) {
+        console.error("Auto deploy error:", err);
+        showToast(`Auto deploy error: ${err.message}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
+        }
       }
     }
 
@@ -5880,6 +6366,8 @@
         });
         const data = await res.json();
         await refreshAllData();
+        await loadOptionsChainDesk(false);
+        await loadOptionsPortfolioDesk();
         if (currentTab === 'tab-history') await loadHistoryData();
         if (!silent) {
           showToast(

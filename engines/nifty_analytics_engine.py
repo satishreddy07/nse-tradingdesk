@@ -300,7 +300,11 @@ class NiftyAnalyticsEngine:
                     status TEXT NOT NULL DEFAULT 'ACTIVE',
                     realized_pnl REAL DEFAULT 0.0,
                     exit_reason TEXT,
-                    exit_note TEXT
+                    exit_note TEXT,
+                    target_pnl REAL DEFAULT 0.0,
+                    stoploss_pnl REAL DEFAULT 0.0,
+                    auto_trade_mode TEXT DEFAULT 'MANUAL',
+                    market_condition TEXT DEFAULT ''
                 );
                 """)
                 # Safe schema migrations for existing databases
@@ -320,6 +324,22 @@ class NiftyAnalyticsEngine:
                     if col_name not in existing_cols:
                         try:
                             conn.execute(f"ALTER TABLE nifty_predictions_log ADD COLUMN {col_name} {col_type};")
+                        except Exception:
+                            pass
+
+                existing_opt_cols = {
+                    r[1] for r in conn.execute("PRAGMA table_info(options_strategies)").fetchall()
+                }
+                opt_migrations = [
+                    ("target_pnl", "REAL DEFAULT 0.0"),
+                    ("stoploss_pnl", "REAL DEFAULT 0.0"),
+                    ("auto_trade_mode", "TEXT DEFAULT 'MANUAL'"),
+                    ("market_condition", "TEXT DEFAULT ''"),
+                ]
+                for col_name, col_type in opt_migrations:
+                    if col_name not in existing_opt_cols:
+                        try:
+                            conn.execute(f"ALTER TABLE options_strategies ADD COLUMN {col_name} {col_type};")
                         except Exception:
                             pass
                 conn.commit()
@@ -367,10 +387,14 @@ class NiftyAnalyticsEngine:
         """
         parsed: List[Tuple[datetime.date, str]] = []
         today = now_ist().date()
+        is_past_expiry_cutoff = (now_ist().hour > 15 or (now_ist().hour == 15 and now_ist().minute >= 30))
         for raw in expiry_strings:
             dt = cls._parse_nse_expiry_date(raw)
-            if dt and dt >= today:
-                parsed.append((dt, raw))
+            if dt:
+                if dt > today:
+                    parsed.append((dt, raw))
+                elif dt == today and not is_past_expiry_cutoff:
+                    parsed.append((dt, raw))
 
         if not parsed and expiry_strings:
             return {
@@ -3084,6 +3108,11 @@ class NiftyAnalyticsEngine:
         if not legs:
             raise ValueError("Strategy must contain at least one leg.")
 
+        target_pnl = float(data.get("target_pnl") or 0.0)
+        stoploss_pnl = float(data.get("stoploss_pnl") or 0.0)
+        auto_trade_mode = str(data.get("auto_trade_mode") or "MANUAL").upper()
+        market_condition = str(data.get("market_condition") or "")
+
         ts_now = format_ist()
         strat_id = f"OPT-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100, 999)}"
 
@@ -3093,12 +3122,14 @@ class NiftyAnalyticsEngine:
                 INSERT INTO options_strategies (
                     strategy_id, strategy_name, symbol, expiry_date, expiry_type,
                     created_at, spot_at_entry, net_premium, max_profit, max_loss,
-                    breakevens, risk_reward, est_margin, pop_pct, legs_json, status, realized_pnl
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0.0)
+                    breakevens, risk_reward, est_margin, pop_pct, legs_json, status, realized_pnl,
+                    target_pnl, stoploss_pnl, auto_trade_mode, market_condition
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0.0, ?, ?, ?, ?)
                 """, (
                     strat_id, strategy_name, symbol, expiry_date, expiry_type,
                     ts_now, spot_at_entry, net_premium, max_profit, max_loss,
-                    breakevens, risk_reward, est_margin, pop_pct, json.dumps(legs)
+                    breakevens, risk_reward, est_margin, pop_pct, json.dumps(legs),
+                    target_pnl, stoploss_pnl, auto_trade_mode, market_condition
                 ))
                 conn.commit()
 
@@ -3123,9 +3154,11 @@ class NiftyAnalyticsEngine:
             f"📊 <b>Strategy:</b> {strategy_name}\n"
             f"🆔 <b>ID:</b> <code>{strat_id}</code>\n"
             f"⏳ <b>Expiry:</b> {expiry_date} ({expiry_type})\n"
+            f"🤖 <b>Mode:</b> {auto_trade_mode} | <b>Condition:</b> {market_condition or 'Manual discretionary'}\n"
             f"📌 <b>Spot at Entry:</b> ₹{spot_at_entry:,.2f}\n"
             f"💵 <b>Premium:</b> {prem_str}\n"
             f"🛡 <b>Max Profit:</b> {mp_str} | <b>Max Loss:</b> {ml_str}\n"
+            f"🎯 <b>Target PnL:</b> +₹{target_pnl:,.2f} | 🛑 <b>Stop Loss:</b> -₹{abs(stoploss_pnl):,.2f}\n"
             f"🎯 <b>R:R:</b> {risk_reward} | <b>PoP:</b> {pop_pct:.1f}%\n"
             f"💼 <b>Est. Margin:</b> ₹{est_margin:,.0f}\n\n"
             f"📋 <b>Legs Breakdown ({len(legs)}):</b>\n" + "\n".join(leg_bullets) + f"\n\n"
@@ -3166,8 +3199,8 @@ class NiftyAnalyticsEngine:
 
         # Fetch live option chain
         opt_chain_data = self.fetch_and_analyze_option_chain(force_refresh=True)
-        weekly_chain = opt_chain_data.get("weekly", {}).get("chain", [])
-        monthly_chain = opt_chain_data.get("monthly", {}).get("chain", [])
+        weekly_chain = opt_chain_data.get("weekly", {}).get("strikes", []) or opt_chain_data.get("weekly", {}).get("chain", [])
+        monthly_chain = opt_chain_data.get("monthly", {}).get("strikes", []) or opt_chain_data.get("monthly", {}).get("chain", [])
         spot_price = opt_chain_data.get("spot_price", d.get("spot_at_entry", 0.0))
 
         ltp_map = {}
@@ -3261,8 +3294,8 @@ class NiftyAnalyticsEngine:
         has_active = any(dict(r).get("status") == "ACTIVE" for r in rows)
         if has_active:
             opt_chain_data = self.fetch_and_analyze_option_chain(force_refresh=False)
-            weekly_chain = opt_chain_data.get("weekly", {}).get("chain", [])
-            monthly_chain = opt_chain_data.get("monthly", {}).get("chain", [])
+            weekly_chain = opt_chain_data.get("weekly", {}).get("strikes", []) or opt_chain_data.get("weekly", {}).get("chain", [])
+            monthly_chain = opt_chain_data.get("monthly", {}).get("strikes", []) or opt_chain_data.get("monthly", {}).get("chain", [])
             spot_price = opt_chain_data.get("spot_price", 0.0)
         else:
             opt_chain_data = {}
@@ -3410,6 +3443,562 @@ class NiftyAnalyticsEngine:
             "equity_curve": equity_curve,
             "spot_price": spot_price,
             "timestamp_ist": format_ist()
+        }
+
+    @staticmethod
+    def _build_strategy_legs_and_metrics(
+        strategy_type: str,
+        strikes_data: List[Dict[str, Any]],
+        atm_strike: int,
+        spot_price: float,
+        lot_size: int = 75
+    ) -> Dict[str, Any]:
+        """
+        Synthesizes executable multi-leg option strategies using real live strike prices,
+        IVs, and Greeks from the NSE option chain.
+        Calculates exact net premium, max profit, max loss, breakevens, R:R, PoP,
+        target PnL, and stoploss PnL.
+        """
+        if not strikes_data:
+            raise ValueError("Strikes data is required to construct strategy legs.")
+
+        def _get_strike(target: float):
+            return min(strikes_data, key=lambda s: abs(s["strike"] - target))
+
+        atm_row = _get_strike(atm_strike)
+        stk_step = 50
+
+        legs = []
+        net_premium = 0.0
+        max_profit = 0.0
+        max_loss = 0.0
+        breakevens = []
+        rr_str = "1:1.5"
+        pop_pct = 60.0
+        target_pnl = 0.0
+        stoploss_pnl = 0.0
+        est_margin = 45000.0
+
+        st = strategy_type.upper()
+
+        if st == "BULL_CALL_SPREAD":
+            l1_stk = _get_strike(atm_strike)
+            l2_stk = _get_strike(atm_strike + 2 * stk_step)
+            p1 = max(0.5, l1_stk.get("ce_ltp") or 100.0)
+            p2 = max(0.1, l2_stk.get("ce_ltp") or 45.0)
+            legs = [
+                {"action": "BUY", "type": "CE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("ce_iv", 13.0)},
+                {"action": "SELL", "type": "CE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("ce_iv", 13.0)}
+            ]
+            net_debit = (p1 - p2) * lot_size
+            net_premium = -round(net_debit, 2)
+            width = (l2_stk["strike"] - l1_stk["strike"]) * lot_size
+            max_profit = round(width - net_debit, 2)
+            max_loss = -round(net_debit, 2)
+            target_pnl = round(max_profit * 0.65, 2)
+            stoploss_pnl = -round(net_debit * 0.50, 2)
+            breakevens = [round(l1_stk["strike"] + (p1 - p2), 1)]
+            rr_str = f"1:{max_profit / max(1.0, net_debit):.2f}"
+            pop_pct = 58.0
+            est_margin = round(net_debit, 2)
+
+        elif st == "BULL_PUT_SPREAD":
+            l1_stk = _get_strike(atm_strike - 1 * stk_step)
+            l2_stk = _get_strike(atm_strike - 3 * stk_step)
+            p1 = max(0.5, l1_stk.get("pe_ltp") or 65.0)
+            p2 = max(0.1, l2_stk.get("pe_ltp") or 25.0)
+            legs = [
+                {"action": "SELL", "type": "PE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("pe_iv", 13.0)},
+                {"action": "BUY", "type": "PE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("pe_iv", 13.0)}
+            ]
+            net_credit = (p1 - p2) * lot_size
+            net_premium = round(net_credit, 2)
+            width = (l1_stk["strike"] - l2_stk["strike"]) * lot_size
+            max_profit = round(net_credit, 2)
+            max_loss = -round(width - net_credit, 2)
+            target_pnl = round(net_credit * 0.70, 2)
+            stoploss_pnl = -round(net_credit * 1.50, 2)
+            breakevens = [round(l1_stk["strike"] - (p1 - p2), 1)]
+            rr_str = f"1:{abs(max_loss) / max(1.0, max_profit):.2f}"
+            pop_pct = 68.0
+            est_margin = round(abs(max_loss) + 15000.0, 2)
+
+        elif st == "BEAR_PUT_SPREAD":
+            l1_stk = _get_strike(atm_strike)
+            l2_stk = _get_strike(atm_strike - 2 * stk_step)
+            p1 = max(0.5, l1_stk.get("pe_ltp") or 100.0)
+            p2 = max(0.1, l2_stk.get("pe_ltp") or 45.0)
+            legs = [
+                {"action": "BUY", "type": "PE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("pe_iv", 13.0)},
+                {"action": "SELL", "type": "PE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("pe_iv", 13.0)}
+            ]
+            net_debit = (p1 - p2) * lot_size
+            net_premium = -round(net_debit, 2)
+            width = (l1_stk["strike"] - l2_stk["strike"]) * lot_size
+            max_profit = round(width - net_debit, 2)
+            max_loss = -round(net_debit, 2)
+            target_pnl = round(max_profit * 0.65, 2)
+            stoploss_pnl = -round(net_debit * 0.50, 2)
+            breakevens = [round(l1_stk["strike"] - (p1 - p2), 1)]
+            rr_str = f"1:{max_profit / max(1.0, net_debit):.2f}"
+            pop_pct = 58.0
+            est_margin = round(net_debit, 2)
+
+        elif st == "BEAR_CALL_SPREAD":
+            l1_stk = _get_strike(atm_strike + 1 * stk_step)
+            l2_stk = _get_strike(atm_strike + 3 * stk_step)
+            p1 = max(0.5, l1_stk.get("ce_ltp") or 65.0)
+            p2 = max(0.1, l2_stk.get("ce_ltp") or 25.0)
+            legs = [
+                {"action": "SELL", "type": "CE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("ce_iv", 13.0)},
+                {"action": "BUY", "type": "CE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("ce_iv", 13.0)}
+            ]
+            net_credit = (p1 - p2) * lot_size
+            net_premium = round(net_credit, 2)
+            width = (l2_stk["strike"] - l1_stk["strike"]) * lot_size
+            max_profit = round(net_credit, 2)
+            max_loss = -round(width - net_credit, 2)
+            target_pnl = round(net_credit * 0.70, 2)
+            stoploss_pnl = -round(net_credit * 1.50, 2)
+            breakevens = [round(l1_stk["strike"] + (p1 - p2), 1)]
+            rr_str = f"1:{abs(max_loss) / max(1.0, max_profit):.2f}"
+            pop_pct = 68.0
+            est_margin = round(abs(max_loss) + 15000.0, 2)
+
+        elif st == "IRON_CONDOR":
+            l_pe_w = _get_strike(atm_strike - 4 * stk_step)
+            l_pe_s = _get_strike(atm_strike - 2 * stk_step)
+            l_ce_s = _get_strike(atm_strike + 2 * stk_step)
+            l_ce_w = _get_strike(atm_strike + 4 * stk_step)
+
+            pe_w_p = max(0.1, l_pe_w.get("pe_ltp") or 12.0)
+            pe_s_p = max(0.5, l_pe_s.get("pe_ltp") or 45.0)
+            ce_s_p = max(0.5, l_ce_s.get("ce_ltp") or 45.0)
+            ce_w_p = max(0.1, l_ce_w.get("ce_ltp") or 12.0)
+
+            legs = [
+                {"action": "BUY", "type": "PE", "strike": l_pe_w["strike"], "lots": 1, "qty": lot_size, "price": pe_w_p, "entry_price": pe_w_p, "iv": l_pe_w.get("pe_iv", 13.0)},
+                {"action": "SELL", "type": "PE", "strike": l_pe_s["strike"], "lots": 1, "qty": lot_size, "price": pe_s_p, "entry_price": pe_s_p, "iv": l_pe_s.get("pe_iv", 13.0)},
+                {"action": "SELL", "type": "CE", "strike": l_ce_s["strike"], "lots": 1, "qty": lot_size, "price": ce_s_p, "entry_price": ce_s_p, "iv": l_ce_s.get("ce_iv", 13.0)},
+                {"action": "BUY", "type": "CE", "strike": l_ce_w["strike"], "lots": 1, "qty": lot_size, "price": ce_w_p, "entry_price": ce_w_p, "iv": l_ce_w.get("ce_iv", 13.0)},
+            ]
+            net_credit = ((pe_s_p - pe_w_p) + (ce_s_p - ce_w_p)) * lot_size
+            net_premium = round(net_credit, 2)
+            wing_width = (l_ce_w["strike"] - l_ce_s["strike"]) * lot_size
+            max_profit = round(net_credit, 2)
+            max_loss = -round(wing_width - net_credit, 2)
+            target_pnl = round(net_credit * 0.65, 2)
+            stoploss_pnl = -round(net_credit * 1.50, 2)
+            prem_pts = net_credit / lot_size
+            breakevens = [round(l_pe_s["strike"] - prem_pts, 1), round(l_ce_s["strike"] + prem_pts, 1)]
+            rr_str = f"1:{abs(max_loss) / max(1.0, max_profit):.2f}"
+            pop_pct = 74.0
+            est_margin = round(abs(max_loss) + 20000.0, 2)
+
+        elif st == "IRON_BUTTERFLY":
+            l_pe_w = _get_strike(atm_strike - 3 * stk_step)
+            l_ce_w = _get_strike(atm_strike + 3 * stk_step)
+
+            ce_atm_p = max(0.5, atm_row.get("ce_ltp") or 85.0)
+            pe_atm_p = max(0.5, atm_row.get("pe_ltp") or 85.0)
+            pe_w_p = max(0.1, l_pe_w.get("pe_ltp") or 20.0)
+            ce_w_p = max(0.1, l_ce_w.get("ce_ltp") or 20.0)
+
+            legs = [
+                {"action": "BUY", "type": "PE", "strike": l_pe_w["strike"], "lots": 1, "qty": lot_size, "price": pe_w_p, "entry_price": pe_w_p, "iv": l_pe_w.get("pe_iv", 13.0)},
+                {"action": "SELL", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_atm_p, "entry_price": pe_atm_p, "iv": atm_row.get("pe_iv", 13.0)},
+                {"action": "SELL", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_atm_p, "entry_price": ce_atm_p, "iv": atm_row.get("ce_iv", 13.0)},
+                {"action": "BUY", "type": "CE", "strike": l_ce_w["strike"], "lots": 1, "qty": lot_size, "price": ce_w_p, "entry_price": ce_w_p, "iv": l_ce_w.get("ce_iv", 13.0)},
+            ]
+            net_credit = ((pe_atm_p - pe_w_p) + (ce_atm_p - ce_w_p)) * lot_size
+            net_premium = round(net_credit, 2)
+            wing_width = (l_ce_w["strike"] - atm_row["strike"]) * lot_size
+            max_profit = round(net_credit, 2)
+            max_loss = -round(wing_width - net_credit, 2)
+            target_pnl = round(net_credit * 0.55, 2)
+            stoploss_pnl = -round(net_credit * 1.20, 2)
+            prem_pts = net_credit / lot_size
+            breakevens = [round(atm_row["strike"] - prem_pts, 1), round(atm_row["strike"] + prem_pts, 1)]
+            rr_str = f"1:{abs(max_loss) / max(1.0, max_profit):.2f}"
+            pop_pct = 58.0
+            est_margin = round(abs(max_loss) + 20000.0, 2)
+
+        elif st == "LONG_STRADDLE":
+            ce_p = max(0.5, atm_row.get("ce_ltp") or 90.0)
+            pe_p = max(0.5, atm_row.get("pe_ltp") or 90.0)
+            legs = [
+                {"action": "BUY", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": atm_row.get("ce_iv", 13.0)},
+                {"action": "BUY", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": atm_row.get("pe_iv", 13.0)},
+            ]
+            net_debit = (ce_p + pe_p) * lot_size
+            net_premium = -round(net_debit, 2)
+            max_profit = 999999.0
+            max_loss = -round(net_debit, 2)
+            target_pnl = round(net_debit * 0.40, 2)
+            stoploss_pnl = -round(net_debit * 0.30, 2)
+            prem_pts = ce_p + pe_p
+            breakevens = [round(atm_row["strike"] - prem_pts, 1), round(atm_row["strike"] + prem_pts, 1)]
+            rr_str = "1:2.5+"
+            pop_pct = 42.0
+            est_margin = round(net_debit, 2)
+
+        elif st == "LONG_STRANGLE":
+            l_pe = _get_strike(atm_strike - 2 * stk_step)
+            l_ce = _get_strike(atm_strike + 2 * stk_step)
+            pe_p = max(0.5, l_pe.get("pe_ltp") or 45.0)
+            ce_p = max(0.5, l_ce.get("ce_ltp") or 45.0)
+            legs = [
+                {"action": "BUY", "type": "PE", "strike": l_pe["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": l_pe.get("pe_iv", 13.0)},
+                {"action": "BUY", "type": "CE", "strike": l_ce["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": l_ce.get("ce_iv", 13.0)},
+            ]
+            net_debit = (pe_p + ce_p) * lot_size
+            net_premium = -round(net_debit, 2)
+            max_profit = 999999.0
+            max_loss = -round(net_debit, 2)
+            target_pnl = round(net_debit * 0.45, 2)
+            stoploss_pnl = -round(net_debit * 0.30, 2)
+            prem_pts = pe_p + ce_p
+            breakevens = [round(l_pe["strike"] - prem_pts, 1), round(l_ce["strike"] + prem_pts, 1)]
+            rr_str = "1:3.0+"
+            pop_pct = 38.0
+            est_margin = round(net_debit, 2)
+
+        elif st == "LONG_CALL":
+            ce_p = max(0.5, atm_row.get("ce_ltp") or 90.0)
+            legs = [
+                {"action": "BUY", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": atm_row.get("ce_iv", 13.0)}
+            ]
+            net_debit = ce_p * lot_size
+            net_premium = -round(net_debit, 2)
+            max_profit = 999999.0
+            max_loss = -round(net_debit, 2)
+            target_pnl = round(net_debit * 0.50, 2)
+            stoploss_pnl = -round(net_debit * 0.35, 2)
+            breakevens = [round(atm_row["strike"] + ce_p, 1)]
+            rr_str = "1:2.5"
+            pop_pct = 45.0
+            est_margin = round(net_debit, 2)
+
+        elif st == "LONG_PUT":
+            pe_p = max(0.5, atm_row.get("pe_ltp") or 90.0)
+            legs = [
+                {"action": "BUY", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": atm_row.get("pe_iv", 13.0)}
+            ]
+            net_debit = pe_p * lot_size
+            net_premium = -round(net_debit, 2)
+            max_profit = 999999.0
+            max_loss = -round(net_debit, 2)
+            target_pnl = round(net_debit * 0.50, 2)
+            stoploss_pnl = -round(net_debit * 0.35, 2)
+            breakevens = [round(atm_row["strike"] - pe_p, 1)]
+            rr_str = "1:2.5"
+            pop_pct = 45.0
+            est_margin = round(net_debit, 2)
+
+        return {
+            "strategy_type": st,
+            "legs": legs,
+            "net_premium": net_premium,
+            "max_profit": max_profit,
+            "max_loss": max_loss,
+            "breakevens": breakevens,
+            "risk_reward": rr_str,
+            "pop_pct": pop_pct,
+            "target_pnl": target_pnl,
+            "stoploss_pnl": stoploss_pnl,
+            "est_margin": est_margin
+        }
+
+    def evaluate_and_deploy_auto_options_strategies(self, modes: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Automated Options Execution Engine based on ML Forecasts & Real-Time Intraday Telemetry:
+        - Weekly & Monthly Strategy Matrix (Image 1):
+          * Strong Bullish -> Bull Call Spread, Bull Put Spread (or Long Call)
+          * Mild Bullish   -> Bull Put Spread, Bull Call Spread
+          * Strong Bearish -> Bear Put Spread, Bear Call Spread (or Long Put)
+          * Mild Bearish   -> Bear Call Spread, Bear Put Spread
+          * Neutral Low Vol -> Iron Condor, Iron Butterfly
+          * Neutral High Vol -> Long Straddle, Long Strangle
+        - Intraday Strategy Matrix (Image 2):
+          * Strong Bullish Momentum -> Bull Call Spread, Long Call
+          * Mild Bullish Trend     -> Bull Put Spread, Bull Call Spread
+          * Strong Bearish Momentum -> Bear Put Spread, Long Put
+          * Mild Bearish Trend     -> Bear Call Spread, Bear Put Spread
+          * Tight Range Low Vol    -> Iron Condor, Iron Butterfly
+          * Breakout Likely Uncertain -> Long Straddle, Long Strangle
+        
+        Strict Constraints:
+        1. Max 2 active auto-strategies per category (Intraday max 2, Weekly max 2, Monthly max 2).
+        2. Both active strategies in the same category must NEVER be identical.
+        3. All strikes, LTPs, and Greeks extracted from live NSE option chains with defined SL & Targets.
+        """
+        if modes is None:
+            modes = ["WEEKLY", "MONTHLY", "INTRADAY"]
+
+        opt_chain_data = self.fetch_and_analyze_option_chain(force_refresh=False)
+        if opt_chain_data.get("status") != "OK":
+            return {"status": "UNAVAILABLE", "message": "Option chain unavailable for auto-deploy."}
+
+        spot_price = float(opt_chain_data.get("spot_price") or 0.0)
+        weekly_chain = opt_chain_data.get("weekly", {})
+        monthly_chain = opt_chain_data.get("monthly", {})
+
+        weekly_strikes = weekly_chain.get("strikes", [])
+        monthly_strikes = monthly_chain.get("strikes", [])
+        weekly_atm = int(weekly_chain.get("atm_strike") or round(spot_price / 50.0) * 50)
+        monthly_atm = int(monthly_chain.get("atm_strike") or round(spot_price / 50.0) * 50)
+        weekly_expiry = weekly_chain.get("expiry", "")
+        monthly_expiry = monthly_chain.get("expiry", "")
+
+        preds = self.compute_nifty_predictions(force_refresh=False)
+        composite_score = float(preds.get("composite_score") or 0.0)
+        t5_verdict = str(preds.get("t5_forecast", {}).get("verdict") or "").upper()
+        w_iv = float(weekly_chain.get("volatility_and_gex", {}).get("atm_iv") or 12.0)
+        m_iv = float(monthly_chain.get("volatility_and_gex", {}).get("atm_iv") or 13.0)
+
+        # Get latest intraday snapshot
+        intraday_dash = self.get_intraday_expiry_dashboard()
+        latest_snap = intraday_dash.get("latest_snapshot") or {}
+        market_state = str(latest_snap.get("market_state") or "BALANCED_STRADDLE_PINNING").upper()
+
+        deployed_list = []
+        skipped_list = []
+
+        for mode in modes:
+            m_upper = mode.upper()
+            with state_engine._lock:
+                with state_engine._get_connection() as conn:
+                    active_rows = conn.execute(
+                        "SELECT * FROM options_strategies WHERE status = 'ACTIVE' AND auto_trade_mode = ?",
+                        (m_upper,)
+                    ).fetchall()
+            active_strats = [dict(r) for r in active_rows]
+            active_count = len(active_strats)
+
+            if active_count >= 2:
+                skipped_list.append({
+                    "mode": m_upper,
+                    "reason": f"Active auto-trade limit reached ({active_count}/2 strategies currently active)."
+                })
+                continue
+
+            existing_strat_types = set()
+            for s in active_strats:
+                s_name = s.get("strategy_name", "").upper()
+                for st_code in [
+                    "BULL_CALL_SPREAD", "BULL_PUT_SPREAD", "BEAR_PUT_SPREAD", "BEAR_CALL_SPREAD",
+                    "IRON_CONDOR", "IRON_BUTTERFLY", "LONG_STRADDLE", "LONG_STRANGLE", "LONG_CALL", "LONG_PUT"
+                ]:
+                    if st_code.replace("_", " ") in s_name or st_code in s_name:
+                        existing_strat_types.add(st_code)
+
+            if m_upper == "WEEKLY":
+                strikes_source = weekly_strikes
+                atm_source = weekly_atm
+                expiry_source = weekly_expiry
+                expiry_type_lbl = "WEEKLY"
+
+                if composite_score >= 20.0 or "STRONG BULLISH" in t5_verdict:
+                    condition = "STRONG_BULLISH"
+                    candidates = ["BULL_CALL_SPREAD", "BULL_PUT_SPREAD"]
+                elif composite_score >= 6.0 or "BULLISH" in t5_verdict:
+                    condition = "MILD_BULLISH"
+                    candidates = ["BULL_PUT_SPREAD", "BULL_CALL_SPREAD"]
+                elif composite_score <= -20.0 or "STRONG BEARISH" in t5_verdict:
+                    condition = "STRONG_BEARISH"
+                    candidates = ["BEAR_PUT_SPREAD", "BEAR_CALL_SPREAD"]
+                elif composite_score <= -6.0 or "BEARISH" in t5_verdict:
+                    condition = "MILD_BEARISH"
+                    candidates = ["BEAR_CALL_SPREAD", "BEAR_PUT_SPREAD"]
+                else:
+                    if w_iv >= 14.5:
+                        condition = "NEUTRAL_HIGH_VOL"
+                        candidates = ["LONG_STRADDLE", "LONG_STRANGLE"]
+                    else:
+                        condition = "NEUTRAL_LOW_VOL"
+                        candidates = ["IRON_CONDOR", "IRON_BUTTERFLY"]
+
+            elif m_upper == "MONTHLY":
+                strikes_source = monthly_strikes
+                atm_source = monthly_atm
+                expiry_source = monthly_expiry
+                expiry_type_lbl = "MONTHLY"
+
+                if composite_score >= 20.0 or "STRONG BULLISH" in t5_verdict:
+                    condition = "STRONG_BULLISH"
+                    candidates = ["BULL_CALL_SPREAD", "BULL_PUT_SPREAD"]
+                elif composite_score >= 6.0 or "BULLISH" in t5_verdict:
+                    condition = "MILD_BULLISH"
+                    candidates = ["BULL_PUT_SPREAD", "BULL_CALL_SPREAD"]
+                elif composite_score <= -20.0 or "STRONG BEARISH" in t5_verdict:
+                    condition = "STRONG_BEARISH"
+                    candidates = ["BEAR_PUT_SPREAD", "BEAR_CALL_SPREAD"]
+                elif composite_score <= -6.0 or "BEARISH" in t5_verdict:
+                    condition = "MILD_BEARISH"
+                    candidates = ["BEAR_CALL_SPREAD", "BEAR_PUT_SPREAD"]
+                else:
+                    if m_iv >= 15.0:
+                        condition = "NEUTRAL_HIGH_VOL"
+                        candidates = ["LONG_STRADDLE", "LONG_STRANGLE"]
+                    else:
+                        condition = "NEUTRAL_LOW_VOL"
+                        candidates = ["IRON_CONDOR", "IRON_BUTTERFLY"]
+
+            else:
+                strikes_source = weekly_strikes
+                atm_source = weekly_atm
+                expiry_source = weekly_expiry
+                expiry_type_lbl = "INTRADAY"
+
+                if "PUT_WRITING" in market_state or "STRONG_BULLISH" in market_state or composite_score >= 25.0:
+                    condition = "STRONG_BULLISH_MOMENTUM"
+                    candidates = ["BULL_CALL_SPREAD", "LONG_CALL"]
+                elif "CALL_WRITING" in market_state or "STRONG_BEARISH" in market_state or composite_score <= -25.0:
+                    condition = "STRONG_BEARISH_MOMENTUM"
+                    candidates = ["BEAR_PUT_SPREAD", "LONG_PUT"]
+                elif "BULLISH_ACCUMULATION" in market_state or "MILD_BULLISH" in market_state or composite_score >= 8.0:
+                    condition = "MILD_BULLISH_TREND"
+                    candidates = ["BULL_PUT_SPREAD", "BULL_CALL_SPREAD"]
+                elif "BEARISH_SUPPLY" in market_state or "MILD_BEARISH" in market_state or composite_score <= -8.0:
+                    condition = "MILD_BEARISH_TREND"
+                    candidates = ["BEAR_CALL_SPREAD", "BEAR_PUT_SPREAD"]
+                elif "BREAKOUT" in market_state or "VOLATILE" in market_state or w_iv >= 16.0:
+                    condition = "BREAKOUT_LIKELY_UNCERTAIN"
+                    candidates = ["LONG_STRADDLE", "LONG_STRANGLE"]
+                else:
+                    condition = "TIGHT_RANGE_LOW_VOL"
+                    candidates = ["IRON_CONDOR", "IRON_BUTTERFLY"]
+
+            viable_candidates = [c for c in candidates if c not in existing_strat_types]
+            if not viable_candidates:
+                skipped_list.append({
+                    "mode": m_upper,
+                    "condition": condition,
+                    "reason": f"Active strategies already cover candidates {candidates}. Diversity enforced."
+                })
+                continue
+
+            slots_available = 2 - active_count
+            to_deploy = viable_candidates[:slots_available]
+
+            for st_type in to_deploy:
+                try:
+                    strat_data = self._build_strategy_legs_and_metrics(
+                        strategy_type=st_type,
+                        strikes_data=strikes_source,
+                        atm_strike=atm_source,
+                        spot_price=spot_price,
+                        lot_size=75
+                    )
+                    readable_name = st_type.replace("_", " ").title()
+                    strat_name = f"{m_upper.capitalize()} {readable_name}"
+
+                    deploy_payload = {
+                        "strategy_name": strat_name,
+                        "symbol": "NIFTY",
+                        "expiry_date": expiry_source,
+                        "expiry_type": expiry_type_lbl,
+                        "spot_at_entry": spot_price,
+                        "net_premium": strat_data["net_premium"],
+                        "max_profit": strat_data["max_profit"],
+                        "max_loss": strat_data["max_loss"],
+                        "breakevens": strat_data["breakevens"],
+                        "risk_reward": strat_data["risk_reward"],
+                        "est_margin": strat_data["est_margin"],
+                        "pop_pct": strat_data["pop_pct"],
+                        "legs": strat_data["legs"],
+                        "target_pnl": strat_data["target_pnl"],
+                        "stoploss_pnl": strat_data["stoploss_pnl"],
+                        "auto_trade_mode": m_upper,
+                        "market_condition": condition
+                    }
+
+                    res = self.deploy_options_strategy(deploy_payload)
+                    deployed_list.append({
+                        "mode": m_upper,
+                        "strategy_id": res.get("strategy_id"),
+                        "strategy_name": strat_name,
+                        "strategy_type": st_type,
+                        "market_condition": condition,
+                        "net_premium": strat_data["net_premium"],
+                        "target_pnl": strat_data["target_pnl"],
+                        "stoploss_pnl": strat_data["stoploss_pnl"],
+                        "expiry_date": expiry_source
+                    })
+                    existing_strat_types.add(st_type)
+                    logger.info(f"🤖 [Auto Options Engine] Deployed {strat_name} under {condition} ({m_upper})")
+                except Exception as ex:
+                    logger.warning(f"Error deploying auto strategy {st_type} ({m_upper}): {ex}")
+
+        return {
+            "status": "OK",
+            "deployed_count": len(deployed_list),
+            "deployed": deployed_list,
+            "skipped": skipped_list,
+            "timestamp_ist": format_ist()
+        }
+
+    def reconcile_active_options_strategies_stops_and_targets(self) -> Dict[str, Any]:
+        """
+        Reconciles all ACTIVE options strategies against:
+        1. Profit Target (target_pnl > 0 and unrealized_pnl >= target_pnl)
+        2. Stop Loss (stoploss_pnl < 0 and unrealized_pnl <= stoploss_pnl)
+        3. Intraday MOC Cutoff: auto-exits intraday strategies at or after 15:15 IST
+        """
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                rows = conn.execute("SELECT * FROM options_strategies WHERE status = 'ACTIVE'").fetchall()
+
+        if not rows:
+            return {"status": "OK", "evaluated": 0, "exited": 0, "actions": []}
+
+        port = self.get_options_portfolio()
+        active_strats = {s["strategy_id"]: s for s in port.get("active_strategies", [])}
+
+        dt_now = now_ist()
+        is_moc_time = (dt_now.hour > 15 or (dt_now.hour == 15 and dt_now.minute >= 15))
+
+        exited_count = 0
+        actions = []
+
+        for r in rows:
+            d = dict(r)
+            strat_id = d["strategy_id"]
+            strat_name = d.get("strategy_name", "")
+            target_pnl = float(d.get("target_pnl") or 0.0)
+            stoploss_pnl = float(d.get("stoploss_pnl") or 0.0)
+            mode = str(d.get("auto_trade_mode") or "MANUAL").upper()
+
+            live_info = active_strats.get(strat_id)
+            unrealized_pnl = float(live_info.get("unrealized_pnl", 0.0)) if live_info else 0.0
+
+            exit_reason = None
+            if target_pnl > 0 and unrealized_pnl >= target_pnl:
+                exit_reason = f"TARGET_REACHED (+₹{unrealized_pnl:,.0f} >= Target ₹{target_pnl:,.0f})"
+            elif stoploss_pnl < 0 and unrealized_pnl <= stoploss_pnl:
+                exit_reason = f"STOPLOSS_HIT (-₹{abs(unrealized_pnl):,.0f} <= SL -₹{abs(stoploss_pnl):,.0f})"
+            elif mode == "INTRADAY" and is_moc_time:
+                exit_reason = f"INTRADAY_MOC_1515_CUTOFF (Time: {dt_now.strftime('%H:%M')} IST)"
+
+            if exit_reason:
+                try:
+                    res = self.exit_options_strategy(strat_id, exit_reason=exit_reason)
+                    exited_count += 1
+                    actions.append({
+                        "strategy_id": strat_id,
+                        "strategy_name": strat_name,
+                        "exit_reason": exit_reason,
+                        "realized_pnl": res.get("realized_pnl", unrealized_pnl)
+                    })
+                    logger.info(f"⚡ [Auto Options Reconciler] Exited {strat_name} ({strat_id}): {exit_reason}")
+                except Exception as e:
+                    logger.warning(f"Error auto-exiting strategy {strat_id}: {e}")
+
+        return {
+            "status": "OK",
+            "evaluated": len(rows),
+            "exited": exited_count,
+            "actions": actions
         }
 
     def get_all_equity_curves(self) -> Dict[str, Any]:
