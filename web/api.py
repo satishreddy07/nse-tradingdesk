@@ -176,7 +176,8 @@ def get_portfolio_summary(portfolio_type: str):
         b_now = sum(1 for s in signals if s.get("bucket") == "BUY_NOW")
         p_brk = sum(1 for s in signals if s.get("bucket") == "PRE_BREAKOUT")
         w_pb = sum(1 for s in signals if s.get("bucket") == "WAIT_PULLBACK")
-        chartink_cnt = p1_state.get("chartink_fetched_count") or (788 if sig_count > 0 else 0)
+        ohlcv_stats = state_engine.get_ohlcv_stats()
+        chartink_cnt = p1_state.get("chartink_fetched_count") or ohlcv_stats.get("stocks_count", 0)
         return {
             "portfolio_type": p_type,
             "title": "Institutional 6-Pillar Engine",
@@ -219,6 +220,8 @@ def get_portfolio_positions(portfolio_type: str):
 
 @app.get("/api/portfolio/{portfolio_type}/history")
 def get_portfolio_history(portfolio_type: str, limit: int = 200):
+    if portfolio_type.strip().upper() == "ALL":
+        return state_engine.get_trade_history(portfolio_type=None, limit=limit)
     p_type = state_engine._normalize_portfolio_type(portfolio_type)
     return state_engine.get_trade_history(portfolio_type=p_type, limit=limit)
 
@@ -417,13 +420,7 @@ class ResetPortfolioRequest(BaseModel):
 
 @app.post("/api/portfolio/reset")
 def reset_portfolio(req: ResetPortfolioRequest):
-    res = state_engine.reset_portfolio_trades(portfolio_type=req.portfolio_type)
-    threading.Thread(
-        target=telegram_vault.backup_master_file_to_cloud,
-        kwargs={"custom_note": f"Portfolio Reset ({req.portfolio_type or 'ALL'})"},
-        daemon=True
-    ).start()
-    return res
+    return state_engine.reset_portfolio_trades(portfolio_type=req.portfolio_type)
 
 
 @app.get("/api/vault/status")
@@ -434,6 +431,7 @@ def get_vault_status():
 @app.post("/api/vault/sync")
 def sync_vault_to_cloud():
     """Manually triggers background backup of the Single Master File (`data/swing_trades.db`) to Telegram Cloud."""
+    cnt = state_engine.get_ohlcv_stats().get("stocks_count", 0)
     threading.Thread(
         target=telegram_vault.backup_master_file_to_cloud,
         kwargs={"custom_note": "Manual UI Single Master File Sync"},
@@ -441,7 +439,7 @@ def sync_vault_to_cloud():
     ).start()
     return {
         "status": "STARTED",
-        "message": "Uploading Single Master File (All Trades + 800 Stocks OHLCV) to Telegram Cloud Vault..."
+        "message": f"Updating Single Master File in-place on Telegram Cloud ({cnt} Stocks OHLCV + All Trades)..."
     }
 
 

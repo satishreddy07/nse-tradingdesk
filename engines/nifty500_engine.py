@@ -44,7 +44,7 @@ from core.config import (
     SEEDS_DIR, HISTORICAL_DATA_DIR
 )
 from execution.state_engine import state_engine
-from engines.institutional_engine import DirectYahooFinanceFetcher
+from engines.institutional_engine import DirectYahooFinanceFetcher, get_stock_sector
 
 logger = logging.getLogger("Nifty500Engine")
 
@@ -484,6 +484,10 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     pullback_zone = (stocks["close"] >= stocks["ema_20"] * 0.985) & (stocks["close"] <= stocks["ema_20"] * 1.020)
     rsi_zone = (stocks["rsi"] >= 40.0) & (stocks["rsi"] <= 62.0)
     prior_c = stocks.groupby("symbol")["close"].shift(1)
+    stocks["prior_close"] = prior_c
+    stocks["chg_1d_pct"] = ((stocks["close"] - prior_c) / (prior_c + 1e-9)) * 100.0
+    stocks["rvol"] = effective_vol / (stocks["vol_ma20"] + 1e-9)
+
     bullish_bar = (stocks["close"] > stocks["open"]) & (stocks["close"] > prior_c)
     vol_confirm = effective_vol >= 0.80 * stocks["vol_ma20"]
 
@@ -546,37 +550,41 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
         shares = min(shares_by_risk, shares_by_slot)
 
         target_2r = round(entry_px + 2.0 * risk_per_share, 2)
-        rs_spread_pct = round(row["rs_spread"] * 100, 2)
-        rsi_val = round(row["rsi"], 1)
+        target_3r = round(entry_px + 3.0 * risk_per_share, 2)
+        rs_spread_pct = round(float(row["rs_spread"]) * 100.0, 2)
+        rsi_val = round(float(row["rsi"]), 1)
+        rvol_val = round(float(row.get("rvol") or 1.0), 2)
+        chg_1d = round(float(row.get("chg_1d_pct") or 0.0), 2)
+        calc_inst_score = round(min(99.0, max(20.0, 50.0 + (rvol_val - 1.0) * 18.0 + rs_spread_pct * 0.75)), 1)
 
         is_strict_setup = bool(row.get("tech_setup", False))
         bucket_label = "BUY_NOW" if (is_bullish and is_strict_setup) else ("PRE_BREAKOUT" if is_strict_setup else "WAIT_PULLBACK")
 
         signal_item = {
             "symbol": sym,
-            "sector": "NIFTY500",
+            "sector": get_stock_sector(sym),
             "bucket": bucket_label,
-            "score": round(50.0 + min(rs_spread_pct * 2, 40.0), 1),
+            "score": round(min(99.0, max(35.0, 55.0 + rs_spread_pct * 1.2 + (rvol_val - 1.0) * 8.0)), 1),
             "confidence": 5 if is_strict_setup else 4,
-            "ml_prob": round(0.55 + min(rs_spread_pct / 100.0, 0.35), 2),
+            "ml_prob": round(min(0.92, max(0.35, 0.52 + (rs_spread_pct / 120.0) + (rvol_val - 1.0) * 0.05)), 3),
             "tier": "A" if is_strict_setup else "B+",
             "close": entry_px,
             "entry": entry_px,
             "sl": initial_sl,
             "t1": target_2r,
-            "t2": round(entry_px + 3.0 * risk_per_share, 2),
-            "rr": 2.0,
+            "t2": target_3r,
+            "rr": round((target_2r - entry_px) / risk_per_share, 2),
             "shares": shares,
             "capital_at_risk": round(shares * risk_per_share, 2),
-            "risk_pct": 1.5,
-            "atr_pct": round((atr_val / entry_px) * 100, 2),
+            "risk_pct": round(P2_RISK_PER_TRADE * 100.0, 2),
+            "atr_pct": round((atr_val / entry_px) * 100.0, 2),
             "rsi14": rsi_val,
-            "dist_to_pivot": round(((entry_px - row["ema_20"]) / row["ema_20"]) * 100, 2),
-            "dist_to_ema20": round(((entry_px - row["ema_20"]) / row["ema_20"]) * 100, 2),
-            "inst_score": round(75.0, 1),
-            "week_confluence": True,
-            "intraday_pct": 0.0,
-            "intraday_adj": 0.0,
+            "dist_to_pivot": round(((entry_px - float(row["ema_20"])) / float(row["ema_20"])) * 100.0, 2),
+            "dist_to_ema20": round(((entry_px - float(row["ema_20"])) / float(row["ema_20"])) * 100.0, 2),
+            "inst_score": calc_inst_score,
+            "week_confluence": bool(entry_px > float(row["ema_50"])),
+            "intraday_pct": chg_1d,
+            "intraday_adj": round(rvol_val, 2),
             "rs_spread": rs_spread_pct
         }
         signals_to_save.append(signal_item)
