@@ -4,18 +4,15 @@ Application Configuration & Environment Settings
 import os
 from pathlib import Path
 
-# Base Paths
+# Base Paths (Single Master File Architecture: only `data/swing_trades.db` is created on disk)
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 HISTORICAL_DATA_DIR = DATA_DIR / "historical_data"
-HISTORICAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
-
 SEEDS_DIR = DATA_DIR / "seeds"
-SEEDS_DIR.mkdir(parents=True, exist_ok=True)
 
-DB_PATH = os.environ.get("DB_PATH", str(DATA_DIR / "swing_trades.db"))
+DB_PATH = Path(os.environ.get("DB_PATH", str(DATA_DIR / "swing_trades.db")))
 
 # Server Configuration (Render compatibility)
 PORT = int(os.environ.get("PORT", 8000))

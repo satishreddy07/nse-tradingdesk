@@ -1,36 +1,49 @@
 """
-SQLite State Engine & Execution Journal
-Manages portfolio holdings, trade logs, scan runs, and signals for both portfolios:
-- INSTITUTIONAL_6PILLAR
-- NIFTY500_MOMENTUM
+SQLite Single Master Vault & Execution State Engine (`data/swing_trades.db`)
+Consolidates ALL system data into ONE single master file:
+1. active_positions  - Open trades with full YYYY-MM-DD HH:MM:SS IST timestamps
+2. trade_history     - Closed trades with full YYYY-MM-DD HH:MM:SS IST entry & exit timestamps
+3. latest_signals    - Screened setups for Portfolio 1 (6-Pillar) & Portfolio 2 (Nifty 500)
+4. scan_logs         - Automated & manual scan execution logs
+5. ohlcv_master_store- All ~800+ fetched stocks' 2-year daily OHLCV history + technical summary
+6. system_kv_store   - Engine snapshots, Nifty 500 seed list, and Telegram Cloud Vault manifest
 """
 import sqlite3
 import threading
 import json
+import zlib
+import pickle
 import logging
 import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
+
+import numpy as np
+import pandas as pd
 
 from core.config import DB_PATH
 from core.data_quality import now_ist, format_ist
 
 logger = logging.getLogger("StateEngine")
 
+
 class StateEngine:
-    """Thread-safe SQLite execution state engine with WAL mode."""
-    
+    """
+    Thread-safe Single Master File SQLite Engine (`data/swing_trades.db`).
+    Uses journal_mode=TRUNCATE so zero extra sidecar files (.db-wal / .db-shm) clutter the disk.
+    """
+
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
         self._lock = threading.RLock()
+        self._ohlcv_mem_cache: Dict[str, Tuple[pd.DataFrame, datetime.datetime]] = {}
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
+        conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=45.0)
         conn.row_factory = sqlite3.Row
-        # Enable WAL mode for high-concurrency read/writes
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA busy_timeout=5000;")
+        conn.execute("PRAGMA busy_timeout=10000;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
         return conn
 
     def _normalize_portfolio_type(self, p_type: Optional[str]) -> str:
@@ -43,9 +56,17 @@ class StateEngine:
 
     def _init_db(self):
         with self._lock:
+            Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
             with self._get_connection() as conn:
+                # Switch out of WAL mode into single-file DELETE mode so no .db-wal / .db-shm files exist
+                try:
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+                    conn.execute("PRAGMA journal_mode=DELETE;")
+                except Exception:
+                    pass
+
                 cursor = conn.cursor()
-                
+
                 # 1. Active Positions Table
                 cursor.execute("""
                 CREATE TABLE IF NOT EXISTS active_positions (
@@ -149,11 +170,434 @@ class StateEngine:
                 );
                 """)
 
+                # 5. Master OHLCV Store Table (All 800+ Stocks' 2-Year Daily Bars in ONE table)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ohlcv_master_store (
+                    symbol TEXT PRIMARY KEY,
+                    last_bar_date TEXT NOT NULL,
+                    bars_count INTEGER NOT NULL,
+                    last_close REAL DEFAULT 0.0,
+                    prev_close REAL DEFAULT 0.0,
+                    change_pct REAL DEFAULT 0.0,
+                    last_volume INTEGER DEFAULT 0,
+                    ema20 REAL DEFAULT 0.0,
+                    ema50 REAL DEFAULT 0.0,
+                    ema200 REAL DEFAULT 0.0,
+                    rsi14 REAL DEFAULT 50.0,
+                    atr14 REAL DEFAULT 0.0,
+                    updated_at TEXT NOT NULL,
+                    ohlcv_blob BLOB NOT NULL
+                );
+                """)
+
+                # 6. Master System Key-Value Store (Snapshots, Manifests, Constituent Seeds)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS system_kv_store (
+                    key TEXT PRIMARY KEY,
+                    value_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                """)
+
                 conn.commit()
-                logger.info("Database schemas verified and ready.")
+                logger.info("Single Master File Database schemas verified and ready.")
 
     # --------------------------------------------------------------------------
-    # ACTIVE POSITIONS OPERATIONS (WITH STRICT MARKET-HOURS TRADING GATE)
+    # SYSTEM KEY-VALUE STORE (INSIDE SINGLE MASTER FILE)
+    # --------------------------------------------------------------------------
+    def set_kv(self, key: str, value: Any) -> None:
+        now_str = format_ist()
+        val_str = json.dumps(value, default=str)
+        with self._lock:
+            with self._get_connection() as conn:
+                conn.execute("""
+                INSERT INTO system_kv_store (key, value_json, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value_json = excluded.value_json,
+                    updated_at = excluded.updated_at;
+                """, (key, val_str, now_str))
+                conn.commit()
+
+    def get_kv(self, key: str, default: Any = None) -> Any:
+        with self._lock:
+            with self._get_connection() as conn:
+                row = conn.execute("SELECT value_json FROM system_kv_store WHERE key = ?", (key,)).fetchone()
+                if row and row["value_json"]:
+                    try:
+                        return json.loads(row["value_json"])
+                    except Exception:
+                        return default
+        return default
+
+    # --------------------------------------------------------------------------
+    # MASTER OHLCV STORAGE (ALL STOCKS IN SINGLE MASTER FILE)
+    # --------------------------------------------------------------------------
+    @staticmethod
+    def _compute_df_summary_and_blob(df: pd.DataFrame) -> Tuple[Dict[str, Any], bytes]:
+        df = df.sort_index()
+        df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+        if len(df) > 500:
+            df = df.iloc[-500:]
+
+        closes = df["Close"].astype(float)
+        highs = df["High"].astype(float)
+        lows = df["Low"].astype(float)
+        vols = df["Volume"].fillna(0).astype(np.int64)
+
+        last_close = float(closes.iloc[-1])
+        prev_close = float(closes.iloc[-2]) if len(closes) >= 2 else last_close
+        change_pct = round(((last_close - prev_close) / max(0.01, prev_close)) * 100.0, 2)
+        last_volume = int(vols.iloc[-1])
+
+        ema20 = round(float(closes.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
+        ema50 = round(float(closes.ewm(span=50, adjust=False).mean().iloc[-1]), 2)
+        ema200 = round(float(closes.ewm(span=200, adjust=False).mean().iloc[-1]), 2)
+
+        # RSI 14
+        delta = closes.diff()
+        gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
+        rs = gain / (loss + 1e-9)
+        rsi14 = round(float((100 - (100 / (1 + rs))).iloc[-1]), 1)
+
+        # ATR 14
+        tr = pd.concat([
+            (highs - lows),
+            (highs - closes.shift(1)).abs(),
+            (lows - closes.shift(1)).abs()
+        ], axis=1).max(axis=1)
+        atr14 = round(float(tr.rolling(14, min_periods=1).mean().iloc[-1]), 2)
+
+        last_idx = df.index[-1]
+        last_bar_date = str(last_idx)[:10]
+
+        compact = pd.DataFrame(index=df.index)
+        for col in ("Open", "High", "Low", "Close"):
+            if col in df.columns:
+                compact[col] = df[col].astype(np.float32)
+        compact["Volume"] = vols
+
+        blob = zlib.compress(pickle.dumps(compact, protocol=pickle.HIGHEST_PROTOCOL), level=6)
+        meta = {
+            "last_bar_date": last_bar_date,
+            "bars_count": len(compact),
+            "last_close": round(last_close, 2),
+            "prev_close": round(prev_close, 2),
+            "change_pct": change_pct,
+            "last_volume": last_volume,
+            "ema20": ema20,
+            "ema50": ema50,
+            "ema200": ema200,
+            "rsi14": rsi14,
+            "atr14": atr14
+        }
+        return meta, blob
+
+    def save_ohlcv_df(self, symbol: str, df: pd.DataFrame) -> None:
+        if df is None or df.empty or "Close" not in df.columns:
+            return
+        sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+        now_dt = now_ist()
+        now_str = format_ist(now_dt)
+        try:
+            meta, blob = self._compute_df_summary_and_blob(df)
+            with self._lock:
+                self._ohlcv_mem_cache[sym] = (df, now_dt)
+                with self._get_connection() as conn:
+                    conn.execute("""
+                    INSERT INTO ohlcv_master_store (
+                        symbol, last_bar_date, bars_count, last_close, prev_close,
+                        change_pct, last_volume, ema20, ema50, ema200, rsi14, atr14,
+                        updated_at, ohlcv_blob
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(symbol) DO UPDATE SET
+                        last_bar_date = excluded.last_bar_date,
+                        bars_count = excluded.bars_count,
+                        last_close = excluded.last_close,
+                        prev_close = excluded.prev_close,
+                        change_pct = excluded.change_pct,
+                        last_volume = excluded.last_volume,
+                        ema20 = excluded.ema20,
+                        ema50 = excluded.ema50,
+                        ema200 = excluded.ema200,
+                        rsi14 = excluded.rsi14,
+                        atr14 = excluded.atr14,
+                        updated_at = excluded.updated_at,
+                        ohlcv_blob = excluded.ohlcv_blob;
+                    """, (
+                        sym, meta["last_bar_date"], meta["bars_count"], meta["last_close"],
+                        meta["prev_close"], meta["change_pct"], meta["last_volume"],
+                        meta["ema20"], meta["ema50"], meta["ema200"], meta["rsi14"],
+                        meta["atr14"], now_str, sqlite3.Binary(blob)
+                    ))
+                    conn.commit()
+        except Exception as e:
+            logger.debug(f"Failed to save OHLCV for {sym} into master DB: {e}")
+
+    def save_ohlcv_batch(self, dfs: Dict[str, pd.DataFrame]) -> int:
+        """Batch-saves multiple ticker DataFrames in a single fast SQLite transaction."""
+        if not dfs:
+            return 0
+        now_dt = now_ist()
+        now_str = format_ist(now_dt)
+        rows_to_insert = []
+        for symbol, df in dfs.items():
+            if df is None or df.empty or "Close" not in df.columns:
+                continue
+            sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+            try:
+                meta, blob = self._compute_df_summary_and_blob(df)
+                self._ohlcv_mem_cache[sym] = (df, now_dt)
+                rows_to_insert.append((
+                    sym, meta["last_bar_date"], meta["bars_count"], meta["last_close"],
+                    meta["prev_close"], meta["change_pct"], meta["last_volume"],
+                    meta["ema20"], meta["ema50"], meta["ema200"], meta["rsi14"],
+                    meta["atr14"], now_str, sqlite3.Binary(blob)
+                ))
+            except Exception as e:
+                logger.debug(f"Skip batch item {sym}: {e}")
+
+        if not rows_to_insert:
+            return 0
+
+        with self._lock:
+            with self._get_connection() as conn:
+                conn.executemany("""
+                INSERT INTO ohlcv_master_store (
+                    symbol, last_bar_date, bars_count, last_close, prev_close,
+                    change_pct, last_volume, ema20, ema50, ema200, rsi14, atr14,
+                    updated_at, ohlcv_blob
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol) DO UPDATE SET
+                    last_bar_date = excluded.last_bar_date,
+                    bars_count = excluded.bars_count,
+                    last_close = excluded.last_close,
+                    prev_close = excluded.prev_close,
+                    change_pct = excluded.change_pct,
+                    last_volume = excluded.last_volume,
+                    ema20 = excluded.ema20,
+                    ema50 = excluded.ema50,
+                    ema200 = excluded.ema200,
+                    rsi14 = excluded.rsi14,
+                    atr14 = excluded.atr14,
+                    updated_at = excluded.updated_at,
+                    ohlcv_blob = excluded.ohlcv_blob;
+                """, rows_to_insert)
+                conn.commit()
+        return len(rows_to_insert)
+
+    def get_ohlcv_df(self, symbol: str) -> Tuple[Optional[pd.DataFrame], float]:
+        """Retrieves (df, age_hours) for a symbol from the Single Master File."""
+        sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+        now_dt = now_ist()
+
+        if sym in self._ohlcv_mem_cache:
+            cached_df, cached_dt = self._ohlcv_mem_cache[sym]
+            age_hrs = max(0.0, (now_dt - cached_dt).total_seconds() / 3600.0)
+            return cached_df, age_hrs
+
+        with self._lock:
+            with self._get_connection() as conn:
+                row = conn.execute(
+                    "SELECT updated_at, ohlcv_blob FROM ohlcv_master_store WHERE symbol = ?",
+                    (sym,)
+                ).fetchone()
+                if row and row["ohlcv_blob"]:
+                    try:
+                        df = pickle.loads(zlib.decompress(row["ohlcv_blob"]))
+                        upd_str = row["updated_at"] or ""
+                        try:
+                            upd_dt = datetime.datetime.strptime(upd_str[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=now_dt.tzinfo)
+                            age_hrs = max(0.0, (now_dt - upd_dt).total_seconds() / 3600.0)
+                        except Exception:
+                            upd_dt = now_dt - datetime.timedelta(hours=1)
+                            age_hrs = 1.0
+                        self._ohlcv_mem_cache[sym] = (df, upd_dt)
+                        return df, age_hrs
+                    except Exception as e:
+                        logger.debug(f"Failed to decode OHLCV blob for {sym}: {e}")
+        return None, 9999.0
+
+    def get_ohlcv_stats(self) -> Dict[str, Any]:
+        """Returns total count and latest bar date across all stocks in ohlcv_master_store."""
+        with self._lock:
+            with self._get_connection() as conn:
+                row = conn.execute("""
+                SELECT COUNT(*) as cnt, MAX(last_bar_date) as max_date, MAX(updated_at) as last_upd
+                FROM ohlcv_master_store
+                """).fetchone()
+                return {
+                    "stocks_count": int(row["cnt"] or 0) if row else 0,
+                    "latest_bar_date": (row["max_date"] or "--") if row else "--",
+                    "last_updated": (row["last_upd"] or "--") if row else "--"
+                }
+
+    def get_all_ohlcv_metadata(self, search: str = "", limit: int = 1000) -> List[Dict[str, Any]]:
+        """Returns fast metadata rows for all fetched stocks in the Single Master File."""
+        query = """
+        SELECT symbol, last_bar_date, bars_count, last_close, prev_close,
+               change_pct, last_volume, ema20, ema50, ema200, rsi14, atr14, updated_at
+        FROM ohlcv_master_store
+        """
+        params: List[Any] = []
+        if search:
+            query += " WHERE symbol LIKE ?"
+            params.append(f"%{search.strip().upper()}%")
+        query += " ORDER BY change_pct DESC, last_volume DESC LIMIT ?"
+        params.append(limit)
+
+        with self._lock:
+            with self._get_connection() as conn:
+                rows = conn.execute(query, params).fetchall()
+                result = []
+                for r in rows:
+                    d = dict(r)
+                    lc = float(d.get("last_close") or 0.0)
+                    atr = float(d.get("atr14") or (lc * 0.025))
+                    risk = max(0.5, round(2.0 * atr, 2))
+                    d["auto_sl"] = round(lc - risk, 2)
+                    d["auto_t1"] = round(lc + 1.5 * risk, 2)
+                    d["auto_t2"] = round(lc + 3.0 * risk, 2)
+                    result.append(d)
+                return result
+
+    def get_stock_chart_payload(self, symbol: str, limit_bars: int = 260) -> Dict[str, Any]:
+        """
+        Builds full Candlestick + Volume + EMA(20/50/200) + RSI14 + Trade Level lines (Entry, SL, T1, T2)
+        and raw OHLCV data table from the Single Master File for any fetched or traded stock.
+        """
+        sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+        df, _ = self.get_ohlcv_df(sym)
+        if df is None or df.empty:
+            return {"status": "NOT_FOUND", "symbol": sym, "message": f"No OHLCV data in Master File for {sym}"}
+
+        df = df.sort_index()
+        df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+
+        closes = df["Close"].astype(float)
+        highs = df["High"].astype(float)
+        lows = df["Low"].astype(float)
+        opens = df["Open"].astype(float)
+        vols = df["Volume"].fillna(0).astype(np.int64)
+
+        ema20_s = closes.ewm(span=20, adjust=False).mean()
+        ema50_s = closes.ewm(span=50, adjust=False).mean()
+        ema200_s = closes.ewm(span=200, adjust=False).mean()
+
+        delta = closes.diff()
+        gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
+        rs = gain / (loss + 1e-9)
+        rsi14_s = 100 - (100 / (1 + rs))
+
+        tr = pd.concat([
+            (highs - lows),
+            (highs - closes.shift(1)).abs(),
+            (lows - closes.shift(1)).abs()
+        ], axis=1).max(axis=1)
+        atr14_s = tr.rolling(14, min_periods=1).mean()
+        pct_chg_s = closes.pct_change().fillna(0.0) * 100.0
+
+        tail_n = min(len(df), max(60, int(limit_bars)))
+        df_slice = df.iloc[-tail_n:]
+
+        candles = []
+        for idx in df_slice.index:
+            d_str = str(idx)[:10]
+            o_val = round(float(opens.loc[idx]), 2)
+            h_val = round(float(highs.loc[idx]), 2)
+            l_val = round(float(lows.loc[idx]), 2)
+            c_val = round(float(closes.loc[idx]), 2)
+            v_val = int(vols.loc[idx])
+            candles.append({
+                "time": d_str,
+                "open": o_val,
+                "high": h_val,
+                "low": l_val,
+                "close": c_val,
+                "volume": v_val,
+                "change_pct": round(float(pct_chg_s.loc[idx]), 2),
+                "ema20": round(float(ema20_s.loc[idx]), 2),
+                "ema50": round(float(ema50_s.loc[idx]), 2),
+                "ema200": round(float(ema200_s.loc[idx]), 2),
+                "rsi14": round(float(rsi14_s.loc[idx]), 1),
+                "atr14": round(float(atr14_s.loc[idx]), 2)
+            })
+
+        # Check if stock is an Active Position or Signal or Historical Trade
+        active_pos = None
+        signal_row = None
+        recent_trades = []
+        with self._lock:
+            with self._get_connection() as conn:
+                ap = conn.execute("SELECT * FROM active_positions WHERE symbol = ?", (sym,)).fetchone()
+                if ap:
+                    active_pos = dict(ap)
+                sig = conn.execute("SELECT * FROM latest_signals WHERE symbol = ? ORDER BY score DESC LIMIT 1", (sym,)).fetchone()
+                if sig:
+                    signal_row = dict(sig)
+                hist = conn.execute("SELECT * FROM trade_history WHERE symbol = ? ORDER BY id DESC LIMIT 5", (sym,)).fetchall()
+                recent_trades = [dict(h) for h in hist]
+
+        last_c = candles[-1]["close"]
+        last_atr = max(0.5, candles[-1]["atr14"])
+
+        if active_pos:
+            ep = round(float(active_pos["entry_price"]), 2)
+            sl = round(float(active_pos["stop_loss"]), 2)
+            t1 = round(float(active_pos["target"]), 2)
+            t2 = round(float(active_pos.get("target_2") or (ep + 2.0 * max(1.0, t1 - ep))), 2)
+            level_source = f"ACTIVE POSITION ({active_pos['portfolio_type']})"
+            entry_ts = active_pos.get("entry_date", "")
+        elif signal_row and float(signal_row.get("sl") or 0) > 0:
+            ep = round(float(signal_row.get("entry") or signal_row.get("close") or last_c), 2)
+            sl = round(float(signal_row["sl"]), 2)
+            t1 = round(float(signal_row.get("t1") or (ep + 1.5 * max(1.0, ep - sl))), 2)
+            t2 = round(float(signal_row.get("t2") or (ep + 3.0 * max(1.0, ep - sl))), 2)
+            level_source = f"SIGNAL SETUP ({signal_row.get('bucket', 'WATCH')} - {signal_row.get('portfolio_type', '')})"
+            entry_ts = signal_row.get("updated_at", "")
+        else:
+            ep = last_c
+            risk_dist = round(2.0 * last_atr, 2)
+            sl = round(ep - risk_dist, 2)
+            t1 = round(ep + 1.5 * risk_dist, 2)
+            t2 = round(ep + 3.0 * risk_dist, 2)
+            level_source = "ATR(14) SWING STRUCTURE (-2.0 ATR SL / +1.5R T1 / +3.0R T2)"
+            entry_ts = candles[-1]["time"]
+
+        risk_per_share = max(0.01, round(ep - sl, 2))
+        rr_t1 = round((t1 - ep) / risk_per_share, 2)
+        rr_t2 = round((t2 - ep) / risk_per_share, 2)
+
+        return {
+            "status": "OK",
+            "symbol": sym,
+            "bars_total": len(df),
+            "last_bar_date": candles[-1]["time"],
+            "latest": candles[-1],
+            "trade_levels": {
+                "source": level_source,
+                "entry_price": ep,
+                "stop_loss": sl,
+                "target_1": t1,
+                "target_2": t2,
+                "risk_per_share": risk_per_share,
+                "sl_pct": round(((sl - ep) / ep) * 100.0, 2),
+                "t1_pct": round(((t1 - ep) / ep) * 100.0, 2),
+                "t2_pct": round(((t2 - ep) / ep) * 100.0, 2),
+                "rr_t1": rr_t1,
+                "rr_t2": rr_t2,
+                "timestamp": entry_ts
+            },
+            "active_position": active_pos,
+            "signal": signal_row,
+            "recent_trades": recent_trades,
+            "candles": candles
+        }
+
+    # --------------------------------------------------------------------------
+    # ACTIVE POSITIONS OPERATIONS (IMMEDIATE MASTER DB SAVE + IMMEDIATE CLOUD SYNC)
     # --------------------------------------------------------------------------
     def open_position(
         self,
@@ -174,7 +618,8 @@ class StateEngine:
         trade_features: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
-        Opens a new position in the database.
+        Opens a new position in the Single Master File with full YYYY-MM-DD HH:MM:SS IST timestamp
+        and immediately syncs the Master File to Telegram Cloud.
         STRICT TRADING GATE: Blocks order execution outside NSE trading hours (09:15–15:30 IST, Mon–Fri).
         """
         from core.market_calendar import NSEMarketCalendar
@@ -215,19 +660,18 @@ class StateEngine:
                     conn.commit()
                     logger.info(f"Opened position for {sym_clean} ({quantity} shs @ ₹{entry_price:.2f}) in {p_type} at {now_str}")
 
-                    # Sync to Telegram Cloud Vault
+                    # Immediately sync Single Master File to Telegram Cloud Vault
                     telegram_vault.send_alert_and_sync(
                         title=f"🚀 NEW TRADE OPENED: {sym_clean} ({p_type})",
                         message=(
                             f"<b>Symbol:</b> <code>{sym_clean}</code>\n"
                             f"<b>Portfolio:</b> {p_type}\n"
                             f"<b>Entry Price:</b> ₹{entry_price:,.2f} × {quantity} shs\n"
-                            f"<b>Stop Loss:</b> ₹{stop_loss:,.2f} | <b>Target 1:</b> ₹{target:,.2f}\n"
+                            f"<b>Stop Loss:</b> ₹{stop_loss:,.2f} | <b>Target 1:</b> ₹{target:,.2f} | <b>Target 2:</b> ₹{target_2:,.2f}\n"
                             f"<b>Entry Timestamp:</b> {now_str}\n"
                             f"<b>Setup:</b> {entry_reason or notes}"
                         ),
-                        sync_db=True,
-                        sync_ohlcv=False
+                        sync_db=True
                     )
                     return True
                 except Exception as e:
@@ -304,7 +748,8 @@ class StateEngine:
         bypass_gate: bool = False
     ) -> Optional[Dict[str, Any]]:
         """
-        Closes an active position and logs it to trade_history with full IST timestamps.
+        Closes an active position, logs it to trade_history with full IST timestamps,
+        and immediately syncs the Single Master File to Telegram Cloud.
         STRICT TRADING GATE: Blocks exit execution outside NSE trading hours unless bypass_gate=True.
         """
         from core.market_calendar import NSEMarketCalendar
@@ -381,7 +826,7 @@ class StateEngine:
                 }
                 logger.info(f"Closed {sym_clean} in {p_type} at {now_str}: PnL ₹{total_pnl:+.2f} ({r_multiple:+.2f}R) Reason: {exit_reason}")
 
-                # Sync to Telegram Cloud Vault
+                # Immediately sync Single Master File to Telegram Cloud Vault
                 telegram_vault.send_alert_and_sync(
                     title=f"🏁 TRADE CLOSED: {sym_clean} ({exit_reason})",
                     message=(
@@ -391,8 +836,7 @@ class StateEngine:
                         f"<b>Realized PnL:</b> ₹{total_pnl:+,.2f} ({r_multiple:+.2f}R | {return_pct:+.2f}%)\n"
                         f"<b>Reason:</b> {exit_reason}"
                     ),
-                    sync_db=True,
-                    sync_ohlcv=False
+                    sync_db=True
                 )
                 return trade_record
 
@@ -414,7 +858,6 @@ class StateEngine:
         logger.info(f"Reset trades completed (portfolio={portfolio_type or 'ALL'}).")
         return {"status": "SUCCESS", "portfolio": portfolio_type or "ALL", "timestamp": format_ist()}
 
-
     # --------------------------------------------------------------------------
     # TRADE HISTORY & PORTFOLIO METRICS
     # --------------------------------------------------------------------------
@@ -434,39 +877,12 @@ class StateEngine:
                 rows = conn.execute(query, params).fetchall()
                 return [dict(r) for r in rows]
 
-    def get_portfolio_stats(self, portfolio_type: Optional[str] = None) -> Dict[str, Any]:
+    def get_portfolio_stats(self, base_capital: float = 500000.0, portfolio_type: Optional[str] = None) -> Dict[str, Any]:
         """Calculates comprehensive quantitative performance metrics."""
+        if isinstance(base_capital, str):
+            portfolio_type = base_capital
         history = self.get_trade_history(portfolio_type=portfolio_type, limit=1000)
         active = self.get_active_positions(portfolio_type=portfolio_type)
-
-        total_trades = len(history)
-        if total_trades == 0:
-            return {
-                "total_trades": 0,
-                "win_rate": 0.0,
-                "profit_factor": 0.0,
-                "expectancy_r": 0.0,
-                "total_realized_pnl": 0.0,
-                "unrealized_pnl": 0.0,
-                "avg_win_r": 0.0,
-                "avg_loss_r": 0.0,
-                "active_count": len(active),
-                "open_risk": sum(max(0.0, (float(p['entry_price']) - float(p['stop_loss'])) * int(p['quantity'])) for p in active)
-            }
-
-        wins = [t for t in history if t["pnl"] > 0]
-        losses = [t for t in history if t["pnl"] <= 0]
-        
-        win_rate = round((len(wins) / total_trades) * 100.0, 1)
-        gross_profit = sum(float(t["pnl"]) for t in wins)
-        gross_loss = abs(sum(float(t["pnl"]) for t in losses))
-        profit_factor = round(gross_profit / (gross_loss + 1e-9), 2)
-        
-        r_list = [float(t["r_multiple"]) for t in history]
-        expectancy_r = round(float(sum(r_list) / len(r_list)), 3)
-        avg_win_r = round(float(sum(t["r_multiple"] for t in wins) / len(wins)), 2) if wins else 0.0
-        avg_loss_r = round(float(sum(t["r_multiple"] for t in losses) / len(losses)), 2) if losses else 0.0
-        total_realized_pnl = round(sum(float(t["pnl"]) for t in history), 2)
 
         # MTM Unrealized PnL
         unrealized = 0.0
@@ -478,6 +894,35 @@ class StateEngine:
             qty = int(p["quantity"])
             unrealized += (cp - ep) * qty
             open_risk += max(0.0, (ep - sl) * qty)
+
+        total_trades = len(history)
+        if total_trades == 0:
+            return {
+                "total_trades": 0,
+                "win_rate": 0.0,
+                "profit_factor": 0.0,
+                "expectancy_r": 0.0,
+                "total_realized_pnl": 0.0,
+                "unrealized_pnl": round(unrealized, 2),
+                "avg_win_r": 0.0,
+                "avg_loss_r": 0.0,
+                "active_count": len(active),
+                "open_risk": round(open_risk, 2)
+            }
+
+        wins = [t for t in history if t["pnl"] > 0]
+        losses = [t for t in history if t["pnl"] <= 0]
+
+        win_rate = round((len(wins) / total_trades) * 100.0, 1)
+        gross_profit = sum(float(t["pnl"]) for t in wins)
+        gross_loss = abs(sum(float(t["pnl"]) for t in losses))
+        profit_factor = round(gross_profit / (gross_loss + 1e-9), 2)
+
+        r_list = [float(t["r_multiple"]) for t in history]
+        expectancy_r = round(float(sum(r_list) / len(r_list)), 3)
+        avg_win_r = round(float(sum(t["r_multiple"] for t in wins) / len(wins)), 2) if wins else 0.0
+        avg_loss_r = round(float(sum(t["r_multiple"] for t in losses) / len(losses)), 2) if losses else 0.0
+        total_realized_pnl = round(sum(float(t["pnl"]) for t in history), 2)
 
         return {
             "total_trades": total_trades,
@@ -663,4 +1108,3 @@ class StateEngine:
 
 # Global Singleton Instance
 state_engine = StateEngine()
-

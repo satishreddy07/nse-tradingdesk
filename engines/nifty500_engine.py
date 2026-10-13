@@ -93,7 +93,7 @@ def get_live_compounded_equity(initial_cash: float = P2_BASE_CAPITAL) -> Tuple[f
 def get_nifty500_symbols() -> List[str]:
     """
     Retrieves official Nifty 500 constituent symbols from NSE archives,
-    falling back to cached seeds if offline or rate-limited.
+    persisting and falling back to the Single Master File (`system_kv_store` / `ohlcv_master_store`).
     """
     url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
     headers = {
@@ -110,23 +110,23 @@ def get_nifty500_symbols() -> List[str]:
             df_raw = pd.read_csv(io.StringIO(res.text))
             symbols = df_raw["Symbol"].dropna().astype(str).str.strip().unique().tolist()
             if len(symbols) >= 100:
+                state_engine.set_kv("nifty500_constituents", symbols)
                 logger.info(f"-> Successfully loaded {len(symbols)} stocks from live official NSE list.")
                 return symbols
     except Exception as e:
-        logger.warning(f"Live NSE constituent ingestion notice: {e}. Checking local seed file...")
+        logger.warning(f"Live NSE constituent ingestion notice: {e}. Checking Single Master File...")
 
-    seed_path = SEEDS_DIR / "indices" / "ind_nifty500list.csv"
-    if seed_path.exists():
-        df_seed = pd.read_csv(seed_path)
-        symbols = df_seed["Symbol"].dropna().astype(str).str.strip().unique().tolist()
-        logger.info(f"-> Loaded {len(symbols)} stocks from cached seed constituent list.")
-        return symbols
+    cached_syms = state_engine.get_kv("nifty500_constituents", [])
+    if isinstance(cached_syms, list) and len(cached_syms) >= 100:
+        logger.info(f"-> Loaded {len(cached_syms)} Nifty 500 stocks from Single Master File.")
+        return cached_syms
 
-    if HISTORICAL_DATA_DIR.exists():
-        pkl_files = [f.stem for f in HISTORICAL_DATA_DIR.glob("*.pkl") if not f.stem.startswith("^")]
-        if pkl_files:
-            logger.info(f"-> Loaded {len(pkl_files[:500])} stocks from local historical cache.")
-            return pkl_files[:500]
+    meta_rows = state_engine.get_all_ohlcv_metadata(limit=500)
+    if meta_rows:
+        syms = [r["symbol"] for r in meta_rows if not r["symbol"].startswith("^")]
+        if syms:
+            logger.info(f"-> Loaded {len(syms)} stocks from Single Master File OHLCV store.")
+            return syms
 
     return ["RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "BHARTIARTL", "SBIN", "LICI", "ITC", "HINDUNILVR"]
 
@@ -134,12 +134,12 @@ def get_nifty500_symbols() -> List[str]:
 async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
     """
     Multi-threaded Smart Incremental Gap-Fill OHLCV Downloader for Nifty 500 + ^CRSLDX benchmark.
-    Uses shared `DirectYahooFinanceFetcher` cache (`data/historical_data/*.pkl`) backed by Telegram Cloud Vault.
+    Uses shared `DirectYahooFinanceFetcher` backed by the Single Master File (`data/swing_trades.db`).
     """
     fetcher = DirectYahooFinanceFetcher(max_workers=24)
-    local_pkl_count = len(list(HISTORICAL_DATA_DIR.glob("*.pkl")))
-    if local_pkl_count < 50:
-        telegram_vault.restore_ohlcv_from_cloud()
+    ohlcv_stats = state_engine.get_ohlcv_stats()
+    if ohlcv_stats.get("stocks_count", 0) < 50:
+        telegram_vault.restore_master_file_from_cloud()
 
     target_date = fetcher.get_latest_expected_bar_date()
     is_mkt_open, _ = NSEMarketCalendar.can_execute_trades()
@@ -147,7 +147,7 @@ async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
     tickers = [f"{s}.NS" for s in symbols]
     total_tickers = len(tickers)
     flat_rows = []
-    gap_or_new_count = 0
+    dirty_dfs: Dict[str, pd.DataFrame] = {}
 
     start_t = time.time()
 
@@ -170,15 +170,15 @@ async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
     completed = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
         future_to_ticker = {
-            executor.submit(fetcher.fetch_or_gapfill_ticker, t, target_date, is_mkt_open): t
+            executor.submit(fetcher.fetch_or_gapfill_ticker, t, target_date, is_mkt_open, False): t
             for t in tickers
         }
         for future in concurrent.futures.as_completed(future_to_ticker):
             completed += 1
             try:
                 sym, df, mode = future.result()
-                if mode in ("GAP_FILLED", "FULL_DOWNLOAD"):
-                    gap_or_new_count += 1
+                if mode in ("GAP_FILLED", "FULL_DOWNLOAD") and df is not None:
+                    dirty_dfs[sym] = df
                 if df is not None and not df.empty:
                     sym_clean = sym.replace(".NS", "").replace(".BO", "").strip().upper()
                     sub_df = df.tail(160)
@@ -208,10 +208,11 @@ async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
                     add_log=(completed % 150 == 0 or completed == total_tickers)
                 )
 
-    if gap_or_new_count > 0:
+    if dirty_dfs:
+        state_engine.save_ohlcv_batch(dirty_dfs)
         threading.Thread(
-            target=telegram_vault.backup_ohlcv_to_cloud,
-            kwargs={"custom_note": f"Nifty 500 Scan Sync ({gap_or_new_count} updated)"},
+            target=telegram_vault.backup_master_file_to_cloud,
+            kwargs={"custom_note": f"Nifty 500 Scan Sync ({len(dirty_dfs)} updated)"},
             daemon=True
         ).start()
 
@@ -649,11 +650,18 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
         reconciled_count=len(reconciled_trades),
         message=summary_msg
     )
+    state_engine.set_kv("nifty500_snapshot", {
+        "macro_regime": macro_regime_label,
+        "bench_ltp": bench_ltp,
+        "bench_ema50": bench_ema,
+        "candidates_found": len(candidates),
+        "last_run_time": format_ist()
+    })
     state_engine.finish_scan_progress(summary_msg)
 
-    # Backup DB state to Telegram Cloud Vault in background
+    # Backup Single Master File to Telegram Cloud Vault in background
     threading.Thread(
-        target=telegram_vault.backup_db_to_cloud,
+        target=telegram_vault.backup_master_file_to_cloud,
         kwargs={"custom_note": f"P2 Nifty 500 Scan Complete ({len(candidates)} RS Candidates)"},
         daemon=True
     ).start()
@@ -700,6 +708,12 @@ def get_nifty500_status() -> Dict[str, Any]:
     can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
     curr_eq, tot_eq, active_count = get_live_compounded_equity()
     state_copy = dict(_nifty500_engine_state)
+    if state_copy.get("macro_regime") == "UNKNOWN" or state_copy.get("bench_ltp") is None:
+        saved = state_engine.get_kv("nifty500_snapshot", {})
+        if isinstance(saved, dict):
+            for k, v in saved.items():
+                if state_copy.get(k) in (None, "UNKNOWN", 0):
+                    state_copy[k] = v
     state_copy["trading_gate_open"] = can_trade
     state_copy["trading_gate_message"] = gate_msg
     state_copy["compounded_equity"] = curr_eq

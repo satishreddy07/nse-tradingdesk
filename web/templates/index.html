@@ -36,6 +36,8 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- Chart.js for Quant Performance Visuals -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- TradingView Lightweight Charts for Institutional Candlesticks + SL/Target Overlays -->
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
@@ -85,9 +87,9 @@
         <div>
           <div class="flex items-center gap-2">
             <span class="font-extrabold tracking-tight text-white text-lg">QUANT<span class="text-cyan-400">DESK</span></span>
-            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">v2.0 NSE</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">v2.5 PRO</span>
           </div>
-          <p class="text-[11px] text-slate-400 font-medium hidden sm:block">Automated 10:20 AM & 3:05 PM Dual Swing Engines</p>
+          <p class="text-[11px] text-slate-400 font-medium hidden sm:block">Single Master File • Live Charts & SL/Targets • Dual Swing Engines</p>
         </div>
       </div>
 
@@ -176,7 +178,7 @@
   <!-- NAVIGATION TABS (PC & MOBILE) -->
   <div class="bg-[#0b0f19] border-b border-slate-800 sticky top-16 md:top-16 z-30">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <nav class="flex space-x-1 sm:space-x-3 overflow-x-auto custom-scroll py-2.5 text-xs font-semibold">
+      <nav class="flex space-x-1 sm:space-x-2.5 overflow-x-auto custom-scroll py-2.5 text-xs font-semibold">
         
         <button onclick="switchTab('tab-p1')" id="nav-tab-p1" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
           <i data-lucide="layers" class="w-4 h-4"></i>
@@ -190,8 +192,14 @@
           <span id="badge-p2-slots" class="px-1.5 py-0.2 rounded text-[10px] bg-violet-900/60 font-mono text-violet-300">0/10</span>
         </button>
 
+        <button onclick="switchTab('tab-charts')" id="nav-tab-charts" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
+          <i data-lucide="candlestick-chart" class="w-4 h-4 text-emerald-400"></i>
+          <span>Charts & Master OHLCV</span>
+          <span id="badge-master-stocks" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-900/60 font-mono text-emerald-300">1010</span>
+        </button>
+
         <button onclick="switchTab('tab-signals')" id="nav-tab-signals" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
-          <i data-lucide="crosshair" class="w-4 h-4 text-emerald-400"></i>
+          <i data-lucide="crosshair" class="w-4 h-4 text-cyan-400"></i>
           <span>Live Signals Screener</span>
         </button>
 
@@ -202,7 +210,7 @@
 
         <button onclick="switchTab('tab-scheduler')" id="nav-tab-scheduler" class="tab-btn px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent">
           <i data-lucide="cloud" class="w-4 h-4 text-blue-400"></i>
-          <span>Cloud Vault & Scheduler</span>
+          <span>Master Vault & Scheduler</span>
         </button>
 
       </nav>
@@ -811,29 +819,235 @@
 
     </div>
 
+    <!-- ================================================================= -->
+    <!-- TAB 6: CHARTS & SINGLE MASTER FILE OHLCV DATA EXPLORER            -->
+    <!-- ================================================================= -->
+    <div id="tab-charts" class="tab-content hidden space-y-6">
+
+      <!-- Master Vault Banner & Quick Symbol Chart Launcher -->
+      <div class="bg-slate-900/70 border border-emerald-500/30 p-5 rounded-2xl shadow-lg">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/40">Single Master File Engine</span>
+              <span class="text-xs text-slate-400 font-mono">data/swing_trades.db • Zero Extra Files</span>
+            </div>
+            <h1 class="text-xl sm:text-2xl font-bold text-white mt-1">Interactive Candlestick Charts & Fetched OHLCV Data</h1>
+            <p class="text-xs text-slate-400 mt-0.5">All <span id="master-total-stocks-label" class="text-emerald-400 font-bold font-mono">1,010</span> fetched stocks, daily OHLCV bars, active trades, and signals live inside ONE single master file. Click any stock to inspect its Candlestick Chart with Stop-Loss & Target lines and raw daily OHLCV bars.</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="relative">
+              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+              <input type="text" id="fetched-search-input" oninput="filterFetchedStocks()" placeholder="Search symbol (e.g. RELIANCE, TCS)..." class="pl-9 pr-4 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 w-60 font-mono">
+            </div>
+            <select id="fetched-filter-select" onchange="filterFetchedStocks()" class="px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+              <option value="ALL">All Fetched Stocks</option>
+              <option value="GAINERS">Top Gainers (1D % > 0)</option>
+              <option value="BULL_EMA">Bullish Trend (Close > EMA50)</option>
+              <option value="RSI_STRONG">High Momentum (RSI 55 - 75)</option>
+            </select>
+            <button onclick="loadFetchedStocksData()" class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center gap-1.5 transition">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <span>Refresh Master Data</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fetched Stocks Master Table -->
+      <div class="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <i data-lucide="database" class="w-4 h-4 text-emerald-400"></i>
+            <h2 class="font-bold text-sm text-white">Fetched Stocks in Single Master File (<span id="fetched-shown-count" class="text-emerald-400 font-mono">0</span>)</h2>
+          </div>
+          <span class="text-[11px] text-slate-400 font-mono" id="fetched-last-updated-tag">Latest Bar Date: --</span>
+        </div>
+
+        <div class="overflow-x-auto custom-scroll max-h-[640px]">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead class="sticky top-0 bg-slate-950 z-10">
+              <tr class="border-b border-slate-800 text-[11px] font-mono uppercase text-slate-400">
+                <th class="p-3">Symbol</th>
+                <th class="p-3">Last Bar Date</th>
+                <th class="p-3">Close (₹)</th>
+                <th class="p-3">1D Change</th>
+                <th class="p-3">Volume</th>
+                <th class="p-3">EMA 20 / 50 / 200</th>
+                <th class="p-3">RSI (14)</th>
+                <th class="p-3">ATR (14)</th>
+                <th class="p-3">Stop Loss (-2 ATR)</th>
+                <th class="p-3">Targets (T1 / T2)</th>
+                <th class="p-3">Stored Bars</th>
+                <th class="p-3 text-right">Chart & OHLCV Data</th>
+              </tr>
+            </thead>
+            <tbody id="fetched-stocks-tbody" class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td colspan="12" class="p-8 text-center text-slate-500 font-sans">Loading fetched stocks from Single Master File...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
   </main>
 
+  <!-- ===================================================================== -->
+  <!-- GLOBAL INTERACTIVE CANDLESTICK CHART + SL/TARGET + OHLCV DATA MODAL    -->
+  <!-- ===================================================================== -->
+  <div id="chart-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+    <div class="bg-[#0b0f19] border border-slate-700/80 rounded-2xl w-full max-w-6xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
+      
+      <!-- Modal Top Header -->
+      <div class="p-3.5 sm:p-4 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-mono font-extrabold text-sm" id="modal-chart-badge">
+            NSE
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base sm:text-lg font-extrabold text-white font-mono" id="modal-chart-symbol">RELIANCE</h3>
+              <span id="modal-chart-price" class="text-sm sm:text-base font-mono font-bold text-emerald-400">₹0.00</span>
+              <span id="modal-chart-chg" class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">+0.00%</span>
+              <span id="modal-chart-source" class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950 border border-cyan-700/50 text-cyan-300">ATR SWING STRUCTURE</span>
+            </div>
+            <div id="modal-crosshair-hud" class="text-[11px] font-mono text-slate-400 mt-0.5">
+              Hover over chart candles to inspect exact daily O / H / L / C / Volume & EMAs
+            </div>
+          </div>
+        </div>
+
+        <!-- Timeframe & Overlay Controls -->
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button onclick="setChartRange(30)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono">1M</button>
+          <button onclick="setChartRange(75)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono">3M</button>
+          <button onclick="setChartRange(140)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono">6M</button>
+          <button onclick="setChartRange(260)" class="px-2.5 py-1 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-[11px] font-mono">1Y</button>
+          <button onclick="setChartRange(500)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono">2Y</button>
+
+          <button onclick="downloadCurrentStockCsv()" class="ml-1 px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-mono flex items-center gap-1">
+            <i data-lucide="download" class="w-3 h-3"></i>
+            <span>CSV</span>
+          </button>
+
+          <button onclick="closeStockChartModal()" class="ml-2 px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-xs font-bold">✕ Close</button>
+        </div>
+      </div>
+
+      <!-- Trade Levels Banner (Entry, Stop Loss, Target 1, Target 2, RSI, ATR) -->
+      <div class="grid grid-cols-2 sm:grid-cols-6 gap-2 p-3 bg-slate-950/90 border-b border-slate-800 text-xs font-mono">
+        <div class="p-2 rounded-xl bg-cyan-950/30 border border-cyan-800/40">
+          <div class="text-[10px] text-cyan-400 uppercase">⚡ Entry Price</div>
+          <div class="text-sm font-bold text-white mt-0.5" id="lvl-entry">₹0.00</div>
+        </div>
+        <div class="p-2 rounded-xl bg-rose-950/30 border border-rose-800/40">
+          <div class="text-[10px] text-rose-400 uppercase">🛑 Stop Loss (SL)</div>
+          <div class="text-sm font-bold text-rose-400 mt-0.5" id="lvl-sl">₹0.00</div>
+        </div>
+        <div class="p-2 rounded-xl bg-amber-950/30 border border-amber-800/40">
+          <div class="text-[10px] text-amber-400 uppercase">🎯 Target 1 (T1)</div>
+          <div class="text-sm font-bold text-amber-400 mt-0.5" id="lvl-t1">₹0.00</div>
+        </div>
+        <div class="p-2 rounded-xl bg-emerald-950/30 border border-emerald-800/40">
+          <div class="text-[10px] text-emerald-400 uppercase">🚀 Target 2 (T2)</div>
+          <div class="text-sm font-bold text-emerald-400 mt-0.5" id="lvl-t2">₹0.00</div>
+        </div>
+        <div class="p-2 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="text-[10px] text-slate-400 uppercase">📊 RSI(14) & ATR(14)</div>
+          <div class="text-sm font-bold text-purple-300 mt-0.5" id="lvl-rsi-atr">--</div>
+        </div>
+        <div class="p-2 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="text-[10px] text-slate-400 uppercase">📐 Risk / Reward</div>
+          <div class="text-sm font-bold text-cyan-300 mt-0.5" id="lvl-rr">--</div>
+        </div>
+      </div>
+
+      <!-- Modal Scrollable Content: Candlestick Chart + Daily OHLCV Data Table -->
+      <div class="flex-1 overflow-y-auto custom-scroll p-3 sm:p-4 space-y-4">
+        
+        <!-- Legend -->
+        <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400 px-1">
+          <div class="flex flex-wrap items-center gap-4">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-cyan-400 inline-block"></span> EMA 20</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-amber-400 inline-block"></span> EMA 50</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-violet-400 inline-block"></span> EMA 200</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-4">
+            <span class="text-cyan-400">── ⚡ ENTRY</span>
+            <span class="text-rose-400">── 🛑 STOP LOSS</span>
+            <span class="text-amber-400">- - 🎯 TARGET 1</span>
+            <span class="text-emerald-400">- - 🚀 TARGET 2</span>
+          </div>
+        </div>
+
+        <!-- TradingView Lightweight Chart Container -->
+        <div id="tv-chart-container" class="w-full h-[380px] sm:h-[430px] rounded-xl border border-slate-800 bg-[#070a13] overflow-hidden relative"></div>
+
+        <!-- Historical Daily OHLCV Data Table from Master File -->
+        <div class="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
+          <div class="p-3 border-b border-slate-800 flex items-center justify-between">
+            <span class="text-xs font-bold text-white flex items-center gap-2">
+              <i data-lucide="table" class="w-4 h-4 text-cyan-400"></i>
+              <span>Daily OHLCV Historical Bars from Single Master File (<span id="modal-bars-count" class="text-cyan-400 font-mono">0</span> bars)</span>
+            </span>
+            <span class="text-[11px] font-mono text-slate-400">Most Recent Sessions First</span>
+          </div>
+          <div class="overflow-x-auto custom-scroll max-h-60">
+            <table class="w-full text-left border-collapse text-xs font-mono">
+              <thead class="sticky top-0 bg-slate-950 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2.5">Date</th>
+                  <th class="p-2.5">Open (₹)</th>
+                  <th class="p-2.5">High (₹)</th>
+                  <th class="p-2.5">Low (₹)</th>
+                  <th class="p-2.5">Close (₹)</th>
+                  <th class="p-2.5">1D %</th>
+                  <th class="p-2.5">Volume</th>
+                  <th class="p-2.5">EMA 20</th>
+                  <th class="p-2.5">EMA 50</th>
+                  <th class="p-2.5">RSI (14)</th>
+                  <th class="p-2.5">ATR (14)</th>
+                </tr>
+              </thead>
+              <tbody id="modal-ohlcv-tbody" class="divide-y divide-slate-800/50">
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
   <!-- MOBILE BOTTOM NAVIGATION BAR -->
-  <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-[#0b0f19]/95 backdrop-blur-md border-t border-slate-800 z-50 px-2 py-2 flex items-center justify-around text-[10px] pb-safe font-medium">
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-[#0b0f19]/95 backdrop-blur-md border-t border-slate-800 z-40 px-1 py-2 flex items-center justify-around text-[10px] pb-safe font-medium">
     <button onclick="switchTab('tab-p1')" class="mobile-nav-btn flex flex-col items-center gap-1 text-cyan-400" id="mob-nav-p1">
-      <i data-lucide="layers" class="w-5 h-5"></i>
-      <span>Portfolio 1</span>
+      <i data-lucide="layers" class="w-4 h-4"></i>
+      <span>P1 Desk</span>
     </button>
     <button onclick="switchTab('tab-p2')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-p2">
-      <i data-lucide="trending-up" class="w-5 h-5"></i>
-      <span>Portfolio 2</span>
+      <i data-lucide="trending-up" class="w-4 h-4"></i>
+      <span>P2 Nifty500</span>
+    </button>
+    <button onclick="switchTab('tab-charts')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-charts">
+      <i data-lucide="candlestick-chart" class="w-4 h-4"></i>
+      <span>Charts/Data</span>
     </button>
     <button onclick="switchTab('tab-signals')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-signals">
-      <i data-lucide="crosshair" class="w-5 h-5"></i>
+      <i data-lucide="crosshair" class="w-4 h-4"></i>
       <span>Signals</span>
     </button>
     <button onclick="switchTab('tab-history')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-history">
-      <i data-lucide="history" class="w-5 h-5"></i>
+      <i data-lucide="history" class="w-4 h-4"></i>
       <span>History</span>
     </button>
     <button onclick="switchTab('tab-scheduler')" class="mobile-nav-btn flex flex-col items-center gap-1 text-slate-400" id="mob-nav-scheduler">
-      <i data-lucide="calendar" class="w-5 h-5"></i>
-      <span>Schedule</span>
+      <i data-lucide="cloud" class="w-4 h-4"></i>
+      <span>Vault</span>
     </button>
   </nav>
 
@@ -845,11 +1059,17 @@
     let currentTab = 'tab-p1';
     let p1SignalsCache = [];
     let p2SignalsCache = [];
+    let fetchedStocksCache = [];
     let allPositionsCache = [];
 
     let scanPollTimer = null;
     let lastLoggedStep = "";
     let wasScanRunning = false;
+
+    // Lightweight Chart instances
+    let tvChart = null;
+    let currentChartSymbol = "RELIANCE";
+    let currentChartPayload = null;
 
     // Initialize Lucide Icons & Clocks
     document.addEventListener("DOMContentLoaded", () => {
@@ -864,7 +1084,6 @@
 
     function updateClock() {
       const now = new Date();
-      // Render IST time string
       const istString = now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
       const clockEl = document.getElementById('live-ist-clock');
       if (clockEl) clockEl.innerText = `${istString} IST`;
@@ -875,7 +1094,6 @@
       menu.classList.toggle('hidden');
     }
 
-    // Close dropdown on outside click
     document.addEventListener('click', (e) => {
       const menu = document.getElementById('scan-dropdown');
       const btn = document.getElementById('btn-scan-menu');
@@ -910,9 +1128,8 @@
       document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
       document.getElementById(tabId).classList.remove('hidden');
 
-      // Update Desktop Nav styles
       document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('bg-cyan-500/10', 'text-cyan-400', 'border-cyan-500/30', 'bg-violet-500/10', 'text-violet-400', 'border-violet-500/30');
+        btn.classList.remove('bg-cyan-500/10', 'text-cyan-400', 'border-cyan-500/30', 'bg-violet-500/10', 'text-violet-400', 'border-violet-500/30', 'bg-emerald-500/10', 'text-emerald-400', 'border-emerald-500/30');
         btn.classList.add('text-slate-400', 'border-transparent');
       });
 
@@ -920,24 +1137,26 @@
       if (activeBtn) {
         if (tabId === 'tab-p2') {
           activeBtn.classList.add('bg-violet-500/10', 'text-violet-400', 'border-violet-500/30');
+        } else if (tabId === 'tab-charts') {
+          activeBtn.classList.add('bg-emerald-500/10', 'text-emerald-400', 'border-emerald-500/30');
         } else {
           activeBtn.classList.add('bg-cyan-500/10', 'text-cyan-400', 'border-cyan-500/30');
         }
         activeBtn.classList.remove('text-slate-400', 'border-transparent');
       }
 
-      // Update Mobile Nav styles
       document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
-        btn.classList.remove('text-cyan-400', 'text-violet-400');
+        btn.classList.remove('text-cyan-400', 'text-violet-400', 'text-emerald-400');
         btn.classList.add('text-slate-400');
       });
       const mobBtn = document.getElementById(`mob-nav-${tabId.replace('tab-', '')}`);
       if (mobBtn) {
         mobBtn.classList.remove('text-slate-400');
-        mobBtn.classList.add(tabId === 'tab-p2' ? 'text-violet-400' : 'text-cyan-400');
+        mobBtn.classList.add(tabId === 'tab-p2' ? 'text-violet-400' : (tabId === 'tab-charts' ? 'text-emerald-400' : 'text-cyan-400'));
       }
 
       lucide.createIcons();
+      if (tabId === 'tab-charts') loadFetchedStocksData();
       if (tabId === 'tab-signals') renderGlobalSignals();
       if (tabId === 'tab-history') loadHistoryData();
       if (tabId === 'tab-scheduler') loadScanLogs();
@@ -953,6 +1172,7 @@
           loadP1Data(),
           loadP2Data()
         ]);
+        if (currentTab === 'tab-charts') await loadFetchedStocksData();
       } catch (e) {
         console.error("Error refreshing data:", e);
       } finally {
@@ -998,23 +1218,28 @@
       if (nextScanEl) nextScanEl.innerText = `Next: ${nextText}`;
       if (mobNextEl) mobNextEl.innerText = `Next: ${nextText}`;
 
-      // Telegram Cloud Vault Telemetry
+      // Telegram Cloud Vault Telemetry (Single Master File)
       const v = data.telegram_vault || {};
       const vBot = document.getElementById('vault-bot-status');
       const vCount = document.getElementById('vault-ohlcv-count');
       const vDate = document.getElementById('vault-ohlcv-date');
       const vDbTime = document.getElementById('vault-db-time');
-      if (vBot) vBot.innerText = v.enabled ? "CONNECTED (Auto-Restore Ready)" : "DISABLED";
-      if (vCount) vCount.innerText = `${v.local_ohlcv_files || 0} Stocks`;
+      const badgeMaster = document.getElementById('badge-master-stocks');
+      const masterLbl = document.getElementById('master-total-stocks-label');
+
+      const totalStocks = v.local_ohlcv_files || v.local_ohlcv_stocks || 0;
+      if (vBot) vBot.innerText = v.enabled ? `SINGLE MASTER FILE (${v.master_file_size_mb || 0} MB)` : "DISABLED";
+      if (vCount) vCount.innerText = `${totalStocks} Stocks`;
       if (vDate) vDate.innerText = `Latest Bar: ${v.latest_bar_date || 'N/A'}`;
       if (vDbTime) vDbTime.innerText = v.last_db_backup_ist || "Synced";
+      if (badgeMaster && totalStocks > 0) badgeMaster.innerText = totalStocks;
+      if (masterLbl && totalStocks > 0) masterLbl.innerText = totalStocks.toLocaleString('en-IN');
     }
 
     // -------------------------------------------------------------------------
     // PORTFOLIO 1 DATA
     // -------------------------------------------------------------------------
     async function loadP1Data() {
-      // Summary
       const sumRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/summary');
       if (sumRes.ok) {
         const sum = await sumRes.json();
@@ -1042,14 +1267,12 @@
         document.getElementById('p1-kpi-ratio').innerText = `Avg Win: +${st.avg_win_r || 0}R | Loss: ${st.avg_loss_r || 0}R`;
       }
 
-      // Positions
       const posRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/positions');
       if (posRes.ok) {
         const positions = await posRes.json();
         renderP1Positions(positions);
       }
 
-      // Signals
       const sigRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/signals');
       if (sigRes.ok) {
         p1SignalsCache = await sigRes.json();
@@ -1075,7 +1298,7 @@
       if (!tbody) return;
 
       if (!positions || positions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 1. Trades execute strictly during NSE market hours (09:15 AM – 03:30 PM IST).</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 1. Click any Signal below to view its Candlestick Chart with Stop-Loss & Targets.</td></tr>`;
         return;
       }
 
@@ -1088,7 +1311,7 @@
         return `
           <tr class="hover:bg-slate-800/30 transition">
             <td class="p-3.5 font-bold text-white flex items-center gap-1.5">
-              <span>${p.symbol}</span>
+              <button onclick="openStockChartModal('${p.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">${p.symbol}</button>
               <span class="text-[10px] px-1 rounded bg-slate-800 text-slate-400 font-normal">${p.sector || 'NSE'}</span>
             </td>
             <td class="p-3.5 text-slate-300 text-[11px] font-mono">${p.entry_date || '-'}</td>
@@ -1113,8 +1336,9 @@
               ${p.current_r >= 0 ? '+' : ''}${(p.current_r || 0).toFixed(2)} R
             </td>
             <td class="p-3.5">${t1Badge}</td>
-            <td class="p-3.5 text-right">
-              <button onclick="closePositionModal('${p.symbol}', ${p.current_price || p.entry_price})" class="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] transition">Close</button>
+            <td class="p-3.5 text-right space-x-1">
+              <button onclick="openStockChartModal('${p.symbol}')" class="px-2 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[11px] transition">📈 Chart & SL</button>
+              <button onclick="closePositionModal('${p.symbol}', ${p.current_price || p.entry_price})" class="px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] transition">Close</button>
             </td>
           </tr>
         `;
@@ -1139,7 +1363,7 @@
         return `
           <tr class="hover:bg-slate-800/30 transition">
             <td class="p-3 font-bold text-white">
-              <div>${s.symbol}</div>
+              <button onclick="openStockChartModal('${s.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4 text-left">${s.symbol}</button>
               <div class="text-[10px] text-slate-400 font-normal">${s.sector || 'EQUITY'}</div>
             </td>
             <td class="p-3">
@@ -1156,8 +1380,9 @@
             </td>
             <td class="p-3">${s.shares || 0} shs</td>
             <td class="p-3 text-purple-300 font-mono">₹${(s.capital_at_risk || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
-            <td class="p-3 text-right">
-              ${s.bucket === 'BUY_NOW' ? `<button onclick="executeSignalOrder('${s.symbol}', ${s.entry}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2})" class="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[10px] transition">Buy CNC</button>` : `<span class="text-slate-600 text-[10px]">-</span>`}
+            <td class="p-3 text-right space-x-1 whitespace-nowrap">
+              <button onclick="openStockChartModal('${s.symbol}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[10px] transition">📈 Chart</button>
+              ${s.bucket === 'BUY_NOW' ? `<button onclick="executeSignalOrder('${s.symbol}', ${s.entry || s.close}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2}, 'INSTITUTIONAL_6PILLAR')" class="px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[10px] transition">Buy CNC</button>` : ``}
             </td>
           </tr>
         `;
@@ -1182,7 +1407,6 @@
     // PORTFOLIO 2 DATA
     // -------------------------------------------------------------------------
     async function loadP2Data() {
-      // Summary
       const sumRes = await fetch('/api/portfolio/NIFTY500_MOMENTUM/summary');
       if (sumRes.ok) {
         const sum = await sumRes.json();
@@ -1204,7 +1428,6 @@
         pnlEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
         document.getElementById('p2-kpi-winrate').innerText = `Win Rate: ${st.win_rate || 0}%`;
 
-        // Regime banner
         const isBull = (sum.macro_regime || "").includes("BULL");
         const rText = document.getElementById('p2-regime-text');
         const rDesc = document.getElementById('p2-regime-desc');
@@ -1225,14 +1448,12 @@
         }
       }
 
-      // Positions
       const posRes = await fetch('/api/portfolio/NIFTY500_MOMENTUM/positions');
       if (posRes.ok) {
         const positions = await posRes.json();
         renderP2Positions(positions);
       }
 
-      // Signals
       const sigRes = await fetch('/api/portfolio/NIFTY500_MOMENTUM/signals');
       if (sigRes.ok) {
         p2SignalsCache = await sigRes.json();
@@ -1260,7 +1481,9 @@
 
         return `
           <tr class="hover:bg-slate-800/30 transition">
-            <td class="p-3.5 font-bold text-white">${p.symbol}</td>
+            <td class="p-3.5 font-bold text-white">
+              <button onclick="openStockChartModal('${p.symbol}')" class="hover:text-violet-400 underline decoration-violet-500/40 underline-offset-4">${p.symbol}</button>
+            </td>
             <td class="p-3.5 text-slate-300 text-[11px] font-mono">${p.entry_date || '-'}</td>
             <td class="p-3.5">
               <div>₹${p.entry_price.toFixed(2)}</div>
@@ -1278,8 +1501,9 @@
             </td>
             <td class="p-3.5 text-slate-300">${p.hold_days || 0} / 8 days</td>
             <td class="p-3.5">${stateBadge}</td>
-            <td class="p-3.5 text-right">
-              <button onclick="closePositionModal('${p.symbol}', ${p.current_price || p.entry_price})" class="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] transition">Close</button>
+            <td class="p-3.5 text-right space-x-1">
+              <button onclick="openStockChartModal('${p.symbol}')" class="px-2 py-1 rounded bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-[11px] transition">📈 Chart & SL</button>
+              <button onclick="closePositionModal('${p.symbol}', ${p.current_price || p.entry_price})" class="px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] transition">Close</button>
             </td>
           </tr>
         `;
@@ -1298,7 +1522,9 @@
       tbody.innerHTML = signals.map(s => {
         return `
           <tr class="hover:bg-slate-800/30 transition">
-            <td class="p-3 font-bold text-white">${s.symbol}</td>
+            <td class="p-3 font-bold text-white">
+              <button onclick="openStockChartModal('${s.symbol}')" class="hover:text-violet-400 underline decoration-violet-500/40 underline-offset-4">${s.symbol}</button>
+            </td>
             <td class="p-3 font-semibold text-slate-200">₹${(s.close || 0).toFixed(2)}</td>
             <td class="p-3 text-emerald-400 font-bold">+${(s.rs_spread || 0).toFixed(1)}%</td>
             <td class="p-3 text-cyan-300">${(s.rsi14 || 0).toFixed(1)}</td>
@@ -1307,12 +1533,325 @@
             <td class="p-3">${s.shares || 0} shs</td>
             <td class="p-3 text-slate-300">₹${((s.shares || 0) * (s.close || 0)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
             <td class="p-3 text-rose-300">₹${(s.capital_at_risk || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
-            <td class="p-3 text-right">
-              <button onclick="executeSignalOrder('${s.symbol}', ${s.close}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2}, 'NIFTY500_MOMENTUM')" class="px-2.5 py-1 rounded bg-violet-600 hover:bg-violet-500 text-white font-bold text-[10px] transition">Execute MOC</button>
+            <td class="p-3 text-right space-x-1 whitespace-nowrap">
+              <button onclick="openStockChartModal('${s.symbol}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-violet-300 text-[10px] transition">📈 Chart</button>
+              <button onclick="executeSignalOrder('${s.symbol}', ${s.close}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2 || 0}, 'NIFTY500_MOMENTUM')" class="px-2 py-1 rounded bg-violet-600 hover:bg-violet-500 text-white font-bold text-[10px] transition">Execute MOC</button>
             </td>
           </tr>
         `;
       }).join('');
+    }
+
+    // -------------------------------------------------------------------------
+    // MASTER FILE FETCHED STOCKS EXPLORER & INTERACTIVE CANDLESTICK CHARTS
+    // -------------------------------------------------------------------------
+    async function loadFetchedStocksData() {
+      try {
+        const res = await fetch('/api/stocks/fetched?limit=1050');
+        if (!res.ok) return;
+        const data = await res.json();
+        fetchedStocksCache = data.stocks || [];
+        const total = data.total_in_master_file || fetchedStocksCache.length;
+
+        const badge = document.getElementById('badge-master-stocks');
+        const lbl = document.getElementById('master-total-stocks-label');
+        const updTag = document.getElementById('fetched-last-updated-tag');
+        if (badge) badge.innerText = total;
+        if (lbl) lbl.innerText = total.toLocaleString('en-IN');
+        if (updTag) updTag.innerText = `Latest Bar Date: ${data.latest_bar_date || '--'} • Master File Updated: ${data.last_updated || '--'}`;
+
+        filterFetchedStocks();
+      } catch (e) {
+        console.error("Failed loading fetched stocks:", e);
+      }
+    }
+
+    function filterFetchedStocks() {
+      const q = (document.getElementById('fetched-search-input')?.value || "").trim().toUpperCase();
+      const mode = document.getElementById('fetched-filter-select')?.value || "ALL";
+
+      let list = fetchedStocksCache;
+      if (q) {
+        list = list.filter(r => r.symbol.includes(q));
+      }
+      if (mode === 'GAINERS') {
+        list = list.filter(r => (r.change_pct || 0) > 0);
+      } else if (mode === 'BULL_EMA') {
+        list = list.filter(r => (r.last_close || 0) > (r.ema50 || 0));
+      } else if (mode === 'RSI_STRONG') {
+        list = list.filter(r => (r.rsi14 || 0) >= 55 && (r.rsi14 || 0) <= 75);
+      }
+
+      const cntEl = document.getElementById('fetched-shown-count');
+      if (cntEl) cntEl.innerText = list.length;
+
+      const tbody = document.getElementById('fetched-stocks-tbody');
+      if (!tbody) return;
+
+      if (list.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-500 font-sans">No matching stocks found in Single Master File.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = list.slice(0, 400).map(r => {
+        const chg = r.change_pct || 0;
+        const chgClass = chg >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        const chgSign = chg >= 0 ? '+' : '';
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="p-3 font-bold text-white">
+              <button onclick="openStockChartModal('${r.symbol}')" class="hover:text-emerald-400 underline decoration-emerald-500/40 underline-offset-4">${r.symbol}</button>
+            </td>
+            <td class="p-3 text-slate-400">${r.last_bar_date || '-'}</td>
+            <td class="p-3 font-bold text-white">₹${(r.last_close || 0).toFixed(2)}</td>
+            <td class="p-3 font-bold ${chgClass}">${chgSign}${chg.toFixed(2)}%</td>
+            <td class="p-3 text-slate-300">${(r.last_volume || 0).toLocaleString('en-IN')}</td>
+            <td class="p-3 text-[11px]">
+              <span class="text-cyan-400">${(r.ema20 || 0).toFixed(0)}</span> /
+              <span class="text-amber-400">${(r.ema50 || 0).toFixed(0)}</span> /
+              <span class="text-violet-400">${(r.ema200 || 0).toFixed(0)}</span>
+            </td>
+            <td class="p-3 ${r.rsi14 >= 60 ? 'text-emerald-400 font-bold' : 'text-slate-300'}">${(r.rsi14 || 0).toFixed(1)}</td>
+            <td class="p-3 text-slate-300">₹${(r.atr14 || 0).toFixed(2)}</td>
+            <td class="p-3 text-rose-400 font-semibold">₹${(r.auto_sl || 0).toFixed(2)}</td>
+            <td class="p-3">
+              <span class="text-amber-400">₹${(r.auto_t1 || 0).toFixed(0)}</span> /
+              <span class="text-emerald-400">₹${(r.auto_t2 || 0).toFixed(0)}</span>
+            </td>
+            <td class="p-3 text-slate-400">${r.bars_count || 0}d</td>
+            <td class="p-3 text-right">
+              <button onclick="openStockChartModal('${r.symbol}')" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-bold text-[11px] transition">
+                📈 Chart & OHLCV
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function openStockChartModal(symbol, bars = 260) {
+      currentChartSymbol = symbol;
+      const modal = document.getElementById('chart-modal');
+      if (modal) modal.classList.remove('hidden');
+
+      document.getElementById('modal-chart-symbol').innerText = `${symbol} (Loading...)`;
+      try {
+        const res = await fetch(`/api/stocks/${encodeURIComponent(symbol)}/chart?bars=${bars}`);
+        if (!res.ok) {
+          showToast(`Failed to load chart for ${symbol}`, "error");
+          return;
+        }
+        const payload = await res.json();
+        if (payload.status !== "OK") {
+          showToast(payload.message || `No data found for ${symbol}`, "error");
+          return;
+        }
+        currentChartPayload = payload;
+        renderLightweightChartAndTable(payload);
+      } catch (e) {
+        showToast(`Chart error: ${e.message}`, "error");
+      }
+    }
+
+    function closeStockChartModal() {
+      const modal = document.getElementById('chart-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function setChartRange(bars) {
+      if (currentChartSymbol) {
+        openStockChartModal(currentChartSymbol, bars);
+      }
+    }
+
+    function renderLightweightChartAndTable(payload) {
+      const sym = payload.symbol;
+      const latest = payload.latest || {};
+      const lvls = payload.trade_levels || {};
+      const candles = payload.candles || [];
+
+      document.getElementById('modal-chart-symbol').innerText = sym;
+      document.getElementById('modal-chart-price').innerText = `₹${(latest.close || 0).toFixed(2)}`;
+      const chg = latest.change_pct || 0;
+      const chgEl = document.getElementById('modal-chart-chg');
+      chgEl.innerText = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`;
+      chgEl.className = `text-xs font-mono px-2 py-0.5 rounded ${chg >= 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`;
+
+      document.getElementById('modal-chart-source').innerText = lvls.source || 'ATR SWING STRUCTURE';
+      document.getElementById('lvl-entry').innerText = `₹${(lvls.entry_price || 0).toFixed(2)}`;
+      document.getElementById('lvl-sl').innerText = `₹${(lvls.stop_loss || 0).toFixed(2)} (${lvls.sl_pct || 0}%)`;
+      document.getElementById('lvl-t1').innerText = `₹${(lvls.target_1 || 0).toFixed(2)} (+${lvls.t1_pct || 0}%)`;
+      document.getElementById('lvl-t2').innerText = `₹${(lvls.target_2 || 0).toFixed(2)} (+${lvls.t2_pct || 0}%)`;
+      document.getElementById('lvl-rsi-atr').innerText = `RSI: ${latest.rsi14 || 0} | ATR: ₹${latest.atr14 || 0}`;
+      document.getElementById('lvl-rr').innerText = `T1: 1:${lvls.rr_t1 || 1.5} | T2: 1:${lvls.rr_t2 || 3.0}`;
+      document.getElementById('modal-bars-count').innerText = candles.length;
+
+      // Render Lightweight Chart
+      const container = document.getElementById('tv-chart-container');
+      container.innerHTML = '';
+
+      if (typeof LightweightCharts !== 'undefined' && candles.length > 0) {
+        tvChart = LightweightCharts.createChart(container, {
+          width: container.clientWidth,
+          height: container.clientHeight || 400,
+          layout: {
+            background: { type: 'solid', color: '#070a13' },
+            textColor: '#94a3b8',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 11
+          },
+          grid: {
+            vertLines: { color: '#1e293b' },
+            horzLines: { color: '#1e293b' }
+          },
+          crosshair: {
+            mode: LightweightCharts.CrosshairMode.Normal
+          },
+          rightPriceScale: {
+            borderColor: '#334155',
+            scaleMargins: { top: 0.08, bottom: 0.22 }
+          },
+          timeScale: {
+            borderColor: '#334155',
+            timeVisible: true
+          }
+        });
+
+        const candleSeries = tvChart.addCandlestickSeries({
+          upColor: '#10b981',
+          downColor: '#f43f5e',
+          borderDownColor: '#f43f5e',
+          borderUpColor: '#10b981',
+          wickDownColor: '#f43f5e',
+          wickUpColor: '#10b981'
+        });
+
+        candleSeries.setData(candles.map(c => ({
+          time: c.time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close
+        })));
+
+        // EMA 20, 50, 200 Line Series
+        const ema20Series = tvChart.addLineSeries({ color: '#06b6d4', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+        const ema50Series = tvChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+        const ema200Series = tvChart.addLineSeries({ color: '#8b5cf6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+
+        ema20Series.setData(candles.map(c => ({ time: c.time, value: c.ema20 })));
+        ema50Series.setData(candles.map(c => ({ time: c.time, value: c.ema50 })));
+        ema200Series.setData(candles.map(c => ({ time: c.time, value: c.ema200 })));
+
+        // Volume Histogram
+        const volumeSeries = tvChart.addHistogramSeries({
+          priceFormat: { type: 'volume' },
+          priceScaleId: ''
+        });
+        volumeSeries.priceScale().applyOptions({
+          scaleMargins: { top: 0.82, bottom: 0 }
+        });
+        volumeSeries.setData(candles.map(c => ({
+          time: c.time,
+          value: c.volume,
+          color: c.close >= c.open ? 'rgba(16, 185, 129, 0.35)' : 'rgba(244, 63, 94, 0.35)'
+        })));
+
+        // Horizontal Price Lines for Entry, Stop Loss, Target 1, Target 2
+        if (lvls.entry_price) {
+          candleSeries.createPriceLine({
+            price: lvls.entry_price,
+            color: '#06b6d4',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Solid,
+            axisLabelVisible: true,
+            title: `⚡ ENTRY ₹${lvls.entry_price}`
+          });
+        }
+        if (lvls.stop_loss) {
+          candleSeries.createPriceLine({
+            price: lvls.stop_loss,
+            color: '#f43f5e',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Solid,
+            axisLabelVisible: true,
+            title: `🛑 STOP LOSS ₹${lvls.stop_loss} (${lvls.sl_pct}%)`
+          });
+        }
+        if (lvls.target_1) {
+          candleSeries.createPriceLine({
+            price: lvls.target_1,
+            color: '#f59e0b',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `🎯 TARGET 1 ₹${lvls.target_1} (+${lvls.t1_pct}%)`
+          });
+        }
+        if (lvls.target_2) {
+          candleSeries.createPriceLine({
+            price: lvls.target_2,
+            color: '#10b981',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `🚀 TARGET 2 ₹${lvls.target_2} (+${lvls.t2_pct}%)`
+          });
+        }
+
+        // Crosshair HUD
+        const candleMap = {};
+        candles.forEach(c => { candleMap[c.time] = c; });
+        tvChart.subscribeCrosshairMove(param => {
+          if (!param || !param.time || !candleMap[param.time]) return;
+          const b = candleMap[param.time];
+          const hud = document.getElementById('modal-crosshair-hud');
+          if (hud) {
+            hud.innerHTML = `<span class="text-white font-bold">${b.time}</span> • O: ₹${b.open} • H: ₹${b.high} • L: ₹${b.low} • C: <span class="${b.change_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">₹${b.close} (${b.change_pct >= 0 ? '+' : ''}${b.change_pct}%)</span> • Vol: ${b.volume.toLocaleString('en-IN')} • EMA20: ₹${b.ema20} • EMA50: ₹${b.ema50} • RSI: ${b.rsi14}`;
+          }
+        });
+
+        tvChart.timeScale().fitContent();
+      }
+
+      // Render OHLCV Table (Most recent first)
+      const tbody = document.getElementById('modal-ohlcv-tbody');
+      if (tbody) {
+        const rev = [...candles].reverse();
+        tbody.innerHTML = rev.slice(0, 120).map(c => {
+          const cls = c.change_pct >= 0 ? 'text-emerald-400' : 'text-rose-400';
+          return `
+            <tr class="hover:bg-slate-800/40">
+              <td class="p-2 text-slate-300">${c.time}</td>
+              <td class="p-2">₹${c.open.toFixed(2)}</td>
+              <td class="p-2 text-emerald-300">₹${c.high.toFixed(2)}</td>
+              <td class="p-2 text-rose-300">₹${c.low.toFixed(2)}</td>
+              <td class="p-2 font-bold text-white">₹${c.close.toFixed(2)}</td>
+              <td class="p-2 font-bold ${cls}">${c.change_pct >= 0 ? '+' : ''}${c.change_pct.toFixed(2)}%</td>
+              <td class="p-2 text-slate-300">${c.volume.toLocaleString('en-IN')}</td>
+              <td class="p-2 text-cyan-400">₹${c.ema20.toFixed(2)}</td>
+              <td class="p-2 text-amber-400">₹${c.ema50.toFixed(2)}</td>
+              <td class="p-2 text-purple-300">${c.rsi14.toFixed(1)}</td>
+              <td class="p-2 text-slate-400">₹${c.atr14.toFixed(2)}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+      lucide.createIcons();
+    }
+
+    function downloadCurrentStockCsv() {
+      if (!currentChartPayload || !currentChartPayload.candles) return;
+      const rows = [["Date", "Open", "High", "Low", "Close", "ChangePct", "Volume", "EMA20", "EMA50", "EMA200", "RSI14", "ATR14"]];
+      currentChartPayload.candles.forEach(c => {
+        rows.push([c.time, c.open, c.high, c.low, c.close, c.change_pct, c.volume, c.ema20, c.ema50, c.ema200, c.rsi14, c.atr14]);
+      });
+      const csv = rows.map(r => r.join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${currentChartPayload.symbol}_OHLCV_MasterData.csv`;
+      a.click();
     }
 
     // -------------------------------------------------------------------------
@@ -1350,7 +1889,9 @@
 
         return `
           <tr class="hover:bg-slate-800/30 transition">
-            <td class="p-3 font-bold text-white">${s.symbol}</td>
+            <td class="p-3 font-bold text-white">
+              <button onclick="openStockChartModal('${s.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">${s.symbol}</button>
+            </td>
             <td class="p-3 text-[11px] text-slate-400">${s.p_label}</td>
             <td class="p-3 text-slate-400">${s.sector || 'NSE'}</td>
             <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${bStyle}">${s.bucket}</span></td>
@@ -1362,7 +1903,8 @@
             <td class="p-3">${(s.rsi14 || 0).toFixed(1)}</td>
             <td class="p-3">${s.week_confluence ? '<span class="text-emerald-400 font-bold">YES</span>' : '<span class="text-slate-600">NO</span>'}</td>
             <td class="p-3 text-right">
-              ${s.shares || 0} shs (₹${(s.capital_at_risk || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} risk)
+              <button onclick="openStockChartModal('${s.symbol}')" class="px-2 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[10px] mr-1">📈 Chart & SL</button>
+              <span>${s.shares || 0} shs</span>
             </td>
           </tr>
         `;
@@ -1394,7 +1936,9 @@
 
         return `
           <tr class="hover:bg-slate-800/30 transition">
-            <td class="p-3 font-bold text-white">${t.symbol}</td>
+            <td class="p-3 font-bold text-white">
+              <button onclick="openStockChartModal('${t.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">${t.symbol}</button>
+            </td>
             <td class="p-3 text-[11px] text-slate-400">${t.portfolio_type.includes('NIFTY') ? 'P2 (Nifty 500)' : 'P1 (6-Pillar)'}</td>
             <td class="p-3 text-slate-300 text-[11px] font-mono">${t.entry_date || '-'}</td>
             <td class="p-3">₹${t.entry_price.toFixed(2)}</td>
@@ -1468,8 +2012,8 @@
         const btnP1Text = document.getElementById('btn-p1-scan-text');
         const chartinkKpiEl = document.getElementById('p1-kpi-chartink');
 
-        if (prog.chartink_count > 0 && chartinkKpiEl) {
-          chartinkKpiEl.innerText = `${prog.chartink_count} Stocks`;
+        if (prog.chartink_fetched_count > 0 && chartinkKpiEl) {
+          chartinkKpiEl.innerText = `${prog.chartink_fetched_count} Stocks`;
         }
 
         if (prog.is_running) {
@@ -1485,8 +2029,7 @@
           if (barEl) barEl.style.width = `${prog.percent || 5}%`;
           if (counterEl) {
             if (prog.stocks_total > 0) {
-              const gapInfo = prog.gap_filled > 0 ? ` (${prog.gap_filled} gap-filled, ${prog.cache_hits || 0} cached)` : '';
-              counterEl.innerText = `${prog.stocks_done || 0} / ${prog.stocks_total} Stocks${gapInfo}`;
+              counterEl.innerText = `${prog.stocks_done || 0} / ${prog.stocks_total} Stocks`;
             } else {
               counterEl.innerText = "Connecting to Screener...";
             }
@@ -1518,7 +2061,7 @@
               logFeedEl.innerHTML = prog.logs.map(line => `<div>${line}</div>`).join('');
               logFeedEl.scrollTop = logFeedEl.scrollHeight;
             }
-            showToast(prog.stage || "Scan completed! Updating dashboard...", 'success');
+            showToast(prog.stage || "Scan completed! Updating Master File...", 'success');
             await refreshAllData();
             if (currentTab === 'tab-scheduler') loadScanLogs();
           }
@@ -1532,7 +2075,6 @@
       document.getElementById('scan-dropdown').classList.add('hidden');
       const autoExec = document.getElementById('chk-auto-exec')?.checked || false;
 
-      // Immediately show live scan banner
       const banner = document.getElementById('live-scan-banner');
       if (banner) banner.classList.remove('hidden');
       document.getElementById('scan-stage-text').innerText = `Connecting live to screener for ${scanType}...`;
@@ -1572,7 +2114,7 @@
         });
         const data = await res.json();
         if (res.ok && data.status === 'closed') {
-          showToast(`Position in ${symbol} closed successfully.`, 'success');
+          showToast(`Position in ${symbol} closed & saved to Single Master File!`, 'success');
           refreshAllData();
         } else {
           showToast(data.message || data.detail || "Blocked by Strict Market-Hours Trading Gate (09:15-15:30 IST).", 'error');
@@ -1583,20 +2125,41 @@
     }
 
     async function executeSignalOrder(symbol, entry, shares, sl, t1, t2, pType = 'INSTITUTIONAL_6PILLAR') {
-      showToast(`Executing order for ${symbol} (${shares} shares @ ₹${entry})...`, 'info');
-      // Triggers scan with auto_execute
-      triggerScan(pType.includes('NIFTY') ? 'NIFTY500' : 'INSTITUTIONAL');
+      try {
+        const res = await fetch('/api/position/open', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: symbol,
+            entry_price: entry,
+            quantity: shares || 1,
+            stop_loss: sl,
+            target: t1,
+            target_2: t2 || 0,
+            portfolio_type: pType
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'opened') {
+          showToast(`Trade opened for ${symbol} at ${data.timestamp} & synced to Single Master File!`, 'success');
+          await refreshAllData();
+        } else {
+          showToast(data.detail || "Order blocked by Strict Market-Hours Trading Gate (09:15-15:30 IST).", 'error');
+        }
+      } catch (e) {
+        showToast(`Order execution error: ${e.message}`, 'error');
+      }
     }
 
     // -------------------------------------------------------------------------
-    // TELEGRAM CLOUD VAULT & PORTFOLIO PNL RESET ACTIONS
+    // SINGLE MASTER FILE TELEGRAM CLOUD VAULT & PORTFOLIO PNL RESET ACTIONS
     // -------------------------------------------------------------------------
     async function syncVaultToCloud() {
-      showToast("Uploading SQLite Trade DB & 2-Year OHLCV Cache to Telegram Cloud Vault...", "info");
+      showToast("Uploading Single Master File (All Trades + 1,010 Stocks OHLCV) to Telegram Cloud Vault...", "info");
       try {
         const res = await fetch('/api/vault/sync', { method: 'POST' });
         const data = await res.json();
-        showToast(data.message || "Telegram Cloud Vault sync triggered!", "success");
+        showToast(data.message || "Single Master File cloud sync triggered!", "success");
         setTimeout(loadSystemStatus, 4000);
       } catch (e) {
         showToast(`Vault sync error: ${e.message}`, "error");
@@ -1604,12 +2167,12 @@
     }
 
     async function restoreVaultFromCloud() {
-      if (!confirm("Restore SQLite Trade DB and OHLCV Historical Cache from Telegram Cloud Vault?")) return;
-      showToast("Restoring DB & OHLCV Cache from Telegram Cloud Vault...", "info");
+      if (!confirm("Restore Single Master File (Trades + OHLCV Data) from Telegram Cloud Vault?")) return;
+      showToast("Restoring Single Master File from Telegram Cloud Vault...", "info");
       try {
         const res = await fetch('/api/vault/restore', { method: 'POST' });
         const data = await res.json();
-        showToast(`Restored! DB: ${data.db_restored ? 'YES' : 'NO'}, OHLCV Cache: ${data.ohlcv_restored ? 'YES' : 'NO'}`, "success");
+        showToast(`Single Master File Restored! Status: ${data.status}`, "success");
         await refreshAllData();
       } catch (e) {
         showToast(`Vault restore error: ${e.message}`, "error");
@@ -1618,7 +2181,7 @@
 
     async function resetPortfolioModal(pType) {
       const label = pType ? pType : "ALL PORTFOLIOS (P1 & P2)";
-      if (!confirm(`Are you sure you want to reset ${label} PnL & trade history to ₹0.00 and sync to Telegram Cloud Vault?`)) return;
+      if (!confirm(`Are you sure you want to reset ${label} PnL & trade history to ₹0.00 in the Single Master File?`)) return;
       try {
         const res = await fetch('/api/portfolio/reset', {
           method: 'POST',

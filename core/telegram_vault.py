@@ -1,171 +1,102 @@
 """
 ========================================================================================
-Telegram Cloud Storage Vault — Trade DB + Historical OHLCV Cache Persistence
+Telegram Cloud Master Vault (`core/telegram_vault.py`)
 ========================================================================================
-Ensures 100% zero data loss across Render container restarts / spin-downs by syncing:
-1. SQLite Trade Database (`data/swing_trades.db` -> `swing_trades_latest.db.gz`)
-   - Active Positions, Closed Trade History, Signals, Scan Execution Logs
-2. Historical 2-Year OHLCV Cache (`data/historical_data/*.pkl` -> `ohlcv_cache_vault.pkl.gz`)
-   - Compact float32 compressed bundle (~2-4 MB for 800+ stocks x 500 daily bars)
-   - Supports Smart Incremental Gap-Filling: on cold boot or scan, restores cached OHLCV
-     from Telegram Cloud and fetches only the missing delta bars up to today's date.
-3. Cloud Pinned Index Pointer (`pinChatMessage` + `getChat`):
-   - Stores `db_file_id` and `ohlcv_file_id` in the Telegram chat's pinned message so
-     cold-boot containers can always discover and download the latest snapshots even if
-     local disk is wiped and `getUpdates` 24h window has expired.
+Backs up and restores the SINGLE MASTER FILE (`data/swing_trades.db`) containing:
+1. All Active Positions & Closed Trade History (with full YYYY-MM-DD HH:MM:SS IST timestamps)
+2. All 800+ Stocks' 2-Year Historical OHLCV Bars (`ohlcv_master_store`)
+3. All Screened Signals, Scan Logs & System Snapshots (`latest_signals`, `system_kv_store`)
+
+Whenever Render restarts or cold-boots, `auto_restore_on_cold_boot()` retrieves the pinned
+`#VAULT_INDEX_JSON:...` message from Telegram and restores the entire Single Master File (`swing_trades.db`).
 ========================================================================================
 """
-
 import os
-import io
-import json
-import time
 import gzip
+import json
 import shutil
-import pickle
 import sqlite3
-import hashlib
 import logging
 import tempfile
-import datetime
 import threading
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Optional
 
 import requests
-import pandas as pd
-import numpy as np
 
-from core.data_quality import IST, now_ist, format_ist
 from core.config import (
-    DATA_DIR, HISTORICAL_DATA_DIR, DB_PATH,
-    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-    VAULT_MANIFEST_PATH, VAULT_CONFIG_PATH
+    DB_PATH,
+    TELEGRAM_BOT_TOKEN,
+    TELEGRAM_CHAT_ID,
 )
+from core.data_quality import format_ist
 
 logger = logging.getLogger("TelegramVault")
 
 
 class TelegramVaultManager:
     """
-    Manages two-way cloud synchronization of both SQLite Trade State and
-    Historical 2-Year OHLCV DataFrames via Telegram Bot API.
+    Manages zero-data-loss cloud persistence of the Single Master File (`data/swing_trades.db`)
+    to Telegram Cloud (`quant_master_vault.db.gz`).
     """
 
     def __init__(self):
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        HISTORICAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
 
-    # --------------------------------------------------------------------------
-    # CREDENTIALS & HANDSHAKE
-    # --------------------------------------------------------------------------
     def get_credentials(self) -> Dict[str, Any]:
-        """Retrieves Telegram Bot Token & Chat ID from env, config file, or default."""
-        cfg = {}
-        if VAULT_CONFIG_PATH.exists():
-            try:
-                with open(VAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-            except Exception:
-                cfg = {}
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN).strip()
+        chat_id = os.getenv("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID).strip()
+        enabled = bool(bot_token and chat_id and ":" in bot_token)
 
-        bot_token = (
-            os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-            or str(cfg.get("bot_token", "")).strip()
-            or TELEGRAM_BOT_TOKEN
-        )
-        chat_id = (
-            os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-            or str(cfg.get("chat_id", "")).strip()
-            or TELEGRAM_CHAT_ID
-        )
-        enabled = cfg.get("enabled", True)
+        masked_token = f"{bot_token[:6]}...{bot_token[-4:]}" if len(bot_token) > 12 else "NOT_SET"
+        masked_chat = f"{chat_id[:3]}...{chat_id[-3:]}" if len(chat_id) > 5 else chat_id
 
         return {
+            "enabled": enabled,
             "bot_token": bot_token,
             "chat_id": chat_id,
-            "enabled": bool(enabled and bot_token and chat_id),
-            "token_masked": f"{bot_token[:6]}...{bot_token[-4:]}" if len(bot_token) > 12 else ("Set" if bot_token else "Not Set"),
-            "chat_id_masked": str(chat_id)
+            "token_masked": masked_token,
+            "chat_id_masked": masked_chat
         }
 
-    def save_credentials(self, bot_token: str, chat_id: str, enabled: bool = True) -> Dict[str, Any]:
-        """Saves custom Telegram credentials to data/vault_config.json."""
-        payload = {
-            "bot_token": str(bot_token).strip(),
-            "chat_id": str(chat_id).strip(),
-            "enabled": bool(enabled),
-            "updated_at": format_ist()
-        }
-        with open(VAULT_CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        return {"status": "SUCCESS", "credentials": self.get_credentials()}
-
-    # --------------------------------------------------------------------------
-    # MANIFEST & CLOUD PINNED INDEX DISCOVERY
-    # --------------------------------------------------------------------------
     def get_manifest(self) -> Dict[str, Any]:
-        """Reads local vault_manifest.json or returns empty structure."""
+        from execution.state_engine import state_engine
         default_manifest = {
-            "last_db_backup": None,
-            "last_ohlcv_backup": None,
+            "last_master_backup": None,
             "history": []
         }
-        if VAULT_MANIFEST_PATH.exists():
-            try:
-                with open(VAULT_MANIFEST_PATH, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    default_manifest.update(data)
-            except Exception:
-                pass
-        return default_manifest
+        m = state_engine.get_kv("vault_manifest", default_manifest)
+        if not isinstance(m, dict):
+            return default_manifest
+        return m
 
-    def _save_manifest(self, manifest: Dict[str, Any]):
-        try:
-            with open(VAULT_MANIFEST_PATH, "w", encoding="utf-8") as f:
-                json.dump(manifest, f, indent=2)
-        except Exception as e:
-            logger.warning(f"Could not write vault_manifest.json: {e}")
+    def _save_manifest(self, manifest: Dict[str, Any]) -> None:
+        from execution.state_engine import state_engine
+        state_engine.set_kv("vault_manifest", manifest)
 
-    def _pin_cloud_index(self):
+    def _pin_cloud_index(self, creds: Dict[str, Any], master_file_id: str, stocks_count: int, latest_bar_date: str) -> None:
         """
-        Sends and pins a compact Cloud Index message in the Telegram chat containing
-        the latest `db_file_id` and `ohlcv_file_id` JSON metadata.
-        On Render cold-boot, `getChat(chat_id)` reads `pinned_message` to recover both IDs!
+        Posts and pins a machine-readable `#VAULT_INDEX_JSON:{...}` message in the Telegram chat
+        so Render cold-boots can always discover the latest Single Master File ID via `getChat`.
         """
-        creds = self.get_credentials()
-        if not creds["enabled"]:
+        if not master_file_id:
             return
-
-        manifest = self.get_manifest()
-        db_rec = manifest.get("last_db_backup") or {}
-        ohlcv_rec = manifest.get("last_ohlcv_backup") or {}
-
-        index_payload = {
-            "db_file_id": db_rec.get("file_id"),
-            "db_timestamp": db_rec.get("timestamp"),
-            "ohlcv_file_id": ohlcv_rec.get("file_id"),
-            "ohlcv_timestamp": ohlcv_rec.get("timestamp"),
-            "ohlcv_stocks_count": ohlcv_rec.get("stocks_count", 0),
-            "ohlcv_latest_date": ohlcv_rec.get("latest_bar_date", ""),
-            "updated_at": format_ist()
-        }
-        index_json_str = json.dumps(index_payload)
-
-        text_html = (
-            "📌 <b>QUANT TRADING DESK — CLOUD VAULT MASTER INDEX</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🗄️ <b>Trade DB Snapshot:</b> <code>{db_rec.get('filename', 'None')}</code> ({db_rec.get('timestamp', '--')})\n"
-            f"📊 <b>OHLCV Cloud Cache:</b> <code>{ohlcv_rec.get('stocks_count', 0)} stocks</code> (Up to {ohlcv_rec.get('latest_bar_date', '--')})\n"
-            f"🕒 <b>Synced At:</b> {index_payload['updated_at']}\n\n"
-            f"<code>#VAULT_INDEX_JSON:{index_json_str}</code>"
-        )
-
         try:
+            payload = {
+                "master_file_id": master_file_id,
+                "db_file_id": master_file_id,
+                "stocks_count": stocks_count,
+                "latest_bar_date": latest_bar_date,
+                "updated_at": format_ist()
+            }
+            text = (
+                f"📌 <b>QUANT MASTER VAULT INDEX (DO NOT DELETE)</b>\n"
+                f"Single Master File (Trades + {stocks_count} Stocks OHLCV)\n"
+                f"<code>#VAULT_INDEX_JSON:{json.dumps(payload)}</code>"
+            )
             resp = requests.post(
                 f"https://api.telegram.org/bot{creds['bot_token']}/sendMessage",
-                data={"chat_id": creds["chat_id"], "text": text_html, "parse_mode": "HTML"},
+                data={"chat_id": creds["chat_id"], "text": text, "parse_mode": "HTML"},
                 timeout=12
             ).json()
             if resp.get("ok"):
@@ -176,350 +107,157 @@ class TelegramVaultManager:
                     timeout=10
                 )
         except Exception as e:
-            logger.debug(f"Cloud index pin notice: {e}")
+            logger.debug(f"Could not pin vault index message: {e}")
 
-    def discover_cloud_file_ids(self) -> Dict[str, Optional[str]]:
-        """
-        Discovers the latest `db_file_id` and `ohlcv_file_id` from:
-        1. Telegram `getChat` pinned message (`#VAULT_INDEX_JSON:...`)
-        2. Local `vault_manifest.json`
-        3. Telegram `getUpdates` recent documents
-        """
+    def discover_cloud_master_file_id(self) -> Optional[str]:
+        """Discovers the latest `master_file_id` from local DB or Telegram pinned message."""
         manifest = self.get_manifest()
-        db_id = (manifest.get("last_db_backup") or {}).get("file_id")
-        ohlcv_id = (manifest.get("last_ohlcv_backup") or {}).get("file_id")
+        last_b = manifest.get("last_master_backup") or manifest.get("last_db_backup") or {}
+        if last_b.get("file_id"):
+            return last_b["file_id"]
 
         creds = self.get_credentials()
-        if not creds["bot_token"] or not creds["chat_id"]:
-            return {"db_file_id": db_id, "ohlcv_file_id": ohlcv_id}
+        if not creds["enabled"]:
+            return None
 
-        # Check Telegram getChat pinned_message first (survives container wipes & 24h getUpdates expiry)
         try:
-            chat_res = requests.get(
+            chat_resp = requests.get(
                 f"https://api.telegram.org/bot{creds['bot_token']}/getChat",
                 params={"chat_id": creds["chat_id"]},
                 timeout=12
             ).json()
-            if chat_res.get("ok"):
-                pinned = chat_res.get("result", {}).get("pinned_message") or {}
-                pinned_text = pinned.get("text") or pinned.get("caption") or ""
-                if "#VAULT_INDEX_JSON:" in pinned_text:
-                    json_part = pinned_text.split("#VAULT_INDEX_JSON:", 1)[1].strip()
-                    idx_data = json.loads(json_part)
-                    if idx_data.get("db_file_id"):
-                        db_id = idx_data["db_file_id"]
-                    if idx_data.get("ohlcv_file_id"):
-                        ohlcv_id = idx_data["ohlcv_file_id"]
+            if chat_resp.get("ok"):
+                pinned = chat_resp.get("result", {}).get("pinned_message", {})
+                text = pinned.get("text") or pinned.get("caption") or ""
+                if "#VAULT_INDEX_JSON:" in text:
+                    json_part = text.split("#VAULT_INDEX_JSON:", 1)[1].strip().split("\n")[0]
+                    parsed = json.loads(json_part)
+                    return parsed.get("master_file_id") or parsed.get("db_file_id")
+                doc = pinned.get("document")
+                if doc and doc.get("file_id"):
+                    return doc["file_id"]
         except Exception as e:
-            logger.debug(f"getChat pinned index lookup note: {e}")
-
-        # Fallback to getUpdates if either is still missing
-        if not db_id or not ohlcv_id:
-            try:
-                upd_res = requests.get(
-                    f"https://api.telegram.org/bot{creds['bot_token']}/getUpdates",
-                    timeout=12
-                ).json()
-                if upd_res.get("ok"):
-                    for u in reversed(upd_res.get("result", [])):
-                        msg = u.get("message") or u.get("channel_post") or {}
-                        doc = msg.get("document") or {}
-                        fname = doc.get("file_name", "")
-                        if not db_id and fname.startswith("swing_trades") and (fname.endswith(".db") or fname.endswith(".db.gz")):
-                            db_id = doc.get("file_id")
-                        if not ohlcv_id and fname.startswith("ohlcv_cache_vault") and fname.endswith(".pkl.gz"):
-                            ohlcv_id = doc.get("file_id")
-            except Exception as e:
-                logger.debug(f"getUpdates lookup note: {e}")
-
-        return {"db_file_id": db_id, "ohlcv_file_id": ohlcv_id}
+            logger.debug(f"Error inspecting Telegram pinned message: {e}")
+        return None
 
     # --------------------------------------------------------------------------
-    # 1. SQLITE TRADE DATABASE BACKUP & RESTORE
+    # SINGLE MASTER FILE BACKUP & RESTORE
     # --------------------------------------------------------------------------
-    def backup_db_to_cloud(self, custom_note: str = "Automated State Sync") -> Dict[str, Any]:
-        """Creates an ACID SQLite snapshot, compresses with gzip, and uploads to Telegram Cloud."""
+    def backup_master_file_to_cloud(self, custom_note: str = "Auto Master File Sync") -> Dict[str, Any]:
+        """
+        Creates an ACID-safe SQLite snapshot of the Single Master File (`data/swing_trades.db`),
+        compresses it with gzip (`quant_master_vault.db.gz`), uploads it to Telegram Cloud,
+        and pins the index message.
+        """
+        from execution.state_engine import state_engine
+
         creds = self.get_credentials()
         if not creds["enabled"]:
             return {"status": "SKIPPED", "message": "Telegram Vault not enabled."}
 
-        target_db = Path(DB_PATH)
-        if not target_db.exists():
-            return {"status": "ERROR", "message": "Database file does not exist yet."}
+        if not DB_PATH.exists():
+            return {"status": "ERROR", "message": "Master database file does not exist yet."}
 
-        now = now_ist()
-        ts_slug = now.strftime("%Y%m%d_%H%M%S")
-        date_display = format_ist(now)
-        filename = f"swing_trades_{ts_slug}.db.gz"
+        with self._lock:
+            tmp_db = None
+            tmp_gz = None
+            try:
+                ohlcv_stats = state_engine.get_ohlcv_stats()
+                stocks_cnt = ohlcv_stats.get("stocks_count", 0)
+                latest_bar = ohlcv_stats.get("latest_bar_date", "--")
 
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-            tmp_db_path = Path(tmp.name)
+                with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f_db:
+                    tmp_db = Path(f_db.name)
 
-        try:
-            with self._lock:
-                src_conn = sqlite3.connect(str(target_db), timeout=30.0)
-                dst_conn = sqlite3.connect(str(tmp_db_path))
-                src_conn.backup(dst_conn)
+                # Online ACID backup of the Single Master File
+                src_conn = sqlite3.connect(str(DB_PATH), timeout=30.0)
+                dst_conn = sqlite3.connect(str(tmp_db))
+                with dst_conn:
+                    src_conn.backup(dst_conn)
                 dst_conn.close()
                 src_conn.close()
 
-            with open(tmp_db_path, "rb") as f:
-                raw_bytes = f.read()
+                tmp_gz = Path(str(tmp_db) + ".gz")
+                with open(tmp_db, "rb") as f_in, gzip.open(tmp_gz, "wb", compresslevel=6) as f_out:
+                    shutil.copyfileobj(f_in, f_out)
 
-            gz_bytes = gzip.compress(raw_bytes, compresslevel=6)
-            sha256_hash = hashlib.sha256(gz_bytes).hexdigest()
-            size_kb = round(len(gz_bytes) / 1024.0, 1)
+                size_kb = round(tmp_gz.stat().st_size / 1024.0, 1)
+                ts_str = format_ist()
 
-            # Gather quick counts for caption
-            p1_open, p2_open, closed_cnt = 0, 0, 0
-            try:
-                conn = sqlite3.connect(str(target_db))
-                cur = conn.cursor()
-                for pt, cnt in cur.execute("SELECT portfolio_type, COUNT(*) FROM active_positions GROUP BY portfolio_type").fetchall():
-                    if "NIFTY" in str(pt).upper():
-                        p2_open += cnt
-                    else:
-                        p1_open += cnt
-                row_c = cur.execute("SELECT COUNT(*) FROM trade_history").fetchone()
-                closed_cnt = row_c[0] if row_c else 0
-                conn.close()
-            except Exception:
-                pass
+                caption = (
+                    f"🏛️ <b>QUANT SINGLE MASTER VAULT</b>\n"
+                    f"📝 <b>Trigger:</b> {custom_note}\n"
+                    f"📦 <b>OHLCV Stocks in Master DB:</b> {stocks_cnt} stocks (Latest: {latest_bar})\n"
+                    f"💾 <b>Compressed Master Size:</b> {size_kb} KB\n"
+                    f"🕒 <b>Timestamp:</b> {ts_str}\n"
+                    f"<code>#QUANT_MASTER_VAULT</code>"
+                )
 
-            caption_html = (
-                "💾 <b>QUANT DESK — TRADE DATABASE CLOUD SNAPSHOT</b>\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"📅 <b>Timestamp:</b> {date_display}\n"
-                f"📦 <b>File:</b> <code>{filename}</code> ({size_kb} KB)\n"
-                f"💼 <b>P1 Active:</b> {p1_open} | <b>P2 Active:</b> {p2_open} | <b>Closed Trades:</b> {closed_cnt}\n"
-                f"📝 <b>Trigger:</b> {custom_note}"
-            )
+                with open(tmp_gz, "rb") as doc_file:
+                    resp = requests.post(
+                        f"https://api.telegram.org/bot{creds['bot_token']}/sendDocument",
+                        data={"chat_id": creds["chat_id"], "caption": caption, "parse_mode": "HTML"},
+                        files={"document": ("quant_master_vault.db.gz", doc_file, "application/gzip")},
+                        timeout=90
+                    ).json()
 
-            files = {"document": (filename, io.BytesIO(gz_bytes), "application/gzip")}
-            data = {"chat_id": creds["chat_id"], "caption": caption_html, "parse_mode": "HTML"}
-            resp = requests.post(
-                f"https://api.telegram.org/bot{creds['bot_token']}/sendDocument",
-                data=data,
-                files=files,
-                timeout=60
-            ).json()
+                if not resp.get("ok"):
+                    err = resp.get("description", "Unknown Telegram error")
+                    logger.warning(f"Telegram Master Vault upload failed: {err}")
+                    return {"status": "ERROR", "message": err}
 
-            if not resp.get("ok"):
-                return {"status": "ERROR", "message": f"Telegram upload error: {resp.get('description')}"}
+                file_id = resp["result"]["document"]["file_id"]
+                record = {
+                    "status": "SUCCESS",
+                    "file_id": file_id,
+                    "filename": "quant_master_vault.db.gz",
+                    "stocks_count": stocks_cnt,
+                    "latest_bar_date": latest_bar,
+                    "size_kb": size_kb,
+                    "note": custom_note,
+                    "timestamp": ts_str
+                }
 
-            doc_obj = resp.get("result", {}).get("document", {})
-            file_id = doc_obj.get("file_id")
-            msg_id = resp.get("result", {}).get("message_id")
+                manifest = self.get_manifest()
+                manifest["last_master_backup"] = record
+                manifest["last_db_backup"] = record
+                manifest["last_ohlcv_backup"] = record
+                hist = manifest.get("history", [])
+                hist.insert(0, {"type": "MASTER_VAULT", **record})
+                manifest["history"] = hist[:25]
+                self._save_manifest(manifest)
 
-            record = {
-                "type": "DB",
-                "timestamp": date_display,
-                "filename": filename,
-                "file_id": file_id,
-                "message_id": msg_id,
-                "size_kb": size_kb,
-                "checksum": sha256_hash,
-                "note": custom_note
-            }
-            manifest = self.get_manifest()
-            manifest["last_db_backup"] = record
-            history = manifest.get("history", [])
-            history.insert(0, record)
-            manifest["history"] = history[:30]
-            self._save_manifest(manifest)
-            self._pin_cloud_index()
+                self._pin_cloud_index(creds, file_id, stocks_cnt, latest_bar)
+                logger.info(f"☁️ Single Master File backed up to Telegram Cloud ({stocks_cnt} stocks, {size_kb} KB)")
+                return record
 
-            logger.info(f"☁️ Uploaded SQLite Trade DB backup to Telegram Cloud: {filename} ({size_kb} KB)")
-            return {"status": "SUCCESS", "file_id": file_id, "filename": filename, "size_kb": size_kb, "timestamp": date_display}
-        except Exception as e:
-            logger.error(f"DB cloud backup error: {e}")
-            return {"status": "ERROR", "message": str(e)}
-        finally:
-            if tmp_db_path.exists():
-                try:
-                    tmp_db_path.unlink()
-                except Exception:
-                    pass
+            except Exception as e:
+                logger.error(f"Master Vault backup exception: {e}")
+                return {"status": "ERROR", "message": str(e)}
+            finally:
+                if tmp_db and tmp_db.exists():
+                    tmp_db.unlink(missing_ok=True)
+                if tmp_gz and tmp_gz.exists():
+                    tmp_gz.unlink(missing_ok=True)
 
-    def restore_db_from_cloud(self, file_id: Optional[str] = None) -> Dict[str, Any]:
-        """Downloads and verifies the latest SQLite Trade DB from Telegram Cloud."""
-        creds = self.get_credentials()
-        if not creds["bot_token"]:
-            return {"status": "ERROR", "message": "Telegram Bot Token not configured."}
+    # Aliases so existing callers all write to the Single Master File backup
+    def backup_db_to_cloud(self, custom_note: str = "Trade Update Sync") -> Dict[str, Any]:
+        return self.backup_master_file_to_cloud(custom_note=custom_note)
 
-        target_file_id = file_id or self.discover_cloud_file_ids().get("db_file_id")
-        if not target_file_id:
-            return {"status": "SKIPPED", "message": "No Trade DB backup found in Telegram Cloud."}
-
-        try:
-            meta = requests.get(
-                f"https://api.telegram.org/bot{creds['bot_token']}/getFile",
-                params={"file_id": target_file_id},
-                timeout=15
-            ).json()
-            if not meta.get("ok"):
-                return {"status": "ERROR", "message": f"getFile failed: {meta.get('description')}"}
-
-            file_path = meta["result"]["file_path"]
-            dl = requests.get(f"https://api.telegram.org/file/bot{creds['bot_token']}/{file_path}", timeout=60)
-            if dl.status_code != 200:
-                return {"status": "ERROR", "message": f"HTTP {dl.status_code} downloading DB"}
-
-            raw_bytes = dl.content
-            if raw_bytes[:2] == b"\x1f\x8b":
-                raw_bytes = gzip.decompress(raw_bytes)
-
-            with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-                tmp_path = Path(tmp.name)
-                tmp.write(raw_bytes)
-
-            # Integrity check
-            conn = sqlite3.connect(str(tmp_path))
-            chk = conn.execute("PRAGMA integrity_check;").fetchone()
-            conn.close()
-            if not chk or chk[0] != "ok":
-                tmp_path.unlink(missing_ok=True)
-                return {"status": "ERROR", "message": "Restored DB failed SQLite integrity check."}
-
-            with self._lock:
-                shutil.copy2(tmp_path, DB_PATH)
-            tmp_path.unlink(missing_ok=True)
-
-            size_kb = round(len(raw_bytes) / 1024.0, 1)
-            logger.info(f"✅ Restored Trade DB from Telegram Cloud ({size_kb} KB)")
-            return {"status": "SUCCESS", "size_kb": size_kb, "file_id": target_file_id, "restored_at": format_ist()}
-        except Exception as e:
-            logger.error(f"Restore DB from cloud failed: {e}")
-            return {"status": "ERROR", "message": str(e)}
-
-    # --------------------------------------------------------------------------
-    # 2. HISTORICAL OHLCV CACHE ARCHIVE BACKUP & RESTORE
-    # --------------------------------------------------------------------------
     def backup_ohlcv_to_cloud(self, custom_note: str = "OHLCV Gap-Fill Sync") -> Dict[str, Any]:
-        """
-        Packs all cached ticker DataFrames in `data/historical_data/*.pkl` into a compact
-        gzipped bundle (`ohlcv_cache_vault.pkl.gz`) and uploads it to Telegram Cloud.
-        Uses float32 for OHLC and int64 for Volume, keeping 800 stocks x 500 bars under ~3.5 MB!
-        """
+        return self.backup_master_file_to_cloud(custom_note=custom_note)
+
+    def restore_master_file_from_cloud(self, file_id: Optional[str] = None) -> Dict[str, Any]:
+        """Restores the Single Master File (`data/swing_trades.db`) from Telegram Cloud."""
+        from execution.state_engine import state_engine
+
         creds = self.get_credentials()
         if not creds["enabled"]:
             return {"status": "SKIPPED", "message": "Telegram Vault not enabled."}
 
-        pkl_files = list(HISTORICAL_DATA_DIR.glob("*.pkl"))
-        if not pkl_files:
-            return {"status": "SKIPPED", "message": "No local OHLCV pickle files to back up."}
-
-        bundle: Dict[str, pd.DataFrame] = {}
-        latest_date_seen = ""
-
-        for fpath in pkl_files:
-            sym = fpath.stem.upper()
-            try:
-                df = pd.read_pickle(fpath)
-                if isinstance(df, pd.DataFrame) and not df.empty and "Close" in df.columns:
-                    df_clean = df[["Open", "High", "Low", "Close", "Volume"]].tail(500).copy()
-                    for col in ["Open", "High", "Low", "Close"]:
-                        df_clean[col] = df_clean[col].astype("float32")
-                    df_clean["Volume"] = df_clean["Volume"].fillna(0).astype("int64")
-                    bundle[sym] = df_clean
-                    bar_dt = str(df_clean.index[-1])[:10]
-                    if bar_dt > latest_date_seen:
-                        latest_date_seen = bar_dt
-            except Exception:
-                continue
-
-        if not bundle:
-            return {"status": "SKIPPED", "message": "No valid OHLCV DataFrames found."}
-
-        now = now_ist()
-        date_display = format_ist(now)
-        filename = "ohlcv_cache_vault.pkl.gz"
-
-        try:
-            raw_pkl = pickle.dumps(
-                {
-                    "created_at": date_display,
-                    "latest_bar_date": latest_date_seen,
-                    "stocks_count": len(bundle),
-                    "ohlcv": bundle
-                },
-                protocol=pickle.HIGHEST_PROTOCOL
-            )
-            gz_bytes = gzip.compress(raw_pkl, compresslevel=6)
-            size_kb = round(len(gz_bytes) / 1024.0, 1)
-            size_mb = round(size_kb / 1024.0, 2)
-
-            caption_html = (
-                "📊 <b>QUANT DESK — HISTORICAL OHLCV CLOUD VAULT</b>\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"📅 <b>Synced At:</b> {date_display}\n"
-                f"📈 <b>Stocks Cached:</b> <code>{len(bundle)} NSE Tickers</code>\n"
-                f"🗓️ <b>Latest Bar Date:</b> <code>{latest_date_seen}</code>\n"
-                f"📦 <b>Archive Size:</b> {size_mb} MB ({size_kb} KB gzip)\n"
-                f"📝 <b>Note:</b> {custom_note}\n\n"
-                "<i>Used for instant cold-boot recovery & incremental gap-filling across Render restarts.</i>"
-            )
-
-            files = {"document": (filename, io.BytesIO(gz_bytes), "application/gzip")}
-            data = {"chat_id": creds["chat_id"], "caption": caption_html, "parse_mode": "HTML"}
-            resp = requests.post(
-                f"https://api.telegram.org/bot{creds['bot_token']}/sendDocument",
-                data=data,
-                files=files,
-                timeout=120
-            ).json()
-
-            if not resp.get("ok"):
-                return {"status": "ERROR", "message": f"Telegram OHLCV upload error: {resp.get('description')}"}
-
-            doc_obj = resp.get("result", {}).get("document", {})
-            file_id = doc_obj.get("file_id")
-            msg_id = resp.get("result", {}).get("message_id")
-
-            record = {
-                "type": "OHLCV",
-                "timestamp": date_display,
-                "filename": filename,
-                "file_id": file_id,
-                "message_id": msg_id,
-                "stocks_count": len(bundle),
-                "latest_bar_date": latest_date_seen,
-                "size_kb": size_kb,
-                "note": custom_note
-            }
-            manifest = self.get_manifest()
-            manifest["last_ohlcv_backup"] = record
-            history = manifest.get("history", [])
-            history.insert(0, record)
-            manifest["history"] = history[:30]
-            self._save_manifest(manifest)
-            self._pin_cloud_index()
-
-            logger.info(f"☁️ Uploaded OHLCV Cloud Cache ({len(bundle)} stocks, up to {latest_date_seen}, {size_mb} MB) to Telegram!")
-            return {
-                "status": "SUCCESS",
-                "file_id": file_id,
-                "stocks_count": len(bundle),
-                "latest_bar_date": latest_date_seen,
-                "size_kb": size_kb,
-                "timestamp": date_display
-            }
-        except Exception as e:
-            logger.error(f"OHLCV cloud backup failed: {e}")
-            return {"status": "ERROR", "message": str(e)}
-
-    def restore_ohlcv_from_cloud(self, file_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Downloads `ohlcv_cache_vault.pkl.gz` from Telegram Cloud and extracts all ticker
-        DataFrames into `data/historical_data/{SYM}.pkl`.
-        """
-        creds = self.get_credentials()
-        if not creds["bot_token"]:
-            return {"status": "ERROR", "message": "Telegram Bot Token not configured."}
-
-        target_file_id = file_id or self.discover_cloud_file_ids().get("ohlcv_file_id")
+        target_file_id = file_id or self.discover_cloud_master_file_id()
         if not target_file_id:
-            return {"status": "SKIPPED", "message": "No OHLCV archive found in Telegram Cloud."}
+            return {"status": "SKIPPED", "message": "No cloud Master File ID found in Telegram."}
 
         try:
             meta = requests.get(
@@ -533,87 +271,74 @@ class TelegramVaultManager:
             file_path = meta["result"]["file_path"]
             dl = requests.get(f"https://api.telegram.org/file/bot{creds['bot_token']}/{file_path}", timeout=90)
             if dl.status_code != 200:
-                return {"status": "ERROR", "message": f"HTTP {dl.status_code} downloading OHLCV archive"}
+                return {"status": "ERROR", "message": f"HTTP {dl.status_code} downloading Master File"}
 
             raw_bytes = dl.content
             if raw_bytes[:2] == b"\x1f\x8b":
                 raw_bytes = gzip.decompress(raw_bytes)
 
-            payload = pickle.loads(raw_bytes)
-            ohlcv_map: Dict[str, pd.DataFrame] = payload.get("ohlcv", {}) if isinstance(payload, dict) else {}
-            latest_bar_date = payload.get("latest_bar_date", "")
+            with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+                tmp.write(raw_bytes)
 
-            HISTORICAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
-            restored_count = 0
-            for sym, df in ohlcv_map.items():
-                if isinstance(df, pd.DataFrame) and not df.empty:
-                    clean_sym = str(sym).replace(".NS", "").replace(".BO", "").strip().upper()
-                    pkl_path = HISTORICAL_DATA_DIR / f"{clean_sym}.pkl"
-                    df.to_pickle(pkl_path)
-                    restored_count += 1
+            conn = sqlite3.connect(str(tmp_path))
+            chk = conn.execute("PRAGMA integrity_check;").fetchone()
+            conn.close()
+            if not chk or chk[0] != "ok":
+                tmp_path.unlink(missing_ok=True)
+                return {"status": "ERROR", "message": "Restored file failed SQLite integrity check."}
 
-            logger.info(f"✅ Restored {restored_count} stock OHLCV histories from Telegram Cloud (latest bar: {latest_bar_date})!")
+            with self._lock:
+                shutil.copy2(tmp_path, DB_PATH)
+                state_engine._ohlcv_mem_cache.clear()
+                state_engine._init_db()
+            tmp_path.unlink(missing_ok=True)
+
+            ohlcv_stats = state_engine.get_ohlcv_stats()
+            size_kb = round(len(raw_bytes) / 1024.0, 1)
+            logger.info(
+                f"✅ Restored Single Master File from Telegram Cloud "
+                f"({size_kb} KB, {ohlcv_stats.get('stocks_count', 0)} OHLCV stocks)"
+            )
             return {
                 "status": "SUCCESS",
-                "stocks_restored": restored_count,
-                "latest_bar_date": latest_bar_date,
+                "size_kb": size_kb,
+                "stocks_count": ohlcv_stats.get("stocks_count", 0),
+                "latest_bar_date": ohlcv_stats.get("latest_bar_date", "--"),
                 "file_id": target_file_id,
                 "restored_at": format_ist()
             }
         except Exception as e:
-            logger.error(f"Restore OHLCV from cloud failed: {e}")
+            logger.error(f"Restore Master File from cloud failed: {e}")
             return {"status": "ERROR", "message": str(e)}
 
-    # --------------------------------------------------------------------------
-    # 3. COLD-BOOT AUTO-RESTORE (RENDER CONTAINER STARTUP)
-    # --------------------------------------------------------------------------
+    def restore_db_from_cloud(self, file_id: Optional[str] = None) -> Dict[str, Any]:
+        return self.restore_master_file_from_cloud(file_id=file_id)
+
+    def restore_ohlcv_from_cloud(self, file_id: Optional[str] = None) -> Dict[str, Any]:
+        return {"status": "SUCCESS", "message": "Included in Single Master File restore."}
+
     def auto_restore_on_cold_boot(self) -> Dict[str, Any]:
         """
-        Automatically executed when the server boots up (e.g. Render spin-up/redeploy):
-        1. If local SQLite DB has 0 trades/signals AND Telegram Cloud has a DB snapshot, restores it.
-        2. If local `data/historical_data` has < 50 cached stocks AND Telegram Cloud has an OHLCV bundle,
-           restores all cached stocks so incremental gap-filling works immediately!
+        Called automatically on server startup (e.g. Render container boot):
+        If the local Master File is missing or has < 50 OHLCV stocks cached,
+        automatically restores the Single Master File from Telegram Cloud.
         """
-        results = {"db_restore": "SKIPPED", "ohlcv_restore": "SKIPPED"}
+        from execution.state_engine import state_engine
+
         creds = self.get_credentials()
         if not creds["enabled"]:
-            return results
+            return {"status": "DISABLED"}
 
-        discovered = self.discover_cloud_file_ids()
+        stats = state_engine.get_ohlcv_stats()
+        if DB_PATH.exists() and stats.get("stocks_count", 0) >= 50:
+            return {"status": "LOCAL_OK", "stocks_count": stats.get("stocks_count", 0)}
 
-        # Check SQLite DB
-        db_needs_restore = False
-        if not Path(DB_PATH).exists() or Path(DB_PATH).stat().st_size == 0:
-            db_needs_restore = True
-        else:
-            try:
-                conn = sqlite3.connect(str(DB_PATH))
-                c_pos = conn.execute("SELECT COUNT(*) FROM active_positions").fetchone()[0]
-                c_hist = conn.execute("SELECT COUNT(*) FROM trade_history").fetchone()[0]
-                c_sig = conn.execute("SELECT COUNT(*) FROM latest_signals").fetchone()[0]
-                conn.close()
-                if c_pos == 0 and c_hist == 0 and c_sig == 0:
-                    db_needs_restore = True
-            except Exception:
-                db_needs_restore = True
+        logger.info("🔄 Cold-boot detected: Restoring Single Master File from Telegram Cloud...")
+        return self.restore_master_file_from_cloud()
 
-        if db_needs_restore and discovered.get("db_file_id"):
-            logger.info("🔄 [ColdBoot] Local DB is empty; restoring Trade DB from Telegram Cloud Vault...")
-            results["db_restore"] = self.restore_db_from_cloud(file_id=discovered["db_file_id"])
-
-        # Check OHLCV Cache
-        local_pkl_count = len(list(HISTORICAL_DATA_DIR.glob("*.pkl")))
-        if local_pkl_count < 50 and discovered.get("ohlcv_file_id"):
-            logger.info(f"🔄 [ColdBoot] Local OHLCV cache has only {local_pkl_count} files; restoring OHLCV Vault from Telegram Cloud...")
-            results["ohlcv_restore"] = self.restore_ohlcv_from_cloud(file_id=discovered["ohlcv_file_id"])
-
-        return results
-
-    # --------------------------------------------------------------------------
-    # 4. ASYNC ALERTS & AUTOMATIC BACKGROUND CLOUD SYNC
-    # --------------------------------------------------------------------------
     def send_alert_and_sync(self, title: str, message: str, sync_db: bool = True, sync_ohlcv: bool = False):
-        """Dispatches a Telegram message and optionally backs up DB/OHLCV in a background thread."""
+        """Dispatches a Telegram alert and immediately syncs the Single Master File in a background thread."""
         creds = self.get_credentials()
         if not creds["enabled"]:
             return
@@ -634,55 +359,38 @@ class TelegramVaultManager:
             except Exception as e:
                 logger.debug(f"Telegram alert error: {e}")
 
-            if sync_db:
-                self.backup_db_to_cloud(custom_note=title)
-            if sync_ohlcv:
-                self.backup_ohlcv_to_cloud(custom_note=title)
+            if sync_db or sync_ohlcv:
+                self.backup_master_file_to_cloud(custom_note=title)
 
         threading.Thread(target=_worker, daemon=True).start()
 
     def get_status(self) -> Dict[str, Any]:
-        """Returns comprehensive status of Telegram Cloud Vault (DB + OHLCV Cache)."""
+        """Returns comprehensive status of the Single Master File & Telegram Cloud Vault."""
+        from execution.state_engine import state_engine
+
         creds = self.get_credentials()
         manifest = self.get_manifest()
-        last_db = manifest.get("last_db_backup") or {}
-        last_ohlcv = manifest.get("last_ohlcv_backup") or {}
-
-        pkl_files = list(HISTORICAL_DATA_DIR.glob("*.pkl"))
-        local_ohlcv_count = len(pkl_files)
-
-        latest_local_date = "--"
-        if pkl_files:
-            try:
-                sample_df = pd.read_pickle(pkl_files[0])
-                if isinstance(sample_df, pd.DataFrame) and not sample_df.empty:
-                    latest_local_date = str(sample_df.index[-1])[:10]
-            except Exception:
-                pass
+        last_m = manifest.get("last_master_backup") or manifest.get("last_db_backup") or {}
+        ohlcv_stats = state_engine.get_ohlcv_stats()
+        stocks_cnt = ohlcv_stats.get("stocks_count", 0)
+        latest_date = ohlcv_stats.get("latest_bar_date", "--")
+        db_size_mb = round(DB_PATH.stat().st_size / (1024 * 1024), 2) if DB_PATH.exists() else 0.0
 
         return {
             "status": "ONLINE" if creds["enabled"] else "DISABLED",
             "enabled": creds["enabled"],
+            "master_file_path": "data/swing_trades.db",
+            "master_file_size_mb": db_size_mb,
             "token_masked": creds["token_masked"],
             "chat_id": creds["chat_id_masked"],
-            "local_ohlcv_stocks": local_ohlcv_count,
-            "local_ohlcv_files": local_ohlcv_count,
-            "latest_local_ohlcv_date": latest_local_date,
-            "latest_bar_date": last_ohlcv.get("latest_bar_date") or latest_local_date,
-            "last_db_backup_ist": last_db.get("timestamp", "Synced"),
-            "last_db_backup": {
-                "timestamp": last_db.get("timestamp", "Never"),
-                "filename": last_db.get("filename", "--"),
-                "size_kb": last_db.get("size_kb", 0.0),
-                "file_id": last_db.get("file_id", "")
-            },
-            "last_ohlcv_backup": {
-                "timestamp": last_ohlcv.get("timestamp", "Never"),
-                "stocks_count": last_ohlcv.get("stocks_count", 0),
-                "latest_bar_date": last_ohlcv.get("latest_bar_date", "--"),
-                "size_kb": last_ohlcv.get("size_kb", 0.0),
-                "file_id": last_ohlcv.get("file_id", "")
-            },
+            "local_ohlcv_stocks": stocks_cnt,
+            "local_ohlcv_files": stocks_cnt,
+            "latest_local_ohlcv_date": latest_date,
+            "latest_bar_date": latest_date,
+            "last_db_backup_ist": last_m.get("timestamp", "Synced"),
+            "last_master_backup": last_m,
+            "last_db_backup": last_m,
+            "last_ohlcv_backup": last_m,
             "history": manifest.get("history", [])[:10]
         }
 

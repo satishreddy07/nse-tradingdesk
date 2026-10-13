@@ -171,12 +171,12 @@ class ChartinkUniverseFetcher:
 class DirectYahooFinanceFetcher:
     """
     High-Speed Multi-Threaded OHLCV Downloader with Smart Incremental Gap-Filling
-    and Telegram Cloud Vault Integration:
+    and Single Master File (`data/swing_trades.db`) + Telegram Cloud Vault Integration:
     - Uses 24 worker threads with pooled keep-alive HTTP connections & dual Yahoo endpoints.
-    - Checks local/Telegram-restored cache (`data/historical_data/{SYM}.pkl`).
-    - If a stock exists in cache up to a past date (e.g. Oct 08) and reappears later (e.g. 20 days later),
-      fetches ONLY the missing delta bars (`period1` -> `period2`), merges & deduplicates cleanly!
-    - If brand new or >180 days gap, downloads full `range=2y`.
+    - Reads/writes all OHLCV data directly inside the Single Master SQLite File (`ohlcv_master_store`).
+    - Zero individual `.pkl` or `.csv` files created on disk.
+    - If a stock exists in Master File up to a past date (e.g. Oct 08) and reappears later (e.g. 20 days later),
+      fetches ONLY the missing delta bars, merges & deduplicates cleanly!
     """
     def __init__(self, max_workers: int = 24, storage_dir: Optional[str] = None):
         self.max_workers = max_workers
@@ -188,8 +188,6 @@ class DirectYahooFinanceFetcher:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept": "application/json, text/plain, */*",
         }
-        self.storage_dir = Path(storage_dir) if storage_dir else HISTORICAL_DATA_DIR
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         # Thread-safe pooled HTTP session for fast, rate-limit resilient requests
         self.session = requests.Session()
@@ -202,36 +200,13 @@ class DirectYahooFinanceFetcher:
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
 
-    def _get_storage_path(self, ticker: str):
-        clean = clean_symbol(ticker)
-        pkl_path = self.storage_dir / f"{clean}.pkl"
-        return pkl_path
-
     def load_raw_cached(self, ticker: str) -> Tuple[Optional[pd.DataFrame], float]:
-        """Returns (cached_df, file_age_hours) regardless of age so gap-filling can inspect last date."""
-        pkl_path = self._get_storage_path(ticker)
-        if pkl_path.exists():
-            try:
-                age_hours = (time.time() - pkl_path.stat().st_mtime) / 3600.0
-                df = pd.read_pickle(pkl_path)
-                if isinstance(df, pd.DataFrame) and not df.empty and "Close" in df.columns and len(df) >= 30:
-                    return df, age_hours
-            except Exception as e:
-                logger.debug(f"Could not read cached pickle for {ticker}: {e}")
-        return None, 9999.0
+        """Returns (cached_df, age_hours) from the Single Master File (`ohlcv_master_store`)."""
+        return state_engine.get_ohlcv_df(ticker)
 
     def save_to_storage(self, ticker: str, df: pd.DataFrame) -> None:
-        if df is None or df.empty:
-            return
-        try:
-            df = df.sort_index()
-            df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
-            if len(df) > 500:
-                df = df.iloc[-500:]
-            pkl_path = self._get_storage_path(ticker)
-            df.to_pickle(pkl_path)
-        except Exception as e:
-            logger.debug(f"Failed to persist {ticker} to storage: {e}")
+        """Saves a single ticker's OHLCV DataFrame directly into the Single Master File."""
+        state_engine.save_ohlcv_df(ticker, df)
 
     @staticmethod
     def get_latest_expected_bar_date() -> datetime.date:
@@ -240,7 +215,6 @@ class DirectYahooFinanceFetcher:
         d = now.date()
         if NSEMarketCalendar.is_trading_day(d) and now.time() >= datetime.time(9, 15):
             return d
-        # Walk back to most recent completed trading day
         d = d - datetime.timedelta(days=1)
         while not NSEMarketCalendar.is_trading_day(d):
             d = d - datetime.timedelta(days=1)
@@ -296,18 +270,12 @@ class DirectYahooFinanceFetcher:
         self,
         ticker: str,
         target_date: Optional[datetime.date] = None,
-        is_market_open: Optional[bool] = None
+        is_market_open: Optional[bool] = None,
+        persist_immediately: bool = True
     ) -> Tuple[str, Optional[pd.DataFrame], str]:
         """
-        Smart Incremental Gap-Filler for a single ticker:
+        Smart Incremental Gap-Filler for a single ticker backed by the Single Master File:
         Returns (ticker, dataframe, fetch_mode) where fetch_mode in ('CACHE_HIT', 'GAP_FILLED', 'FULL_DOWNLOAD', 'FAILED').
-        - If cached_df exists up to `last_bar_date`:
-          - If `last_bar_date >= target_date` and (not is_market_open or file modified within 20 mins):
-            returns cached_df immediately ('CACHE_HIT').
-          - If `1 <= gap_days <= 300` (e.g. stock reappeared after 20 days since Oct 08, or needs today's bar):
-            fetches only the compact missing delta range (`5d` / `1mo` / `3mo` / `6mo` / `1y`), concatenates with cached_df,
-            deduplicates by calendar date, trims to 500 bars, and saves ('GAP_FILLED').
-        - Otherwise fetches full `range='2y'` ('FULL_DOWNLOAD').
         """
         if target_date is None:
             target_date = self.get_latest_expected_bar_date()
@@ -324,7 +292,7 @@ class DirectYahooFinanceFetcher:
             if gap_days <= 0 and (not is_market_open or age_hours <= 0.35):
                 return ticker, cached_df, "CACHE_HIT"
 
-            # Case 2: Cached in cloud/local up to a past date (e.g. Oct 08 -> 20 days gap) or live intraday bar update
+            # Case 2: Cached in Master File up to a past date (e.g. Oct 08 -> 20 days gap) or live intraday bar update
             if 0 <= gap_days <= 300:
                 if gap_days <= 4:
                     delta_range = "5d"
@@ -352,7 +320,8 @@ class DirectYahooFinanceFetcher:
                     merged = merged[~pd.Series(merged.index.date).duplicated(keep="last").values]
                     if len(merged) > 500:
                         merged = merged.iloc[-500:]
-                    self.save_to_storage(ticker, merged)
+                    if persist_immediately:
+                        self.save_to_storage(ticker, merged)
                     return ticker, merged, "GAP_FILLED"
                 else:
                     return ticker, cached_df, "CACHE_HIT"
@@ -360,34 +329,36 @@ class DirectYahooFinanceFetcher:
         # Case 3: Brand new stock or gap > 300 days -> Full 2-Year Download
         full_df = self._request_yahoo_df(ticker, {"range": "2y", "interval": "1d", "includePrePost": "false"}, max_retries=3)
         if full_df is not None and not full_df.empty:
-            self.save_to_storage(ticker, full_df)
+            if persist_immediately:
+                self.save_to_storage(ticker, full_df)
             return ticker, full_df, "FULL_DOWNLOAD"
 
         return ticker, cached_df, "FAILED"
 
     def fetch_universe_ohlcv(self, tickers: List[str], min_bars: int = 105) -> Tuple[Dict[str, pd.DataFrame], Dict[str, int]]:
         """
-        Multi-threaded universe OHLCV fetcher with Telegram Cloud Vault auto-restore & auto-backup:
-        1. If local cache has < 50 files, restores OHLCV bundle from Telegram Cloud first.
+        Multi-threaded universe OHLCV fetcher backed by the Single Master File (`data/swing_trades.db`):
+        1. If Master File has < 50 stocks cached, restores the Single Master File from Telegram Cloud first.
         2. Processes all tickers across 24 threads using Smart Incremental Gap-Filling.
-        3. If any stocks were gap-filled or newly downloaded, syncs the updated OHLCV bundle back to Telegram Cloud.
+        3. Commits all updated/new OHLCV DataFrames into the Single Master File in one batch transaction.
         """
         total_tickers = len(tickers)
-        local_pkl_count = len(list(self.storage_dir.glob("*.pkl")))
-        if local_pkl_count < 50:
+        ohlcv_stats = state_engine.get_ohlcv_stats()
+        if ohlcv_stats.get("stocks_count", 0) < 50:
             state_engine.update_scan_progress(
-                stage="Step 2b/6: Restoring cached 2-Yr OHLCV Vault from Telegram Cloud...",
+                stage="Step 2b/6: Restoring Single Master File from Telegram Cloud Vault...",
                 percent=19,
                 stocks_total=total_tickers,
                 stocks_done=0,
                 add_log=True
             )
-            telegram_vault.restore_ohlcv_from_cloud()
+            telegram_vault.restore_master_file_from_cloud()
 
         target_date = self.get_latest_expected_bar_date()
         is_mkt_open, _ = NSEMarketCalendar.can_execute_trades()
 
         results: Dict[str, pd.DataFrame] = {}
+        dirty_dfs: Dict[str, pd.DataFrame] = {}
         stats = {
             "total_requested": total_tickers,
             "cache_hits": 0,
@@ -407,7 +378,7 @@ class DirectYahooFinanceFetcher:
         completed = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_ticker = {
-                executor.submit(self.fetch_or_gapfill_ticker, t, target_date, is_mkt_open): t
+                executor.submit(self.fetch_or_gapfill_ticker, t, target_date, is_mkt_open, False): t
                 for t in tickers
             }
             for future in concurrent.futures.as_completed(future_to_ticker):
@@ -418,8 +389,12 @@ class DirectYahooFinanceFetcher:
                         stats["cache_hits"] += 1
                     elif mode == "GAP_FILLED":
                         stats["gap_filled"] += 1
+                        if df is not None:
+                            dirty_dfs[sym] = df
                     elif mode == "FULL_DOWNLOAD":
                         stats["full_downloads"] += 1
+                        if df is not None:
+                            dirty_dfs[sym] = df
 
                     if df is not None and len(df) >= min_bars:
                         last_close = float(df["Close"].iloc[-1])
@@ -444,13 +419,10 @@ class DirectYahooFinanceFetcher:
                         add_log=(completed % 160 == 0 or completed == total_tickers)
                     )
 
-        # If any stocks were gap-filled or newly downloaded, sync updated OHLCV cache to Telegram Cloud in background
-        if stats["gap_filled"] > 0 or stats["full_downloads"] > 0:
-            threading.Thread(
-                target=telegram_vault.backup_ohlcv_to_cloud,
-                kwargs={"custom_note": f"Scan Sync ({stats['gap_filled']} gap-filled, {stats['full_downloads']} new)"},
-                daemon=True
-            ).start()
+        # Commit all gap-filled / newly downloaded OHLCV series into the Single Master File in one fast transaction
+        if dirty_dfs:
+            saved_cnt = state_engine.save_ohlcv_batch(dirty_dfs)
+            logger.info(f"Saved {saved_cnt} updated OHLCV stocks into Single Master File (data/swing_trades.db).")
 
         logger.info(
             f"OHLCV Sync Complete: {total_tickers} Chartink stocks -> "
@@ -1247,12 +1219,24 @@ class InstitutionalEngine:
             message=summary_msg,
             details=dl_stats
         )
+        state_engine.set_kv("institutional_snapshot", {
+            "chartink_fetched_count": _institutional_engine_state.get("chartink_fetched_count", len(tickers)),
+            "universe_size": len(signals_df),
+            "cache_hits_count": dl_stats.get("cache_hits", 0),
+            "gap_filled_count": dl_stats.get("gap_filled", 0),
+            "full_downloads_count": dl_stats.get("full_downloads", 0),
+            "buy_now_count": b_now,
+            "pre_breakout_count": p_brk,
+            "wait_pullback_count": w_pb,
+            "avoid_count": avoid,
+            "last_run_time": format_ist()
+        })
         state_engine.finish_scan_progress(summary_msg)
 
-        # Backup latest signals & DB state to Telegram Cloud Vault in background
+        # Backup Single Master File to Telegram Cloud Vault in background
         threading.Thread(
-            target=telegram_vault.backup_db_to_cloud,
-            kwargs={"custom_note": f"P1 Scan Complete ({b_now} BUY_NOW)"},
+            target=telegram_vault.backup_master_file_to_cloud,
+            kwargs={"custom_note": f"P1 Scan Complete ({len(tickers)} Chartink, {b_now} BUY_NOW)"},
             daemon=True
         ).start()
 
@@ -1263,9 +1247,16 @@ class InstitutionalEngine:
 def get_institutional_status() -> Dict[str, Any]:
     can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
     state_copy = dict(_institutional_engine_state)
+    if not state_copy.get("chartink_fetched_count"):
+        saved = state_engine.get_kv("institutional_snapshot", {})
+        if isinstance(saved, dict):
+            for k, v in saved.items():
+                if not state_copy.get(k):
+                    state_copy[k] = v
     state_copy["trading_gate_open"] = can_trade
     state_copy["trading_gate_message"] = gate_msg
     state_copy["stats"] = state_engine.get_portfolio_stats(portfolio_type=PORTFOLIO_TYPE)
     state_copy["active_count"] = len(state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE))
     return state_copy
+
 

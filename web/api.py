@@ -306,6 +306,42 @@ class ClosePositionRequest(BaseModel):
     notes: str = ""
 
 
+class OpenPositionRequest(BaseModel):
+    symbol: str
+    entry_price: float
+    quantity: int
+    stop_loss: float
+    target: float
+    target_2: float = 0.0
+    portfolio_type: str = "INSTITUTIONAL_6PILLAR"
+    sector: str = "NSE"
+    notes: str = "UI Manual Execution"
+
+
+@app.post("/api/position/open")
+def open_new_position(req: OpenPositionRequest):
+    can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
+    if not can_trade:
+        raise HTTPException(status_code=403, detail=gate_msg)
+
+    ok = state_engine.open_position(
+        symbol=req.symbol,
+        entry_price=req.entry_price,
+        quantity=max(1, int(req.quantity)),
+        stop_loss=req.stop_loss,
+        target=req.target,
+        target_2=req.target_2 or round(req.entry_price + 2.0 * max(1.0, req.target - req.entry_price), 2),
+        triggered_from="UI_MANUAL",
+        notes=req.notes,
+        sector=req.sector,
+        portfolio_type=req.portfolio_type,
+        entry_reason="UI Execution"
+    )
+    if not ok:
+        raise HTTPException(status_code=403, detail="Order blocked by Strict Market-Hours Trading Gate.")
+    return {"status": "opened", "symbol": req.symbol, "timestamp": format_ist()}
+
+
 @app.post("/api/position/close")
 def close_active_position(req: ClosePositionRequest):
     can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
@@ -334,11 +370,46 @@ def close_active_position(req: ClosePositionRequest):
     if not res:
         raise HTTPException(status_code=403, detail="Trade closure blocked by Strict Market-Hours Trading Gate.")
 
-    return {"status": "SUCCESS", "closed_trade": res}
+    return {"status": "closed", "closed_trade": res}
 
 
 # --------------------------------------------------------------------------
-# PORTFOLIO RESET & TELEGRAM CLOUD VAULT ENDPOINTS
+# MASTER FILE FETCHED STOCKS EXPLORER & LIGHTWEIGHT CANDLESTICK CHART API
+# --------------------------------------------------------------------------
+@app.get("/api/stocks/fetched")
+def get_fetched_stocks(search: str = "", limit: int = 850):
+    """Returns all fetched stocks stored in the Single Master File (`ohlcv_master_store`)."""
+    stats = state_engine.get_ohlcv_stats()
+    rows = state_engine.get_all_ohlcv_metadata(search=search, limit=limit)
+    return {
+        "total_in_master_file": stats.get("stocks_count", len(rows)),
+        "latest_bar_date": stats.get("latest_bar_date", "--"),
+        "last_updated": stats.get("last_updated", "--"),
+        "stocks": rows
+    }
+
+
+@app.get("/api/stocks/{symbol}/chart")
+def get_stock_chart_and_data(symbol: str, bars: int = 260):
+    """
+    Returns Lightweight Candlestick Chart series, Volume, EMA(20/50/200), RSI(14), ATR(14),
+    and exact Entry / Stop-Loss / Target 1 / Target 2 price lines from the Single Master File.
+    If the stock is not yet in the Master File, fetches it live from Yahoo Finance and saves it.
+    """
+    from engines.institutional_engine import DirectYahooFinanceFetcher
+
+    sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    payload = state_engine.get_stock_chart_payload(sym, limit_bars=bars)
+    if payload.get("status") == "NOT_FOUND":
+        fetcher = DirectYahooFinanceFetcher(max_workers=4)
+        _, df, _ = fetcher.fetch_or_gapfill_ticker(sym, persist_immediately=True)
+        if df is not None and not df.empty:
+            payload = state_engine.get_stock_chart_payload(sym, limit_bars=bars)
+    return payload
+
+
+# --------------------------------------------------------------------------
+# PORTFOLIO RESET & SINGLE MASTER FILE TELEGRAM CLOUD VAULT ENDPOINTS
 # --------------------------------------------------------------------------
 class ResetPortfolioRequest(BaseModel):
     portfolio_type: Optional[str] = None  # None = reset both portfolios to ₹0 PnL
@@ -348,7 +419,7 @@ class ResetPortfolioRequest(BaseModel):
 def reset_portfolio(req: ResetPortfolioRequest):
     res = state_engine.reset_portfolio_trades(portfolio_type=req.portfolio_type)
     threading.Thread(
-        target=telegram_vault.backup_db_to_cloud,
+        target=telegram_vault.backup_master_file_to_cloud,
         kwargs={"custom_note": f"Portfolio Reset ({req.portfolio_type or 'ALL'})"},
         daemon=True
     ).start()
@@ -362,25 +433,26 @@ def get_vault_status():
 
 @app.post("/api/vault/sync")
 def sync_vault_to_cloud():
-    """Manually triggers background backup of both Trade DB and OHLCV Historical Cache to Telegram Cloud."""
-    def _sync_both():
-        telegram_vault.backup_db_to_cloud(custom_note="Manual Cloud Sync (Trade DB)")
-        telegram_vault.backup_ohlcv_to_cloud(custom_note="Manual Cloud Sync (OHLCV Historical Cache)")
-
-    threading.Thread(target=_sync_both, daemon=True).start()
+    """Manually triggers background backup of the Single Master File (`data/swing_trades.db`) to Telegram Cloud."""
+    threading.Thread(
+        target=telegram_vault.backup_master_file_to_cloud,
+        kwargs={"custom_note": "Manual UI Single Master File Sync"},
+        daemon=True
+    ).start()
     return {
         "status": "STARTED",
-        "message": "Uploading SQLite Trade DB + 2-Yr OHLCV Historical Cache Archive to Telegram Cloud Vault..."
+        "message": "Uploading Single Master File (All Trades + 800 Stocks OHLCV) to Telegram Cloud Vault..."
     }
 
 
 @app.post("/api/vault/restore")
 def restore_vault_from_cloud():
-    """Restores latest Trade DB and OHLCV Historical Cache Archive from Telegram Cloud Vault."""
-    db_res = telegram_vault.restore_db_from_cloud()
-    ohlcv_res = telegram_vault.restore_ohlcv_from_cloud()
+    """Restores the Single Master File (`data/swing_trades.db`) from Telegram Cloud Vault."""
+    res = telegram_vault.restore_master_file_from_cloud()
     return {
-        "status": "SUCCESS",
-        "db_restore": db_res,
-        "ohlcv_restore": ohlcv_res
+        "status": res.get("status", "SUCCESS"),
+        "db_restored": res.get("status") == "SUCCESS",
+        "ohlcv_restored": res.get("status") == "SUCCESS",
+        "details": res
     }
+
