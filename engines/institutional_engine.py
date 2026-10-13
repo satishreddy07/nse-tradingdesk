@@ -526,191 +526,292 @@ class DirectYahooFinanceFetcher:
             "REALTY": "^CNXREALTY",
             "ENERGY": "^CNXENERGY"
         }
-        bench_data = {}
-        for name, ticker in benchmarks.items():
-            _, df = self.fetch_ticker_chart(ticker, range_period="1y")
-            if df is not None and not df.empty:
-                bench_data[name] = df
+        bench_data: Dict[str, pd.DataFrame] = {}
+
+        def _fetch_one(item: Tuple[str, str]):
+            name, ticker = item
+            _, df = self.fetch_ticker_chart(ticker, range_period="1y", max_retries=2)
+            return name, df
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(benchmarks)) as executor:
+            for fut in concurrent.futures.as_completed([executor.submit(_fetch_one, it) for it in benchmarks.items()]):
+                try:
+                    name, df = fut.result()
+                    if df is not None and not df.empty:
+                        bench_data[name] = df
+                except Exception:
+                    pass
         return bench_data
 
 
 # ==============================================================================
-# FEATURE ENGINE
+# C-VECTORIZED & MULTI-THREADED PARALLEL FEATURE ENGINE
 # ==============================================================================
+from scipy.signal import lfilter
+from numpy.lib.stride_tricks import sliding_window_view
+
+
+def _fast_ewm_array(arr: np.ndarray, span: float) -> np.ndarray:
+    """C-vectorized EWM matching pd.Series(arr).ewm(span=span, adjust=False).mean()."""
+    if len(arr) == 0:
+        return arr
+    alpha = 2.0 / (span + 1.0)
+    out, _ = lfilter([alpha], [1.0, -(1.0 - alpha)], arr, zi=[arr[0] * (1.0 - alpha)])
+    return out
+
+
 class FeatureEngine:
     @staticmethod
-    def calc_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
-        up_move = high.diff()
-        down_move = -low.diff()
-        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
-        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+    def calc_adx_np(high_np: np.ndarray, low_np: np.ndarray, close_np: np.ndarray, period: int = 14) -> float:
+        """Fast pure-NumPy ADX(14) last-value calculation (only needs last ~45 bars)."""
+        m = min(len(close_np), period * 3 + 5)
+        if m < period * 2 + 2:
+            return 20.0
+        h = high_np[-m:]
+        l = low_np[-m:]
+        c = close_np[-m:]
 
-        tr1 = high - low
-        tr2 = (high - close.shift(1)).abs()
-        tr3 = (low - close.shift(1)).abs()
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        up_move = h[1:] - h[:-1]
+        down_move = l[:-1] - l[1:]
+        plus_dm = np.where((up_move > down_move) & (up_move > 0.0), up_move, 0.0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0.0), down_move, 0.0)
+        tr = np.maximum(h[1:] - l[1:], np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])))
 
-        tr_smooth = tr.rolling(period).sum()
-        plus_di = 100 * (pd.Series(plus_dm, index=high.index).rolling(period).sum() / (tr_smooth + 1e-9))
-        minus_di = 100 * (pd.Series(minus_dm, index=high.index).rolling(period).sum() / (tr_smooth + 1e-9))
-        dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di + 1e-9)
-        return dx.rolling(period).mean()
+        # Rolling period sum via sliding_window_view
+        tr_sum = np.sum(sliding_window_view(tr, period), axis=-1)
+        pdm_sum = np.sum(sliding_window_view(plus_dm, period), axis=-1)
+        mdm_sum = np.sum(sliding_window_view(minus_dm, period), axis=-1)
+
+        plus_di = 100.0 * (pdm_sum / (tr_sum + 1e-9))
+        minus_di = 100.0 * (mdm_sum / (tr_sum + 1e-9))
+        dx = 100.0 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-9)
+        if len(dx) < period:
+            return float(np.mean(dx)) if len(dx) > 0 else 20.0
+        val = float(np.mean(dx[-period:]))
+        return val if not math.isnan(val) else 20.0
 
     @staticmethod
-    def calc_rsi(close: pd.Series, period: int = 14) -> pd.Series:
-        delta = close.diff()
-        gain = delta.where(delta > 0, 0.0).rolling(period).mean()
-        loss = (-delta.where(delta < 0, 0.0)).rolling(period).mean()
+    def calc_rsi_np(close_np: np.ndarray, period: int = 14) -> float:
+        """Fast pure-NumPy SMA-RSI(14) last-value calculation matching calc_rsi(close, 14).iloc[-1]."""
+        if len(close_np) < period + 1:
+            return 50.0
+        d = np.diff(close_np[-(period + 1):])
+        gain = float(np.mean(np.where(d > 0.0, d, 0.0)))
+        loss = float(np.mean(np.where(d < 0.0, -d, 0.0)))
         rs = gain / (loss + 1e-9)
-        return 100 - (100 / (1 + rs))
+        val = 100.0 - (100.0 / (1.0 + rs))
+        return val if not math.isnan(val) else 50.0
 
     @staticmethod
-    def check_minervini_template(df: pd.DataFrame, ema50: pd.Series, ema150: pd.Series, ema200: pd.Series) -> int:
-        close = df['Close'].iloc[-1]
-        c_50 = ema50.iloc[-1]
-        c_150 = ema150.iloc[-1]
-        c_200 = ema200.iloc[-1]
-
-        lookback_bars = min(len(df), 250)
-        high_52w = df['High'].iloc[-lookback_bars:].max()
-        low_52w = df['Low'].iloc[-lookback_bars:].min()
-
+    def check_minervini_np(
+        c_now: float,
+        c_20: float,
+        c_50: float,
+        c_150: float,
+        c_200: float,
+        c_200_prev22: float,
+        high_52w: float,
+        low_52w: float
+    ) -> int:
         score = 0
-        if close > c_150 and close > c_200: score += 1
+        if c_now > c_150 and c_now > c_200: score += 1
         if c_150 > c_200: score += 1
-        if len(ema200) >= 22 and c_200 > ema200.iloc[-22]: score += 1
+        if c_200 > c_200_prev22: score += 1
         if c_50 > c_150 and c_50 > c_200: score += 1
-        if close > c_50: score += 1
-        if close >= low_52w * 1.30: score += 1
-        if close >= high_52w * 0.75: score += 1
-        if close > df['Close'].ewm(span=20, adjust=False).mean().iloc[-1]: score += 1
+        if c_now > c_50: score += 1
+        if c_now >= low_52w * 1.30: score += 1
+        if c_now >= high_52w * 0.75: score += 1
+        if c_now > c_20: score += 1
         return score
+
+    @staticmethod
+    def precompute_benchmark_context(benchmarks: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
+        """Precomputes benchmark returns, market dates, and intraday multipliers ONCE before parallel stock loop."""
+        nifty_df = benchmarks.get("NIFTY_50")
+        nifty_ret_3m = 0.0
+        if nifty_df is not None and len(nifty_df) >= 63:
+            nc = nifty_df["Close"].to_numpy(dtype=np.float64, copy=False)
+            nifty_ret_3m = float((nc[-1] - nc[-63]) / (nc[-63] + 1e-9) * 100.0)
+
+        sector_ret_6m_map: Dict[str, float] = {}
+        for k, bdf in benchmarks.items():
+            if bdf is not None and len(bdf) >= 126:
+                bc = bdf["Close"].to_numpy(dtype=np.float64, copy=False)
+                sector_ret_6m_map[k] = float((bc[-1] - bc[-126]) / (bc[-126] + 1e-9) * 100.0)
+            elif bdf is not None and len(bdf) >= 63:
+                bc = bdf["Close"].to_numpy(dtype=np.float64, copy=False)
+                sector_ret_6m_map[k] = float((bc[-1] - bc[0]) / (bc[0] + 1e-9) * 100.0)
+            else:
+                sector_ret_6m_map[k] = 0.0
+
+        now_dt = now_ist()
+        today_date = now_dt.date()
+        live_intraday_mult = DirectYahooFinanceFetcher.get_intraday_volume_multiplier(today_date)
+        vol_factor = get_intraday_volume_factor(now_dt)
+
+        return {
+            "nifty_ret_3m": nifty_ret_3m,
+            "sector_ret_6m_map": sector_ret_6m_map,
+            "today_date": today_date,
+            "live_intraday_mult": live_intraday_mult,
+            "vol_factor": vol_factor
+        }
 
     @classmethod
     def compute_stock_metrics(
         cls,
         ticker: str,
         df: pd.DataFrame,
-        benchmarks: Dict[str, pd.DataFrame]
+        benchmarks: Dict[str, pd.DataFrame],
+        bench_ctx: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
         n = len(df)
         if n < 105:
             return None
 
-        close = df['Close']
-        high = df['High']
-        low = df['Low']
-        volume = df['Volume']
+        if bench_ctx is None:
+            bench_ctx = cls.precompute_benchmark_context(benchmarks)
+
+        close_np = df["Close"].to_numpy(dtype=np.float64, copy=False)
+        high_np = df["High"].to_numpy(dtype=np.float64, copy=False)
+        low_np = df["Low"].to_numpy(dtype=np.float64, copy=False)
+        vol_np = df["Volume"].to_numpy(dtype=np.float64, copy=False)
+
+        c_now = float(close_np[-1])
+        if c_now <= 0 or math.isnan(c_now):
+            return None
 
         sector = get_stock_sector(ticker)
 
-        ema20 = close.ewm(span=20, adjust=False).mean()
-        ema50 = close.ewm(span=50, adjust=False).mean()
-        ema150 = close.ewm(span=150, adjust=False).mean()
-        ema200 = close.ewm(span=200, adjust=False).mean()
+        ema20 = _fast_ewm_array(close_np, 20.0)
+        ema50 = _fast_ewm_array(close_np, 50.0)
+        ema150 = _fast_ewm_array(close_np, 150.0)
+        ema200 = _fast_ewm_array(close_np, 200.0)
 
-        ema20_slope = (ema20.iloc[-1] - ema20.iloc[-10]) / ema20.iloc[-10] * 100 if n >= 10 else 0.0
-        ema50_slope = (ema50.iloc[-1] - ema50.iloc[-10]) / ema50.iloc[-10] * 100 if n >= 10 else 0.0
-        adx_series = cls.calc_adx(high, low, close, 14)
-        adx14 = float(adx_series.iloc[-1]) if not pd.isna(adx_series.iloc[-1]) else 20.0
-        mv_passed = cls.check_minervini_template(df, ema50, ema150, ema200)
+        ema20_now = float(ema20[-1])
+        ema50_now = float(ema50[-1])
+        ema20_slope = float((ema20_now - ema20[-10]) / (ema20[-10] + 1e-9) * 100.0) if n >= 10 else 0.0
+        ema50_slope = float((ema50_now - ema50[-10]) / (ema50[-10] + 1e-9) * 100.0) if n >= 10 else 0.0
 
-        c_now = float(close.iloc[-1])
-        ret_1m = (c_now - close.iloc[-21]) / close.iloc[-21] * 100 if n >= 21 else 0.0
-        ret_3m = (c_now - close.iloc[-63]) / close.iloc[-63] * 100 if n >= 63 else 0.0
-        ret_6m = (c_now - close.iloc[-126]) / close.iloc[-126] * 100 if n >= 126 else 0.0
+        adx14 = cls.calc_adx_np(high_np, low_np, close_np, 14)
+
+        lookback_bars = min(n, 250)
+        high_52w = float(np.max(high_np[-lookback_bars:]))
+        low_52w = float(np.min(low_np[-lookback_bars:]))
+        c_200_prev22 = float(ema200[-22]) if n >= 22 else float(ema200[0])
+        mv_passed = cls.check_minervini_np(
+            c_now, ema20_now, ema50_now, float(ema150[-1]), float(ema200[-1]),
+            c_200_prev22, high_52w, low_52w
+        )
+
+        ret_1m = float((c_now - close_np[-21]) / (close_np[-21] + 1e-9) * 100.0) if n >= 21 else 0.0
+        ret_3m = float((c_now - close_np[-63]) / (close_np[-63] + 1e-9) * 100.0) if n >= 63 else 0.0
+        ret_6m = float((c_now - close_np[-126]) / (close_np[-126] + 1e-9) * 100.0) if n >= 126 else float((c_now - close_np[0]) / (close_np[0] + 1e-9) * 100.0)
 
         ret_3m_ex_1m = ret_3m - ret_1m
         ret_6m_ex_3m = ret_6m - ret_3m
 
-        nifty_df = benchmarks.get("NIFTY_50")
-        nifty_ret_3m = 0.0
-        if nifty_df is not None and len(nifty_df) >= 63:
-            nifty_ret_3m = (nifty_df['Close'].iloc[-1] - nifty_df['Close'].iloc[-63]) / nifty_df['Close'].iloc[-63] * 100
+        nifty_ret_3m = bench_ctx["nifty_ret_3m"]
         excess_3m = ret_3m - nifty_ret_3m
 
-        sector_bench_key = sector if sector in benchmarks else "NIFTY_500"
-        sector_df = benchmarks.get(sector_bench_key, nifty_df)
-        sector_ret_6m = 0.0
-        if sector_df is not None and len(sector_df) >= 126:
-            sector_ret_6m = (sector_df['Close'].iloc[-1] - sector_df['Close'].iloc[-126]) / sector_df['Close'].iloc[-126] * 100
+        s_map = bench_ctx["sector_ret_6m_map"]
+        sector_ret_6m = s_map.get(sector, s_map.get("NIFTY_500", s_map.get("NIFTY_50", 0.0)))
         sector_excess_6m = ret_6m - sector_ret_6m
 
-        rsi_series = cls.calc_rsi(close, 14)
-        rsi14 = float(rsi_series.iloc[-1]) if not pd.isna(rsi_series.iloc[-1]) else 50.0
+        rsi14 = cls.calc_rsi_np(close_np, 14)
 
-        tr = pd.concat([high - low, (high - close.shift(1)).abs(), (low - close.shift(1)).abs()], axis=1).max(axis=1)
-        atr14 = float(tr.rolling(14).mean().iloc[-1])
-        atr_pct = (atr14 / c_now) * 100
+        # Fast ATR-14 (last 14 True Range bars)
+        h14 = high_np[-14:]
+        l14 = low_np[-14:]
+        cp14 = close_np[-15:-1]
+        tr14 = np.maximum(h14 - l14, np.maximum(np.abs(h14 - cp14), np.abs(l14 - cp14)))
+        atr14 = float(np.mean(tr14))
+        atr_pct = (atr14 / c_now) * 100.0
         atr_distance = abs(atr_pct - 2.5)
 
-        sma20 = close.rolling(20).mean()
-        std20 = close.rolling(20).std()
-        bb_width = ((std20 * 4) / (sma20 + 1e-9)).iloc[-1]
-        bb_width_series = (std20 * 4) / (sma20 + 1e-9)
-        bb_width_min_6m = bb_width_series.iloc[-min(n, 126):].min()
+        # Fast Bollinger Band Squeeze over last 126 windows (requires last 145 closes)
+        bb_slice = close_np[-min(n, 145):]
+        bb_wins = sliding_window_view(bb_slice, 20)
+        sma20_arr = np.mean(bb_wins, axis=-1)
+        std20_arr = np.std(bb_wins, axis=-1, ddof=1)
+        bb_width_arr = (std20_arr * 4.0) / (sma20_arr + 1e-9)
+        bb_width = float(bb_width_arr[-1])
+        bb_width_min_6m = float(np.min(bb_width_arr))
         bb_sq_ratio = bb_width / (bb_width_min_6m + 1e-9)
 
-        last_idx_dt = df.index[-1].date() if hasattr(df.index[-1], "date") else pd.Timestamp(df.index[-1]).date()
-        intraday_vol_mult = DirectYahooFinanceFetcher.get_intraday_volume_multiplier(last_idx_dt)
-        effective_last_vol = float(volume.iloc[-1]) * intraday_vol_mult
+        last_idx = df.index[-1]
+        last_idx_dt = last_idx.date() if hasattr(last_idx, "date") else pd.Timestamp(last_idx).date()
+        intraday_vol_mult = bench_ctx["live_intraday_mult"] if last_idx_dt == bench_ctx["today_date"] else 1.0
+        effective_last_vol = float(vol_np[-1]) * intraday_vol_mult
 
-        vol_50d_avg_prev = volume.shift(1).rolling(50).mean().iloc[-1] if n >= 51 else volume.mean()
+        vol_50d_avg_prev = float(np.mean(vol_np[-51:-1])) if n >= 51 else float(np.mean(vol_np))
         vol_ratio = effective_last_vol / (vol_50d_avg_prev + 1e-9)
 
-        daily_returns = close.pct_change() * 100
-        vol_50_rolling = volume.rolling(min(n, 50)).mean()
-        accum_mask = (daily_returns.iloc[-20:] > 0.7) & (volume.iloc[-20:] > vol_50_rolling.iloc[-20:])
-        accum_days = int(accum_mask.sum())
+        # Last 20 daily returns & 50-bar rolling volume averages for accumulation / pocket pivot
+        c_tail21 = close_np[-21:]
+        ret_tail20 = ((c_tail21[1:] - c_tail21[:-1]) / (c_tail21[:-1] + 1e-9)) * 100.0
+        vol_tail20 = vol_np[-20:]
+        if n >= 69:
+            vol_50_roll20 = np.mean(sliding_window_view(vol_np[-69:], 50), axis=-1)
+        else:
+            vol_50_roll20 = np.full(20, vol_50d_avg_prev, dtype=np.float64)
 
-        down_vols = volume.iloc[-10:][daily_returns.iloc[-10:] < 0]
-        max_down_vol = down_vols.max() if not down_vols.empty else 0
-        pocket_pivot = bool(daily_returns.iloc[-1] > 0 and effective_last_vol > max_down_vol)
-        vol_dryup = float(volume.iloc[-5:].mean() / (vol_50d_avg_prev + 1e-9))
+        accum_days = int(np.sum((ret_tail20 > 0.7) & (vol_tail20 > vol_50_roll20)))
 
-        pivot_20d = float(high.iloc[-20:].max())
-        dist_to_pivot = ((pivot_20d - c_now) / pivot_20d) * 100
-        dist_to_ema20 = ((c_now - ema20.iloc[-1]) / ema20.iloc[-1]) * 100
+        ret_tail10 = ret_tail20[-10:]
+        vol_tail10 = vol_tail20[-10:]
+        down_vols = vol_tail10[ret_tail10 < 0.0]
+        max_down_vol = float(np.max(down_vols)) if len(down_vols) > 0 else 0.0
+        intraday_pct = float(ret_tail20[-1])
+        pocket_pivot = bool(intraday_pct > 0.0 and effective_last_vol > max_down_vol)
+        vol_dryup = float(np.mean(vol_np[-5:]) / (vol_50d_avg_prev + 1e-9))
 
-        close_10d = close.iloc[-10:]
-        base_tightness = float((close_10d.max() - close_10d.min()) / (close_10d.mean() + 1e-9) * 100)
+        pivot_20d = float(np.max(high_np[-20:]))
+        dist_to_pivot = ((pivot_20d - c_now) / (pivot_20d + 1e-9)) * 100.0
+        dist_to_ema20 = ((c_now - ema20_now) / (ema20_now + 1e-9)) * 100.0
 
+        close_10d = close_np[-10:]
+        base_tightness = float((np.max(close_10d) - np.min(close_10d)) / (np.mean(close_10d) + 1e-9) * 100.0)
+
+        # Fast Weekly Confluence in pure NumPy (5 trading sessions per week, anchored to latest bar)
         try:
-            weekly_close = close.resample('W').last().dropna()
-            w_10 = weekly_close.ewm(span=10, adjust=False).mean()
-            w_30 = weekly_close.ewm(span=30, adjust=False).mean()
-            w_rsi = cls.calc_rsi(weekly_close, 14)
-            week_confluence = bool(
-                weekly_close.iloc[-1] > w_10.iloc[-1] and
-                w_10.iloc[-1] > w_30.iloc[-1] and
-                w_rsi.iloc[-1] > 50
-            )
+            weekly_close = close_np[::-5][::-1]
+            if len(weekly_close) >= 15:
+                w_10 = _fast_ewm_array(weekly_close, 10.0)
+                w_30 = _fast_ewm_array(weekly_close, 30.0)
+                w_rsi = cls.calc_rsi_np(weekly_close, 14)
+                week_confluence = bool(
+                    weekly_close[-1] > w_10[-1] and
+                    w_10[-1] > w_30[-1] and
+                    w_rsi > 50.0
+                )
+            else:
+                week_confluence = False
         except Exception:
             week_confluence = False
 
         is_vcp = bool(base_tightness < 6.0 and bb_sq_ratio < 1.35)
 
+        c_high = float(high_np[-1])
+        c_low = float(low_np[-1])
+
         inst_score = (
-            (accum_days / 6.0 * 35) +
-            (25 if pocket_pivot else 0) +
-            (min(vol_ratio, 2.5) / 2.5 * 25) +
-            (15 if c_now > (low.iloc[-1] + (high.iloc[-1] - low.iloc[-1]) * 0.6) else 0)
+            (accum_days / 6.0 * 35.0) +
+            (25.0 if pocket_pivot else 0.0) +
+            (min(vol_ratio, 2.5) / 2.5 * 25.0) +
+            (15.0 if c_now > (c_low + (c_high - c_low) * 0.6) else 0.0)
         )
-        inst_score = float(np.clip(inst_score, 0, 100))
+        inst_score = float(min(100.0, max(0.0, inst_score)))
 
-        intraday_pct = float(daily_returns.iloc[-1])
-        c_high = float(high.iloc[-1])
-        c_low = float(low.iloc[-1])
-        range_pos = float((c_now - c_low) / ((c_high - c_low) + 1e-9) * 100)
+        range_pos = float((c_now - c_low) / ((c_high - c_low) + 1e-9) * 100.0)
 
-        vol_factor = get_intraday_volume_factor()
+        vol_factor = bench_ctx["vol_factor"]
         projected_vol_ratio = vol_ratio / vol_factor
-        intraday_score = float(np.clip(
-            (50 + intraday_pct * 16.67) * 0.50 +
+        intraday_score = float(min(100.0, max(0.0,
+            (50.0 + intraday_pct * 16.67) * 0.50 +
             range_pos * 0.30 +
-            min(projected_vol_ratio, 2.0) / 2.0 * 100 * 0.20,
-            0, 100
-        ))
+            min(projected_vol_ratio, 2.0) / 2.0 * 100.0 * 0.20
+        )))
 
         return {
             "ticker": ticker,
@@ -748,8 +849,55 @@ class FeatureEngine:
             "inst_score": inst_score,
             "intraday_pct": intraday_pct,
             "intraday_score": intraday_score,
-            "above_50dma": bool(c_now > ema50.iloc[-1])
+            "above_50dma": bool(c_now > ema50_now)
         }
+
+    @classmethod
+    def compute_universe_metrics_parallel(
+        cls,
+        ohlcv_dict: Dict[str, pd.DataFrame],
+        benchmarks: Dict[str, pd.DataFrame],
+        max_workers: int = 16
+    ) -> List[Dict[str, Any]]:
+        """
+        Computes all 30 technical indicators across the entire liquid stock universe
+        using 16 parallel worker threads with C-vectorized NumPy/SciPy arrays and live progress updates.
+        """
+        if not ohlcv_dict:
+            return []
+
+        bench_ctx = cls.precompute_benchmark_context(benchmarks)
+        items = list(ohlcv_dict.items())
+        total_stocks = len(items)
+        raw_records: List[Dict[str, Any]] = []
+
+        def _worker(item: Tuple[str, pd.DataFrame]) -> Optional[Dict[str, Any]]:
+            sym, df = item
+            return cls.compute_stock_metrics(sym, df, benchmarks, bench_ctx=bench_ctx)
+
+        done_cnt = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_worker, item) for item in items]
+            for fut in concurrent.futures.as_completed(futures):
+                done_cnt += 1
+                try:
+                    res = fut.result()
+                    if res is not None:
+                        raw_records.append(res)
+                except Exception as e:
+                    logger.debug(f"Indicator calculation skip: {e}")
+
+                if done_cnt % 120 == 0 or done_cnt == total_stocks:
+                    pct = 70 + int((done_cnt / max(1, total_stocks)) * 12)
+                    state_engine.update_scan_progress(
+                        stage=f"Step 4/6: Multi-Threaded Technical Indicator Engine ({done_cnt}/{total_stocks} liquid stocks computed)...",
+                        percent=pct,
+                        stocks_total=total_stocks,
+                        stocks_done=done_cnt,
+                        add_log=(done_cnt == total_stocks)
+                    )
+
+        return raw_records
 
 
 # ==============================================================================
@@ -779,15 +927,15 @@ class PercentileScoringEngine:
         p_excess_3m = cls.pct_rank(df['excess_3m'], ascending=True)
         p_mom_raw = p_ret_1m * 0.2 + p_ret_3m_ex * 0.3 + p_ret_6m_ex * 0.3 + p_excess_3m * 0.2
 
-        def get_rsi_mult(rsi):
-            if 50.0 <= rsi <= 70.0: return 1.05
-            elif (40.0 <= rsi < 50.0) or (70.0 < rsi <= 80.0): return 1.00
-            elif 80.0 < rsi <= 85.0: return 0.85
-            elif rsi > 85.0: return 0.60
-            elif rsi < 30.0: return 0.70
-            else: return 0.90
+        rsi_vals = df['rsi14'].to_numpy(dtype=np.float64, copy=False)
+        rsi_mult = np.full(len(rsi_vals), 0.90, dtype=np.float64)
+        rsi_mult[(rsi_vals >= 50.0) & (rsi_vals <= 70.0)] = 1.05
+        rsi_mult[((rsi_vals >= 40.0) & (rsi_vals < 50.0)) | ((rsi_vals > 70.0) & (rsi_vals <= 80.0))] = 1.00
+        rsi_mult[(rsi_vals > 80.0) & (rsi_vals <= 85.0)] = 0.85
+        rsi_mult[rsi_vals > 85.0] = 0.60
+        rsi_mult[rsi_vals < 30.0] = 0.70
 
-        df['p_momentum'] = p_mom_raw * df['rsi14'].apply(get_rsi_mult)
+        df['p_momentum'] = p_mom_raw * rsi_mult
 
         # Pillar 3 — Volatility (15%)
         p_atr = cls.pct_rank(df['atr_distance'], ascending=False)
@@ -991,88 +1139,110 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
     closed_events = []
 
     for pos in open_positions:
-        sym = pos["symbol"]
-        formatted_sym = format_nse_ticker(sym)
-        df = ohlcv_dict.get(formatted_sym) or ohlcv_dict.get(sym)
-        if df is None or df.empty:
-            continue
+        try:
+            sym = pos["symbol"]
+            formatted_sym = format_nse_ticker(sym)
+            df = ohlcv_dict.get(formatted_sym)
+            if df is None:
+                df = ohlcv_dict.get(sym)
+            if df is None:
+                df, _ = state_engine.get_ohlcv_df(sym)
+            if df is None or df.empty:
+                continue
 
-        latest_bar = df.iloc[-1]
-        c = float(latest_bar["Close"])
-        h = float(latest_bar["High"])
-        l = float(latest_bar["Low"])
+            latest_bar = df.iloc[-1]
+            c = float(latest_bar["Close"])
+            h = float(latest_bar["High"])
+            l = float(latest_bar["Low"])
 
-        entry_px = float(pos["entry_price"])
-        sl = float(pos["stop_loss"])
-        orig_sl = float(pos.get("original_stop_loss") or sl)
-        t1 = float(pos["target"])
-        t2 = float(pos.get("target_2") or (entry_px + 3.0 * (entry_px - orig_sl)))
-        qty = int(pos["quantity"])
-        t1_hit = bool(pos.get("t1_hit", 0))
+            bar_idx = df.index[-1]
+            bar_date_str = str(bar_idx)[:10]
+            entry_date_str = str(pos.get("entry_date") or "")[:10]
+            is_same_entry_day = (bar_date_str == entry_date_str)
 
-        # Always update MTM price so dashboard reflects latest price
-        if not can_trade:
-            state_engine.update_position_price(
-                sym,
-                current_price=c,
-                highest_price=max(float(pos.get("highest_price") or entry_px), h)
-            )
-            continue
+            # On the entry day itself, daily Low/High includes 9:15 AM bars BEFORE the trade was opened.
+            # Therefore on entry day we strictly use live LTP `c` instead of pre-entry morning `l`.
+            check_low = c if is_same_entry_day else min(l, c)
+            check_high = c if is_same_entry_day else max(h, c)
 
-        # STRICT TRADING GATE OPEN (09:15 - 15:30 IST): Evaluate live exits
-        # Check Stop Loss
-        if l <= sl or c <= sl:
-            closed = state_engine.close_position(
-                sym, exit_price=sl,
-                exit_reason="STOP_LOSS" if not t1_hit else "TRAILING_BE_STOP"
-            )
-            if closed:
-                closed_events.append(closed)
-            continue
+            entry_px = float(pos["entry_price"])
+            sl = float(pos["stop_loss"])
+            orig_sl = float(pos.get("original_stop_loss") or sl)
+            t1 = float(pos["target"])
+            t2 = float(pos.get("target_2") or (entry_px + 3.0 * (entry_px - orig_sl)))
+            qty = int(pos["quantity"])
+            t1_hit = bool(pos.get("t1_hit", 0))
 
-        # Check T1 Target
-        if not t1_hit and h >= t1:
-            booked_qty = qty // 2
-            pnl_t1 = round((t1 - entry_px) * booked_qty, 2)
-            rem_qty = qty - booked_qty
-            with state_engine._lock:
-                with state_engine._get_connection() as conn:
-                    conn.execute("""
-                    UPDATE active_positions
-                    SET quantity = ?, stop_loss = ?, t1_hit = 1, t1_pnl = ?, sl_reason = 'BREAKEVEN_TRAILING', updated_at = ?
-                    WHERE symbol = ?
-                    """, (rem_qty, entry_px, pnl_t1, format_ist(), sym))
-            logger.info(f"🎯 [P1 T1 Hit] {sym} booked 50% ({booked_qty} shs) @ ₹{t1:.2f}. SL moved to BE ₹{entry_px:.2f}.")
-            telegram_vault.send_alert_and_sync(
-                title=f"🎯 P1 TARGET 1 HIT (+1.5R): {sym}",
-                message=f"Booked 50% ({booked_qty} shs) @ ₹{t1:.2f} (PnL: +₹{pnl_t1:.2f}). Stop Loss moved to Breakeven ₹{entry_px:.2f}.",
-                sync_db=True
-            )
+            # Always update MTM price so dashboard reflects latest price
+            if not can_trade:
+                state_engine.update_position_price(
+                    sym,
+                    current_price=c,
+                    highest_price=max(float(pos.get("highest_price") or entry_px), check_high)
+                )
+                continue
 
-        # Check T2 Target
-        if t1_hit and h >= t2:
-            closed = state_engine.close_position(sym, exit_price=t2, exit_reason="T2_FULL_TARGET")
-            if closed:
-                closed_events.append(closed)
-            continue
+            # STRICT TRADING GATE OPEN (09:15 - 15:30 IST): Evaluate live exits
+            # Check Stop Loss
+            if check_low <= sl:
+                closed = state_engine.close_position(
+                    sym, exit_price=c if is_same_entry_day else sl,
+                    exit_reason="STOP_LOSS" if not t1_hit else "TRAILING_BE_STOP"
+                )
+                if closed:
+                    closed_events.append(closed)
+                continue
 
-        # Trailing SL update after T1
-        if t1_hit:
-            highest_seen = max(float(pos.get("highest_price") or entry_px), h)
-            tr = pd.concat([df['High'] - df['Low'], (df['High'] - df['Close'].shift(1)).abs(), (df['Low'] - df['Close'].shift(1)).abs()], axis=1).max(axis=1)
-            atr14 = float(tr.rolling(14).mean().iloc[-1]) if len(df) >= 14 else entry_px * 0.02
-            trail_sl = round(max(entry_px, highest_seen - 1.5 * atr14), 2)
-            if trail_sl > sl:
-                state_engine.update_position_price(sym, current_price=c, stop_loss=trail_sl, highest_price=highest_seen)
+            # Check T1 Target
+            if not t1_hit and check_high >= t1:
+                booked_qty = qty // 2
+                pnl_t1 = round((t1 - entry_px) * booked_qty, 2)
+                rem_qty = qty - booked_qty
+                with state_engine._lock:
+                    with state_engine._get_connection() as conn:
+                        conn.execute("""
+                        UPDATE active_positions
+                        SET quantity = ?, stop_loss = ?, t1_hit = 1, t1_pnl = ?, sl_reason = 'BREAKEVEN_TRAILING', updated_at = ?
+                        WHERE symbol = ?
+                        """, (rem_qty, entry_px, pnl_t1, format_ist(), sym))
+                logger.info(f"🎯 [P1 T1 Hit] {sym} booked 50% ({booked_qty} shs) @ ₹{t1:.2f}. SL moved to BE ₹{entry_px:.2f}.")
                 telegram_vault.send_alert_and_sync(
-                    title=f"📈 P1 TRAILING STOP RATCHETED: {sym}",
-                    message=f"Stop-Loss raised from ₹{sl:,.2f} to <b>₹{trail_sl:,.2f}</b> (LTP: ₹{c:,.2f}).",
+                    title=f"🎯 P1 TARGET 1 HIT (+1.5R): {sym}",
+                    message=f"Booked 50% ({booked_qty} shs) @ ₹{t1:.2f} (PnL: +₹{pnl_t1:.2f}). Stop Loss moved to Breakeven ₹{entry_px:.2f}.",
                     sync_db=True
                 )
+
+            # Check T2 Target
+            if t1_hit and check_high >= t2:
+                closed = state_engine.close_position(sym, exit_price=t2, exit_reason="T2_FULL_TARGET")
+                if closed:
+                    closed_events.append(closed)
+                continue
+
+            # Trailing SL update after T1
+            if t1_hit:
+                highest_seen = max(float(pos.get("highest_price") or entry_px), check_high)
+                if len(df) >= 15:
+                    h14 = df["High"].to_numpy(dtype=np.float64, copy=False)[-14:]
+                    l14 = df["Low"].to_numpy(dtype=np.float64, copy=False)[-14:]
+                    cp14 = df["Close"].to_numpy(dtype=np.float64, copy=False)[-15:-1]
+                    atr14 = float(np.mean(np.maximum(h14 - l14, np.maximum(np.abs(h14 - cp14), np.abs(l14 - cp14)))))
+                else:
+                    atr14 = entry_px * 0.02
+                trail_sl = round(max(entry_px, highest_seen - 1.5 * atr14), 2)
+                if trail_sl > sl:
+                    state_engine.update_position_price(sym, current_price=c, stop_loss=trail_sl, highest_price=highest_seen)
+                    telegram_vault.send_alert_and_sync(
+                        title=f"📈 P1 TRAILING STOP RATCHETED: {sym}",
+                        message=f"Stop-Loss raised from ₹{sl:,.2f} to <b>₹{trail_sl:,.2f}</b> (LTP: ₹{c:,.2f}).",
+                        sync_db=True
+                    )
+                else:
+                    state_engine.update_position_price(sym, current_price=c, highest_price=highest_seen)
             else:
-                state_engine.update_position_price(sym, current_price=c, highest_price=highest_seen)
-        else:
-            state_engine.update_position_price(sym, current_price=c, highest_price=max(float(pos.get("highest_price") or entry_px), h))
+                state_engine.update_position_price(sym, current_price=c, highest_price=max(float(pos.get("highest_price") or entry_px), check_high))
+        except Exception as pos_err:
+            logger.error(f"Error reconciling position {pos.get('symbol')}: {pos_err}")
 
     return closed_events
 
@@ -1111,225 +1281,230 @@ class InstitutionalEngine:
         )
         logger.info(f"=== Institutional 6-Pillar Engine Run ({mode.upper()}) at {format_ist()} ===")
 
-        # Step 1: Ingest Universe Live from Chartink
-        if custom_tickers and len(custom_tickers) > 0:
-            tickers = [format_nse_ticker(t) for t in custom_tickers]
-            _institutional_engine_state["chartink_fetched_count"] = len(tickers)
-            state_engine.update_scan_progress(
-                stage=f"Step 1/6: Using {len(tickers)} specified tickers...",
-                percent=10,
-                stocks_total=len(tickers),
-                stocks_done=0
-            )
-        else:
-            tickers = self.chartink.fetch_tickers()
-            if not tickers:
-                meta_rows = state_engine.get_all_ohlcv_metadata(limit=2000)
-                tickers = [f"{r['symbol']}.NS" for r in meta_rows if r.get("symbol") and not str(r["symbol"]).startswith("^")]
-            _institutional_engine_state["chartink_fetched_count"] = len(tickers)
-            state_engine.update_scan_progress(
-                stage=f"Step 1/6: Connected to Chartink! Fetched {len(tickers)} live NSE stocks.",
-                percent=12,
-                stocks_total=len(tickers),
-                stocks_done=0
-            )
-
-        # Step 2: Benchmarks
-        state_engine.update_scan_progress(
-            stage=f"Step 2/6: Fetching NSE Market & Sector Benchmarks (^NSEI, ^CRSLDX, Bank, IT, Auto, Pharma) for {len(tickers)} Chartink stocks...",
-            percent=18,
-            stocks_total=len(tickers),
-            stocks_done=0
-        )
-        benchmarks = self.yahoo.fetch_benchmarks()
-
-        # Step 3: Multi-Threaded Incremental Gap-Fill OHLCV Fetch
-        ohlcv_dict, dl_stats = self.yahoo.fetch_universe_ohlcv(tickers, min_bars=105)
-        _institutional_engine_state["cache_hits_count"] = dl_stats.get("cache_hits", 0)
-        _institutional_engine_state["gap_filled_count"] = dl_stats.get("gap_filled", 0)
-        _institutional_engine_state["full_downloads_count"] = dl_stats.get("full_downloads", 0)
-
-        if not ohlcv_dict:
-            _institutional_engine_state["status"] = "FAILED"
-            state_engine.finish_scan_progress("Scan aborted: No valid OHLCV data retrieved.")
-            return pd.DataFrame()
-
-        # Step 4: Reconcile active positions
-        state_engine.update_scan_progress(
-            stage=f"Step 4/6: Reconciling active positions & computing 30 raw technical features across {len(ohlcv_dict)} liquid stocks (from {len(tickers)} Chartink stocks)...",
-            percent=70,
-            stocks_total=len(tickers),
-            stocks_done=len(tickers)
-        )
-        reconciled = reconcile_open_institutional_positions(ohlcv_dict)
-        _institutional_engine_state["reconciled_trades"] = len(reconciled)
-
-        # Step 5: Feature Extraction
-        raw_records = []
-        for sym, df in ohlcv_dict.items():
-            metrics = FeatureEngine.compute_stock_metrics(sym, df, benchmarks=benchmarks)
-            if metrics is not None:
-                raw_records.append(metrics)
-
-        if not raw_records:
-            _institutional_engine_state["status"] = "NO_CANDIDATES"
-            state_engine.finish_scan_progress("Scan finished: 0 stocks passed raw feature extraction.")
-            return pd.DataFrame()
-
-        raw_df = pd.DataFrame(raw_records)
-
-        # Step 6: 6-Pillar Percentile Scoring
-        state_engine.update_scan_progress(
-            stage=f"Step 5/6: Constructing 6-Pillars & Ranking Universe Percentiles ({len(raw_df)} liquid stocks out of {len(tickers)} Chartink stocks)...",
-            percent=82
-        )
-        scored_df = PercentileScoringEngine.score_universe(raw_df, run_mode=mode)
-
-        # Step 7: ML Re-Ranking
-        state_engine.update_scan_progress(
-            stage="Step 6/6: Applying Calibrated ML Meta-Classifier Re-Ranker & Score-Weighted Sizing...",
-            percent=92
-        )
-        reranked_df = MLReRanker.apply_reranking(scored_df)
-
-        # Step 8: Classification & Position Sizing
-        final_rows = []
-        for _, row in reranked_df.iterrows():
-            bucket = ExecutionEngine.classify(row)
-            pos_info = ExecutionEngine.calculate_position(row, capital=self.capital, base_risk_pct=self.risk_per_trade_pct)
-
-            final_rows.append({
-                "ticker": clean_symbol(row['ticker']),
-                "sector": row['sector'],
-                "bucket": bucket,
-                "score": round(row['score'], 1),
-                "confidence": int(row['confidence']),
-                "ml_prob": float(row['ml_prob']),
-                "tier": pos_info['tier'],
-                "close": row['close'],
-                "entry": pos_info['entry'],
-                "sl": pos_info['sl'],
-                "t1": pos_info['t1'],
-                "t2": pos_info['t2'],
-                "rr": pos_info['rr'],
-                "shares": pos_info['shares'],
-                "capital_at_risk": pos_info['capital_at_risk'],
-                "risk_pct": pos_info['risk_pct'],
-                "atr_pct": round(row['atr_pct'], 2),
-                "rsi14": round(row['rsi14'], 1),
-                "dist_to_pivot": round(row['dist_to_pivot'], 2),
-                "dist_to_ema20": round(row['dist_to_ema20'], 2),
-                "inst_score": round(row['inst_score'], 1),
-                "week_confluence": bool(row['week_confluence']),
-                "intraday_pct": round(row['intraday_pct'], 2),
-                "intraday_adj": round(row['intraday_adj'], 2),
-                "rs_spread": round(row.get('sector_excess_6m', 0.0), 2)
-            })
-
-        signals_df = pd.DataFrame(final_rows)
-        bucket_order = {"BUY_NOW": 0, "PRE_BREAKOUT": 1, "WAIT_PULLBACK": 2, "AVOID": 3}
-        signals_df["_sort_key"] = signals_df["bucket"].map(bucket_order)
-        signals_df.sort_values(by=["_sort_key", "score", "ml_prob"], ascending=[True, False, False], inplace=True)
-        signals_df.drop(columns=["_sort_key"], inplace=True)
-        signals_df.reset_index(drop=True, inplace=True)
-
-        # Save to database
-        records_list = signals_df.to_dict(orient="records")
-        state_engine.save_latest_signals(records_list, portfolio_type=PORTFOLIO_TYPE)
-
-        # Update engine runtime state
-        b_now = int((signals_df['bucket'] == 'BUY_NOW').sum())
-        p_brk = int((signals_df['bucket'] == 'PRE_BREAKOUT').sum())
-        w_pb = int((signals_df['bucket'] == 'WAIT_PULLBACK').sum())
-        avoid = int((signals_df['bucket'] == 'AVOID').sum())
-
-        _institutional_engine_state["universe_size"] = len(signals_df)
-        _institutional_engine_state["buy_now_count"] = b_now
-        _institutional_engine_state["pre_breakout_count"] = p_brk
-        _institutional_engine_state["wait_pullback_count"] = w_pb
-        _institutional_engine_state["avoid_count"] = avoid
-        _institutional_engine_state["signals"] = records_list[:100]
-        _institutional_engine_state["status"] = "COMPLETED"
-
-        # Auto-execution if enabled AND Strict Market-Hours Trading Gate is OPEN (09:15 - 15:30 IST)
-        orders_placed = 0
-        gate_notice = ""
-        if auto_execute:
-            if not can_trade:
-                gate_notice = " [🔒 STRICT TRADING GATE: Market Closed — Signals updated, 0 trades executed]"
-                logger.warning(f"🔒 [P1 Auto-Execute Blocked] {gate_msg}")
+        try:
+            # Step 1: Ingest Universe Live from Chartink
+            if custom_tickers and len(custom_tickers) > 0:
+                tickers = [format_nse_ticker(t) for t in custom_tickers]
+                _institutional_engine_state["chartink_fetched_count"] = len(tickers)
+                state_engine.update_scan_progress(
+                    stage=f"Step 1/6: Using {len(tickers)} specified tickers...",
+                    percent=10,
+                    stocks_total=len(tickers),
+                    stocks_done=0
+                )
             else:
-                active_syms = [p["symbol"] for p in state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)]
-                buy_now_candidates = signals_df[(signals_df['bucket'] == 'BUY_NOW') & (~signals_df['ticker'].isin(active_syms))]
+                tickers = self.chartink.fetch_tickers()
+                if not tickers:
+                    meta_rows = state_engine.get_all_ohlcv_metadata(limit=2000)
+                    tickers = [f"{r['symbol']}.NS" for r in meta_rows if r.get("symbol") and not str(r["symbol"]).startswith("^")]
+                _institutional_engine_state["chartink_fetched_count"] = len(tickers)
+                state_engine.update_scan_progress(
+                    stage=f"Step 1/6: Connected to Chartink! Fetched {len(tickers)} live NSE stocks.",
+                    percent=12,
+                    stocks_total=len(tickers),
+                    stocks_done=0
+                )
 
-                for _, r in buy_now_candidates.iterrows():
-                    if r['shares'] > 0 and orders_placed < 5:
-                        opened = state_engine.open_position(
-                            symbol=r['ticker'],
-                            entry_price=r['entry'],
-                            quantity=r['shares'],
-                            stop_loss=r['sl'],
-                            target=r['t1'],
-                            target_2=r['t2'],
-                            triggered_from=f"INSTITUTIONAL_{mode.upper()}",
-                            notes=f"Tier {r['tier']} | Score: {r['score']} | ML P(W): {r['ml_prob']} | T1: ₹{r['t1']} | T2: ₹{r['t2']}",
-                            sl_reason="INITIAL_SL",
-                            sector=r['sector'],
-                            portfolio_type=PORTFOLIO_TYPE,
-                            entry_reason=f"6-Pillar BUY_NOW, Score={r['score']}, ML={r['ml_prob']}, RVOL confirmation",
-                            entry_regime="BULLISH_CONFIRMED",
-                            entry_metrics=r.to_dict()
-                        )
-                        if opened:
-                            orders_placed += 1
-                            state_engine.update_scan_progress(
-                                stage=f"✅ Auto-Executed BUY_NOW: {r['ticker']} ({r['shares']} shs @ ₹{r['entry']:.2f})",
-                                percent=96,
-                                add_log=True
+            # Step 2: Parallel Benchmarks Fetch
+            state_engine.update_scan_progress(
+                stage=f"Step 2/6: Parallel fetch of 11 NSE Market & Sector Benchmarks (^NSEI, ^CRSLDX, Bank, IT, Auto, Pharma)...",
+                percent=18,
+                stocks_total=len(tickers),
+                stocks_done=0
+            )
+            benchmarks = self.yahoo.fetch_benchmarks()
+
+            # Step 3: Multi-Threaded Incremental Gap-Fill OHLCV Fetch
+            ohlcv_dict, dl_stats = self.yahoo.fetch_universe_ohlcv(tickers, min_bars=105)
+            _institutional_engine_state["cache_hits_count"] = dl_stats.get("cache_hits", 0)
+            _institutional_engine_state["gap_filled_count"] = dl_stats.get("gap_filled", 0)
+            _institutional_engine_state["full_downloads_count"] = dl_stats.get("full_downloads", 0)
+
+            if not ohlcv_dict:
+                _institutional_engine_state["status"] = "FAILED"
+                state_engine.finish_scan_progress("Scan aborted: No valid OHLCV data retrieved.")
+                return pd.DataFrame()
+
+            # Step 4: Reconcile active positions & Multi-Threaded Parallel Feature Extraction
+            state_engine.update_scan_progress(
+                stage=f"Step 4/6: Reconciling active positions & launching 16-Thread Parallel Indicator Engine across {len(ohlcv_dict)} liquid stocks...",
+                percent=70,
+                stocks_total=len(ohlcv_dict),
+                stocks_done=0
+            )
+            reconciled = reconcile_open_institutional_positions(ohlcv_dict)
+            _institutional_engine_state["reconciled_trades"] = len(reconciled)
+
+            # Step 5: 16-Thread Parallel C-Vectorized Feature Extraction
+            t_feat = time.time()
+            raw_records = FeatureEngine.compute_universe_metrics_parallel(ohlcv_dict, benchmarks=benchmarks, max_workers=16)
+            logger.info(f"⚡ Parallel Technical Indicator Engine computed 30 features for {len(raw_records)} stocks in {time.time() - t_feat:.2f}s.")
+
+            if not raw_records:
+                _institutional_engine_state["status"] = "NO_CANDIDATES"
+                state_engine.finish_scan_progress("Scan finished: 0 stocks passed raw feature extraction.")
+                return pd.DataFrame()
+
+            raw_df = pd.DataFrame(raw_records)
+
+            # Step 6: 6-Pillar Percentile Scoring
+            state_engine.update_scan_progress(
+                stage=f"Step 5/6: Constructing 6-Pillars & Ranking Universe Percentiles ({len(raw_df)} liquid stocks out of {len(tickers)} Chartink stocks)...",
+                percent=85
+            )
+            scored_df = PercentileScoringEngine.score_universe(raw_df, run_mode=mode)
+
+            # Step 7: ML Re-Ranking
+            state_engine.update_scan_progress(
+                stage="Step 6/6: Applying Calibrated ML Meta-Classifier Re-Ranker & Score-Weighted Sizing...",
+                percent=92
+            )
+            reranked_df = MLReRanker.apply_reranking(scored_df)
+
+            # Step 8: Classification & Position Sizing
+            final_rows = []
+            for _, row in reranked_df.iterrows():
+                bucket = ExecutionEngine.classify(row)
+                pos_info = ExecutionEngine.calculate_position(row, capital=self.capital, base_risk_pct=self.risk_per_trade_pct)
+
+                final_rows.append({
+                    "ticker": clean_symbol(row['ticker']),
+                    "sector": row['sector'],
+                    "bucket": bucket,
+                    "score": round(row['score'], 1),
+                    "confidence": int(row['confidence']),
+                    "ml_prob": float(row['ml_prob']),
+                    "tier": pos_info['tier'],
+                    "close": row['close'],
+                    "entry": pos_info['entry'],
+                    "sl": pos_info['sl'],
+                    "t1": pos_info['t1'],
+                    "t2": pos_info['t2'],
+                    "rr": pos_info['rr'],
+                    "shares": pos_info['shares'],
+                    "capital_at_risk": pos_info['capital_at_risk'],
+                    "risk_pct": pos_info['risk_pct'],
+                    "atr_pct": round(row['atr_pct'], 2),
+                    "rsi14": round(row['rsi14'], 1),
+                    "dist_to_pivot": round(row['dist_to_pivot'], 2),
+                    "dist_to_ema20": round(row['dist_to_ema20'], 2),
+                    "inst_score": round(row['inst_score'], 1),
+                    "week_confluence": bool(row['week_confluence']),
+                    "intraday_pct": round(row['intraday_pct'], 2),
+                    "intraday_adj": round(row['intraday_adj'], 2),
+                    "rs_spread": round(row.get('sector_excess_6m', 0.0), 2)
+                })
+
+            signals_df = pd.DataFrame(final_rows)
+            bucket_order = {"BUY_NOW": 0, "PRE_BREAKOUT": 1, "WAIT_PULLBACK": 2, "AVOID": 3}
+            signals_df["_sort_key"] = signals_df["bucket"].map(bucket_order)
+            signals_df.sort_values(by=["_sort_key", "score", "ml_prob"], ascending=[True, False, False], inplace=True)
+            signals_df.drop(columns=["_sort_key"], inplace=True)
+            signals_df.reset_index(drop=True, inplace=True)
+
+            # Save to database
+            records_list = signals_df.to_dict(orient="records")
+            state_engine.save_latest_signals(records_list, portfolio_type=PORTFOLIO_TYPE)
+
+            # Update engine runtime state
+            b_now = int((signals_df['bucket'] == 'BUY_NOW').sum())
+            p_brk = int((signals_df['bucket'] == 'PRE_BREAKOUT').sum())
+            w_pb = int((signals_df['bucket'] == 'WAIT_PULLBACK').sum())
+            avoid = int((signals_df['bucket'] == 'AVOID').sum())
+
+            _institutional_engine_state["universe_size"] = len(signals_df)
+            _institutional_engine_state["buy_now_count"] = b_now
+            _institutional_engine_state["pre_breakout_count"] = p_brk
+            _institutional_engine_state["wait_pullback_count"] = w_pb
+            _institutional_engine_state["avoid_count"] = avoid
+            _institutional_engine_state["signals"] = records_list[:100]
+            _institutional_engine_state["status"] = "COMPLETED"
+
+            # Auto-execution if enabled AND Strict Market-Hours Trading Gate is OPEN (09:15 - 15:30 IST)
+            orders_placed = 0
+            gate_notice = ""
+            if auto_execute:
+                if not can_trade:
+                    gate_notice = " [🔒 STRICT TRADING GATE: Market Closed — Signals updated, 0 trades executed]"
+                    logger.warning(f"🔒 [P1 Auto-Execute Blocked] {gate_msg}")
+                else:
+                    active_syms = [p["symbol"] for p in state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)]
+                    buy_now_candidates = signals_df[(signals_df['bucket'] == 'BUY_NOW') & (~signals_df['ticker'].isin(active_syms))]
+
+                    for _, r in buy_now_candidates.iterrows():
+                        if r['shares'] > 0 and orders_placed < 5:
+                            opened = state_engine.open_position(
+                                symbol=r['ticker'],
+                                entry_price=r['entry'],
+                                quantity=r['shares'],
+                                stop_loss=r['sl'],
+                                target=r['t1'],
+                                target_2=r['t2'],
+                                triggered_from=f"INSTITUTIONAL_{mode.upper()}",
+                                notes=f"Tier {r['tier']} | Score: {r['score']} | ML P(W): {r['ml_prob']} | T1: ₹{r['t1']} | T2: ₹{r['t2']}",
+                                sl_reason="INITIAL_SL",
+                                sector=r['sector'],
+                                portfolio_type=PORTFOLIO_TYPE,
+                                entry_reason=f"6-Pillar BUY_NOW, Score={r['score']}, ML={r['ml_prob']}, RVOL confirmation",
+                                entry_regime="BULLISH_CONFIRMED",
+                                entry_metrics=r.to_dict()
                             )
+                            if opened:
+                                orders_placed += 1
+                                state_engine.update_scan_progress(
+                                    stage=f"✅ Auto-Executed BUY_NOW: {r['ticker']} ({r['shares']} shs @ ₹{r['entry']:.2f})",
+                                    percent=96,
+                                    add_log=True
+                                )
 
-        _institutional_engine_state["orders_executed"] = orders_placed
+            _institutional_engine_state["orders_executed"] = orders_placed
 
-        elapsed = time.time() - start_time
-        summary_msg = (
-            f"Chartink Live Scan Complete in {elapsed:.1f}s: {len(tickers)} Chartink stocks fetched "
-            f"(Master Vault Hit: {dl_stats['cache_hits']}, Intraday Delta: {dl_stats['gap_filled']}, New 2Y: {dl_stats['full_downloads']}) -> "
-            f"{len(signals_df)} liquid stocks analyzed -> BUY NOW: {b_now} (Auto-Executed: {orders_placed}) | PRE BREAKOUT: {p_brk} | WAIT PULLBACK: {w_pb}{gate_notice}"
-        )
-        state_engine.log_scan_run(
-            scan_type=f"INSTITUTIONAL_{mode.upper()}",
-            portfolio_type=PORTFOLIO_TYPE,
-            status="SUCCESS",
-            execution_time_sec=elapsed,
-            candidates_count=b_now + p_brk,
-            orders_count=orders_placed,
-            reconciled_count=len(reconciled),
-            message=summary_msg,
-            details=dl_stats
-        )
-        state_engine.set_kv("institutional_snapshot", {
-            "chartink_fetched_count": _institutional_engine_state.get("chartink_fetched_count", len(tickers)),
-            "universe_size": len(signals_df),
-            "cache_hits_count": dl_stats.get("cache_hits", 0),
-            "gap_filled_count": dl_stats.get("gap_filled", 0),
-            "full_downloads_count": dl_stats.get("full_downloads", 0),
-            "buy_now_count": b_now,
-            "pre_breakout_count": p_brk,
-            "wait_pullback_count": w_pb,
-            "avoid_count": avoid,
-            "last_run_time": format_ist()
-        })
-        state_engine.finish_scan_progress(summary_msg)
+            elapsed = time.time() - start_time
+            summary_msg = (
+                f"Chartink Live Scan Complete in {elapsed:.1f}s: {len(tickers)} Chartink stocks fetched "
+                f"(Master Vault Hit: {dl_stats['cache_hits']}, Intraday Delta: {dl_stats['gap_filled']}, New 2Y: {dl_stats['full_downloads']}) -> "
+                f"{len(signals_df)} liquid stocks analyzed -> BUY NOW: {b_now} (Auto-Executed: {orders_placed}) | PRE BREAKOUT: {p_brk} | WAIT PULLBACK: {w_pb}{gate_notice}"
+            )
+            state_engine.log_scan_run(
+                scan_type=f"INSTITUTIONAL_{mode.upper()}",
+                portfolio_type=PORTFOLIO_TYPE,
+                status="SUCCESS",
+                execution_time_sec=elapsed,
+                candidates_count=b_now + p_brk,
+                orders_count=orders_placed,
+                reconciled_count=len(reconciled),
+                message=summary_msg,
+                details=dl_stats
+            )
+            state_engine.set_kv("institutional_snapshot", {
+                "chartink_fetched_count": _institutional_engine_state.get("chartink_fetched_count", len(tickers)),
+                "universe_size": len(signals_df),
+                "cache_hits_count": dl_stats.get("cache_hits", 0),
+                "gap_filled_count": dl_stats.get("gap_filled", 0),
+                "full_downloads_count": dl_stats.get("full_downloads", 0),
+                "buy_now_count": b_now,
+                "pre_breakout_count": p_brk,
+                "wait_pullback_count": w_pb,
+                "avoid_count": avoid,
+                "last_run_time": format_ist()
+            })
+            state_engine.finish_scan_progress(summary_msg)
 
-        # Backup Single Master File to Telegram Cloud Vault in background
-        threading.Thread(
-            target=telegram_vault.backup_master_file_to_cloud,
-            kwargs={"custom_note": f"P1 Scan Complete ({len(tickers)} Chartink, {b_now} BUY_NOW)"},
-            daemon=True
-        ).start()
+            # Backup Single Master File to Telegram Cloud Vault in background
+            threading.Thread(
+                target=telegram_vault.backup_master_file_to_cloud,
+                kwargs={"custom_note": f"P1 Scan Complete ({len(tickers)} Chartink, {b_now} BUY_NOW)"},
+                daemon=True
+            ).start()
 
-        logger.info(summary_msg)
-        return signals_df
+            logger.info(summary_msg)
+            return signals_df
+        except Exception as err:
+            _institutional_engine_state["status"] = "FAILED"
+            err_msg = f"Scan encountered error: {err}"
+            logger.exception(err_msg)
+            state_engine.finish_scan_progress(err_msg)
+            return pd.DataFrame()
 
 
 def get_institutional_status() -> Dict[str, Any]:

@@ -108,9 +108,10 @@ class NSEMarketCalendar:
         """Loads previously synced NSE holidays from the Single Master File (swing_trades.db)."""
         if cls._db_loaded:
             return
+        cls._db_loaded = True
         try:
             from execution.state_engine import state_engine
-            cached = state_engine.get_engine_state("NSE_HOLIDAYS_VAULT")
+            cached = state_engine.get_kv("NSE_HOLIDAYS_VAULT")
             if cached and isinstance(cached, dict):
                 holidays_dict = cached.get("holidays") or {}
                 if isinstance(holidays_dict, dict) and holidays_dict:
@@ -128,7 +129,6 @@ class NSEMarketCalendar:
                         "live_fetched_count": cached.get("live_fetched_count", len(holidays_dict)),
                         "total_holidays_loaded": len(cls.NSE_HOLIDAYS),
                     })
-            cls._db_loaded = True
         except Exception as e:
             logger.debug(f"Could not load cached NSE holidays from DB: {e}")
 
@@ -224,7 +224,7 @@ class NSEMarketCalendar:
                 # Persist into Single Master File (swing_trades.db)
                 try:
                     from execution.state_engine import state_engine
-                    state_engine.save_engine_state("NSE_HOLIDAYS_VAULT", {
+                    state_engine.set_kv("NSE_HOLIDAYS_VAULT", {
                         "source": sync_source,
                         "last_synced_ist": sync_ts,
                         "last_synced_date": today_str,

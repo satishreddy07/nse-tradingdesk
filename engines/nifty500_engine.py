@@ -144,25 +144,37 @@ async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
 
     tickers = [f"{s}.NS" for s in symbols]
     total_tickers = len(tickers)
-    flat_rows = []
+    frames: List[pd.DataFrame] = []
     dirty_dfs: Dict[str, pd.DataFrame] = {}
 
     start_t = time.time()
 
+    def _df_to_norm_frame(df: pd.DataFrame, sym_clean: str, max_rows: int = 160) -> Optional[pd.DataFrame]:
+        sub = df.tail(max_rows)
+        if sub.empty:
+            return None
+        idx = pd.DatetimeIndex(sub.index)
+        if idx.tz is not None:
+            idx = idx.tz_localize(None)
+        dt_norm = idx.normalize()
+        out = pd.DataFrame({
+            "date": dt_norm,
+            "symbol": sym_clean,
+            "open": sub["Open"].to_numpy(dtype=np.float64, copy=False),
+            "high": sub["High"].to_numpy(dtype=np.float64, copy=False),
+            "low": sub["Low"].to_numpy(dtype=np.float64, copy=False),
+            "close": sub["Close"].to_numpy(dtype=np.float64, copy=False),
+            "volume": sub["Volume"].fillna(0.0).to_numpy(dtype=np.float64, copy=False),
+        })
+        out.dropna(subset=["close", "open"], inplace=True)
+        return out if not out.empty else None
+
     # 1. Fetch ^CRSLDX benchmark
     _, bench_df = fetcher.fetch_ticker_chart("^CRSLDX", range_period="1y")
     if bench_df is not None and not bench_df.empty:
-        for idx_ts, r in bench_df.tail(180).iterrows():
-            dt_norm = pd.Timestamp(idx_ts).tz_localize(None).normalize() if pd.Timestamp(idx_ts).tzinfo else pd.Timestamp(idx_ts).normalize()
-            flat_rows.append({
-                "date": dt_norm,
-                "symbol": "^CRSLDX",
-                "open": float(r["Open"]),
-                "high": float(r["High"]),
-                "low": float(r["Low"]),
-                "close": float(r["Close"]),
-                "volume": float(r["Volume"] or 0.0),
-            })
+        bf = _df_to_norm_frame(bench_df, "^CRSLDX", max_rows=180)
+        if bf is not None:
+            frames.append(bf)
 
     # 2. Fetch or incrementally gap-fill Nifty 500 constituents in 24 threads
     completed = 0
@@ -179,20 +191,9 @@ async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
                     dirty_dfs[sym] = df
                 if df is not None and not df.empty:
                     sym_clean = sym.replace(".NS", "").replace(".BO", "").strip().upper()
-                    sub_df = df.tail(160)
-                    for idx_ts, r in sub_df.iterrows():
-                        if pd.isna(r["Close"]) or pd.isna(r["Open"]):
-                            continue
-                        dt_norm = pd.Timestamp(idx_ts).tz_localize(None).normalize() if pd.Timestamp(idx_ts).tzinfo else pd.Timestamp(idx_ts).normalize()
-                        flat_rows.append({
-                            "date": dt_norm,
-                            "symbol": sym_clean,
-                            "open": float(r["Open"]),
-                            "high": float(r["High"]),
-                            "low": float(r["Low"]),
-                            "close": float(r["Close"]),
-                            "volume": float(r["Volume"] or 0.0),
-                        })
+                    sf = _df_to_norm_frame(df, sym_clean, max_rows=160)
+                    if sf is not None:
+                        frames.append(sf)
             except Exception:
                 pass
 
@@ -214,9 +215,10 @@ async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
             daemon=True
         ).start()
 
+    combined_df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     elapsed = time.time() - start_t
-    logger.info(f"-> Nifty 500 Incremental Sync finished in {elapsed:.1f}s ({len(flat_rows):,} total bars retrieved).")
-    return pd.DataFrame(flat_rows)
+    logger.info(f"-> Nifty 500 Incremental Sync finished in {elapsed:.1f}s ({len(combined_df):,} total bars retrieved).")
+    return combined_df
 
 
 def calc_rsi(s: pd.Series) -> pd.Series:
@@ -255,6 +257,12 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
         h = float(latest_bar["high"])
         l = float(latest_bar["low"])
 
+        bar_date_str = str(latest_bar["date"])[:10]
+        entry_date_str = str(pos.get("entry_date") or "")[:10]
+        is_same_entry_day = (bar_date_str == entry_date_str)
+        check_low = c if is_same_entry_day else min(l, c)
+        check_high = c if is_same_entry_day else max(h, c)
+
         entry_px = float(pos["entry_price"])
         orig_sl = float(pos.get("original_stop_loss") or pos["stop_loss"])
         current_sl = float(pos["stop_loss"])
@@ -262,7 +270,7 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
         r_unit = max(0.01, entry_px - orig_sl)
         target_2r = entry_px + (2.0 * r_unit)
 
-        highest_seen = max(float(pos.get("highest_price") or entry_px), h, c)
+        highest_seen = max(float(pos.get("highest_price") or entry_px), check_high, c)
 
         # If market is closed, update MTM price only and strictly block trade exit execution
         if not can_trade:
@@ -274,7 +282,7 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
             pos.get("sl_reason") == "TRAILING_SL" or
             (float(pos.get("highest_price") or 0) >= target_2r)
         )
-        hit_2r_today = (h >= target_2r) or (c >= target_2r)
+        hit_2r_today = (check_high >= target_2r) or (c >= target_2r)
         in_trailing_mode = previously_trailing or hit_2r_today
 
         if len(sym_df) >= 6:
@@ -299,8 +307,8 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
 
         # Priority 1: Initial Stop-Loss
         if not in_trailing_mode:
-            if l <= orig_sl or c <= orig_sl:
-                res = state_engine.close_position(sym, exit_price=orig_sl, exit_reason="INITIAL_SL")
+            if check_low <= orig_sl:
+                res = state_engine.close_position(sym, exit_price=c if is_same_entry_day else orig_sl, exit_reason="INITIAL_SL")
                 if res:
                     closed_events.append(res)
                     logger.info(f"🛑 [P2 Priority 1: INITIAL_SL] Stop-Loss hit for {sym} @ ₹{orig_sl:.2f}")
@@ -309,8 +317,8 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
         # Priority 2: Trailing Stop-Loss
         if in_trailing_mode:
             trailing_sl = max(current_sl, rolling_5d_low)
-            if l <= trailing_sl or c <= trailing_sl:
-                res = state_engine.close_position(sym, exit_price=trailing_sl, exit_reason="TRAILING_SL")
+            if check_low <= trailing_sl:
+                res = state_engine.close_position(sym, exit_price=c if is_same_entry_day else trailing_sl, exit_reason="TRAILING_SL")
                 if res:
                     closed_events.append(res)
                     logger.info(f"🎯 [P2 Priority 2: TRAILING_SL] Trailing Stop hit for {sym} @ ₹{trailing_sl:.2f}")

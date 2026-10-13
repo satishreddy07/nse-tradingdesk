@@ -15,16 +15,26 @@ import zlib
 import pickle
 import logging
 import datetime
+import concurrent.futures
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from scipy.signal import lfilter
 
 from core.config import DB_PATH
 from core.data_quality import IST, now_ist, format_ist
 
 logger = logging.getLogger("StateEngine")
+
+
+def _fast_ewm_last(arr: np.ndarray, alpha: float) -> float:
+    """Fast C-level EWM last value matching pd.Series.ewm(alpha=alpha, adjust=False).mean().iloc[-1]."""
+    if len(arr) == 0:
+        return 0.0
+    out, _ = lfilter([alpha], [1.0, -(1.0 - alpha)], arr, zi=[arr[0] * (1.0 - alpha)])
+    return float(out[-1])
 
 
 class StateEngine:
@@ -36,6 +46,7 @@ class StateEngine:
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
         self._lock = threading.RLock()
+        self._progress_lock = threading.RLock()
         self._ohlcv_mem_cache: Dict[str, Tuple[pd.DataFrame, datetime.datetime]] = {}
         self._init_db()
 
@@ -235,39 +246,50 @@ class StateEngine:
     # --------------------------------------------------------------------------
     @staticmethod
     def _compute_df_summary_and_blob(df: pd.DataFrame) -> Tuple[Dict[str, Any], bytes]:
-        df = df.sort_index()
-        df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+        if not df.index.is_monotonic_increasing:
+            df = df.sort_index()
         if len(df) > 500:
             df = df.iloc[-500:]
 
-        closes = df["Close"].astype(float)
-        highs = df["High"].astype(float)
-        lows = df["Low"].astype(float)
-        vols = df["Volume"].fillna(0).astype(np.int64)
+        closes_np = df["Close"].to_numpy(dtype=np.float64, copy=False)
+        highs_np = df["High"].to_numpy(dtype=np.float64, copy=False)
+        lows_np = df["Low"].to_numpy(dtype=np.float64, copy=False)
+        vols_s = df["Volume"].fillna(0).astype(np.int64)
+        n = len(closes_np)
 
-        last_close = float(closes.iloc[-1])
-        prev_close = float(closes.iloc[-2]) if len(closes) >= 2 else last_close
+        last_close = float(closes_np[-1])
+        prev_close = float(closes_np[-2]) if n >= 2 else last_close
         change_pct = round(((last_close - prev_close) / max(0.01, prev_close)) * 100.0, 2)
-        last_volume = int(vols.iloc[-1])
+        last_volume = int(vols_s.iloc[-1])
 
-        ema20 = round(float(closes.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
-        ema50 = round(float(closes.ewm(span=50, adjust=False).mean().iloc[-1]), 2)
-        ema200 = round(float(closes.ewm(span=200, adjust=False).mean().iloc[-1]), 2)
+        ema20 = round(_fast_ewm_last(closes_np, 2.0 / 21.0), 2)
+        ema50 = round(_fast_ewm_last(closes_np, 2.0 / 51.0), 2)
+        ema200 = round(_fast_ewm_last(closes_np, 2.0 / 201.0), 2)
 
-        # RSI 14
-        delta = closes.diff()
-        gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
-        loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
-        rs = gain / (loss + 1e-9)
-        rsi14 = round(float((100 - (100 / (1 + rs))).iloc[-1]), 1)
+        # Fast C-vectorized Wilder RSI 14
+        if n >= 2:
+            delta = np.empty(n, dtype=np.float64)
+            delta[0] = 0.0
+            delta[1:] = closes_np[1:] - closes_np[:-1]
+            gains = np.where(delta > 0.0, delta, 0.0)
+            losses = np.where(delta < 0.0, -delta, 0.0)
+            avg_gain = _fast_ewm_last(gains[1:], 1.0 / 14.0)
+            avg_loss = _fast_ewm_last(losses[1:], 1.0 / 14.0)
+            rs = avg_gain / (avg_loss + 1e-9)
+            rsi14 = round(float(100.0 - (100.0 / (1.0 + rs))), 1)
+        else:
+            rsi14 = 50.0
 
-        # ATR 14
-        tr = pd.concat([
-            (highs - lows),
-            (highs - closes.shift(1)).abs(),
-            (lows - closes.shift(1)).abs()
-        ], axis=1).max(axis=1)
-        atr14 = round(float(tr.rolling(14, min_periods=1).mean().iloc[-1]), 2)
+        # Fast NumPy ATR 14 (only needs last 15 bars!)
+        if n >= 2:
+            win = min(14, n - 1)
+            h_tail = highs_np[-win:]
+            l_tail = lows_np[-win:]
+            c_prev = closes_np[-(win + 1):-1]
+            tr_tail = np.maximum(h_tail - l_tail, np.maximum(np.abs(h_tail - c_prev), np.abs(l_tail - c_prev)))
+            atr14 = round(float(np.mean(tr_tail)), 2)
+        else:
+            atr14 = round(float(highs_np[-1] - lows_np[-1]), 2)
 
         last_idx = df.index[-1]
         last_bar_date = str(last_idx)[:10]
@@ -276,9 +298,9 @@ class StateEngine:
         for col in ("Open", "High", "Low", "Close"):
             if col in df.columns:
                 compact[col] = df[col].astype(np.float32)
-        compact["Volume"] = vols
+        compact["Volume"] = vols_s
 
-        blob = zlib.compress(pickle.dumps(compact, protocol=pickle.HIGHEST_PROTOCOL), level=6)
+        blob = zlib.compress(pickle.dumps(compact, protocol=pickle.HIGHEST_PROTOCOL), level=1)
         meta = {
             "last_bar_date": last_bar_date,
             "bars_count": len(compact),
@@ -336,55 +358,84 @@ class StateEngine:
             logger.debug(f"Failed to save OHLCV for {sym} into master DB: {e}")
 
     def save_ohlcv_batch(self, dfs: Dict[str, pd.DataFrame]) -> int:
-        """Batch-saves multiple ticker DataFrames in a single fast SQLite transaction."""
+        """
+        Multi-threaded parallel OHLCV summary & compression + chunked SQLite transaction:
+        1. Updates in-memory cache immediately.
+        2. Computes technical summary & compressed blob across 16 parallel threads.
+        3. Writes to SQLite in 250-row chunks so database locks are held for <50ms.
+        """
         if not dfs:
             return 0
         now_dt = now_ist()
         now_str = format_ist(now_dt)
-        rows_to_insert = []
+
+        valid_items: List[Tuple[str, pd.DataFrame]] = []
         for symbol, df in dfs.items():
             if df is None or df.empty or "Close" not in df.columns:
                 continue
             sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
-            try:
-                meta, blob = self._compute_df_summary_and_blob(df)
-                self._ohlcv_mem_cache[sym] = (df, now_dt)
-                rows_to_insert.append((
-                    sym, meta["last_bar_date"], meta["bars_count"], meta["last_close"],
-                    meta["prev_close"], meta["change_pct"], meta["last_volume"],
-                    meta["ema20"], meta["ema50"], meta["ema200"], meta["rsi14"],
-                    meta["atr14"], now_str, sqlite3.Binary(blob)
-                ))
-            except Exception as e:
-                logger.debug(f"Skip batch item {sym}: {e}")
+            self._ohlcv_mem_cache[sym] = (df, now_dt)
+            valid_items.append((sym, df))
+
+        if not valid_items:
+            return 0
+
+        def _prep_row(item: Tuple[str, pd.DataFrame]):
+            sym, df = item
+            meta, blob = self._compute_df_summary_and_blob(df)
+            return (
+                sym, meta["last_bar_date"], meta["bars_count"], meta["last_close"],
+                meta["prev_close"], meta["change_pct"], meta["last_volume"],
+                meta["ema20"], meta["ema50"], meta["ema200"], meta["rsi14"],
+                meta["atr14"], now_str, sqlite3.Binary(blob)
+            )
+
+        rows_to_insert = []
+        if len(valid_items) <= 8:
+            for item in valid_items:
+                try:
+                    rows_to_insert.append(_prep_row(item))
+                except Exception as e:
+                    logger.debug(f"Skip batch item {item[0]}: {e}")
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
+                for fut in concurrent.futures.as_completed([executor.submit(_prep_row, it) for it in valid_items]):
+                    try:
+                        rows_to_insert.append(fut.result())
+                    except Exception as e:
+                        logger.debug(f"Skip parallel batch item: {e}")
 
         if not rows_to_insert:
             return 0
 
-        with self._lock:
-            with self._get_connection() as conn:
-                conn.executemany("""
-                INSERT INTO ohlcv_master_store (
-                    symbol, last_bar_date, bars_count, last_close, prev_close,
-                    change_pct, last_volume, ema20, ema50, ema200, rsi14, atr14,
-                    updated_at, ohlcv_blob
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(symbol) DO UPDATE SET
-                    last_bar_date = excluded.last_bar_date,
-                    bars_count = excluded.bars_count,
-                    last_close = excluded.last_close,
-                    prev_close = excluded.prev_close,
-                    change_pct = excluded.change_pct,
-                    last_volume = excluded.last_volume,
-                    ema20 = excluded.ema20,
-                    ema50 = excluded.ema50,
-                    ema200 = excluded.ema200,
-                    rsi14 = excluded.rsi14,
-                    atr14 = excluded.atr14,
-                    updated_at = excluded.updated_at,
-                    ohlcv_blob = excluded.ohlcv_blob;
-                """, rows_to_insert)
-                conn.commit()
+        sql = """
+        INSERT INTO ohlcv_master_store (
+            symbol, last_bar_date, bars_count, last_close, prev_close,
+            change_pct, last_volume, ema20, ema50, ema200, rsi14, atr14,
+            updated_at, ohlcv_blob
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(symbol) DO UPDATE SET
+            last_bar_date = excluded.last_bar_date,
+            bars_count = excluded.bars_count,
+            last_close = excluded.last_close,
+            prev_close = excluded.prev_close,
+            change_pct = excluded.change_pct,
+            last_volume = excluded.last_volume,
+            ema20 = excluded.ema20,
+            ema50 = excluded.ema50,
+            ema200 = excluded.ema200,
+            rsi14 = excluded.rsi14,
+            atr14 = excluded.atr14,
+            updated_at = excluded.updated_at,
+            ohlcv_blob = excluded.ohlcv_blob;
+        """
+        chunk_size = 250
+        for i in range(0, len(rows_to_insert), chunk_size):
+            chunk = rows_to_insert[i:i + chunk_size]
+            with self._lock:
+                with self._get_connection() as conn:
+                    conn.executemany(sql, chunk)
+                    conn.commit()
         return len(rows_to_insert)
 
     def get_ohlcv_df(self, symbol: str) -> Tuple[Optional[pd.DataFrame], float]:
@@ -1204,7 +1255,7 @@ class StateEngine:
             }
 
     def start_scan_progress(self, scan_type: str, initial_stage: str = "Initializing live scan..."):
-        with self._lock:
+        with self._progress_lock:
             self.init_progress_tracker()
             now_str = format_ist()
             self._live_progress = {
@@ -1227,7 +1278,7 @@ class StateEngine:
         stocks_done: Optional[int] = None,
         add_log: bool = True
     ):
-        with self._lock:
+        with self._progress_lock:
             self.init_progress_tracker()
             now_str = format_ist()
             self._live_progress["stage"] = stage
@@ -1243,7 +1294,7 @@ class StateEngine:
                     self._live_progress["logs"] = self._live_progress["logs"][-25:]
 
     def finish_scan_progress(self, final_stage: str = "Scan completed successfully."):
-        with self._lock:
+        with self._progress_lock:
             self.init_progress_tracker()
             now_str = format_ist()
             self._live_progress["is_running"] = False
@@ -1253,7 +1304,7 @@ class StateEngine:
             self._live_progress["logs"].append(f"[{now_str[11:19]}] ✅ {final_stage}")
 
     def get_scan_progress(self) -> Dict[str, Any]:
-        with self._lock:
+        with self._progress_lock:
             self.init_progress_tracker()
             return dict(self._live_progress)
 
