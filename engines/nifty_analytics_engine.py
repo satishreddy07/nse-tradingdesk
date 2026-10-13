@@ -44,6 +44,7 @@ from typing import Dict, List, Any, Optional, Tuple
 import requests
 import numpy as np
 import pandas as pd
+from core import config
 from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL
 
 from core.data_quality import IST, now_ist, format_ist
@@ -304,7 +305,11 @@ class NiftyAnalyticsEngine:
                     target_pnl REAL DEFAULT 0.0,
                     stoploss_pnl REAL DEFAULT 0.0,
                     auto_trade_mode TEXT DEFAULT 'MANUAL',
-                    market_condition TEXT DEFAULT ''
+                    market_condition TEXT DEFAULT '',
+                    trailing_stop_pnl REAL DEFAULT 0.0,
+                    highest_pnl_reached REAL DEFAULT 0.0,
+                    trailing_status TEXT DEFAULT 'INACTIVE',
+                    ai_rationale TEXT DEFAULT ''
                 );
                 """)
                 # Safe schema migrations for existing databases
@@ -338,6 +343,7 @@ class NiftyAnalyticsEngine:
                     ("trailing_stop_pnl", "REAL DEFAULT 0.0"),
                     ("highest_pnl_reached", "REAL DEFAULT 0.0"),
                     ("trailing_status", "TEXT DEFAULT 'INACTIVE'"),
+                    ("ai_rationale", "TEXT DEFAULT ''"),
                 ]
                 for col_name, col_type in opt_migrations:
                     if col_name not in existing_opt_cols:
@@ -2270,16 +2276,33 @@ class NiftyAnalyticsEngine:
         6. Live News RSS & Central Bank (RBI MPC / US Fed FOMC) Event Sentiment
         Plus Walk-Forward Validation, Calibration, Option Chain PCR overlay, and Quant Suggestions.
         """
+        from core import config
         now_ts = time.time()
         market_open = NSEMarketCalendar.can_execute_trades()
         cache_ttl = 300 if market_open else 3600
         if not force_refresh and self._predictions_mem_cache and (now_ts - self._predictions_cache_ts) < cache_ttl:
+            if "ai_analysis" not in self._predictions_mem_cache and getattr(config, "AI_ENABLED", True):
+                try:
+                    from ai_engine.service import ai_service
+                    ai_out = ai_service.analyze_predictions(force_refresh=False, predictions_data=self._predictions_mem_cache)
+                    if ai_out:
+                        self._predictions_mem_cache["ai_analysis"] = ai_out.model_dump()
+                except Exception:
+                    pass
             return self._predictions_mem_cache
 
         # If not forcing refresh, check Master DB persisted predictions first
         if not force_refresh:
             persisted = state_engine.get_kv("latest_nifty_predictions")
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
+                if "ai_analysis" not in persisted and getattr(config, "AI_ENABLED", True):
+                    try:
+                        from ai_engine.service import ai_service
+                        ai_out = ai_service.analyze_predictions(force_refresh=False, predictions_data=persisted)
+                        if ai_out:
+                            persisted["ai_analysis"] = ai_out.model_dump()
+                    except Exception:
+                        pass
                 with self._lock:
                     self._predictions_mem_cache = persisted
                     self._predictions_cache_ts = now_ts
@@ -2691,6 +2714,17 @@ class NiftyAnalyticsEngine:
             return obj
 
         payload = _clean_payload_json(payload)
+
+        # Automatically generate and integrate AI interpretation into prediction payload
+        try:
+            from core import config
+            if config.AI_ENABLED:
+                from ai_engine.service import ai_service
+                ai_output = ai_service.analyze_predictions(force_refresh=False, predictions_data=payload)
+                if ai_output:
+                    payload["ai_analysis"] = ai_output.model_dump()
+        except Exception as ai_e:
+            logger.debug(f"AI auto-interpretation attach notice: {ai_e}")
 
         with self._lock:
             self._predictions_mem_cache = payload
@@ -3134,6 +3168,7 @@ class NiftyAnalyticsEngine:
         stoploss_pnl = float(data.get("stoploss_pnl") or 0.0)
         auto_trade_mode = str(data.get("auto_trade_mode") or "MANUAL").upper()
         market_condition = str(data.get("market_condition") or "")
+        ai_rationale = str(data.get("ai_rationale") or "").strip()
 
         ts_now = format_ist()
         strat_id = f"OPT-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100, 999)}"
@@ -3146,14 +3181,14 @@ class NiftyAnalyticsEngine:
                     created_at, spot_at_entry, net_premium, max_profit, max_loss,
                     breakevens, risk_reward, est_margin, pop_pct, legs_json, status, realized_pnl,
                     target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
-                    trailing_stop_pnl, highest_pnl_reached, trailing_status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0.0, ?, ?, ?, ?, ?, ?, ?)
+                    trailing_stop_pnl, highest_pnl_reached, trailing_status, ai_rationale
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0.0, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     strat_id, strategy_name, symbol, expiry_date, expiry_type,
                     ts_now, spot_at_entry, net_premium, max_profit, max_loss,
                     breakevens, risk_reward, est_margin, pop_pct, json.dumps(legs),
                     target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
-                    stoploss_pnl, 0.0, 'INACTIVE'
+                    stoploss_pnl, 0.0, 'INACTIVE', ai_rationale
                 ))
                 conn.commit()
 
@@ -3172,6 +3207,7 @@ class NiftyAnalyticsEngine:
         prem_str = f"Net Credit +₹{abs(net_premium):,.2f}" if net_premium >= 0 else f"Net Debit -₹{abs(net_premium):,.2f}"
         mp_str = f"₹{max_profit:,.2f}" if (max_profit is not None and max_profit != 999999) else "Unlimited"
         ml_str = f"₹{abs(max_loss):,.2f}" if (max_loss is not None and max_loss != -999999) else "Unlimited"
+        ai_alert_block = f"\n🧠 <b>AI Synthesis:</b> {ai_rationale}\n" if ai_rationale else ""
 
         telegram_msg = (
             f"🎯 <b>NEW OPTIONS STRATEGY DEPLOYED</b>\n\n"
@@ -3179,6 +3215,7 @@ class NiftyAnalyticsEngine:
             f"🆔 <b>ID:</b> <code>{strat_id}</code>\n"
             f"⏳ <b>Expiry:</b> {expiry_date} ({expiry_type})\n"
             f"🤖 <b>Mode:</b> {auto_trade_mode} | <b>Condition:</b> {market_condition or 'Manual discretionary'}\n"
+            f"{ai_alert_block}"
             f"📌 <b>Spot at Entry:</b> ₹{spot_at_entry:,.2f}\n"
             f"💵 <b>Premium:</b> {prem_str}\n"
             f"🛡 <b>Max Profit:</b> {mp_str} | <b>Max Loss:</b> {ml_str}\n"
@@ -3780,6 +3817,43 @@ class NiftyAnalyticsEngine:
         w_iv = float(weekly_chain.get("volatility_and_gex", {}).get("atm_iv") or 12.0)
         m_iv = float(monthly_chain.get("volatility_and_gex", {}).get("atm_iv") or 13.0)
 
+        # Smart AI Analysis Synthesis from Predictions
+        ai_data = preds.get("ai_analysis") or {}
+        ai_avoid_list = [str(x).lower() for x in (ai_data.get("reasons_to_avoid_trade") or [])]
+        ai_avoid_str = " ".join(ai_avoid_list)
+        ai_conflict_str = str(ai_data.get("horizon_conflict_explained") or "").lower()
+        ai_rec_action = str(ai_data.get("recommended_options_action") or "").upper()
+        ai_rationale = str(ai_data.get("prediction_interpretation") or ai_data.get("regime_analysis") or "").strip()
+        ai_summary = f"{ai_data.get('recommended_options_action', '')} | {ai_rationale[:140]}" if ai_rationale else str(ai_data.get("recommended_options_action") or "")
+
+        has_naked_risk = any(w in ai_avoid_str for w in ["naked", "unhedged", "decay", "resistance", "overbought", "support", "oversold"])
+        has_divergence = bool(ai_conflict_str and any(w in ai_conflict_str for w in ["divergence", "conflict", "opposing", "caution", "mixed"]))
+
+        def refine_candidates_with_ai(c_list: List[str]) -> List[str]:
+            refined: List[str] = []
+            for c in c_list:
+                if c == "LONG_CALL" and (has_naked_risk or has_divergence):
+                    alt = "BULL_PUT_SPREAD" if "BULL_PUT_SPREAD" not in refined else "BULL_CALL_SPREAD"
+                    if alt not in refined:
+                        refined.append(alt)
+                elif c == "LONG_PUT" and (has_naked_risk or has_divergence):
+                    alt = "BEAR_CALL_SPREAD" if "BEAR_CALL_SPREAD" not in refined else "BEAR_PUT_SPREAD"
+                    if alt not in refined:
+                        refined.append(alt)
+                else:
+                    if c not in refined:
+                        refined.append(c)
+
+            # If AI explicitly recommends a strategy type, prioritize it
+            for known_strat in ["BULL_CALL_SPREAD", "BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "BEAR_PUT_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY", "LONG_STRADDLE", "LONG_STRANGLE"]:
+                if known_strat.replace("_", " ") in ai_rec_action:
+                    if known_strat in refined and refined[0] != known_strat:
+                        refined.remove(known_strat)
+                        refined.insert(0, known_strat)
+                    elif known_strat not in refined and len(refined) < 3:
+                        refined.insert(0, known_strat)
+            return refined
+
         # Get latest intraday snapshot
         intraday_dash = self.get_intraday_expiry_dashboard()
         latest_snap = intraday_dash.get("latest_snapshot") or {}
@@ -3893,6 +3967,7 @@ class NiftyAnalyticsEngine:
                     condition = "TIGHT_RANGE_LOW_VOL"
                     candidates = ["IRON_CONDOR", "IRON_BUTTERFLY"]
 
+            candidates = refine_candidates_with_ai(candidates)
             viable_candidates = [c for c in candidates if c not in existing_strat_types]
             if not viable_candidates:
                 skipped_list.append({
@@ -3934,7 +4009,8 @@ class NiftyAnalyticsEngine:
                         "target_pnl": strat_data["target_pnl"],
                         "stoploss_pnl": strat_data["stoploss_pnl"],
                         "auto_trade_mode": m_upper,
-                        "market_condition": condition
+                        "market_condition": condition,
+                        "ai_rationale": ai_summary
                     }
 
                     res = self.deploy_options_strategy(deploy_payload)
@@ -3944,6 +4020,7 @@ class NiftyAnalyticsEngine:
                         "strategy_name": strat_name,
                         "strategy_type": st_type,
                         "market_condition": condition,
+                        "ai_rationale": ai_summary,
                         "net_premium": strat_data["net_premium"],
                         "target_pnl": strat_data["target_pnl"],
                         "stoploss_pnl": strat_data["stoploss_pnl"],

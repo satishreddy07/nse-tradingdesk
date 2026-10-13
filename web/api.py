@@ -726,21 +726,33 @@ def get_ai_status_endpoint():
 @app.get("/api/ai/analysis")
 def get_ai_analysis_endpoint():
     """Returns the latest valid AI analysis (from cache or newly evaluated)."""
-    from ai_engine.service import ai_service
-    analysis = ai_service.analyze_predictions(force_refresh=False)
-    return analysis.model_dump()
+    try:
+        from ai_engine.service import ai_service
+        analysis = ai_service.analyze_predictions(force_refresh=False)
+        return analysis.model_dump()
+    except Exception as exc:
+        logger.error(f"Error in GET /api/ai/analysis: {exc}", exc_info=True)
+        from ai_engine.service import ai_service
+        from datetime import datetime, timezone
+        return ai_service._build_unavailable_fallback(str(exc), datetime.now(timezone.utc).isoformat()).model_dump()
 
 
 @app.post("/api/ai/analyze")
 def trigger_ai_analysis_endpoint(payload: Optional[AIAnalyzeRequest] = None):
     """Triggers an on-demand AI analysis from current verified ML predictions."""
-    from ai_engine.service import ai_service
-    req = payload or AIAnalyzeRequest()
-    analysis = ai_service.analyze_predictions(
-        force_refresh=req.force_refresh,
-        model_override=req.model_override
-    )
-    return analysis.model_dump()
+    try:
+        from ai_engine.service import ai_service
+        req = payload or AIAnalyzeRequest()
+        analysis = ai_service.analyze_predictions(
+            force_refresh=req.force_refresh,
+            model_override=req.model_override
+        )
+        return analysis.model_dump()
+    except Exception as exc:
+        logger.error(f"Error in POST /api/ai/analyze: {exc}", exc_info=True)
+        from ai_engine.service import ai_service
+        from datetime import datetime, timezone
+        return ai_service._build_unavailable_fallback(str(exc), datetime.now(timezone.utc).isoformat()).model_dump()
 
 
 @app.post("/api/ai/benchmark")

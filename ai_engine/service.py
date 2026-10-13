@@ -95,8 +95,15 @@ class AIService:
 
         # 2. Ingest ML predictions from nifty_analytics_engine if not provided
         if predictions_data is None:
-            from engines.nifty_analytics_engine import nifty_analytics_engine
-            predictions_data = nifty_analytics_engine.compute_nifty_predictions(force_refresh=False)
+            try:
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                predictions_data = nifty_analytics_engine.compute_nifty_predictions(force_refresh=False)
+            except Exception as pe:
+                logger.error(f"Failed to fetch ML predictions: {pe}")
+                return self._build_unavailable_fallback(
+                    reason=f"Failed to fetch ML predictions: {str(pe)}",
+                    now_iso=now_iso
+                )
 
         # 3. Build normalized PredictionInputContract
         try:
