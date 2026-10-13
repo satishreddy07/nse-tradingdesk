@@ -121,45 +121,47 @@
     <div class="w-full max-w-[1920px] mx-auto px-3 sm:px-4 md:px-6 2xl:px-8 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-3">
       
       <!-- Brand Logo & Title (Shrink-proof & Non-overlapping on Mobile) -->
-      <div class="flex items-center gap-2.5 min-w-0 shrink-0">
-        <img src="/static/bull-logo.jpg" alt="QuantDesk Bull" class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-cyan-500/50 shadow-lg shadow-cyan-500/20 shrink-0">
+      <div class="flex items-center gap-2 min-w-0 shrink-0">
+        <img src="/static/bull-logo.jpg" alt="QuantDesk Bull" class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-cyan-500/50 shadow-md shadow-cyan-500/20 shrink-0">
         <div class="min-w-0">
           <div class="flex items-center gap-1.5">
             <span class="font-extrabold tracking-tight text-white text-base sm:text-lg leading-none">QUANT<span class="text-cyan-400">DESK</span></span>
-            <span class="hidden sm:inline-flex text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-semibold whitespace-nowrap">v3.0 MULTI-ASSET</span>
+            <span class="hidden 2xl:inline-flex text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-semibold whitespace-nowrap">v3.0 MULTI-ASSET</span>
           </div>
-          <p class="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate mt-0.5 hidden xs:block sm:block">Swing • Intraday • AI Predictions • Options</p>
+          <p class="text-[10px] text-slate-400 font-medium truncate mt-0.5 hidden 2xl:block">Swing • Intraday • AI Predictions • Options</p>
         </div>
       </div>
 
       <!-- Desktop Primary Module Switcher (Swing | Intraday | Predictions | Options) -->
       <div class="hidden lg:flex items-center bg-slate-900/90 p-1 rounded-xl border border-slate-800 gap-1 shrink-0">
-        <button onclick="switchModule('module-swing')" id="desk-mod-swing" class="mod-btn px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all bg-cyan-500 text-black shadow-md shadow-cyan-500/20 whitespace-nowrap">
+        <button onclick="switchModule('module-swing')" id="desk-mod-swing" class="mod-btn px-2.5 2xl:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all bg-cyan-500 text-black shadow-md shadow-cyan-500/20 whitespace-nowrap">
           <i data-lucide="trending-up" class="w-3.5 h-3.5 stroke-[2.5]"></i>
-          <span>Swing Trading</span>
+          <span class="hidden 2xl:inline">Swing Trading</span>
+          <span class="2xl:hidden">Swing</span>
         </button>
-        <button onclick="switchModule('module-intraday')" id="desk-mod-intraday" class="mod-btn px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-intraday')" id="desk-mod-intraday" class="mod-btn px-2.5 2xl:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
           <span>Intraday</span>
-          <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">LIVE</span>
+          <span class="hidden 2xl:inline text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">LIVE</span>
         </button>
-        <button onclick="switchModule('module-predictions')" id="desk-mod-predictions" class="mod-btn px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-predictions')" id="desk-mod-predictions" class="mod-btn px-2.5 2xl:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="brain-circuit" class="w-3.5 h-3.5 text-purple-400"></i>
           <span>Predictions</span>
-          <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">ML</span>
+          <span class="hidden 2xl:inline text-[9px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">ML</span>
         </button>
-        <button onclick="switchModule('module-options')" id="desk-mod-options" class="mod-btn px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-options')" id="desk-mod-options" class="mod-btn px-2.5 2xl:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="flame" class="w-3.5 h-3.5 text-emerald-400"></i>
-          <span>Options Desk</span>
-          <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">VIX/F&O</span>
+          <span class="hidden 2xl:inline">Options Desk</span>
+          <span class="2xl:hidden">Options</span>
+          <span class="hidden 2xl:inline text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">VIX/F&O</span>
         </button>
       </div>
 
       <!-- Desktop Telemetry Pills -->
       <div class="hidden xl:flex items-center gap-1.5 2xl:gap-2 text-[11px] shrink-0">
-        <div id="market-status-pill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 whitespace-nowrap">
-          <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-          <span id="market-status-text" class="font-medium">Checking...</span>
+        <div id="market-status-pill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 whitespace-nowrap max-w-[200px]" title="Market Status">
+          <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+          <span id="market-status-text" class="font-medium truncate">Checking...</span>
         </div>
 
         <div id="vault-status-pill" onclick="switchModule('module-swing'); switchTab('tab-scheduler');" class="cursor-pointer hidden 2xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/40 border border-cyan-800/60 text-cyan-300 font-mono whitespace-nowrap hover:bg-cyan-900/40 transition" title="Telegram Cloud Master Vault: Click to view backup history">
@@ -167,7 +169,7 @@
           <span>☁️ Backup: <b id="header-vault-time" class="text-white font-bold">--</b></span>
         </div>
 
-        <div class="px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 font-mono text-slate-400 whitespace-nowrap">
+        <div class="hidden 2xl:flex px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 font-mono text-slate-400 whitespace-nowrap">
           <span id="live-ist-clock">--:--:-- IST</span>
         </div>
       </div>
@@ -217,9 +219,10 @@
         </div>
 
         <!-- Refresh Live Prices Button -->
-        <button id="btn-header-refresh-prices" onclick="refreshLivePrices(false)" class="flex items-center gap-1.5 px-2.5 py-1.5 sm:py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-semibold text-xs transition whitespace-nowrap shrink-0" title="Fetch Live Market Prices from Yahoo Finance for all stocks on page">
+        <button id="btn-header-refresh-prices" onclick="refreshLivePrices(false)" class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-semibold text-xs transition whitespace-nowrap shrink-0" title="Fetch Live Market Prices from Yahoo Finance for all stocks on page">
           <i data-lucide="refresh-cw" class="w-3.5 h-3.5 shrink-0" id="refresh-icon"></i>
-          <span class="hidden sm:inline" id="btn-refresh-prices-text">Refresh Prices</span>
+          <span class="hidden 2xl:inline" id="btn-refresh-prices-text">Refresh Prices</span>
+          <span class="2xl:hidden hidden sm:inline">Refresh</span>
         </button>
       </div>
 
@@ -6984,12 +6987,30 @@
 
       // Market Status
       const mStatus = data.market_status || {};
-      const statusText = mStatus.message || "Market Closed";
+      const fullStatus = mStatus.message || "Market Closed";
+      let shortStatus = mStatus.is_open ? "Market Open" : "Closed (Opens 09:15)";
+      if (mStatus.is_trading_day === false) {
+        shortStatus = "Market Closed (Holiday)";
+      }
       const statusEl = document.getElementById('market-status-text');
       const mobStatusEl = document.getElementById('mobile-market-status');
+      const marketPill = document.getElementById('market-status-pill');
 
-      if (statusEl) statusEl.innerText = statusText;
-      if (mobStatusEl) mobStatusEl.innerHTML = `<span class="w-2 h-2 rounded-full ${mStatus.is_open ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse"></span><span>${statusText}</span>`;
+      if (statusEl) {
+        statusEl.innerText = shortStatus;
+        if (marketPill) {
+          marketPill.title = fullStatus;
+          marketPill.className = `flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-mono whitespace-nowrap max-w-[200px] ${
+            mStatus.is_open
+              ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+              : 'bg-slate-800/80 border-slate-700 text-slate-300'
+          }`;
+        }
+      }
+      if (mobStatusEl) {
+        mobStatusEl.innerHTML = `<span class="w-2 h-2 rounded-full ${mStatus.is_open ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse shrink-0"></span><span>${shortStatus}</span>`;
+        mobStatusEl.title = fullStatus;
+      }
 
       // Live Price Stream Badge
       const lp = data.last_price_stream || {};

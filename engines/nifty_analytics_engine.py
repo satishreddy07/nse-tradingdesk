@@ -2517,6 +2517,7 @@ class NiftyAnalyticsEngine:
                 "call_wall": w_oc.get("walls_and_pain", {}).get("call_wall_1"),
                 "put_wall": w_oc.get("walls_and_pain", {}).get("put_wall_1"),
                 "straddle_premium": w_oc.get("straddle", {}).get("straddle_premium"),
+                "atm_iv": float(w_oc.get("volatility_and_gex", {}).get("atm_iv") or 0.0),
             }
 
         combined_news_deriv_score = float(np.clip(round(news_score * 0.5 + deriv_score * 0.5, 1), -100.0, 100.0))

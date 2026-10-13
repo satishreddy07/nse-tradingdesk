@@ -146,16 +146,39 @@ def build_prediction_context(
         if fii_long_ratio is not None:
             fii_dii_summary += f" | FII Index Fut Long Ratio: {fii_long_ratio:.1f}%"
 
-    # News items (source, title, timestamp)
+    # India VIX from macro rows
+    macro_rows = pillars.get("macro_cross_asset") or []
+    india_vix_val = None
+    if isinstance(macro_rows, list):
+        for m in macro_rows:
+            if isinstance(m, dict) and (m.get("ticker") == "^INDIAVIX" or "VIX" in str(m.get("name", "")).upper()):
+                india_vix_val = safe_optional_float(m.get("last_close") or m.get("close") or m.get("ltp"))
+                break
+
+    # ATM IV from options overlay
+    atm_iv_val = safe_optional_float(options_overlay.get("atm_iv"))
+
+    # News items & detected live catalysts
     news_items_clean: List[Dict[str, str]] = []
-    raw_news = news_data.get("items") or []
+    raw_news = news_data.get("headlines") or news_data.get("items") or []
     if isinstance(raw_news, list):
-        for n in raw_news[:4]:
+        for n in raw_news[:6]:
             if isinstance(n, dict):
                 news_items_clean.append({
                     "title": str(n.get("title") or "")[:150],
-                    "source": str(n.get("source") or "NSE/RSS"),
-                    "published_at": str(n.get("published_at") or n.get("pub_date") or ""),
+                    "source": str(n.get("source") or n.get("category") or "Economic Times/LiveMint"),
+                    "published_at": str(n.get("published_at") or n.get("published") or n.get("pub_date") or ""),
+                })
+    raw_catalysts = news_data.get("detected_live_catalysts") or []
+    if isinstance(raw_catalysts, list):
+        for c in raw_catalysts[:3]:
+            if isinstance(c, dict):
+                lbl = str(c.get("label") or "Macro Catalyst")
+                sample = str(c.get("sample_headline") or "")[:100]
+                news_items_clean.append({
+                    "title": f"Catalyst Alert: {lbl} — {sample}",
+                    "source": "NSE Macro Scanner",
+                    "published_at": "Live",
                 })
 
     market_context = MarketContextItem(
@@ -169,6 +192,8 @@ def build_prediction_context(
         fii_dii_summary=fii_dii_summary,
         option_chain_pcr=safe_optional_float(options_overlay.get("near_atm_pcr")),
         max_pain=safe_optional_float(options_overlay.get("max_pain")),
+        india_vix=india_vix_val,
+        atm_iv=atm_iv_val,
         recent_news_events=news_items_clean if news_items_clean else None,
     )
 

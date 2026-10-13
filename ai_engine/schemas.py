@@ -35,6 +35,8 @@ class MarketContextItem(BaseModel):
     fii_dii_summary: Optional[str] = None
     option_chain_pcr: Optional[float] = None
     max_pain: Optional[float] = None
+    india_vix: Optional[float] = Field(None, description="India VIX current market level")
+    atm_iv: Optional[float] = Field(None, description="ATM implied volatility (%) from live option chain")
     recent_news_events: Optional[List[Dict[str, str]]] = None
 
 
