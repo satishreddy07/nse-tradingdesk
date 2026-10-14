@@ -1067,18 +1067,26 @@ class StateEngine:
         with self._lock:
             with self._get_connection() as conn:
                 try:
-                    if stop_loss is not None and highest_price is not None:
+                    cur = conn.execute("SELECT stop_loss FROM active_positions WHERE symbol = ?", (sym_clean,)).fetchone()
+                    effective_sl = stop_loss
+                    if cur and stop_loss is not None:
+                        current_sl = float(cur["stop_loss"] or 0.0)
+                        # Ratchet safety gate: Stop Loss can only tighten (move up), never loosen (move down)
+                        if current_sl > 0:
+                            effective_sl = max(current_sl, stop_loss)
+
+                    if effective_sl is not None and highest_price is not None:
                         conn.execute("""
                         UPDATE active_positions
                         SET current_price = ?, stop_loss = ?, highest_price = ?, updated_at = ?
                         WHERE symbol = ?
-                        """, (current_price, stop_loss, highest_price, now_str, sym_clean))
-                    elif stop_loss is not None:
+                        """, (current_price, effective_sl, highest_price, now_str, sym_clean))
+                    elif effective_sl is not None:
                         conn.execute("""
                         UPDATE active_positions
                         SET current_price = ?, stop_loss = ?, updated_at = ?
                         WHERE symbol = ?
-                        """, (current_price, stop_loss, now_str, sym_clean))
+                        """, (current_price, effective_sl, now_str, sym_clean))
                     else:
                         conn.execute("""
                         UPDATE active_positions
@@ -1235,11 +1243,19 @@ class StateEngine:
                 )
                 return trade_record
 
-    def reset_portfolio_trades(self, portfolio_type: Optional[str] = None) -> Dict[str, Any]:
+    def reset_portfolio_trades(self, portfolio_type: Optional[str] = None, confirm_token: str = "") -> Dict[str, Any]:
         """
-        Resets active_positions and trade_history (either for a specific portfolio or all portfolios)
-        so Realized & Unrealized PnL start cleanly at ₹0.00, and immediately syncs to Telegram Cloud.
+        STRICT IMMUTABILITY GATE:
+        Active positions and trade history are permanently protected from automated wipes or accidental calls.
+        Resetting trades is strictly blocked unless explicit confirm_token == 'CONFIRM_USER_AUTHORIZED_RESET'.
         """
+        if confirm_token != "CONFIRM_USER_AUTHORIZED_RESET":
+            logger.warning("🔒 [Strict Safety Gate] Blocked portfolio reset request: Missing or invalid confirmation token.")
+            return {
+                "status": "BLOCKED",
+                "message": "🔒 [Strict Safety Gate] Active and closed trades are protected. Wipe requires confirm_token='CONFIRM_USER_AUTHORIZED_RESET'."
+            }
+
         from core.telegram_vault import telegram_vault
 
         with self._lock:
@@ -1253,10 +1269,10 @@ class StateEngine:
                     conn.execute("DELETE FROM trade_history")
                 conn.commit()
         now_str = format_ist()
-        logger.info(f"Reset trades completed (portfolio={portfolio_type or 'ALL'}) at {now_str}.")
+        logger.info(f"User-authorized reset trades completed (portfolio={portfolio_type or 'ALL'}) at {now_str}.")
         telegram_vault.send_alert_and_sync(
             title=f"🔄 PORTFOLIO TRADES RESET ({portfolio_type or 'ALL'})",
-            message=f"Active positions & trade history cleared for <b>{portfolio_type or 'ALL'}</b> at {now_str}. Master Vault synced.",
+            message=f"Active positions & trade history cleared for <b>{portfolio_type or 'ALL'}</b> with user confirmation at {now_str}. Master Vault synced.",
             sync_db=True
         )
         return {"status": "SUCCESS", "portfolio": portfolio_type or "ALL", "timestamp": now_str}

@@ -612,11 +612,15 @@ def reset_stock_chart(symbol: str):
 # --------------------------------------------------------------------------
 class ResetPortfolioRequest(BaseModel):
     portfolio_type: Optional[str] = None  # None = reset both portfolios to ₹0 PnL
+    confirm_token: Optional[str] = None   # Must equal 'CONFIRM_USER_AUTHORIZED_RESET'
 
 
 @app.post("/api/portfolio/reset")
 def reset_portfolio(req: ResetPortfolioRequest):
-    return state_engine.reset_portfolio_trades(portfolio_type=req.portfolio_type)
+    return state_engine.reset_portfolio_trades(
+        portfolio_type=req.portfolio_type,
+        confirm_token=req.confirm_token or ""
+    )
 
 
 @app.get("/api/vault/status")
