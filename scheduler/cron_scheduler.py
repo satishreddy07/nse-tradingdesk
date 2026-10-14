@@ -185,8 +185,35 @@ def scheduled_live_price_stream_job():
                 ai_service.analyze_predictions(force_refresh=False)
             except Exception as aie:
                 logger.debug(f"5m AI analysis evaluation warning: {aie}")
+
+        # 5. Check real-time institutional call/put wall breach
+        try:
+            from engines.intraday_analytics_engine import intraday_analytics_engine
+            w_chain = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False).get("weekly", {})
+            spot_val = float(w_chain.get("spot_price") or 0.0)
+            cw = int(w_chain.get("walls_and_pain", {}).get("call_wall_1") or 0)
+            pw = int(w_chain.get("walls_and_pain", {}).get("put_wall_1") or 0)
+            if spot_val > 0 and cw > 0 and pw > 0:
+                intraday_analytics_engine.check_intraday_wall_breach_and_alert(spot_val, cw, pw)
+        except Exception as we:
+            logger.debug(f"Wall breach check notice: {we}")
     except Exception as e:
         logger.warning(f"5m option chain sync & auto-trade warning: {e}")
+
+
+def scheduled_intraday_flash_bulletin_job(slot_label: str):
+    """
+    Fires at key institutional inflection points (09:45, 11:30, 13:00, 14:15 IST)
+    to generate and dispatch a multi-pillar Intraday Flash Bulletin to Telegram.
+    """
+    current_dt = now_ist()
+    if not NSEMarketCalendar.is_trading_day(current_dt.date()):
+        return
+    try:
+        from engines.intraday_analytics_engine import intraday_analytics_engine
+        intraday_analytics_engine.generate_intraday_ai_flash_bulletin(slot_label=slot_label)
+    except Exception as e:
+        logger.warning(f"Intraday flash bulletin ({slot_label}) warning: {e}")
 
 
 def scheduled_options_premarket_job():
@@ -522,6 +549,44 @@ def start_scheduler():
             name="03:45 PM Daily Prediction Outcomes & Online Training Sync",
             replace_existing=True,
             misfire_grace_time=600
+        )
+
+        # Job 4: Intraday Flash Bulletins at Institutional Transition Windows (Mon-Fri)
+        # 4A. 09:45 AM IST - Opening Range Breakout (ORB) Bulletin
+        _scheduler.add_job(
+            lambda: scheduled_intraday_flash_bulletin_job("09:45 ORB"),
+            trigger=CronTrigger(day_of_week="mon-fri", hour=9, minute=45, timezone=IST),
+            id="job_intraday_bulletin_0945",
+            name="09:45 AM Opening Range Breakout (ORB) Flash Bulletin",
+            replace_existing=True,
+            misfire_grace_time=180
+        )
+        # 4B. 11:30 AM IST - Mid-Day Pre-Europe Institutional Review
+        _scheduler.add_job(
+            lambda: scheduled_intraday_flash_bulletin_job("11:30 Pre-Europe"),
+            trigger=CronTrigger(day_of_week="mon-fri", hour=11, minute=30, timezone=IST),
+            id="job_intraday_bulletin_1130",
+            name="11:30 AM Mid-Day Pre-Europe Institutional Review",
+            replace_existing=True,
+            misfire_grace_time=180
+        )
+        # 4C. 01:00 PM IST - European Cash Open Volatility Impulse
+        _scheduler.add_job(
+            lambda: scheduled_intraday_flash_bulletin_job("13:00 Europe Open"),
+            trigger=CronTrigger(day_of_week="mon-fri", hour=13, minute=0, timezone=IST),
+            id="job_intraday_bulletin_1300",
+            name="01:00 PM European Cash Open Volatility Impulse",
+            replace_existing=True,
+            misfire_grace_time=180
+        )
+        # 4D. 02:15 PM IST - Expiry Afternoon Gamma Unwind Alert
+        _scheduler.add_job(
+            lambda: scheduled_intraday_flash_bulletin_job("14:15 Afternoon Gamma"),
+            trigger=CronTrigger(day_of_week="mon-fri", hour=14, minute=15, timezone=IST),
+            id="job_intraday_bulletin_1415",
+            name="02:15 PM Expiry Afternoon Gamma Unwind Alert",
+            replace_existing=True,
+            misfire_grace_time=180
         )
 
         _scheduler.start()

@@ -1376,6 +1376,13 @@ class NiftyAnalyticsEngine:
                 "put_wall": recorded["put_wall"] if recorded else None,
             })
 
+        advanced_intra: Dict[str, Any] = {}
+        try:
+            from engines.intraday_analytics_engine import intraday_analytics_engine
+            advanced_intra = intraday_analytics_engine.get_full_intraday_suite(force_refresh=False)
+        except Exception as aie:
+            logger.debug(f"Intraday advanced suite load notice: {aie}")
+
         return {
             "status": "OK" if latest else "EMPTY",
             "session_date": session_date,
@@ -1389,6 +1396,7 @@ class NiftyAnalyticsEngine:
             "scheduled_slots": schedule_slots,
             "scheduled_50m_slots": schedule_slots,
             "snapshots": snaps,
+            "advanced_intraday": advanced_intra,
         }
 
     # ==========================================================================

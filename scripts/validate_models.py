@@ -137,6 +137,32 @@ def run_model_validation(force_refresh: bool = False, verbose_ledger: bool = Tru
     except Exception as e:
         print(f"  [Notice] US Intelligence preview warning: {e}")
 
+    # 6. Intraday Multi-Pillar Telemetry & Zero-Gamma Flip
+    print("\n" + "-" * 80)
+    print(" [5] INTRADAY MULTI-PILLAR TELEMETRY & ZERO-GAMMA FLIP")
+    print("-" * 80)
+    try:
+        from engines.intraday_analytics_engine import intraday_analytics_engine
+        suite = intraday_analytics_engine.get_full_intraday_suite(force_refresh=force_refresh)
+        vwap_m = suite.get("vwap_and_orb", {})
+        gex_m = suite.get("gamma_exposure", {})
+        sec_m = suite.get("sectoral_divergence", {})
+
+        print(f"  * Intraday VWAP           : Rs {vwap_m.get('vwap', 0.0):,.1f} ({vwap_m.get('vwap_distance_pts', 0.0):+.1f} pts / {vwap_m.get('vwap_distance_pct', 0.0):+.2f}%)")
+        print(f"  * VWAP Regime             : {vwap_m.get('vwap_regime', 'N/A')}")
+        print(f"  * 15m ORB [9:15-9:30]     : Rs {vwap_m.get('orb_15m', {}).get('low', 0):,.0f} - Rs {vwap_m.get('orb_15m', {}).get('high', 0):,.0f} ({vwap_m.get('orb_15m', {}).get('range_pts', 0):.0f} pts) -> {vwap_m.get('orb_15m', {}).get('status', 'N/A')}")
+        print(f"  * 30m ORB [9:15-9:45]     : Rs {vwap_m.get('orb_30m', {}).get('low', 0):,.0f} - Rs {vwap_m.get('orb_30m', {}).get('high', 0):,.0f} ({vwap_m.get('orb_30m', {}).get('range_pts', 0):.0f} pts) -> {vwap_m.get('orb_30m', {}).get('status', 'N/A')}")
+        print(f"  * Choppiness Index (CHOP) : {vwap_m.get('choppiness_index', 50.0):.1f} / 100 ({vwap_m.get('choppiness_regime', 'N/A')})")
+        print(f"  * Zero-Gamma Flip Level   : Rs {gex_m.get('zero_gamma_flip_level', 0):,.1f} (Spot vs Flip: {gex_m.get('spot_vs_flip_pts', 0.0):+.1f} pts)")
+        print(f"  * Market GEX Regime       : {gex_m.get('market_gex_regime', 'N/A')}")
+        print(f"  * Total Net Dealer GEX    : {gex_m.get('total_net_gex_cr', 0.0):+,.0f} Cr (Call: +{gex_m.get('total_call_gex_cr', 0.0):,.0f} Cr | Put: {gex_m.get('total_put_gex_cr', 0.0):,.0f} Cr)")
+        print(f"  * Max Gamma Pin Strike    : {gex_m.get('max_gamma_strike', 0)} CE")
+        print(f"  * Sector Breadth          : {sec_m.get('breadth_pct_green', 0.0):.1f}% Green ({sec_m.get('green_sectors', 0)}/{sec_m.get('total_sectors', 0)} sectors)")
+        print(f"  * Bank vs IT Alignment    : {sec_m.get('bank_vs_it_alignment', 'N/A')}")
+        print(f"  * Best vs Worst Sector    : Best: {sec_m.get('best_sector', 'N/A')} | Worst: {sec_m.get('worst_sector', 'N/A')} (Spread: {sec_m.get('sector_spread_pct', 0.0):.2f}%)")
+    except Exception as e:
+        print(f"  [Notice] Intraday Suite preview warning: {e}")
+
     print("\n" + "=" * 80)
     print(" [OK] MODEL CALIBRATION & VALIDATION DIAGNOSTIC COMPLETED ")
     print("=" * 80 + "\n")

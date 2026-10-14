@@ -559,6 +559,18 @@ def get_nifty_intraday_expiry(session_date: Optional[str] = None, interval_mode:
     return nifty_analytics_engine.get_intraday_expiry_dashboard(session_date=session_date, interval_mode=interval_mode)
 
 
+@app.get("/api/nifty/intraday-advanced")
+def get_nifty_intraday_advanced(force_refresh: bool = False):
+    """Returns Institutional Intraday Suite: VWAP, 15m/30m ORB, Choppiness Index, GEX, Zero-Gamma Flip, and Sector Breadth."""
+    from engines.intraday_analytics_engine import intraday_analytics_engine
+    try:
+        suite = intraday_analytics_engine.get_full_intraday_suite(force_refresh=force_refresh)
+        return _sanitize_for_json(suite)
+    except Exception as e:
+        logger.error(f"Error fetching intraday advanced suite: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
 @app.post("/api/nifty/intraday-expiry/capture")
 def capture_nifty_intraday_snapshot(slot_override: Optional[str] = None, interval_mode: str = "30m"):
     """Manually or automatically captures a live Weekly Option Expiry snapshot and syncs to Cloud Vault."""
