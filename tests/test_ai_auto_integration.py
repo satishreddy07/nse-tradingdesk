@@ -44,7 +44,8 @@ def test_ai_analysis_automatically_attached_to_predictions():
         missing_or_stale_data=[]
     )
 
-    with patch("ai_engine.service.ai_service.analyze_predictions", return_value=mock_ai_resp):
+    with patch("ai_engine.service.ai_service.analyze_predictions", return_value=mock_ai_resp), \
+         patch.object(state_engine, "get_kv", return_value=None):
         nifty_analytics_engine._predictions_mem_cache = {
             "status": "OK",
             "spot_price": 24800.0,

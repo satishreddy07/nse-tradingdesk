@@ -2498,7 +2498,8 @@ class NiftyAnalyticsEngine:
         if not force_recalculate:
             # Check in-memory locked cache
             if self._predictions_mem_cache and self._predictions_mem_cache.get("is_premarket_locked") and self._predictions_mem_cache.get("prediction_date") == today_str:
-                if "ai_analysis" not in self._predictions_mem_cache and getattr(config, "AI_ENABLED", True):
+                cur_ai = self._predictions_mem_cache.get("ai_analysis")
+                if (not cur_ai or cur_ai.get("status") != "OK") and getattr(config, "AI_ENABLED", True):
                     try:
                         from ai_engine.service import ai_service
                         ai_out = ai_service.analyze_predictions(force_refresh=False, predictions_data=self._predictions_mem_cache)
@@ -2511,7 +2512,8 @@ class NiftyAnalyticsEngine:
             # Check persistent KV store for today's locked prediction
             locked_persisted = state_engine.get_kv(locked_key)
             if locked_persisted and isinstance(locked_persisted, dict) and locked_persisted.get("status") == "OK":
-                if "ai_analysis" not in locked_persisted and getattr(config, "AI_ENABLED", True):
+                cur_ai = locked_persisted.get("ai_analysis")
+                if (not cur_ai or cur_ai.get("status") != "OK") and getattr(config, "AI_ENABLED", True):
                     try:
                         from ai_engine.service import ai_service
                         ai_out = ai_service.analyze_predictions(force_refresh=False, predictions_data=locked_persisted)
@@ -5047,19 +5049,19 @@ class NiftyAnalyticsEngine:
         with state_engine._lock:
             with state_engine._get_connection() as conn:
                 p1_rows = conn.execute(
-                    "SELECT * FROM trade_history WHERE portfolio_type = 'P1_SWING' ORDER BY exit_date ASC"
+                    "SELECT * FROM trade_history WHERE portfolio_type IN ('P1_SWING', 'INSTITUTIONAL_6PILLAR') ORDER BY exit_date ASC"
                 ).fetchall()
                 p2_rows = conn.execute(
-                    "SELECT * FROM trade_history WHERE portfolio_type = 'P2_NIFTY500' ORDER BY exit_date ASC"
+                    "SELECT * FROM trade_history WHERE portfolio_type IN ('P2_NIFTY500', 'NIFTY500_MOMENTUM') ORDER BY exit_date ASC"
                 ).fetchall()
                 p1_active = conn.execute(
-                    "SELECT * FROM active_positions WHERE portfolio_type = 'P1_SWING'"
+                    "SELECT * FROM active_positions WHERE portfolio_type IN ('P1_SWING', 'INSTITUTIONAL_6PILLAR')"
                 ).fetchall()
                 p2_active = conn.execute(
-                    "SELECT * FROM active_positions WHERE portfolio_type = 'P2_NIFTY500'"
+                    "SELECT * FROM active_positions WHERE portfolio_type IN ('P2_NIFTY500', 'NIFTY500_MOMENTUM')"
                 ).fetchall()
 
-        # Build P1 curve
+        # Build P1 curve (Institutional 6-Pillar Swing Desk, Base ₹5,00,000)
         p1_base = float(P1_BASE_CAPITAL)
         p1_running = p1_base
         p1_curve = [{"timestamp": "Start", "date": "Base Capital", "equity": p1_base, "pnl": 0.0, "label": "Base ₹5,00,000"}]
@@ -5073,17 +5075,31 @@ class NiftyAnalyticsEngine:
                 "pnl": round(pnl, 2),
                 "label": f"{r['symbol']} ({r['return_pct']}%)"
             })
-        p1_mtm = sum(float(r["unrealized_pnl"] or 0.0) for r in p1_active)
+
+        # Add realized partial gains from T1 target hits
+        for r in p1_active:
+            if r["t1_hit"] and float(r["t1_pnl"] or 0.0) > 0:
+                t1_p = float(r["t1_pnl"])
+                p1_running += t1_p
+                p1_curve.append({
+                    "timestamp": r["updated_at"] or format_ist(),
+                    "date": str(r["updated_at"] or format_ist())[:10],
+                    "equity": round(p1_running, 2),
+                    "pnl": round(t1_p, 2),
+                    "label": f"🎯 T1 Booked: {r['symbol']} (+₹{t1_p:,.0f})"
+                })
+
+        p1_mtm = sum((float(r["current_price"] or r["entry_price"]) - float(r["entry_price"])) * int(r["quantity"]) for r in p1_active)
         if p1_active:
             p1_curve.append({
                 "timestamp": "Live MTM",
                 "date": "Today Live",
                 "equity": round(p1_running + p1_mtm, 2),
                 "pnl": round(p1_mtm, 2),
-                "label": f"Open Positions ({len(p1_active)} Stocks)"
+                "label": f"Open Positions ({len(p1_active)} Stocks: +₹{p1_mtm:,.0f} MTM)"
             })
 
-        # Build P2 curve
+        # Build P2 curve (Nifty 500 Compounding Desk, Base ₹1,00,000)
         p2_base = float(P2_BASE_CAPITAL)
         p2_running = p2_base
         p2_curve = [{"timestamp": "Start", "date": "Base Capital", "equity": p2_base, "pnl": 0.0, "label": "Base ₹1,00,000"}]
@@ -5097,14 +5113,27 @@ class NiftyAnalyticsEngine:
                 "pnl": round(pnl, 2),
                 "label": f"{r['symbol']} ({r['return_pct']}%)"
             })
-        p2_mtm = sum(float(r["unrealized_pnl"] or 0.0) for r in p2_active)
+
+        for r in p2_active:
+            if r["t1_hit"] and float(r["t1_pnl"] or 0.0) > 0:
+                t1_p = float(r["t1_pnl"])
+                p2_running += t1_p
+                p2_curve.append({
+                    "timestamp": r["updated_at"] or format_ist(),
+                    "date": str(r["updated_at"] or format_ist())[:10],
+                    "equity": round(p2_running, 2),
+                    "pnl": round(t1_p, 2),
+                    "label": f"🎯 T1 Booked: {r['symbol']} (+₹{t1_p:,.0f})"
+                })
+
+        p2_mtm = sum((float(r["current_price"] or r["entry_price"]) - float(r["entry_price"])) * int(r["quantity"]) for r in p2_active)
         if p2_active:
             p2_curve.append({
                 "timestamp": "Live MTM",
                 "date": "Today Live",
                 "equity": round(p2_running + p2_mtm, 2),
                 "pnl": round(p2_mtm, 2),
-                "label": f"Open Positions ({len(p2_active)} Stocks)"
+                "label": f"Open Positions ({len(p2_active)} Stocks: +₹{p2_mtm:,.0f} MTM)"
             })
 
         result = {

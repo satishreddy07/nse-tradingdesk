@@ -33,6 +33,7 @@ from core.config import (
 from engines.institutional_engine import InstitutionalEngine, refresh_live_market_prices
 from engines.nifty500_engine import run_nifty500_pipeline_sync
 from execution.state_engine import state_engine
+from core.execution_queue import execution_queue
 
 logger = logging.getLogger("Scheduler")
 
@@ -154,6 +155,7 @@ def scheduled_render_keepalive_job():
 def scheduled_live_price_stream_job():
     """
     Runs every 5 minutes during NSE market hours (09:15 AM – 03:30 PM IST, Mon-Fri, Excl. Holidays).
+    Queued sequentially via central ExecutionQueueManager to guarantee zero SQLite lock collisions.
     1. Streams live prices for all Active Portfolio Positions and Screened Signals.
     2. Updates complete NSE Option Chain (Weekly + Monthly) synchronously every 5 minutes.
     3. Reconciles all active options strategies against their Targets, Stop Losses, and 15:15 MOC cutoff.
@@ -163,44 +165,53 @@ def scheduled_live_price_stream_job():
     can_trade, _ = NSEMarketCalendar.can_execute_trades(current_dt)
     if not can_trade:
         return
-    try:
-        res = refresh_live_market_prices(scope="ACTIVE_AND_SIGNALS")
-        logger.info(
-            f"📡 [5m Live Price Stream] Updated {res.get('symbols_updated', 0)} stocks "
-            f"({res.get('active_positions_updated', 0)} active positions) in {res.get('elapsed_sec', 0)}s"
-        )
-    except Exception as e:
-        logger.warning(f"5m live price stream warning: {e}")
 
-    try:
-        from engines.nifty_analytics_engine import nifty_analytics_engine
-        # 1. Update complete option chains along with stock prices every 5 minutes
-        nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=True)
-        # 2. Reconcile stops and targets for all active options strategies
-        nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
-        # 3. Regenerate complete analysis & evaluate/deploy intraday auto-strategies if active < 2 (uses locked pre-market forecast)
-        nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["INTRADAY"], force_refresh=False)
-        # 4. Periodically evaluate AI intelligence analysis (respecting cache TTL)
-        if config.AI_ENABLED:
-            try:
-                from ai_engine.service import ai_service
-                ai_service.analyze_predictions(force_refresh=False)
-            except Exception as aie:
-                logger.debug(f"5m AI analysis evaluation warning: {aie}")
-
-        # 5. Check real-time institutional call/put wall breach
+    def _stream_worker():
         try:
-            from engines.intraday_analytics_engine import intraday_analytics_engine
-            w_chain = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False).get("weekly", {})
-            spot_val = float(w_chain.get("spot_price") or 0.0)
-            cw = int(w_chain.get("walls_and_pain", {}).get("call_wall_1") or 0)
-            pw = int(w_chain.get("walls_and_pain", {}).get("put_wall_1") or 0)
-            if spot_val > 0 and cw > 0 and pw > 0:
-                intraday_analytics_engine.check_intraday_wall_breach_and_alert(spot_val, cw, pw)
-        except Exception as we:
-            logger.debug(f"Wall breach check notice: {we}")
-    except Exception as e:
-        logger.warning(f"5m option chain sync & auto-trade warning: {e}")
+            res = refresh_live_market_prices(scope="ACTIVE_AND_SIGNALS")
+            logger.info(
+                f"📡 [5m Live Price Stream] Updated {res.get('symbols_updated', 0)} stocks "
+                f"({res.get('active_positions_updated', 0)} active positions) in {res.get('elapsed_sec', 0)}s"
+            )
+        except Exception as e:
+            logger.warning(f"5m live price stream warning: {e}")
+
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            # 1. Update complete option chains along with stock prices every 5 minutes
+            nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=True)
+            # 2. Reconcile stops and targets for all active options strategies
+            nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
+            # 3. Regenerate complete analysis & evaluate/deploy intraday auto-strategies if active < 2 (uses locked pre-market forecast)
+            nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["INTRADAY"], force_refresh=False)
+            # 4. Periodically evaluate AI intelligence analysis (respecting cache TTL)
+            if config.AI_ENABLED:
+                try:
+                    from ai_engine.service import ai_service
+                    ai_service.analyze_predictions(force_refresh=False)
+                except Exception as aie:
+                    logger.debug(f"5m AI analysis evaluation warning: {aie}")
+
+            # 5. Check real-time institutional call/put wall breach
+            try:
+                from engines.intraday_analytics_engine import intraday_analytics_engine
+                w_chain = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False).get("weekly", {})
+                spot_val = float(w_chain.get("spot_price") or 0.0)
+                cw = int(w_chain.get("walls_and_pain", {}).get("call_wall_1") or 0)
+                pw = int(w_chain.get("walls_and_pain", {}).get("put_wall_1") or 0)
+                if spot_val > 0 and cw > 0 and pw > 0:
+                    intraday_analytics_engine.check_intraday_wall_breach_and_alert(spot_val, cw, pw)
+            except Exception as we:
+                logger.debug(f"Wall breach check notice: {we}")
+        except Exception as e:
+            logger.warning(f"5m option chain sync & auto-trade warning: {e}")
+
+    execution_queue.submit_task(
+        task_fn=_stream_worker,
+        task_name="5m Live Price & Option Stream",
+        task_type="PRICE_STREAM_5M",
+        deduplicate=True
+    )
 
 
 def scheduled_intraday_flash_bulletin_job(slot_label: str):

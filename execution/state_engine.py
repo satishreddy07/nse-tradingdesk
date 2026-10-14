@@ -861,6 +861,39 @@ class StateEngine:
                         )
                         return True
 
+                    # Slot capacity and cash risk validation
+                    max_slots = 15 if "NIFTY" in p_type else 10
+                    cur_cnt = conn.execute(
+                        "SELECT COUNT(*) FROM active_positions WHERE portfolio_type = ?",
+                        (p_type,)
+                    ).fetchone()[0]
+                    if cur_cnt >= max_slots:
+                        logger.warning(f"⚠️ [Slot Limit] Cannot open {sym_clean}: {p_type} already at {cur_cnt}/{max_slots} slots.")
+                        return False
+
+                    base_cap = 100000.0 if "NIFTY" in p_type else 500000.0
+                    total_inv = conn.execute(
+                        "SELECT SUM(entry_price * quantity) FROM active_positions WHERE portfolio_type = ?",
+                        (p_type,)
+                    ).fetchone()[0] or 0.0
+                    t1_pnl_sum = conn.execute(
+                        "SELECT SUM(t1_pnl) FROM active_positions WHERE portfolio_type = ? AND t1_hit = 1",
+                        (p_type,)
+                    ).fetchone()[0] or 0.0
+                    hist_pnl = conn.execute(
+                        "SELECT SUM(pnl) FROM trade_history WHERE portfolio_type = ?",
+                        (p_type,)
+                    ).fetchone()[0] or 0.0
+                    free_cash = max(0.0, base_cap + hist_pnl + t1_pnl_sum - total_inv)
+                    required_cash = entry_price * quantity
+
+                    if required_cash > free_cash:
+                        logger.warning(
+                            f"⚠️ [Risk Gate] Insufficient available cash to open {sym_clean}: "
+                            f"Required ₹{required_cash:,.2f} > Free Cash ₹{free_cash:,.2f}."
+                        )
+                        return False
+
                     conn.execute("""
                     INSERT INTO active_positions (
                         symbol, portfolio_type, entry_price, quantity, stop_loss, original_stop_loss,
@@ -1175,15 +1208,24 @@ class StateEngine:
                 return [dict(r) for r in rows]
 
     def get_portfolio_stats(self, base_capital: float = 500000.0, portfolio_type: Optional[str] = None) -> Dict[str, Any]:
-        """Calculates comprehensive quantitative performance metrics."""
+        """Calculates comprehensive quantitative performance metrics including realized partial T1 targets."""
         if isinstance(base_capital, str):
             portfolio_type = base_capital
-        history = self.get_trade_history(portfolio_type=portfolio_type, limit=1000)
-        active = self.get_active_positions(portfolio_type=portfolio_type)
+            base_capital = 100000.0 if portfolio_type and "NIFTY" in str(portfolio_type).upper() else 500000.0
+        elif portfolio_type and "NIFTY" in str(portfolio_type).upper() and base_capital == 500000.0:
+            base_capital = 100000.0
 
-        # MTM Unrealized PnL
+        p_type = self._normalize_portfolio_type(portfolio_type) if portfolio_type else None
+        history = self.get_trade_history(portfolio_type=p_type, limit=1000)
+        active = self.get_active_positions(portfolio_type=p_type)
+
+        # MTM Unrealized PnL, Open Risk, Invested Capital, and Booked T1 PnL
         unrealized = 0.0
         open_risk = 0.0
+        total_invested = 0.0
+        active_t1_pnl = 0.0
+        t1_booked_count = 0
+
         for p in active:
             cp = float(p.get("current_price") or p["entry_price"])
             ep = float(p["entry_price"])
@@ -1191,8 +1233,29 @@ class StateEngine:
             qty = int(p["quantity"])
             unrealized += (cp - ep) * qty
             open_risk += max(0.0, (ep - sl) * qty)
+            total_invested += ep * qty
+            if p.get("t1_hit"):
+                t1_pnl_val = float(p.get("t1_pnl") or 0.0)
+                active_t1_pnl += t1_pnl_val
+                t1_booked_count += 1
 
-        total_trades = len(history)
+        closed_realized_pnl = sum(float(t["pnl"]) for t in history)
+        total_realized_pnl = round(closed_realized_pnl + active_t1_pnl, 2)
+
+        max_slots = 15 if (p_type and "NIFTY" in p_type) else 10
+        slots_used = len(active)
+        slots_available = max(0, max_slots - slots_used)
+        available_cash = round(max(0.0, base_capital + total_realized_pnl - total_invested), 2)
+
+        wins = [t for t in history if t["pnl"] > 0]
+        losses = [t for t in history if t["pnl"] <= 0]
+
+        total_wins_count = len(wins) + t1_booked_count
+        total_trades = len(history) + t1_booked_count
+
+        gross_profit = sum(float(t["pnl"]) for t in wins) + active_t1_pnl
+        gross_loss = abs(sum(float(t["pnl"]) for t in losses))
+
         if total_trades == 0:
             return {
                 "total_trades": 0,
@@ -1200,26 +1263,33 @@ class StateEngine:
                 "profit_factor": 0.0,
                 "expectancy_r": 0.0,
                 "total_realized_pnl": 0.0,
+                "closed_realized_pnl": 0.0,
+                "t1_realized_pnl": 0.0,
+                "t1_booked_count": 0,
                 "unrealized_pnl": round(unrealized, 2),
+                "total_invested": round(total_invested, 2),
+                "available_cash": available_cash,
+                "max_slots": max_slots,
+                "slots_used": slots_used,
+                "slots_available": slots_available,
                 "avg_win_r": 0.0,
                 "avg_loss_r": 0.0,
-                "active_count": len(active),
+                "active_count": slots_used,
                 "open_risk": round(open_risk, 2)
             }
 
-        wins = [t for t in history if t["pnl"] > 0]
-        losses = [t for t in history if t["pnl"] <= 0]
+        win_rate = round((total_wins_count / total_trades) * 100.0, 1)
+        if gross_loss > 0:
+            profit_factor = round(gross_profit / gross_loss, 2)
+        else:
+            profit_factor = round(gross_profit / 1.0, 2) if gross_profit > 0 else 0.0
 
-        win_rate = round((len(wins) / total_trades) * 100.0, 1)
-        gross_profit = sum(float(t["pnl"]) for t in wins)
-        gross_loss = abs(sum(float(t["pnl"]) for t in losses))
-        profit_factor = round(gross_profit / (gross_loss + 1e-9), 2)
+        r_list = [float(t["r_multiple"]) for t in history] + ([1.5] * t1_booked_count)
+        expectancy_r = round(float(sum(r_list) / len(r_list)), 3) if r_list else 0.0
 
-        r_list = [float(t["r_multiple"]) for t in history]
-        expectancy_r = round(float(sum(r_list) / len(r_list)), 3)
-        avg_win_r = round(float(sum(t["r_multiple"] for t in wins) / len(wins)), 2) if wins else 0.0
+        win_r_list = [float(t["r_multiple"]) for t in wins] + ([1.5] * t1_booked_count)
+        avg_win_r = round(float(sum(win_r_list) / len(win_r_list)), 2) if win_r_list else 0.0
         avg_loss_r = round(float(sum(t["r_multiple"] for t in losses) / len(losses)), 2) if losses else 0.0
-        total_realized_pnl = round(sum(float(t["pnl"]) for t in history), 2)
 
         return {
             "total_trades": total_trades,
@@ -1227,10 +1297,18 @@ class StateEngine:
             "profit_factor": profit_factor,
             "expectancy_r": expectancy_r,
             "total_realized_pnl": total_realized_pnl,
+            "closed_realized_pnl": round(closed_realized_pnl, 2),
+            "t1_realized_pnl": round(active_t1_pnl, 2),
+            "t1_booked_count": t1_booked_count,
             "unrealized_pnl": round(unrealized, 2),
+            "total_invested": round(total_invested, 2),
+            "available_cash": available_cash,
+            "max_slots": max_slots,
+            "slots_used": slots_used,
+            "slots_available": slots_available,
             "avg_win_r": avg_win_r,
             "avg_loss_r": avg_loss_r,
-            "active_count": len(active),
+            "active_count": slots_used,
             "open_risk": round(open_risk, 2)
         }
 

@@ -33,6 +33,7 @@ from engines.nifty500_engine import (
     PORTFOLIO_TYPE as P2_TYPE
 )
 from execution.state_engine import state_engine
+from core.execution_queue import execution_queue
 from scheduler.cron_scheduler import (
     start_scheduler, shutdown_scheduler, get_scheduler_status,
     register_external_request_origin
@@ -259,6 +260,11 @@ def get_portfolio_summary(portfolio_type: str):
             "base_capital": P1_BASE_CAPITAL,
             "current_equity": round(P1_BASE_CAPITAL + stats.get("total_realized_pnl", 0.0) + stats.get("unrealized_pnl", 0.0), 2),
             "active_positions": stats.get("active_count", 0),
+            "max_slots": stats.get("max_slots", 10),
+            "slots_used": stats.get("slots_used", 0),
+            "available_slots": stats.get("slots_available", 0),
+            "available_cash": stats.get("available_cash", 0.0),
+            "total_invested": stats.get("total_invested", 0.0),
             "open_risk": stats.get("open_risk", 0.0),
             "chartink_fetched_count": chartink_cnt,
             "universe_size": p1_state.get("universe_size") or sig_count,
@@ -319,8 +325,33 @@ def refresh_prices_endpoint(req: RefreshPricesRequest = RefreshPricesRequest()):
     """
     Fetches live LTP from Yahoo Finance for all Active Portfolio Positions and Screened Signals on the page,
     updating MTM PnL, trailing stops, and signal prices immediately.
+    Serialized via execution_queue to prevent collision with active scans.
     """
-    return refresh_live_market_prices(scope=req.scope)
+    def _refresh_task():
+        return refresh_live_market_prices(scope=req.scope)
+
+    q_status = execution_queue.get_status()
+    if not q_status.get("is_running") and q_status.get("queued_count") == 0:
+        res = execution_queue.submit_and_wait(
+            _refresh_task,
+            task_name="Manual Price Refresh",
+            task_type="PRICE_REFRESH_MANUAL",
+            timeout=30.0
+        )
+        return res or {"status": "SUCCESS", "message": "Live prices refreshed successfully."}
+    else:
+        info = execution_queue.submit_task(
+            _refresh_task,
+            task_name="Manual Price Refresh",
+            task_type="PRICE_REFRESH_MANUAL",
+            deduplicate=True
+        )
+        return {
+            "status": "QUEUED",
+            "message": f"Price refresh queued behind current active task ({q_status.get('current_task', {}).get('name', 'running task')}).",
+            "queue_position": info.get("queue_position", 1),
+            "queue_status": execution_queue.get_status()
+        }
 
 
 # --------------------------------------------------------------------------
@@ -331,12 +362,19 @@ class TriggerScanRequest(BaseModel):
     auto_execute: bool = True
 
 
+@app.get("/api/execution/queue")
+def get_execution_queue_status():
+    """Returns live telemetry of QuantDesk central Execution Queue."""
+    return execution_queue.get_status()
+
+
 @app.get("/api/scan/progress")
 def get_scan_progress():
     prog = state_engine.get_scan_progress()
     p1_state = get_institutional_status()
     prog["chartink_fetched_count"] = p1_state.get("chartink_fetched_count", 0)
     prog["universe_size"] = p1_state.get("universe_size", 0)
+    prog["queue_status"] = execution_queue.get_status()
     return prog
 
 
@@ -344,7 +382,10 @@ def get_scan_progress():
 def trigger_scan(req: TriggerScanRequest):
     s_type = req.scan_type.upper()
     curr_prog = state_engine.get_scan_progress()
-    if curr_prog.get("is_running"):
+    q_status = execution_queue.get_status()
+
+    # If scan is already running on execution worker
+    if curr_prog.get("is_running") and q_status.get("is_running") and q_status.get("current_task", {}).get("type") == "CHARTINK_SCAN":
         return {
             "status": "ALREADY_RUNNING",
             "message": f"Scan is currently in progress: {curr_prog.get('stage')}",
@@ -352,13 +393,21 @@ def trigger_scan(req: TriggerScanRequest):
         }
 
     can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
+
+    # Determine initial stage based on queue state
+    if q_status.get("is_running"):
+        init_stage = f"⏳ In Queue (Position {q_status.get('queued_count', 0) + 1}): Waiting for [{q_status.get('current_task', {}).get('name')}] to complete..."
+    else:
+        init_stage = f"Initiating live {s_type} scan..."
+
     state_engine.start_scan_progress(
         scan_type=s_type,
-        initial_stage=f"Initiating live {s_type} scan..."
+        initial_stage=init_stage
     )
 
     def run_scan_worker():
         logger.info(f"⚡ Live scan started: {s_type} (Auto-Execute: {req.auto_execute}, TradingGate: {can_trade})")
+        state_engine.update_scan_progress(stage=f"Step 1/6: Fetching live {s_type} universe from Chartink...", percent=10)
         try:
             if s_type in ("MORNING_1020AM", "INSTITUTIONAL", "ALL"):
                 inst = InstitutionalEngine()
@@ -371,16 +420,21 @@ def trigger_scan(req: TriggerScanRequest):
             logger.error(f"Error during live scan {s_type}: {e}", exc_info=True)
             state_engine.finish_scan_progress(f"Scan encountered error: {str(e)}")
 
-    t = threading.Thread(target=run_scan_worker, daemon=True)
-    t.start()
+    task_res = execution_queue.submit_task(
+        run_scan_worker,
+        task_name=f"Live Scan: {s_type}",
+        task_type="CHARTINK_SCAN",
+        deduplicate=True
+    )
 
     return {
-        "status": "STARTED",
-        "message": f"Live scan '{s_type}' started! Fetching latest stocks & updating OHLCV gaps...",
+        "status": "QUEUED" if q_status.get("is_running") else "STARTED",
+        "message": f"Live scan '{s_type}' dispatched through execution queue! Zero lock collisions.",
         "auto_execute": req.auto_execute,
         "trading_gate_open": can_trade,
         "trading_gate_message": gate_msg,
         "timestamp": format_ist(),
+        "queue_position": task_res.get("queue_position", 1),
         "progress": state_engine.get_scan_progress()
     }
 
@@ -418,22 +472,57 @@ def open_new_position(req: OpenPositionRequest):
     if not can_trade:
         raise HTTPException(status_code=403, detail=gate_msg)
 
+    p_type = state_engine._normalize_portfolio_type(req.portfolio_type)
+    sym_clean = req.symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    active_positions = state_engine.get_active_positions(portfolio_type=p_type)
+    active_syms = [p["symbol"] for p in active_positions]
+
+    if sym_clean in active_syms:
+        raise HTTPException(status_code=400, detail=f"{sym_clean} is already active in your portfolio.")
+
+    max_slots = 15 if "NIFTY" in p_type else 10
+    if len(active_positions) >= max_slots:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Slot limit reached ({len(active_positions)}/{max_slots} slots used). Please close an existing position before opening {sym_clean}."
+        )
+
+    stats = state_engine.get_portfolio_stats(portfolio_type=p_type)
+    avail_cash = float(stats.get("available_cash", 0.0))
+    qty = max(1, int(req.quantity))
+    req_val = round(req.entry_price * qty, 2)
+
+    if req_val > avail_cash:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient available cash: Required ₹{req_val:,.2f}, but only ₹{avail_cash:,.2f} is free (Slots: {len(active_positions)}/{max_slots} used, ₹{stats.get('total_invested', 0):,.2f} invested)."
+        )
+
     ok = state_engine.open_position(
-        symbol=req.symbol,
+        symbol=sym_clean,
         entry_price=req.entry_price,
-        quantity=max(1, int(req.quantity)),
+        quantity=qty,
         stop_loss=req.stop_loss,
         target=req.target,
         target_2=req.target_2 or round(req.entry_price + 2.0 * max(1.0, req.target - req.entry_price), 2),
         triggered_from="UI_MANUAL",
         notes=req.notes,
         sector=req.sector,
-        portfolio_type=req.portfolio_type,
-        entry_reason="UI Execution"
+        portfolio_type=p_type,
+        entry_reason="UI Manual Execution"
     )
     if not ok:
-        raise HTTPException(status_code=403, detail="Order blocked by Strict Market-Hours Trading Gate.")
-    return {"status": "opened", "symbol": req.symbol, "timestamp": format_ist()}
+        raise HTTPException(status_code=400, detail=f"Order rejected by execution engine for {sym_clean}.")
+
+    return {
+        "status": "opened",
+        "symbol": sym_clean,
+        "quantity": qty,
+        "entry_price": req.entry_price,
+        "required_capital": req_val,
+        "remaining_cash": round(max(0.0, avail_cash - req_val), 2),
+        "timestamp": format_ist()
+    }
 
 
 @app.post("/api/position/close")

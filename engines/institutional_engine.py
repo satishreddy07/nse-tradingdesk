@@ -1438,11 +1438,54 @@ class InstitutionalEngine:
                     gate_notice = " [🔒 STRICT TRADING GATE: Market Closed — Signals updated, 0 trades executed]"
                     logger.warning(f"🔒 [P1 Auto-Execute Blocked] {gate_msg}")
                 else:
-                    active_syms = [p["symbol"] for p in state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)]
-                    buy_now_candidates = signals_df[(signals_df['bucket'] == 'BUY_NOW') & (~signals_df['ticker'].isin(active_syms))]
+                    active_positions = state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)
+                    active_syms = [p["symbol"] for p in active_positions]
 
-                    for _, r in buy_now_candidates.iterrows():
-                        if r['shares'] > 0 and orders_placed < 5:
+                    # 1. Enforce strict derived ranking: Sort strictly by score DESC, then ml_prob DESC
+                    buy_now_candidates = signals_df[(signals_df['bucket'] == 'BUY_NOW') & (~signals_df['ticker'].isin(active_syms))].copy()
+                    buy_now_candidates.sort_values(by=["score", "ml_prob"], ascending=[False, False], inplace=True)
+
+                    # 2. Derive available slots and free cash from live portfolio metrics
+                    p1_stats = state_engine.get_portfolio_stats(portfolio_type=PORTFOLIO_TYPE, base_capital=self.capital)
+                    max_slots = int(p1_stats.get("max_slots", 10))
+                    available_slots = max(0, max_slots - len(active_positions))
+                    available_cash = float(p1_stats.get("available_cash", 0.0))
+
+                    logger.info(
+                        f"📊 [P1 Auto-Execute Check] Active: {len(active_positions)}/{max_slots} | "
+                        f"Available Slots: {available_slots} | Free Cash: ₹{available_cash:,.2f} | "
+                        f"BUY_NOW Candidates: {len(buy_now_candidates)}"
+                    )
+
+                    if available_slots <= 0:
+                        logger.info("ℹ️ [P1 Auto-Execute] Portfolio capacity full (10/10 slots active). 0 orders placed.")
+                        state_engine.update_scan_progress(
+                            stage=f"ℹ️ Auto-Execution Skipped: Portfolio slots full ({len(active_positions)}/10 used).",
+                            percent=96,
+                            add_log=True
+                        )
+                    else:
+                        for _, r in buy_now_candidates.iterrows():
+                            if orders_placed >= available_slots:
+                                logger.info(f"ℹ️ [P1 Auto-Execute] All available slots filled ({orders_placed}/{available_slots}). Stopping.")
+                                break
+
+                            req_val = round(float(r['entry']) * int(r['shares']), 2)
+                            if r['shares'] <= 0:
+                                continue
+
+                            if req_val > available_cash:
+                                logger.warning(
+                                    f"⚠️ [P1 Auto-Execute Skipped] {r['ticker']} (Rank Score: {r['score']}, ML: {r['ml_prob']}): "
+                                    f"Required capital ₹{req_val:,.2f} exceeds available cash ₹{available_cash:,.2f}."
+                                )
+                                state_engine.update_scan_progress(
+                                    stage=f"⚠️ Skipped {r['ticker']}: Required ₹{req_val:,.0f} > Available Cash ₹{available_cash:,.0f}",
+                                    percent=96,
+                                    add_log=True
+                                )
+                                continue
+
                             opened = state_engine.open_position(
                                 symbol=r['ticker'],
                                 entry_price=r['entry'],
@@ -1451,18 +1494,19 @@ class InstitutionalEngine:
                                 target=r['t1'],
                                 target_2=r['t2'],
                                 triggered_from=f"INSTITUTIONAL_{mode.upper()}",
-                                notes=f"Tier {r['tier']} | Score: {r['score']} | ML P(W): {r['ml_prob']} | T1: ₹{r['t1']} | T2: ₹{r['t2']}",
+                                notes=f"Rank #{orders_placed+1} | Score: {r['score']} | ML: {r['ml_prob']} | T1: ₹{r['t1']} | T2: ₹{r['t2']}",
                                 sl_reason="INITIAL_SL",
                                 sector=r['sector'],
                                 portfolio_type=PORTFOLIO_TYPE,
-                                entry_reason=f"6-Pillar BUY_NOW, Score={r['score']}, ML={r['ml_prob']}, RVOL confirmation",
+                                entry_reason=f"6-Pillar BUY_NOW Rank #{orders_placed+1}, Score={r['score']}, ML={r['ml_prob']}",
                                 entry_regime="BULLISH_CONFIRMED",
                                 entry_metrics=r.to_dict()
                             )
                             if opened:
                                 orders_placed += 1
+                                available_cash = max(0.0, available_cash - req_val)
                                 state_engine.update_scan_progress(
-                                    stage=f"✅ Auto-Executed BUY_NOW: {r['ticker']} ({r['shares']} shs @ ₹{r['entry']:.2f})",
+                                    stage=f"✅ Auto-Executed BUY_NOW #{orders_placed}: {r['ticker']} ({r['shares']} shs @ ₹{r['entry']:.2f}) [Score: {r['score']}]",
                                     percent=96,
                                     add_log=True
                                 )
