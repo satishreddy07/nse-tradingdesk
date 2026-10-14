@@ -362,10 +362,12 @@ class DirectYahooFinanceFetcher:
         if cached_df is not None and len(cached_df) >= 80:
             last_idx = cached_df.index[-1]
             last_bar_date = last_idx.date() if hasattr(last_idx, "date") else pd.Timestamp(last_idx).date()
-            gap_days = (target_date - last_bar_date).days
+            now_dt = now_ist()
+            is_post_market = (now_dt.time() >= datetime.time(15, 30)) if NSEMarketCalendar.is_trading_day(now_dt.date()) else False
+            is_stale_partial_bar = (last_bar_date == target_date and is_post_market and age_hours > 0.25)
 
             # Case 1: Already up to date in Single Master File (outside market hours, or refreshed within the last 30 mins during live market hours)
-            if gap_days <= 0 and (not is_market_open or age_hours <= 0.50):
+            if gap_days <= 0 and not is_stale_partial_bar and (not is_market_open or age_hours <= 0.50):
                 return ticker, cached_df, "CACHE_HIT"
 
             # Case 2: Cached in Master File up to a past date (e.g. Oct 08 -> 20 days gap) or live intraday bar update (>15m old)

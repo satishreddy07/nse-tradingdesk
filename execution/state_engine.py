@@ -535,7 +535,10 @@ class StateEngine:
             else:
                 last_idx = df.index[-1]
                 last_dt = last_idx.date() if hasattr(last_idx, "date") else pd.Timestamp(last_idx).date()
-                if last_dt < target_date or (is_mkt_open and age_hrs > 0.02):
+                now_dt = now_ist()
+                is_post_market = (now_dt.time() >= datetime.time(15, 30)) if NSEMarketCalendar.is_trading_day(now_dt.date()) else False
+                is_partial_today = (last_dt == target_date and is_post_market and age_hrs > 0.25)
+                if last_dt < target_date or (is_mkt_open and age_hrs > 0.02) or is_partial_today:
                     needs_live_sync = True
 
             if needs_live_sync:
