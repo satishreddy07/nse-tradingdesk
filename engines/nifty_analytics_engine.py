@@ -170,6 +170,8 @@ class NiftyAnalyticsEngine:
         self._predictions_cache_ts: float = 0.0
         self._equity_curves_cache: Optional[Dict[str, Any]] = None
         self._equity_curves_cache_ts: float = 0.0
+        self._intraday_expiry_cache: Dict[str, Any] = {}
+        self._intraday_expiry_cache_ts: float = 0.0
         self._ensure_tables()
 
     def invalidate_equity_curves_cache(self) -> None:
@@ -1300,11 +1302,13 @@ class NiftyAnalyticsEngine:
     def get_intraday_expiry_dashboard(
         self,
         session_date: Optional[str] = None,
-        interval_mode: str = "30m"
+        interval_mode: str = "30m",
+        force_refresh: bool = False
     ) -> Dict[str, Any]:
         """
         Returns the complete Intraday Weekly Option Expiry Dashboard:
         - Supports interval_mode: '15m', '30m' (Recommended Institutional Standard), and '50m'
+        - In-memory cached (30s market hours, 300s off-market) for sub-millisecond API response.
         - If no snapshot exists yet for today, captures the current live snapshot automatically!
         - Automatically heals and gapfills any missed past slots so there are ZERO BLANKS!
         - Includes the schedule tracker, all recorded snapshots, live weekly option chain summary,
@@ -1312,6 +1316,14 @@ class NiftyAnalyticsEngine:
         """
         if not session_date:
             session_date = now_ist().strftime("%Y-%m-%d")
+
+        now_ts = time.time()
+        market_open = NSEMarketCalendar.can_execute_trades()
+        cache_ttl = 30 if market_open else 300
+        cache_key = f"{session_date}_{interval_mode}"
+
+        if not force_refresh and cache_key in self._intraday_expiry_cache and (now_ts - self._intraday_expiry_cache_ts) < cache_ttl:
+            return self._intraday_expiry_cache[cache_key]
 
         # Automatically gapfill any elapsed slots that were missed
         self.auto_gapfill_missed_intraday_slots(session_date=session_date, interval_mode=interval_mode)
@@ -1401,7 +1413,7 @@ class NiftyAnalyticsEngine:
         except Exception as aie:
             logger.debug(f"Intraday advanced suite load notice: {aie}")
 
-        return {
+        res = {
             "status": "OK" if latest else "EMPTY",
             "session_date": session_date,
             "expiry_date": latest.get("expiry_date", "--"),
@@ -1416,6 +1428,10 @@ class NiftyAnalyticsEngine:
             "snapshots": snaps,
             "advanced_intraday": advanced_intra,
         }
+        with self._lock:
+            self._intraday_expiry_cache[cache_key] = res
+            self._intraday_expiry_cache_ts = now_ts
+        return res
 
     # ==========================================================================
     # 3. NIFTY 50 T+1 & T+5 MULTI-FACTOR PREDICTION & CALIBRATION ENGINE

@@ -988,6 +988,16 @@ class StateEngine:
                     else:
                         item["price_updated_at"] = pos_upd or item.get("entry_date", "")
                     item["day_change_pct"] = round(float(item.get("day_change_pct") or 0.0), 2)
+                    ep = float(item.get("entry_price") or 0.0)
+                    cp = float(item.get("current_price") or ep)
+                    sl = float(item.get("stop_loss") or ep * 0.95)
+                    qty = int(item.get("quantity") or 0)
+                    item["qty"] = qty
+                    item["unrealized_pnl"] = round((cp - ep) * qty, 2)
+                    item["return_pct"] = round(((cp - ep) / max(0.01, ep)) * 100.0, 2)
+                    item["stop_distance_pct"] = round(((cp - sl) / max(0.01, cp)) * 100.0, 2)
+                    r_unit = max(0.01, ep - float(item.get("original_stop_loss") or sl))
+                    item["current_r"] = round((cp - ep) / r_unit, 2)
                     try:
                         item["metrics"] = json.loads(item.get("metrics_json") or "{}")
                     except Exception:

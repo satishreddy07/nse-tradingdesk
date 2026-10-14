@@ -3738,25 +3738,32 @@
       }
 
       // Smart Polling: Only poll automatically during 09:00 AM – 03:50 PM IST trading days (or when a manual scan is running)
-      // so an idle open browser tab never prevents Render from sleeping after 03:50 PM IST or on weekends/holidays.
+      // and only when browser tab is visible, so an idle open tab never wastes network or battery.
       setInterval(() => {
-        if (wasScanRunning || (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow())) {
+        if (wasScanRunning || (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow())) {
           pollScanProgress();
         }
       }, 2500);
       setInterval(() => {
-        if (wasScanRunning || (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow())) {
+        if (!document.hidden && (wasScanRunning || (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()))) {
           refreshAllData();
         }
       }, 30000);
       // 5-Minute Live Price Stream for all Active Positions, Screened Stocks, and Options Chains
       setInterval(() => {
-        if (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+        if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
           refreshLivePrices(true);
           loadOptionsChainDesk(false);
           loadOptionsPortfolioDesk();
         }
       }, 300000);
+
+      // Instant refresh when user switches back to this tab
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+          refreshAllData();
+        }
+      });
     });
 
 
@@ -3900,11 +3907,14 @@
     }
 
     async function loadIntradayExpiryDesk(forceRefresh = false) {
+      if (niftyIntradayCache && !forceRefresh) {
+        renderIntradayExpiryUI(niftyIntradayCache);
+      }
       try {
         if (forceRefresh) {
           await fetch('/api/nifty/options-chain?force_refresh=true');
         }
-        const res = await fetch(`/api/nifty/intraday-expiry?interval_mode=${currentIntradayInterval}`);
+        const res = await fetch(`/api/nifty/intraday-expiry?interval_mode=${currentIntradayInterval}&force_refresh=${forceRefresh ? 'true' : 'false'}`);
         if (!res.ok) return;
         const data = await res.json();
         niftyIntradayCache = data;
@@ -5915,6 +5925,12 @@
     }
 
     async function loadOptionsChainDesk(forceRefresh = false) {
+      if (niftyOptionsChainCache && !forceRefresh) {
+        renderOptionsChainUI(niftyOptionsChainCache);
+        if (typeof renderBuilderCompactChain === 'function') {
+          renderBuilderCompactChain();
+        }
+      }
       try {
         const res = await fetch(`/api/nifty/options-chain?force_refresh=${forceRefresh ? 'true' : 'false'}`);
         if (!res.ok) return;
@@ -8149,6 +8165,8 @@
       if (window.lucide) lucide.createIcons();
       if (secId === 'analytics') {
         setTimeout(loadAllEquityCurves, 50);
+      } else if (secId === 'signals' && (!p1SignalsCache || p1SignalsCache.length === 0)) {
+        loadP1Data(true);
       }
     }
 
@@ -8255,15 +8273,15 @@
       }
     }
 
-    async function refreshAllData() {
+    async function refreshAllData(forceSignals = false) {
       const icon = document.getElementById('refresh-icon');
       if (icon) icon.classList.add('animate-spin');
 
       try {
         await Promise.all([
           loadSystemStatus(),
-          loadP1Data(),
-          loadP2Data(),
+          loadP1Data(forceSignals),
+          loadP2Data(forceSignals),
           (typeof loadAllEquityCurves === 'function' ? loadAllEquityCurves() : Promise.resolve())
         ]);
         if (currentModule === 'module-swing' && currentTab === 'tab-charts') await loadFetchedStocksData();
@@ -8271,9 +8289,11 @@
         if (currentModule !== 'module-swing') {
           await ensureMasterDataThenRenderModules();
         }
-        // Pre-fetch predictions and options chain in background for instantaneous navigation
-        if (!niftyPredictionsCache) loadPredictionsDesk(false);
-        if (!niftyOptionsChainCache) loadOptionsChainDesk(false);
+        // Stagger pre-fetch for background desks so initial paint is instantaneous
+        setTimeout(() => {
+          if (!niftyPredictionsCache) loadPredictionsDesk(false);
+          if (!niftyOptionsChainCache) loadOptionsChainDesk(false);
+        }, 300);
       } catch (e) {
         console.error("Error refreshing data:", e);
       } finally {
@@ -8542,12 +8562,19 @@
     // -------------------------------------------------------------------------
     // PORTFOLIO 1 DATA
     // -------------------------------------------------------------------------
-    async function loadP1Data() {
-      const [sumRes, posRes, sigRes] = await Promise.all([
+    async function loadP1Data(forceSignals = false) {
+      const needSignals = forceSignals || !p1SignalsCache || wasScanRunning || (currentP1SubSection === 'p1-sec-signals');
+      const fetchList = [
         fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/summary'),
-        fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/positions'),
-        fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/signals')
-      ]);
+        fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/positions')
+      ];
+      if (needSignals) {
+        fetchList.push(fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/signals'));
+      }
+      const results = await Promise.all(fetchList);
+      const sumRes = results[0];
+      const posRes = results[1];
+      const sigRes = needSignals ? results[2] : null;
 
       if (sumRes.ok) {
         const sum = await sumRes.json();
@@ -8631,7 +8658,7 @@
         renderP1Positions(positions);
       }
 
-      if (sigRes.ok) {
+      if (sigRes && sigRes.ok) {
         p1SignalsCache = await sigRes.json();
         const cAll = p1SignalsCache.length;
         const cBuy = p1SignalsCache.filter(s => s.bucket === 'BUY_NOW').length;
@@ -8645,6 +8672,8 @@
         if (document.getElementById('cnt-p1-wait')) document.getElementById('cnt-p1-wait').innerText = `(${cWait})`;
         if (document.getElementById('cnt-p1-avoid')) document.getElementById('cnt-p1-avoid').innerText = `(${cAvoid})`;
 
+        filterP1Signals(currentP1FilterBucket);
+      } else if (p1SignalsCache && p1SignalsCache.length > 0 && currentP1SubSection === 'p1-sec-signals') {
         filterP1Signals(currentP1FilterBucket);
       }
     }
@@ -8788,12 +8817,19 @@
     // -------------------------------------------------------------------------
     // PORTFOLIO 2 DATA
     // -------------------------------------------------------------------------
-    async function loadP2Data() {
-      const [sumRes, posRes, sigRes] = await Promise.all([
+    async function loadP2Data(forceSignals = false) {
+      const needSignals = forceSignals || !p2SignalsCache || wasScanRunning;
+      const fetchList = [
         fetch('/api/portfolio/NIFTY500_MOMENTUM/summary'),
-        fetch('/api/portfolio/NIFTY500_MOMENTUM/positions'),
-        fetch('/api/portfolio/NIFTY500_MOMENTUM/signals')
-      ]);
+        fetch('/api/portfolio/NIFTY500_MOMENTUM/positions')
+      ];
+      if (needSignals) {
+        fetchList.push(fetch('/api/portfolio/NIFTY500_MOMENTUM/signals'));
+      }
+      const results = await Promise.all(fetchList);
+      const sumRes = results[0];
+      const posRes = results[1];
+      const sigRes = needSignals ? results[2] : null;
 
       if (sumRes.ok) {
         const sum = await sumRes.json();
@@ -8852,8 +8888,10 @@
         renderP2Positions(positions);
       }
 
-      if (sigRes.ok) {
+      if (sigRes && sigRes.ok) {
         p2SignalsCache = await sigRes.json();
+        renderP2SignalsTable(p2SignalsCache);
+      } else if (p2SignalsCache) {
         renderP2SignalsTable(p2SignalsCache);
       }
     }

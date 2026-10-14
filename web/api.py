@@ -657,10 +657,10 @@ def get_nifty_options_chain(force_refresh: bool = False):
 
 
 @app.get("/api/nifty/intraday-expiry")
-def get_nifty_intraday_expiry(session_date: Optional[str] = None, interval_mode: str = "30m"):
+def get_nifty_intraday_expiry(session_date: Optional[str] = None, interval_mode: str = "30m", force_refresh: bool = False):
     """Returns the Intraday Weekly Option Expiry progression (15m / 30m Institutional Standard / 50m)."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
-    return nifty_analytics_engine.get_intraday_expiry_dashboard(session_date=session_date, interval_mode=interval_mode)
+    return nifty_analytics_engine.get_intraday_expiry_dashboard(session_date=session_date, interval_mode=interval_mode, force_refresh=force_refresh)
 
 
 @app.get("/api/nifty/intraday-advanced")
