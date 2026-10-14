@@ -1168,10 +1168,12 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
 
             is_same_entry_day = (bar_date_str == entry_date_str)
 
-            # On the entry day itself, daily Low/High includes 9:15 AM bars BEFORE the trade was opened.
-            # Therefore on entry day we strictly use live LTP `c` instead of pre-entry morning `l`.
-            check_low = c if is_same_entry_day else min(l, c)
-            check_high = c if is_same_entry_day else max(h, c)
+            # During live trading hours (09:15 - 15:30 IST), stop-loss evaluation strictly monitors
+            # the live current market price `c` (LTP). Daily candle Low `l` from delayed external
+            # feeds contains pre-entry wicks, auction match prints, or yesterday's artifacts and must
+            # never be used to falsely stop out active positions trading well in profit.
+            check_low = c
+            check_high = max(h, c)
 
             entry_px = float(pos["entry_price"])
             sl = float(pos["stop_loss"])
@@ -1194,7 +1196,7 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
             # Check Stop Loss
             if check_low <= sl:
                 closed = state_engine.close_position(
-                    sym, exit_price=c if is_same_entry_day else sl,
+                    sym, exit_price=c,
                     exit_reason="STOP_LOSS" if not t1_hit else "TRAILING_BE_STOP"
                 )
                 if closed:

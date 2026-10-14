@@ -265,9 +265,9 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
             state_engine.update_position_price(sym, current_price=c, stop_loss=current_sl, highest_price=highest_seen)
             continue
 
-        is_same_entry_day = (bar_date_str == entry_date_str)
-        check_low = c if is_same_entry_day else min(l, c)
-        check_high = c if is_same_entry_day else max(h, c)
+        # In live trading hours, stop loss strictly evaluates the live market price c (LTP)
+        check_low = c
+        check_high = max(h, c)
 
         entry_px = float(pos["entry_price"])
         orig_sl = float(pos.get("original_stop_loss") or pos["stop_loss"])
@@ -314,7 +314,7 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
         # Priority 1: Initial Stop-Loss
         if not in_trailing_mode:
             if check_low <= orig_sl:
-                res = state_engine.close_position(sym, exit_price=c if is_same_entry_day else orig_sl, exit_reason="INITIAL_SL")
+                res = state_engine.close_position(sym, exit_price=c, exit_reason="INITIAL_SL")
                 if res:
                     closed_events.append(res)
                     logger.info(f"🛑 [P2 Priority 1: INITIAL_SL] Stop-Loss hit for {sym} @ ₹{orig_sl:.2f}")

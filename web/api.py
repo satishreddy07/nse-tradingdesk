@@ -502,6 +502,21 @@ def get_stock_chart_and_data(symbol: str, bars: int = 260):
     return payload
 
 
+@app.post("/api/stocks/{symbol}/reset_chart")
+def reset_stock_chart(symbol: str):
+    """
+    Explicitly resets chart state for a completed or exited stock:
+    purges any lingering setup signal from latest_signals and returns the reset chart payload.
+    """
+    sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    with state_engine._lock:
+        with state_engine._get_connection() as conn:
+            conn.execute("DELETE FROM latest_signals WHERE symbol = ?", (sym,))
+            conn.commit()
+    return state_engine.get_stock_chart_payload(sym, limit_bars=260)
+
+
+
 # --------------------------------------------------------------------------
 # PORTFOLIO RESET & SINGLE MASTER FILE TELEGRAM CLOUD VAULT ENDPOINTS
 # --------------------------------------------------------------------------

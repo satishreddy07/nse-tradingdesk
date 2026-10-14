@@ -643,6 +643,12 @@ class StateEngine:
                 except Exception:
                     nifty_pred = None
 
+        is_completed_trade = bool(recent_trades and not active_pos)
+        show_trade_lines = False
+        is_completed = False
+        completed_info = None
+        trade_status = "NONE"
+
         if active_pos:
             ep = round(float(active_pos["entry_price"]), 2)
             sl = round(float(active_pos["stop_loss"]), 2)
@@ -654,6 +660,37 @@ class StateEngine:
             risk_per_share = max(0.01, round(ep - sl, 2))
             rr_t1 = round((t1 - ep) / risk_per_share, 2)
             rr_t2 = round((t2 - ep) / risk_per_share, 2)
+            show_trade_lines = True
+            trade_status = "ACTIVE"
+        elif is_completed_trade:
+            # Position completed (hit Stop Loss or Target). Reset chart: clear trade lines and display completed audit
+            last_trade = recent_trades[0]
+            is_completed = True
+            show_trade_lines = False
+            trade_status = "COMPLETED"
+            ep = float(last_trade.get("entry_price") or last_c)
+            exit_px = float(last_trade.get("exit_price") or last_c)
+            sl = None
+            t1 = None
+            t2 = None
+            direction = "COMPLETED"
+            exit_reason = str(last_trade.get("exit_reason") or "TRADE_EXITED")
+            level_source = f"POSITION COMPLETED ({exit_reason}) • CHART RESET"
+            entry_ts = str(last_trade.get("exit_date") or candles[-1]["time"])
+            risk_per_share = 0.0
+            rr_t1 = float(last_trade.get("r_multiple") or 0.0)
+            rr_t2 = 0.0
+            completed_info = {
+                "entry_price": ep,
+                "exit_price": exit_px,
+                "exit_reason": exit_reason,
+                "pnl": float(last_trade.get("pnl") or 0.0),
+                "r_multiple": float(last_trade.get("r_multiple") or 0.0),
+                "return_pct": float(last_trade.get("return_pct") or 0.0),
+                "entry_date": last_trade.get("entry_date"),
+                "exit_date": last_trade.get("exit_date"),
+                "hold_days": last_trade.get("hold_days", 1)
+            }
         elif nifty_pred and isinstance(nifty_pred, dict) and nifty_pred.get("status") == "OK":
             t1_f = nifty_pred.get("t1_forecast") or {}
             t5_f = nifty_pred.get("t5_forecast") or {}
@@ -691,7 +728,9 @@ class StateEngine:
                 rr_t1 = round((t1 - ep) / risk_per_share, 2)
                 rr_t2 = round((t2 - ep) / risk_per_share, 2)
             entry_ts = nifty_pred.get("timestamp_ist") or candles[-1]["time"]
-        elif signal_row and float(signal_row.get("sl") or 0) > 0:
+            show_trade_lines = True
+            trade_status = "NIFTY_FORECAST"
+        elif signal_row and float(signal_row.get("sl") or 0) > 0 and not is_completed_trade:
             ep = round(float(signal_row.get("entry") or signal_row.get("close") or last_c), 2)
             sl = round(float(signal_row["sl"]), 2)
             t1 = round(float(signal_row.get("t1") or (ep + 1.5 * max(1.0, ep - sl))), 2)
@@ -702,18 +741,21 @@ class StateEngine:
             risk_per_share = max(0.01, round(ep - sl, 2))
             rr_t1 = round((t1 - ep) / risk_per_share, 2)
             rr_t2 = round((t2 - ep) / risk_per_share, 2)
+            show_trade_lines = True
+            trade_status = "SIGNAL"
         else:
             ep = last_c
-            risk_dist = round(2.0 * last_atr, 2)
-            sl = round(ep - risk_dist, 2)
-            t1 = round(ep + 1.5 * risk_dist, 2)
-            t2 = round(ep + 3.0 * risk_dist, 2)
-            direction = "BULLISH_LONG"
-            level_source = "ATR(14) SWING STRUCTURE (-2.0 ATR SL / +1.5R T1 / +3.0R T2)"
+            sl = None
+            t1 = None
+            t2 = None
+            direction = "TECHNICALS"
+            level_source = "TECHNICAL ANALYSIS (EMA 20/50/200 & RSI14)"
             entry_ts = candles[-1]["time"]
-            risk_per_share = max(0.01, round(ep - sl, 2))
-            rr_t1 = round((t1 - ep) / risk_per_share, 2)
-            rr_t2 = round((t2 - ep) / risk_per_share, 2)
+            risk_per_share = 0.0
+            rr_t1 = 0.0
+            rr_t2 = 0.0
+            show_trade_lines = False
+            trade_status = "NONE"
 
         payload = {
             "status": "OK",
@@ -729,12 +771,16 @@ class StateEngine:
                 "target_1": t1,
                 "target_2": t2,
                 "risk_per_share": risk_per_share,
-                "sl_pct": round(((sl - ep) / ep) * 100.0, 2),
-                "t1_pct": round(((t1 - ep) / ep) * 100.0, 2),
-                "t2_pct": round(((t2 - ep) / ep) * 100.0, 2),
+                "sl_pct": round(((sl - ep) / ep) * 100.0, 2) if (sl and ep) else 0.0,
+                "t1_pct": round(((t1 - ep) / ep) * 100.0, 2) if (t1 and ep) else 0.0,
+                "t2_pct": round(((t2 - ep) / ep) * 100.0, 2) if (t2 and ep) else 0.0,
                 "rr_t1": rr_t1,
                 "rr_t2": rr_t2,
-                "timestamp": entry_ts
+                "timestamp": entry_ts,
+                "show_trade_lines": show_trade_lines,
+                "is_completed": is_completed,
+                "trade_status": trade_status,
+                "completed_trade": completed_info
             },
             "active_position": active_pos,
             "signal": signal_row,
@@ -1049,6 +1095,8 @@ class StateEngine:
 
                 # Delete from active_positions
                 conn.execute("DELETE FROM active_positions WHERE symbol = ?", (sym_clean,))
+                # Clear any stale signal for this symbol so chart and screener reset
+                conn.execute("DELETE FROM latest_signals WHERE symbol = ?", (sym_clean,))
                 conn.commit()
 
                 trade_record = {
