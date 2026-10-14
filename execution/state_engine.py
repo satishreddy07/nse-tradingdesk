@@ -850,14 +850,9 @@ class StateEngine:
                         (sym_clean,)
                     ).fetchone()
                     if existing:
-                        conn.execute(
-                            "UPDATE active_positions SET current_price = ?, updated_at = ? WHERE symbol = ?",
-                            (entry_price, now_str, sym_clean)
-                        )
-                        conn.commit()
                         logger.info(
                             f"Position for {sym_clean} is already open ({existing['quantity']} shs @ ₹{existing['entry_price']:.2f}); "
-                            "skipping duplicate open."
+                            "skipping duplicate open without mutating price."
                         )
                         return True
 

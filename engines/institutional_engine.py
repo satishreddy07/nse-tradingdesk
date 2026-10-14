@@ -1140,10 +1140,14 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
         try:
             sym = pos["symbol"]
             formatted_sym = format_nse_ticker(sym)
+            is_freshly_fetched = (formatted_sym in ohlcv_dict or sym in ohlcv_dict)
             df = ohlcv_dict.get(formatted_sym)
             if df is None:
                 df = ohlcv_dict.get(sym)
             if df is None:
+                # Outside market hours, do not overwrite live position prices with stale local cache
+                if not can_trade:
+                    continue
                 df, _ = state_engine.get_ohlcv_df(sym)
             if df is None or df.empty:
                 continue

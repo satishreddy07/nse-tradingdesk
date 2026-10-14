@@ -644,7 +644,7 @@ def start_scheduler():
             id="job_morning_1020",
             name="10:20 AM Morning Intraday Scan",
             replace_existing=True,
-            misfire_grace_time=3600
+            misfire_grace_time=120
         )
 
         # Job 2: 3:00 PM IST Monday-Friday
@@ -660,7 +660,7 @@ def start_scheduler():
             id="job_afternoon_305",
             name="3:00 PM Afternoon Close-of-Day Swing Scan",
             replace_existing=True,
-            misfire_grace_time=3600
+            misfire_grace_time=120
         )
 
         # Job 3: 03:45 PM Daily Prediction Outcomes & Online Training (Mon-Fri)

@@ -405,17 +405,18 @@ def trigger_scan(req: TriggerScanRequest):
         initial_stage=init_stage
     )
 
+    effective_auto_exec = bool(req.auto_execute and can_trade)
     def run_scan_worker():
-        logger.info(f"⚡ Live scan started: {s_type} (Auto-Execute: {req.auto_execute}, TradingGate: {can_trade})")
+        logger.info(f"⚡ Live scan started: {s_type} (Auto-Execute: {effective_auto_exec}, TradingGate: {can_trade})")
         state_engine.update_scan_progress(stage=f"Step 1/6: Fetching live {s_type} universe from Chartink...", percent=10)
         try:
             if s_type in ("MORNING_1020AM", "AFTERNOON_305PM", "AFTERNOON_300PM", "INSTITUTIONAL", "ALL"):
                 inst = InstitutionalEngine()
                 mode_override = "morning" if "MORNING" in s_type else ("afternoon" if "AFTERNOON" in s_type else None)
-                inst.run(auto_execute=req.auto_execute, mode_override=mode_override)
+                inst.run(auto_execute=effective_auto_exec, mode_override=mode_override)
 
             if s_type in ("AFTERNOON_305PM", "AFTERNOON_300PM", "NIFTY500", "ALL"):
-                run_nifty500_pipeline_sync(mode="MANUAL_TRIGGER", auto_execute=req.auto_execute)
+                run_nifty500_pipeline_sync(mode="MANUAL_TRIGGER", auto_execute=effective_auto_exec)
         except Exception as e:
             logger.error(f"Error during live scan {s_type}: {e}", exc_info=True)
             state_engine.finish_scan_progress(f"Scan encountered error: {str(e)}")
