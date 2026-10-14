@@ -1524,7 +1524,7 @@ class StateEngine:
             return dict(self._live_progress)
 
     # --------------------------------------------------------------------------
-    # SCHEDULED 6-PILLAR RUN TELEMETRY (10:20 AM & 3:05 PM IST)
+    # SCHEDULED 6-PILLAR RUN TELEMETRY (10:20 AM & 3:00 PM IST)
     # --------------------------------------------------------------------------
     def record_scheduled_scan_outcome(
         self,
@@ -1538,7 +1538,7 @@ class StateEngine:
         error: Optional[str] = None,
         note: str = ""
     ):
-        """Persists the outcome, status, and BUY stocks count of 10:20 AM and 3:05 PM 6-pillar runs in SQLite."""
+        """Persists the outcome, status, and BUY stocks count of 10:20 AM and 3:00 PM 6-pillar runs in SQLite."""
         now_dt = now_ist()
         today_str = now_dt.strftime("%Y-%m-%d")
         now_str = format_ist(now_dt)
@@ -1563,7 +1563,7 @@ class StateEngine:
         self.set_kv("scheduled_scans_telemetry", telemetry)
 
     def get_scheduled_scans_telemetry(self) -> Dict[str, Any]:
-        """Returns structured status of today's 10:20 AM Morning and 3:05 PM Evening 6-pillar runs."""
+        """Returns structured status of today's 10:20 AM Morning and 3:00 PM Evening 6-pillar runs."""
         now_dt = now_ist()
         today_str = now_dt.strftime("%Y-%m-%d")
         telemetry = self.get_kv("scheduled_scans_telemetry") or {}
@@ -1592,7 +1592,7 @@ class StateEngine:
                                     "execution_time_sec": float(r["execution_time_sec"] or 0),
                                     "note": r["message"]
                                 }
-                        elif "AFTERNOON" in stype or "305" in stype:
+                        elif "AFTERNOON" in stype or "305" in stype or "300" in stype or "1500" in stype:
                             if "afternoon_305" not in telemetry:
                                 cand = int(r["candidates_count"] or 0)
                                 telemetry["afternoon_305"] = {
@@ -1620,14 +1620,14 @@ class StateEngine:
 
         a_status = telemetry.get("afternoon_305")
         if not a_status:
-            is_past = current_time_str >= "15:05"
+            is_past = current_time_str >= "15:00"
             a_status = {
                 "status": "PENDING" if not is_past else "AWAITING_TRIGGER",
                 "timestamp": "--",
                 "date": today_str,
                 "buy_now_count": 0,
                 "total_scanned": 0,
-                "note": "Scheduled for 03:05 PM IST Mon-Fri" if not is_past else "Ready to trigger (MOC Window)"
+                "note": "Scheduled for 03:00 PM IST Mon-Fri" if not is_past else "Ready to trigger (MOC Window)"
             }
 
         return {

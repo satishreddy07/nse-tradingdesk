@@ -6,7 +6,7 @@ Features two distinct, mathematically sound quantitative swing portfolios:
 1. **Portfolio 1 — Institutional 6-Pillar Percentile Engine**: Liquid universe from Chartink with 30 raw technical metrics, 6 pillars, real sector relative strength, ML meta-classifier re-ranking, and score-weighted position sizing.
 2. **Portfolio 2 — Nifty 500 Momentum Compounded Engine**: Daily Market-On-Close (MOC) swing engine for Nifty 500 constituents with dynamic equity reinvestment compounding, 10 slots cap, 7-point entry criteria matrix, and 4-tier strategy exit hierarchy.
 
-Integrated with an automated scheduler running every trading day at **10:20 AM IST** and **3:05 PM IST**, deployed on a Render backend with a responsive PC and mobile web application.
+Integrated with an automated scheduler running every trading day at **10:20 AM IST** and **3:00 PM IST**, deployed on a Render backend with a responsive PC and mobile web application.
 
 ---
 
@@ -51,7 +51,7 @@ Integrated with an automated scheduler running every trading day at **10:20 AM I
                      ┌────────────────────────┼────────────────────────┐
                      ▼                        ▼                        ▼
            APScheduler Daemon        FastAPI REST API         Responsive Web Desk
-           10:20 AM & 3:05 PM       Endpoints & Health       PC & Mobile Home Layout
+           10:20 AM & 3:00 PM       Endpoints & Health       PC & Mobile Home Layout
 ```
 
 ---
@@ -63,8 +63,8 @@ Integrated with an automated scheduler running every trading day at **10:20 AM I
 - **True Opening Range & RVOL**: By 10:20 AM, institutional liquidity blocks have settled, true opening ranges have formed, and opening volume expansion (RVOL) provides genuine statistical significance.
 - **Action**: Evaluates morning momentum, checks Minervini Stage 2 breakouts, and reconciles overnight gap positions.
 
-### 2. Why 3:05 PM IST? (Afternoon MOC Swing Scan)
-- **Market-On-Close (MOC) Precision**: NSE regular trading closes at 3:30 PM. Running at 3:05 PM gives 25 minutes of execution runway.
+### 2. Why 3:00 PM IST? (Afternoon MOC Swing Scan)
+- **Market-On-Close (MOC) Precision**: NSE regular trading closes at 3:30 PM. Running at 3:00 PM gives 30 minutes of execution runway.
 - **92% Volume Profile Completion**: Daily volume distribution is over 90% finalized, preventing morning fakeouts.
 - **Intraday Confirmation**: Applies a ±15 point confirmation score based on range position and volume delivery.
 - **Action**: Audits Nifty 500 macro regime gate, reconciles 4-tier strategy exits, and enters new qualifying setups before the market close.
@@ -121,7 +121,7 @@ Open your browser to: **`http://localhost:8000`**
 # Run morning 10:20 AM scan
 python main.py --scan morning
 
-# Run afternoon 3:05 PM scan
+# Run afternoon 3:00 PM scan
 python main.py --scan afternoon
 
 # Run Portfolio 1 (Institutional 6-Pillar) scan only

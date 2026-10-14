@@ -48,11 +48,11 @@ P2_RISK_PER_TRADE = float(os.environ.get("P2_RISK_PER_TRADE", 0.015)) # 1.5% dyn
 P2_MAX_SLOTS = int(os.environ.get("P2_MAX_SLOTS", 10))                # 10 maximum concurrent slots
 P2_STOP_ATR_MULT = float(os.environ.get("P2_STOP_ATR_MULT", 2.0))     # 2.0x ATR Wilder stop
 
-# Scheduler Config
-SCHEDULE_MORNING_HOUR = 10
-SCHEDULE_MORNING_MINUTE = 20
-SCHEDULE_AFTERNOON_HOUR = 15
-SCHEDULE_AFTERNOON_MINUTE = 5
+# Scheduler Config (10:20 AM Morning & 3:00 PM MOC Close)
+SCHEDULE_MORNING_HOUR = int(os.environ.get("SCHEDULE_MORNING_HOUR", 10))
+SCHEDULE_MORNING_MINUTE = int(os.environ.get("SCHEDULE_MORNING_MINUTE", 20))
+SCHEDULE_AFTERNOON_HOUR = int(os.environ.get("SCHEDULE_AFTERNOON_HOUR", 15))
+SCHEDULE_AFTERNOON_MINUTE = int(os.environ.get("SCHEDULE_AFTERNOON_MINUTE", 0))  # 3:00 PM IST sharp
 
 # Telegram Cloud Vault Config (Persists Trade DB + OHLCV Historical Cache across Render restarts)
 TELEGRAM_BOT_TOKEN = os.environ.get(

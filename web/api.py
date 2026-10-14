@@ -358,7 +358,7 @@ def refresh_prices_endpoint(req: RefreshPricesRequest = RefreshPricesRequest()):
 # SCAN TRIGGER & LIVE PROGRESS
 # --------------------------------------------------------------------------
 class TriggerScanRequest(BaseModel):
-    scan_type: str = "ALL"  # 'MORNING_1020AM', 'AFTERNOON_305PM', 'INSTITUTIONAL', 'NIFTY500', 'ALL'
+    scan_type: str = "ALL"  # 'MORNING_1020AM', 'AFTERNOON_300PM', 'AFTERNOON_305PM', 'INSTITUTIONAL', 'NIFTY500', 'ALL'
     auto_execute: bool = True
 
 
@@ -409,12 +409,12 @@ def trigger_scan(req: TriggerScanRequest):
         logger.info(f"⚡ Live scan started: {s_type} (Auto-Execute: {req.auto_execute}, TradingGate: {can_trade})")
         state_engine.update_scan_progress(stage=f"Step 1/6: Fetching live {s_type} universe from Chartink...", percent=10)
         try:
-            if s_type in ("MORNING_1020AM", "INSTITUTIONAL", "ALL"):
+            if s_type in ("MORNING_1020AM", "AFTERNOON_305PM", "AFTERNOON_300PM", "INSTITUTIONAL", "ALL"):
                 inst = InstitutionalEngine()
                 mode_override = "morning" if "MORNING" in s_type else ("afternoon" if "AFTERNOON" in s_type else None)
                 inst.run(auto_execute=req.auto_execute, mode_override=mode_override)
 
-            if s_type in ("AFTERNOON_305PM", "NIFTY500", "ALL"):
+            if s_type in ("AFTERNOON_305PM", "AFTERNOON_300PM", "NIFTY500", "ALL"):
                 run_nifty500_pipeline_sync(mode="MANUAL_TRIGGER", auto_execute=req.auto_execute)
         except Exception as e:
             logger.error(f"Error during live scan {s_type}: {e}", exc_info=True)

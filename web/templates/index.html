@@ -187,7 +187,7 @@
               <span class="text-[10px] text-cyan-400 font-mono">P1 Base</span>
             </button>
             <button onclick="triggerScan('AFTERNOON_305PM')" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-800 flex items-center justify-between text-slate-200">
-              <span>🌇 MOC Close Scan (3:05 PM)</span>
+              <span>🌇 MOC Close Scan (3:00 PM)</span>
               <span class="text-[10px] text-violet-400 font-mono">P1+P2</span>
             </button>
             <button onclick="triggerScan('INSTITUTIONAL')" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-800 flex items-center justify-between text-slate-200">
@@ -341,7 +341,7 @@
         </div>
 
 
-        <!-- Automated Scheduled Runs Telemetry (10:20 AM Morning & 3:05 PM Evening MOC) -->
+        <!-- Automated Scheduled Runs Telemetry (10:20 AM Morning & 3:00 PM Evening MOC) -->
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3 mb-3">
             <div class="flex items-center gap-2">
@@ -350,7 +350,7 @@
             </div>
             <div class="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono">
               <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Daily Automated Cadence: 10:20 AM & 03:05 PM IST</span>
+              <span>Daily Automated Cadence: 10:20 AM & 03:00 PM IST</span>
             </div>
           </div>
 
@@ -382,11 +382,11 @@
               </div>
             </div>
 
-            <!-- Evening Run Card (3:05 PM) -->
+            <!-- Evening Run Card (3:00 PM) -->
             <div id="card-scan-afternoon" class="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 sm:p-4 transition">
               <div class="flex items-center justify-between gap-2">
                 <span class="font-bold text-slate-200 flex items-center gap-1.5">
-                  <span>🌇 Evening MOC Run (03:05 PM IST)</span>
+                  <span>🌇 Evening MOC Run (03:00 PM IST)</span>
                 </span>
                 <span id="scan-afternoon-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">PENDING</span>
               </div>
@@ -404,7 +404,7 @@
                   <span id="scan-afternoon-total" class="text-slate-300">--</span>
                 </div>
                 <div class="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
-                  <span id="scan-afternoon-status-note">Awaiting scheduled trigger at 03:05 PM IST</span>
+                  <span id="scan-afternoon-status-note">Awaiting scheduled trigger at 03:00 PM IST</span>
                 </div>
               </div>
             </div>
@@ -715,7 +715,7 @@
         <div class="flex items-center gap-2 self-start sm:self-center">
           <button onclick="triggerScan('NIFTY500')" class="px-3.5 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs flex items-center gap-1.5 transition">
             <i data-lucide="play" class="w-3.5 h-3.5 stroke-[2.5]"></i>
-            <span>Run 3:05 PM Scan</span>
+            <span>Run 3:00 PM Scan</span>
           </button>
         </div>
       </div>
@@ -845,13 +845,13 @@
         </div>
       </div>
 
-      <!-- Qualifying Candidate Signals for 3:05 PM MOC -->
+      <!-- Qualifying Candidate Signals for 3:00 PM MOC -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
         <div class="flex items-center justify-between mb-4">
           <div>
             <h3 class="font-bold text-white text-sm flex items-center gap-2">
               <i data-lucide="check-circle" class="w-4 h-4 text-violet-400"></i>
-              <span>7-Point Matrix Qualifying Setups (3:05 PM Close)</span>
+              <span>7-Point Matrix Qualifying Setups (3:00 PM Close)</span>
             </h3>
             <p class="text-xs text-slate-400">Ranked by Relative Strength Spread vs Nifty 500</p>
           </div>
@@ -862,7 +862,7 @@
             <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
               <tr>
                 <th class="p-3">Stock Symbol</th>
-                <th class="p-3">LTP (3:05 PM)</th>
+                <th class="p-3">LTP (3:00 PM)</th>
                 <th class="p-3">RS Spread (63d)</th>
                 <th class="p-3">RSI-14 (40-62)</th>
                 <th class="p-3">Initial SL (-2 ATR)</th>
@@ -875,7 +875,7 @@
             </thead>
             <tbody id="p2-signals-tbody" class="divide-y divide-slate-800/60 font-mono">
               <tr>
-                <td colspan="10" class="p-8 text-center text-slate-500 font-sans">No candidate signals yet. Run 3:05 PM MOC scan.</td>
+                <td colspan="10" class="p-8 text-center text-slate-500 font-sans">No candidate signals yet. Run 3:00 PM MOC scan.</td>
               </tr>
             </tbody>
           </table>
@@ -1201,16 +1201,16 @@
               </p>
             </div>
 
-            <!-- 3:05 PM -->
+            <!-- 3:00 PM -->
             <div class="bg-slate-950/70 border border-violet-800/40 rounded-xl p-4 relative overflow-hidden">
               <div class="absolute top-0 right-0 w-24 h-24 bg-violet-500/5 rounded-full blur-xl pointer-events-none"></div>
               <div class="flex items-center justify-between mb-2">
-                <span class="text-xs font-mono font-bold text-violet-400">03:05 PM IST</span>
+                <span class="text-xs font-mono font-bold text-violet-400">03:00 PM IST</span>
                 <span class="px-2 py-0.5 rounded text-[10px] bg-violet-900/50 text-violet-300 font-mono">DAILY MON-FRI</span>
               </div>
               <h4 class="font-bold text-white text-sm">Afternoon MOC Swing Scan</h4>
               <p class="text-xs text-slate-400 mt-1">
-                Runs 25 minutes before market close. 92% daily volume completed. Applies Intraday Confirmation (±15 pts), checks 4-Tier Strategy Exits & executes new 7-point matrix swing entries.
+                Runs 30 minutes before market close (03:00 PM IST). 92% daily volume completed. Applies Intraday Confirmation (±15 pts), checks 4-Tier Strategy Exits & executes new 7-point matrix swing entries.
               </p>
             </div>
 
@@ -8491,7 +8491,7 @@
 
       renderVaultSyncHistory(v);
 
-      // 6-Pillar Scheduled Execution Status Telemetry (10:20 AM Morning & 3:05 PM Evening MOC)
+      // 6-Pillar Scheduled Execution Status Telemetry (10:20 AM Morning & 3:00 PM Evening MOC)
       const stSched = data.scheduled_scans_telemetry || {};
       const sm = stSched.morning_1020 || {};
       const sa = stSched.afternoon_305 || {};
@@ -8540,7 +8540,7 @@
       if (saTime) saTime.innerText = sa.timestamp || '--';
       if (saBuys) saBuys.innerText = `${sa.buy_now_count ?? 0} BUY NOW Stocks`;
       if (saTotal) saTotal.innerText = `${sa.total_scanned ?? 0} Stocks Scanned`;
-      if (saNote) saNote.innerText = sa.note || 'Scheduled for 03:05 PM IST';
+      if (saNote) saNote.innerText = sa.note || 'Scheduled for 03:00 PM IST';
     }
 
     async function syncNseHolidaysLive() {
@@ -8950,7 +8950,7 @@
       if (!tbody) return;
 
       if (!signals || signals.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-500 font-sans">No candidate signals yet. Run 3:05 PM MOC scan.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-500 font-sans">No candidate signals yet. Run 3:00 PM MOC scan.</td></tr>`;
         return;
       }
 

@@ -414,7 +414,7 @@ class NSEMarketCalendar:
     @classmethod
     def get_next_scheduled_scan(cls, dt: datetime.datetime = None) -> Dict[str, Any]:
         """
-        Determines the next upcoming automated scan (10:20 AM or 3:05 PM IST).
+        Determines the next upcoming automated scan (10:20 AM or 3:00 PM IST).
         """
         cls._load_cached_holidays_from_db()
         if dt is None:
@@ -422,8 +422,16 @@ class NSEMarketCalendar:
         elif dt.tzinfo is None:
             dt = IST.localize(dt)
 
-        t_1020 = datetime.time(10, 20)
-        t_1505 = datetime.time(15, 5)
+        try:
+            from core.config import (
+                SCHEDULE_MORNING_HOUR, SCHEDULE_MORNING_MINUTE,
+                SCHEDULE_AFTERNOON_HOUR, SCHEDULE_AFTERNOON_MINUTE
+            )
+            t_1020 = datetime.time(SCHEDULE_MORNING_HOUR, SCHEDULE_MORNING_MINUTE)
+            t_1500 = datetime.time(SCHEDULE_AFTERNOON_HOUR, SCHEDULE_AFTERNOON_MINUTE)
+        except Exception:
+            t_1020 = datetime.time(10, 20)
+            t_1500 = datetime.time(15, 0)
 
         curr_date = dt.date()
         curr_time = dt.time()
@@ -437,13 +445,13 @@ class NSEMarketCalendar:
                     "seconds_remaining": int((target_dt - dt).total_seconds()),
                     "label": "10:20 AM Morning Intraday Scan"
                 }
-            elif curr_time < t_1505:
-                target_dt = IST.localize(datetime.datetime.combine(curr_date, t_1505))
+            elif curr_time < t_1500:
+                target_dt = IST.localize(datetime.datetime.combine(curr_date, t_1500))
                 return {
-                    "scan_type": "AFTERNOON_305PM",
+                    "scan_type": "AFTERNOON_300PM",
                     "target_time": target_dt.strftime("%Y-%m-%d %H:%M:%S IST"),
                     "seconds_remaining": int((target_dt - dt).total_seconds()),
-                    "label": "3:05 PM MOC & Daily Close Swing Scan"
+                    "label": f"{t_1500.strftime('%I:%M %p').lstrip('0')} MOC & Daily Close Swing Scan"
                 }
 
         next_date = curr_date + datetime.timedelta(days=1)

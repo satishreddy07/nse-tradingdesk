@@ -4,7 +4,7 @@ Quant Trading Desk - Master Entry Point
 ========================================================================================
 Starts FastAPI web server with automated APScheduler on Asia/Kolkata (IST):
 - 10:20 AM IST: Morning Intraday Momentum & Entry Scan
-- 03:05 PM IST: Afternoon Close-of-Day Swing Scan & MOC Execution
+- 03:00 PM IST: Afternoon Close-of-Day Swing Scan & MOC Execution
 
 Ready for local development and Render Cloud deployment.
 ========================================================================================
@@ -99,7 +99,7 @@ def main():
     print("  • Portfolio 2: Nifty 500 Momentum Compounded Engine (₹1,00,000 Dynamic Compounding)")
     print("Automated Daily Schedule (NSE Mon-Fri):")
     print("  • 10:20 AM IST: Morning Intraday Momentum & Entry Scan")
-    print("  • 03:05 PM IST: Afternoon MOC Swing Scan & 4-Tier Strategy Exits")
+    print("  • 03:00 PM IST: Afternoon MOC Swing Scan & 4-Tier Strategy Exits")
     print(f"Listening on http://{args.host}:{args.port}")
     print("=" * 80)
 

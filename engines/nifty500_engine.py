@@ -388,7 +388,7 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     _nifty500_engine_state["last_run_timestamp"] = today_str
 
     state_engine.start_scan_progress(
-        scan_type="NIFTY500_MOMENTUM (3:05 PM MOC)",
+        scan_type="NIFTY500_MOMENTUM (3:00 PM MOC)",
         initial_stage="Step 1/5: Ingesting live Nifty 500 constituent list from NSE..."
     )
     logger.info(f"=== 🚀 Starting Nifty 500 Momentum Pipeline ({mode}) at {today_str} ===")
@@ -606,7 +606,7 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
 
             order_payload = {
                 "symbol": sym,
-                "action": "BUY CNC (MOC 3:05 PM)",
+                "action": "BUY CNC (MOC 3:00 PM)",
                 "ltp": round(entry_px, 2),
                 "quantity": shares,
                 "initial_sl": initial_sl,

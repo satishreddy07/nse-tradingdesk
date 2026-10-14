@@ -52,3 +52,38 @@ def test_no_undefined_standard_modules_across_repo():
                             found_issues.append(f"{p}:{node.lineno}: undefined module {mod_name}.{node.attr}")
 
     assert len(found_issues) == 0, f"Found undefined standard modules: {found_issues}"
+
+
+def test_afternoon_scan_schedule_configuration():
+    from core.config import SCHEDULE_AFTERNOON_HOUR, SCHEDULE_AFTERNOON_MINUTE, SCHEDULE_MORNING_HOUR, SCHEDULE_MORNING_MINUTE
+    assert SCHEDULE_AFTERNOON_HOUR == 15
+    assert SCHEDULE_AFTERNOON_MINUTE == 0
+    assert SCHEDULE_MORNING_HOUR == 10
+    assert SCHEDULE_MORNING_MINUTE == 20
+
+
+def test_keepalive_target_url_rejects_testserver():
+    from scheduler.cron_scheduler import register_external_request_origin, get_keepalive_target_url
+    from execution.state_engine import state_engine
+
+    # Ensure testserver is ignored and never stored
+    register_external_request_origin("http", "testserver")
+    saved = state_engine.get_kv("RENDER_PUBLIC_URL")
+    assert saved is None or "testserver" not in str(saved)
+
+    url = get_keepalive_target_url()
+    assert "testserver" not in url
+
+
+def test_next_scheduled_scan_300pm_resolution():
+    from core.market_calendar import NSEMarketCalendar
+    import datetime
+    from core.data_quality import IST
+
+    # At 12:00 PM on a trading day, next scan should be 15:00 IST
+    mock_noon = IST.localize(datetime.datetime(2026, 10, 14, 12, 0, 0))
+    scan_info = NSEMarketCalendar.get_next_scheduled_scan(mock_noon)
+    assert scan_info["target_time"].endswith("15:00:00 IST")
+    assert "3:00 PM" in scan_info["label"]
+    assert scan_info["scan_type"] == "AFTERNOON_300PM"
+

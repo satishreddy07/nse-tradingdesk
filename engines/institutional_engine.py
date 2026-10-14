@@ -1544,7 +1544,7 @@ class InstitutionalEngine:
             })
             state_engine.finish_scan_progress(summary_msg)
 
-            # Record scheduled/manual 6-pillar run telemetry for morning (10:20 AM) or afternoon (3:05 PM)
+            # Record scheduled/manual 6-pillar run telemetry for morning (10:20 AM) or afternoon (3:00 PM)
             curr_hour = now_ist().hour
             is_morning = (mode_override == "morning") or (curr_hour < 13)
             run_key = "morning_1020" if is_morning else "afternoon_305"
