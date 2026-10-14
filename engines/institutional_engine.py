@@ -1028,7 +1028,32 @@ class MLReRanker:
     @classmethod
     def apply_reranking(cls, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
-        df['ml_prob'] = cls.predict_win_probability(df)
+        try:
+            from engines.swing_quant_ml_engine import swing_quant_ml_engine
+            regime = swing_quant_ml_engine.capture_market_regime()
+            probs = []
+            exp_rs = []
+            verdicts = []
+            flags_list = []
+
+            for _, row in df.iterrows():
+                eval_res = swing_quant_ml_engine.evaluate_candidate(row.to_dict(), market_regime=regime)
+                probs.append(eval_res["win_prob"])
+                exp_rs.append(eval_res["expected_r"])
+                verdicts.append(eval_res["verdict"])
+                flags_list.append(json.dumps(eval_res["risk_flags"]))
+
+            df['ml_prob'] = probs
+            df['expected_r'] = exp_rs
+            df['ml_verdict'] = verdicts
+            df['risk_flags_json'] = flags_list
+        except Exception as e:
+            logger.debug(f"Failed to use SwingQuantMLEngine in MLReRanker: {e}")
+            df['ml_prob'] = cls.predict_win_probability(df)
+            df['expected_r'] = ((df['ml_prob'] * 1.5) - ((1.0 - df['ml_prob']) * 1.0)).round(2)
+            df['ml_verdict'] = np.where(df['ml_prob'] >= 0.55, "APPROVED", np.where(df['ml_prob'] >= 0.48, "CAUTION", "REJECTED"))
+            df['risk_flags_json'] = "[]"
+
         df['score'] = (df['score_raw'] * 0.85 + (df['ml_prob'] * 100.0) * 0.15).clip(0.0, 100.0)
         return df
 
@@ -1043,11 +1068,16 @@ class ExecutionEngine:
         dist_pivot = row['dist_to_pivot']
         dist_ema20 = row['dist_to_ema20']
         vol_ratio = row.get('vol_ratio', 1.0)
+        ml_verdict = str(row.get('ml_verdict', 'APPROVED')).upper()
+
+        # Closed-Loop Pre-Trade ML Gatekeeper: Block setups classified as REJECTED
+        if ml_verdict == "REJECTED":
+            return "AVOID"
 
         if score < 40.0:
             return "AVOID"
         elif score >= 80.0 and dist_pivot <= 2.0:
-            if vol_ratio >= 1.15:
+            if vol_ratio >= 1.15 and ml_verdict == "APPROVED":
                 return "BUY_NOW"
             else:
                 return "PRE_BREAKOUT"
@@ -1069,11 +1099,12 @@ class ExecutionEngine:
         low_20d = row['low']
         score = row['score']
         conf = row['confidence']
+        ml_verdict = str(row.get('ml_verdict', 'APPROVED')).upper()
 
-        if score >= 90.0 and conf >= 5:
+        if score >= 90.0 and conf >= 5 and ml_verdict == "APPROVED":
             risk_pct = 1.00
             tier = "A+"
-        elif score >= 80.0 and conf >= 4:
+        elif score >= 80.0 and conf >= 4 and ml_verdict == "APPROVED":
             risk_pct = 0.75
             tier = "A"
         else:
@@ -1408,7 +1439,10 @@ class InstitutionalEngine:
                     "week_confluence": bool(row['week_confluence']),
                     "intraday_pct": round(row['intraday_pct'], 2),
                     "intraday_adj": round(row['intraday_adj'], 2),
-                    "rs_spread": round(row.get('sector_excess_6m', 0.0), 2)
+                    "rs_spread": round(row.get('sector_excess_6m', 0.0), 2),
+                    "expected_r": float(row.get('expected_r', 0.0)),
+                    "ml_verdict": str(row.get('ml_verdict', 'APPROVED')),
+                    "risk_flags": str(row.get('risk_flags_json', '[]'))
                 })
 
             signals_df = pd.DataFrame(final_rows)
@@ -1518,6 +1552,36 @@ class InstitutionalEngine:
                                 )
 
             _institutional_engine_state["orders_executed"] = orders_placed
+
+            # Closed-Loop Shadow Candidate Tracking
+            try:
+                from engines.swing_quant_ml_engine import swing_quant_ml_engine
+                current_active_syms = [p["symbol"] for p in state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)]
+                shadow_logged = 0
+                for _, s_row in signals_df.iterrows():
+                    s_sym = s_row['ticker']
+                    if s_sym in current_active_syms:
+                        continue
+                    bkt = s_row['bucket']
+                    verd = str(s_row.get('ml_verdict', 'APPROVED')).upper()
+                    if bkt in ('BUY_NOW', 'PRE_BREAKOUT') or verd == 'REJECTED' or float(s_row['score']) >= 65.0:
+                        rej_tag = f"{bkt}_{verd}"
+                        logged = swing_quant_ml_engine.record_shadow_candidate(
+                            symbol=s_sym,
+                            portfolio_type=PORTFOLIO_TYPE,
+                            entry_price=float(s_row['entry']),
+                            stop_loss=float(s_row['sl']),
+                            target=float(s_row['t1']),
+                            target_2=float(s_row['t2']),
+                            candidate_meta=s_row.to_dict(),
+                            rejection_reason=rej_tag
+                        )
+                        if logged:
+                            shadow_logged += 1
+                if shadow_logged > 0:
+                    logger.info(f"👻 Logged {shadow_logged} candidates into Shadow Ledger for counterfactual tracking.")
+            except Exception as e:
+                logger.debug(f"Failed to record shadow candidates: {e}")
 
             elapsed = time.time() - start_time
             summary_msg = (

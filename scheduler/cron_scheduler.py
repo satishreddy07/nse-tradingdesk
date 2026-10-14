@@ -538,6 +538,20 @@ def scheduled_daily_prediction_training_job():
     except Exception as e:
         logger.warning(f"03:45 PM Daily Prediction Training Job error: {e}")
 
+    try:
+        from engines.swing_quant_ml_engine import swing_quant_ml_engine
+        # 1. Reconcile active shadow trades against EOD candle highs/lows
+        shadow_audit = swing_quant_ml_engine.reconcile_shadow_trades()
+        # 2. Retrain ML meta-classifier & expected R regressor
+        ml_meta = swing_quant_ml_engine.train_model()
+        logger.info(
+            f"🤖 [03:45 PM Swing ML Self-Training] Shadow Audit: {shadow_audit.get('resolved', 0)} resolved "
+            f"({shadow_audit.get('winners', 0)} W / {shadow_audit.get('losers', 0)} L, {shadow_audit.get('remaining_active', 0)} active). "
+            f"Model Samples: {ml_meta.get('total_samples', 0)} (Empirical: {ml_meta.get('empirical_samples', 0)}), Brier: {ml_meta.get('brier_score', 0):.4f}."
+        )
+    except Exception as e:
+        logger.warning(f"03:45 PM Swing Quant ML Training Job error: {e}")
+
 
 def start_scheduler():
     """Initializes and starts the BackgroundScheduler with IST triggers & Render Anti-Sleep Guard."""

@@ -158,10 +158,36 @@ class StateEngine:
                     intraday_pct REAL,
                     intraday_adj REAL,
                     rs_spread REAL,
+                    expected_r REAL DEFAULT 0.0,
+                    ml_verdict TEXT DEFAULT 'APPROVED',
                     updated_at TEXT NOT NULL,
                     UNIQUE(symbol, portfolio_type)
                 );
                 """)
+
+                try:
+                    cursor.execute("ALTER TABLE latest_signals ADD COLUMN expected_r REAL DEFAULT 0.0;")
+                except Exception:
+                    pass
+                try:
+                    cursor.execute("ALTER TABLE latest_signals ADD COLUMN ml_verdict TEXT DEFAULT 'APPROVED';")
+                except Exception:
+                    pass
+
+                # Backfill open active positions into quant_trade_dataset if not tracked yet
+                try:
+                    cursor.execute("""
+                    INSERT OR IGNORE INTO quant_trade_dataset (
+                        symbol, portfolio_type, trade_type, status, entry_price, stop_loss, target, target_2,
+                        sector, created_at, updated_at
+                    )
+                    SELECT symbol, portfolio_type, 'REAL', 'ACTIVE', entry_price, stop_loss, target, target_2,
+                           sector, entry_date, updated_at
+                    FROM active_positions
+                    WHERE symbol NOT IN (SELECT symbol FROM quant_trade_dataset WHERE status = 'ACTIVE' AND trade_type = 'REAL');
+                    """)
+                except Exception:
+                    pass
 
                 # 4. Scan Executions Log Table
                 cursor.execute("""
@@ -931,6 +957,30 @@ class StateEngine:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (now_str, sync_type, p_type, "CLOUD_SYNCED", 0.25, 1, 1, 1, sync_msg, sync_details))
                     conn.commit()
+
+                    # Closed-Loop Quant ML Engine: Record Real Trade Entry
+                    try:
+                        from engines.swing_quant_ml_engine import swing_quant_ml_engine
+                        cand_meta = dict(entry_metrics) if entry_metrics else {}
+                        cand_meta.update({
+                            "sector": sector,
+                            "entry": entry_price,
+                            "sl": stop_loss,
+                            "t1": target,
+                            "t2": target_2,
+                            "notes": notes
+                        })
+                        swing_quant_ml_engine.record_real_trade_entry(
+                            symbol=sym_clean,
+                            portfolio_type=p_type,
+                            entry_price=entry_price,
+                            stop_loss=stop_loss,
+                            target=target,
+                            target_2=target_2,
+                            candidate_meta=cand_meta
+                        )
+                    except Exception as ex:
+                        logger.debug(f"Could not log entry into quant_trade_dataset: {ex}")
                 except Exception as e:
                     logger.error(f"Error opening position for {sym_clean}: {e}")
                     return False
@@ -1140,6 +1190,21 @@ class StateEngine:
                 conn.execute("DELETE FROM latest_signals WHERE symbol = ?", (sym_clean,))
                 conn.commit()
 
+                # Record Closed-Loop Real Trade Exit into quant_trade_dataset
+                try:
+                    from engines.swing_quant_ml_engine import swing_quant_ml_engine
+                    swing_quant_ml_engine.record_real_trade_exit(
+                        symbol=sym_clean,
+                        exit_price=exit_price,
+                        exit_reason=exit_reason,
+                        pnl=round(total_pnl, 2),
+                        r_multiple=r_multiple,
+                        return_pct=return_pct,
+                        hold_days=hold_days
+                    )
+                except Exception as ex:
+                    logger.debug(f"Failed to record trade exit in quant_trade_dataset: {ex}")
+
                 trade_record = {
                     "symbol": sym_clean,
                     "portfolio_type": p_type,
@@ -1339,8 +1404,9 @@ class StateEngine:
                         symbol, portfolio_type, sector, bucket, score, confidence, ml_prob,
                         tier, close, entry, sl, t1, t2, rr, shares, capital_at_risk,
                         risk_pct, atr_pct, rsi14, dist_to_pivot, dist_to_ema20,
-                        inst_score, week_confluence, intraday_pct, intraday_adj, rs_spread, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        inst_score, week_confluence, intraday_pct, intraday_adj, rs_spread,
+                        expected_r, ml_verdict, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         sym_clean, p_type, s.get("sector", "DIVERSIFIED"), s.get("bucket", "WATCH"),
                         float(s.get("score", 0.0)), int(s.get("confidence", 0)), float(s.get("ml_prob", 0.0)),
@@ -1351,7 +1417,9 @@ class StateEngine:
                         float(s.get("dist_to_pivot", 0.0)), float(s.get("dist_to_ema20", 0.0)),
                         float(s.get("inst_score", 0.0)), 1 if s.get("week_confluence") else 0,
                         float(s.get("intraday_pct", 0.0)), float(s.get("intraday_adj", 0.0)),
-                        float(s.get("rs_spread", 0.0)), now_str
+                        float(s.get("rs_spread", 0.0)),
+                        float(s.get("expected_r", 0.0)), str(s.get("ml_verdict", "APPROVED")),
+                        now_str
                     ))
                 conn.commit()
 

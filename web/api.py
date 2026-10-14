@@ -970,5 +970,63 @@ def run_ai_benchmark_endpoint():
     }
 
 
+# ==============================================================================
+# SWING QUANT ML & SHADOW LEDGER ENDPOINTS
+# ==============================================================================
+@app.get("/api/ml/swing/model-status")
+def get_swing_ml_status_endpoint():
+    """Returns training metadata, empirical win rates, Brier score, and gatekeeper criteria."""
+    from engines.swing_quant_ml_engine import swing_quant_ml_engine
+    return {
+        "status": "OK",
+        "timestamp_ist": format_ist(),
+        "engine": swing_quant_ml_engine.get_status()
+    }
 
 
+@app.post("/api/ml/swing/train")
+def train_swing_ml_endpoint():
+    """Triggers on-demand online training for the Swing Quant ML meta-classifier & expected R regressor."""
+    from engines.swing_quant_ml_engine import swing_quant_ml_engine
+    meta = swing_quant_ml_engine.train_model()
+    return {
+        "status": "OK",
+        "message": "Swing Quant ML model retrained successfully.",
+        "training_metadata": meta
+    }
+
+
+@app.get("/api/ml/swing/dataset")
+def get_swing_quant_dataset_endpoint(limit: int = 50, trade_type: Optional[str] = None):
+    """Retrieves records from the master quant trade dataset (real and shadow counterfactuals)."""
+    from engines.swing_quant_ml_engine import swing_quant_ml_engine
+    rows = swing_quant_ml_engine.get_dataset(limit=limit, trade_type=trade_type)
+    return {
+        "status": "OK",
+        "count": len(rows),
+        "dataset": rows
+    }
+
+
+@app.get("/api/ml/swing/shadow-trades")
+def get_active_shadow_trades_endpoint():
+    """Retrieves all active shadow setups currently monitored counterfactually without capital risk."""
+    from engines.swing_quant_ml_engine import swing_quant_ml_engine
+    active = swing_quant_ml_engine.get_active_shadow_trades()
+    return {
+        "status": "OK",
+        "active_shadow_count": len(active),
+        "shadow_trades": active
+    }
+
+
+@app.post("/api/ml/swing/reconcile-shadow")
+def reconcile_shadow_trades_endpoint():
+    """Triggers on-demand reconciliation of active shadow trades against latest EOD candle highs/lows."""
+    from engines.swing_quant_ml_engine import swing_quant_ml_engine
+    audit = swing_quant_ml_engine.reconcile_shadow_trades()
+    return {
+        "status": "OK",
+        "message": "Shadow counterfactual reconciliation complete.",
+        "audit": audit
+    }
