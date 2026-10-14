@@ -1407,7 +1407,7 @@ class NiftyAnalyticsEngine:
         """Computes 1D, 5D, 20D, 63D % returns, EMA20/50/200, Wilder RSI(14), ATR(14), MACD, ADX(14), BB%B from a daily OHLCV DataFrame."""
         if df is None or df.empty or "Close" not in df.columns:
             return {}
-        c = df["Close"].dropna().to_numpy(dtype=np.float64)
+        c = df["Close"].dropna().to_numpy(dtype=np.float64, copy=True)
         n = len(c)
         if n == 0:
             return {}
@@ -1418,7 +1418,22 @@ class NiftyAnalyticsEngine:
         prev_20d = float(c[-21]) if n >= 21 else float(c[0])
         prev_63d = float(c[-64]) if n >= 64 else float(c[0])
 
-        ret_1d = ((last - prev_1d) / max(0.01, prev_1d)) * 100.0
+        meta = getattr(df, "attrs", {}).get("meta", {}) or {}
+        meta_chg_pct = meta.get("regularMarketChangePercent")
+        meta_prev_c = meta.get("chartPreviousClose") or meta.get("previousClose")
+        meta_price = meta.get("regularMarketPrice")
+
+        if meta_price is not None and float(meta_price) > 0:
+            last = float(meta_price)
+            c[-1] = last
+
+        if meta_chg_pct is not None and not pd.isna(meta_chg_pct):
+            ret_1d = float(meta_chg_pct)
+        elif meta_prev_c is not None and float(meta_prev_c) > 0:
+            ret_1d = ((last - float(meta_prev_c)) / float(meta_prev_c)) * 100.0
+        else:
+            ret_1d = ((last - prev_1d) / max(0.01, prev_1d)) * 100.0
+
         ret_5d = ((last - prev_5d) / max(0.01, prev_5d)) * 100.0
         ret_20d = ((last - prev_20d) / max(0.01, prev_20d)) * 100.0
         ret_63d = ((last - prev_63d) / max(0.01, prev_63d)) * 100.0
@@ -2543,6 +2558,16 @@ class NiftyAnalyticsEngine:
         ]
         macro_rows = []
         macro_score = 0.0
+        crude_oil_status = {
+            "ticker": "BZ=F",
+            "ltp": 0.0,
+            "ret_1d": 0.0,
+            "ret_5d": 0.0,
+            "signal_score": 0.0,
+            "impact": "NEUTRAL",
+            "is_spike": False,
+            "transmission_mechanism": "Energy prices are steady.",
+        }
         for m_name, m_tk, m_w, is_inv, m_note in macro_defs:
             mm = metrics_map.get(m_tk) or {}
             c_val = mm.get("close") or 0.0
@@ -2553,7 +2578,39 @@ class NiftyAnalyticsEngine:
                 raw_sig = (-r1 * 14.0) + (-r5 * 5.0) + (15.0 if c_val <= e20_val else -15.0)
             else:
                 raw_sig = (r1 * 8.0) + (r5 * 3.0)
-            sig = float(np.clip(raw_sig, -100.0, 100.0))
+
+            impact_tag = "TAILWIND" if raw_sig >= 10 else ("HEADWIND" if raw_sig <= -10 else "NEUTRAL")
+            if m_tk == "BZ=F":
+                # Special Institutional Sensitivity for Brent Crude Oil:
+                # India imports 85%+ of oil. Overnight spike >= 2.0% or 5D surge >= 5.0% acts as a severe macroeconomic shock.
+                if r1 >= 2.0 or r5 >= 5.0:
+                    raw_sig = min(raw_sig, -90.0)
+                    impact_tag = "SEVERE HEADWIND"
+                    m_note = f"⚠️ Crude Spike ({'+' if r1>=0 else ''}{r1:.2f}% 1D / {'+' if r5>=0 else ''}{r5:.2f}% 5D): High inflation, CAD pressure & margin squeeze for Indian refiners/tyres/paints"
+                elif r1 <= -2.0 or r5 <= -5.0:
+                    raw_sig = max(raw_sig, 80.0)
+                    impact_tag = "STRONG TAILWIND"
+                    m_note = f"Crude Slump ({r1:.2f}% 1D / {r5:.2f}% 5D): Strong relief on India CAD, fiscal balance & domestic input costs"
+
+                sig = float(np.clip(raw_sig, -100.0, 100.0))
+                crude_oil_status = {
+                    "ticker": "BZ=F",
+                    "ltp": round(c_val, 2),
+                    "ret_1d": round(r1, 2),
+                    "ret_5d": round(r5, 2),
+                    "signal_score": round(sig, 1),
+                    "impact": impact_tag,
+                    "is_spike": bool(r1 >= 2.0 or r5 >= 5.0),
+                    "transmission_mechanism": (
+                        f"Brent Crude is at ${c_val:.2f} ({'+' if r1 >= 0 else ''}{r1:.2f}% 1D, {'+' if r5 >= 0 else ''}{r5:.2f}% 5D). "
+                        + ("⚠️ SEVERE MACRO HEADWIND: India imports >85% of crude oil requirements. A spike directly expands India's Current Account Deficit (CAD), depreciates the INR, elevates domestic inflation, and compresses operating margins for heavy users (Oils, Paints, Aviation, Tyre, Cement)." if (r1 >= 2.0 or r5 >= 5.0)
+                           else ("POSITIVE MACRO TAILWIND: Cooling energy prices reduce imported inflation and ease fiscal import bill pressure." if (r1 <= -1.5 or r5 <= -3.0)
+                                 else "MODERATE DRAG / STEADY: Energy prices are range-bound with manageable fiscal transmission."))
+                    )
+                }
+            else:
+                sig = float(np.clip(raw_sig, -100.0, 100.0))
+
             macro_score += sig * m_w
             macro_rows.append({
                 "name": m_name,
@@ -2562,7 +2619,7 @@ class NiftyAnalyticsEngine:
                 "ret_1d": r1,
                 "ret_5d": r5,
                 "ema20": e20_val,
-                "impact_on_nifty": "TAILWIND" if sig >= 10 else ("HEADWIND" if sig <= -10 else "NEUTRAL"),
+                "impact_on_nifty": impact_tag,
                 "signal_score": round(sig, 1),
                 "note": m_note,
             })
@@ -2770,6 +2827,210 @@ class NiftyAnalyticsEngine:
             }
         ]
 
+        # Build Multi-Pillar Quantitative Basis Breakdown for T+1 & T+5 Deep-Dive
+        tailwinds_t1 = []
+        headwinds_t1 = []
+
+        if spot >= ema20:
+            tailwinds_t1.append(f"Nifty Spot (₹{spot:,.1f}) is trading above 20 EMA (₹{ema20:,.1f}) — short-term momentum intact")
+        else:
+            headwinds_t1.append(f"Nifty Spot (₹{spot:,.1f}) is trading below 20 EMA (₹{ema20:,.1f}) — intraday resistance at 20 EMA")
+
+        if rsi14 >= 55.0:
+            tailwinds_t1.append(f"Wilder RSI(14) at {rsi14:.1f} shows positive bullish momentum")
+        elif rsi14 <= 45.0:
+            headwinds_t1.append(f"Wilder RSI(14) at {rsi14:.1f} shows soft/bearish momentum")
+
+        n50_adv = int(breadth_data.get("nifty50_advances", 0))
+        n50_dec = int(breadth_data.get("nifty50_declines", 0))
+        ad_ratio = float(breadth_data.get("ad_ratio", 1.0))
+        if ad_ratio >= 1.15:
+            tailwinds_t1.append(f"Market Breadth is positive: {n50_adv} Advances vs {n50_dec} Declines (A/D ratio {ad_ratio:.2f})")
+        elif ad_ratio <= 0.85:
+            headwinds_t1.append(f"Market Breadth is negative: {n50_dec} Declines vs {n50_adv} Advances (A/D ratio {ad_ratio:.2f})")
+
+        sp500_ret = float(us_intel.get("sp500_1d_pct", 0.0))
+        nasdaq_ret = float(us_intel.get("nasdaq_1d_pct", 0.0))
+        if sp500_ret >= 0.25 or nasdaq_ret >= 0.4:
+            tailwinds_t1.append(f"US Markets closed positive: S&P 500 {sp500_ret:+.2f}%, Nasdaq {nasdaq_ret:+.2f}%")
+        elif sp500_ret <= -0.25 or nasdaq_ret <= -0.4:
+            headwinds_t1.append(f"US Markets closed negative: S&P 500 {sp500_ret:+.2f}%, Nasdaq {nasdaq_ret:+.2f}%")
+
+        if crude_oil_status.get("is_spike"):
+            headwinds_t1.append(f"⚠️ Brent Crude Oil surged {crude_oil_status.get('ret_1d'):+.2f}% to ${crude_oil_status.get('ltp'):.2f}/bbl (Severe CAD, inflation & margin drag)")
+        elif crude_oil_status.get("ret_1d", 0) <= -1.5:
+            tailwinds_t1.append(f"Brent Crude Oil softened {crude_oil_status.get('ret_1d'):+.2f}% to ${crude_oil_status.get('ltp'):.2f}/bbl (Relief for Indian economy & CAD)")
+
+        vix_m = metrics_map.get("^INDIAVIX", {})
+        vix_c = float(vix_m.get("close", 0.0))
+        vix_1d = float(vix_m.get("ret_1d", 0.0))
+        if vix_c >= 16.0 or vix_1d >= 4.0:
+            headwinds_t1.append(f"India VIX elevated at {vix_c:.2f} ({vix_1d:+.2f}% 1D) — higher hedging demand & volatility")
+        elif vix_c < 13.5:
+            tailwinds_t1.append(f"India VIX subdued at {vix_c:.2f} — low volatility complacency supports index stability")
+
+        fii_net = float(inst_flow_data.get("latest_cash", {}).get("fii_net", 0.0))
+        dii_net = float(inst_flow_data.get("latest_cash", {}).get("dii_net", 0.0))
+        if fii_net >= 400.0:
+            tailwinds_t1.append(f"FIIs net buyers in cash market (+₹{fii_net:,.0f} Cr)")
+        elif fii_net <= -400.0:
+            headwinds_t1.append(f"FIIs heavy net sellers in cash market (-₹{abs(fii_net):,.0f} Cr)")
+        if dii_net >= 800.0:
+            tailwinds_t1.append(f"DII institutional liquidity backstop strong (+₹{dii_net:,.0f} Cr)")
+
+        top_sec = sectoral_rows[0] if sectoral_rows else {}
+        worst_sec = sectoral_rows[-1] if sectoral_rows else {}
+        if top_sec and top_sec.get("ret_1d", 0) > 0.4:
+            tailwinds_t1.append(f"Sectoral impulse led by {top_sec.get('name')} ({top_sec.get('ret_1d'):+.2f}% 1D)")
+        if worst_sec and worst_sec.get("ret_1d", 0) < -0.4:
+            headwinds_t1.append(f"Sectoral drag from {worst_sec.get('name')} ({worst_sec.get('ret_1d'):+.2f}% 1D)")
+
+        pillar_labels_t1 = {
+            "technical": "Pillar 1: Technicals & Momentum",
+            "breadth": "Pillar 2: Market Breadth (A/D & EMAs)",
+            "sectoral": "Pillar 3: Sectoral Leadership & Flow",
+            "global": "Pillar 4: US & Global Equities",
+            "macro": "Pillar 5: Macro (Crude, VIX, USD/INR)",
+            "news_deriv": "Pillar 6: News Sentiment & Options Overlay",
+            "institutional": "Pillar 7: FII/DII Cash & Derivatives OI",
+        }
+        pillar_drivers_t1 = {
+            "technical": f"Nifty ₹{spot:,.1f} vs EMA20 ₹{ema20:,.1f}, RSI(14)={rsi14:.1f}, MACD Hist={macd_h:+.1f}",
+            "breadth": f"{n50_adv} Adv / {n50_dec} Dec ({ad_ratio:.2f} ratio), {breadth_data.get('nifty50_pct_above_ema20', 0):.0f}% stocks > EMA20",
+            "sectoral": f"BankNifty {metrics_map.get('^NSEBANK', {}).get('ret_1d', 0):+.2f}%, IT {metrics_map.get('^CNXIT', {}).get('ret_1d', 0):+.2f}%, Weighted Impulse {sectoral_score:+.1f}",
+            "global": f"S&P 500 {sp500_ret:+.2f}%, Nasdaq {nasdaq_ret:+.2f}%, US Sentiment {us_intel.get('us_regime', 'NEUTRAL')}",
+            "macro": f"Brent Crude {crude_oil_status.get('ret_1d', 0):+.2f}%, India VIX {vix_c:.1f}, USD/INR {metrics_map.get('INR=X', {}).get('close', 0):.2f}",
+            "news_deriv": f"Near-ATM PCR {oc_summary.get('near_atm_pcr', 1.0):.2f}, News Sentiment {news_data.get('sentiment_label', 'NEUTRAL')}",
+            "institutional": f"FII Cash ₹{fii_net:+,.0f} Cr, DII Cash ₹{dii_net:+,.0f} Cr, FII Futures Long {inst_flow_data.get('latest_oi', {}).get('fii_fut_long_pct', 50):.1f}%",
+        }
+
+        t1_pillar_contributions = []
+        for pk, plabel in pillar_labels_t1.items():
+            sc = float(pillar_raw_scores.get(pk, 0.0))
+            w = float(learned_weights_t1.get(pk, 0.14))
+            pts = round(sc * w, 2)
+            t1_pillar_contributions.append({
+                "pillar_key": pk,
+                "pillar_name": plabel,
+                "raw_score": round(sc, 1),
+                "weight_pct": round(w * 100.0, 1),
+                "net_points": pts,
+                "impact": "BULLISH" if pts >= 1.5 else ("BEARISH" if pts <= -1.5 else "NEUTRAL"),
+                "key_driver": pillar_drivers_t1.get(pk, ""),
+            })
+
+        t1_basis_breakdown = {
+            "verdict": t1_verdict,
+            "composite_score": composite_score,
+            "horizon": "T+1 (Next Session)",
+            "verdict_rationale": (
+                f"T+1 is evaluated as {t1_verdict} (Composite Score {composite_score:+.1f}/100). "
+                f"The next-session tactical model synthesizes immediate overnight global momentum, "
+                f"crude oil shock transmission, live market breadth ({n50_adv} Adv / {n50_dec} Dec), "
+                f"and fast technical moving average support (EMA20 ₹{ema20:,.0f}). "
+                + ("⚠️ Severe crude oil surge is exerting a heavy macro headwind." if crude_oil_status.get("is_spike") else "")
+            ),
+            "pillar_contributions": t1_pillar_contributions,
+            "top_tailwinds": tailwinds_t1[:5] if tailwinds_t1 else ["Technicals and liquidity broadly within balanced ranges."],
+            "top_headwinds": headwinds_t1[:5] if headwinds_t1 else ["No immediate critical macro headwinds detected."],
+            "crude_oil_impact": crude_oil_status,
+            "difference_from_t5": (
+                "T+1 focuses on immediate 1-day price drift, overnight gap risk, and fast session indicators. "
+                "In contrast, T+5 filters out single-day noise and reflects structural moving averages (EMA50/200) and weekly institutional accumulation."
+            ),
+            "expected_drift": f"{t1_expected_pts:+.1f} pts ({t1_expected_pct:+.2f}%) toward ₹{t1_expected_close:,.0f}",
+            "confidence_band": f"1σ Range: ₹{t1_low_1s:,.0f} – ₹{t1_high_1s:,.0f} | 2σ Range: ₹{t1_low_2s:,.0f} – ₹{t1_high_2s:,.0f}",
+        }
+
+        # T+5 Structural Basis Breakdown
+        tailwinds_t5 = []
+        headwinds_t5 = []
+        if spot >= ema50:
+            tailwinds_t5.append(f"Nifty Spot (₹{spot:,.1f}) holds structural support above 50 EMA (₹{ema50:,.1f})")
+        else:
+            headwinds_t5.append(f"Nifty Spot (₹{spot:,.1f}) trades below 50 EMA (₹{ema50:,.1f}) — medium-term resistance")
+
+        if spot >= ema200:
+            tailwinds_t5.append(f"Long-term structural bull regime confirmed: Spot is above 200 EMA (₹{ema200:,.1f})")
+        else:
+            headwinds_t5.append(f"Caution: Nifty Spot is below 200 EMA (₹{ema200:,.1f}) — long-term bear regime")
+
+        if pct_e50_val >= 50.0:
+            tailwinds_t5.append(f"{pct_e50_val:.1f}% of Nifty 50 stocks maintain price above their 50 EMA")
+        else:
+            headwinds_t5.append(f"Breadth contraction: only {pct_e50_val:.1f}% of Nifty 50 stocks are above 50 EMA")
+
+        if fii_fut_long_pct >= 50.0:
+            tailwinds_t5.append(f"Institutional FII derivatives sentiment is net long: {fii_fut_long_pct:.1f}% index futures long ratio")
+        else:
+            headwinds_t5.append(f"Institutional FII derivatives sentiment is net short: {fii_fut_long_pct:.1f}% long ratio ({100.0 - fii_fut_long_pct:.1f}% short)")
+
+        if crude_oil_status.get("ret_5d", 0) >= 5.0:
+            headwinds_t5.append(f"Brent Crude 5-day surge ({crude_oil_status.get('ret_5d'):+.2f}%) elevates multi-week CAD and fuel inflation concerns")
+        elif crude_oil_status.get("ret_5d", 0) <= -3.0:
+            tailwinds_t5.append(f"Brent Crude 5-day easing ({crude_oil_status.get('ret_5d'):+.2f}%) provides weekly tailwind for corporate margins")
+
+        pillar_labels_t5 = {
+            "technical": "Structural Moving Averages (EMA 50 & 200)",
+            "breadth": "Constituent Breadth (% > EMA50 & 200)",
+            "sectoral": "Multi-Day Sector Rotation & Resilience",
+            "global": "US Structural Regime & S&P/Nasdaq EMA Trends",
+            "macro": "Medium-Term Macro & Crude Risk",
+            "institutional": "FII Multi-Day Index Futures OI Accumulation",
+        }
+        pillar_scores_t5 = {
+            "technical": tech_score_t5,
+            "breadth": breadth_score_t5,
+            "sectoral": sectoral_score,
+            "global": global_score_t5,
+            "macro": macro_score_t5,
+            "institutional": inst_score_t5,
+        }
+        pillar_drivers_t5 = {
+            "technical": f"Spot ₹{spot:,.1f} vs EMA50 ₹{ema50:,.1f} & EMA200 ₹{ema200:,.1f}, 5-Day Trend {ret_5d:+.2f}%",
+            "breadth": f"{pct_e50_val:.1f}% stocks > EMA50, {pct_e200_val:.1f}% stocks > EMA200",
+            "sectoral": f"Sectoral leadership breadth across Banking, IT, Auto and Energy over weekly cycle",
+            "global": f"US S&P 500 weekly regime, 50-day moving average support & Treasury yield trajectory",
+            "macro": f"Brent Crude 5-day return {crude_oil_status.get('ret_5d', 0):+.2f}%, USD/INR stability & US VIX",
+            "institutional": f"FII Index Futures Long Ratio {fii_fut_long_pct:.1f}% ({inst_flow_data.get('latest_oi', {}).get('fii_fut_net', 0):,} contracts)",
+        }
+        t5_pillar_contributions = []
+        for pk, plabel in pillar_labels_t5.items():
+            sc = float(pillar_scores_t5.get(pk, 0.0))
+            w = float(learned_weights_t5.get(pk, 0.16))
+            pts = round(sc * w, 2)
+            t5_pillar_contributions.append({
+                "pillar_key": pk,
+                "pillar_name": plabel,
+                "raw_score": round(sc, 1),
+                "weight_pct": round(w * 100.0, 1),
+                "net_points": pts,
+                "impact": "BULLISH" if pts >= 1.5 else ("BEARISH" if pts <= -1.5 else "NEUTRAL"),
+                "key_driver": pillar_drivers_t5.get(pk, ""),
+            })
+
+        t5_basis_breakdown = {
+            "verdict": t5_verdict,
+            "composite_score": composite_score_t5,
+            "horizon": "T+5 (5-Day Weekly)",
+            "verdict_rationale": (
+                f"T+5 Weekly Outlook is evaluated as {t5_verdict} (Composite Score {composite_score_t5:+.1f}/100). "
+                f"Institutional multi-day positioning evaluates structural moving averages (EMA50 ₹{ema50:,.0f}, EMA200 ₹{ema200:,.0f}), "
+                f"medium-term market breadth ({pct_e50_val:.1f}% stocks > EMA50), and FII index futures positioning ({fii_fut_long_pct:.1f}% long). "
+                f"It is specifically engineered to resist single-day kneejerk overreactions when structural weekly support remains intact."
+            ),
+            "pillar_contributions": t5_pillar_contributions,
+            "top_tailwinds": tailwinds_t5[:5] if tailwinds_t5 else ["Structural long-term moving average support intact."],
+            "top_headwinds": headwinds_t5[:5] if headwinds_t5 else ["Macro risk within weekly historical volatility bounds."],
+            "crude_oil_impact": crude_oil_status,
+            "difference_from_t1": (
+                "Why T+5 differs from T+1: T+1 reacts acutely to overnight crude shocks and daily sentiment, "
+                "whereas T+5 looks at weekly structural support above EMA50/200 and institutional swing positioning."
+            ),
+            "expected_drift": f"{t5_expected_pts:+.1f} pts ({t5_expected_pct:+.2f}%) toward ₹{t5_expected_close:,.0f}",
+            "confidence_band": f"1σ Range: ₹{t5_low_1s:,.0f} – ₹{t5_high_1s:,.0f} | 2σ Range: ₹{t5_low_2s:,.0f} – ₹{t5_high_2s:,.0f}",
+        }
+
         payload = {
             "status": "OK",
             "timestamp_ist": format_ist(),
@@ -2798,6 +3059,7 @@ class NiftyAnalyticsEngine:
                 "expected_close": t1_expected_close,
                 "range_1sigma": [t1_low_1s, t1_high_1s],
                 "range_2sigma": [t1_low_2s, t1_high_2s],
+                "basis_breakdown": t1_basis_breakdown,
             },
             "t5_forecast": {
                 "horizon": "T+5 (Next 5 Trading Days)",
@@ -2810,7 +3072,9 @@ class NiftyAnalyticsEngine:
                 "expected_close": t5_expected_close,
                 "range_1sigma": [t5_low_1s, t5_high_1s],
                 "range_2sigma": [t5_low_2s, t5_high_2s],
+                "basis_breakdown": t5_basis_breakdown,
             },
+            "crude_oil_status": crude_oil_status,
             "us_intelligence": us_intel,
             "futures_relative_radar": futures_radar,
             "validation_and_calibration": calibration,

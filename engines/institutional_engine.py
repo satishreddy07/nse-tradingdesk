@@ -313,7 +313,7 @@ class DirectYahooFinanceFetcher:
                             df.iloc[-1, df.columns.get_loc("Low")] = min(cur_l, reg_l, reg_p) if cur_l > 0 else min(reg_l, reg_p)
                             df.iloc[-1, df.columns.get_loc("Close")] = reg_p
                             df.iloc[-1, df.columns.get_loc("Volume")] = max(cur_v, reg_v)
-                        elif meta_dt.date() > last_dt.date() and NSEMarketCalendar.is_trading_day(meta_dt.date()):
+                        elif meta_dt.date() > last_dt.date() and (NSEMarketCalendar.is_trading_day(meta_dt.date()) or not yf_ticker.endswith(".NS")):
                             # Append today's live partial intraday candle
                             live_row = pd.DataFrame({
                                 "Open": [reg_o],
@@ -325,6 +325,7 @@ class DirectYahooFinanceFetcher:
                             df = pd.concat([df, live_row]).sort_index()
                             df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
 
+                    df.attrs["meta"] = meta
                     return df
                 elif resp.status_code == 429:
                     time.sleep((1.5 ** attempt) + np.random.uniform(0.2, 0.8))

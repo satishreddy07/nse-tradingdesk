@@ -1520,10 +1520,15 @@
         <!-- T+1 & T+5 Forecast Hero Cards -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
           <!-- T+1 Card -->
-          <div class="bg-slate-950/90 border border-purple-500/35 rounded-2xl p-4 sm:p-5">
+          <div onclick="openPredictionDeepDiveModal('t1')" class="bg-slate-950/90 border border-purple-500/35 hover:border-purple-400/80 rounded-2xl p-4 sm:p-5 cursor-pointer transition-all hover:shadow-xl hover:shadow-purple-950/40 relative group">
             <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
               <div>
-                <div class="text-[10px] font-mono uppercase text-purple-400">HORIZON 1 • NEXT TRADING SESSION (T+1)</div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] font-mono uppercase text-purple-400 font-bold">HORIZON 1 • NEXT TRADING SESSION (T+1)</span>
+                  <button onclick="event.stopPropagation(); openPredictionDeepDiveModal('t1')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30 transition shadow-sm">
+                    <span>🔍 Why this prediction?</span>
+                  </button>
+                </div>
                 <div id="pred-t1-verdict" class="text-base sm:text-xl font-extrabold text-white mt-0.5">LOADING...</div>
               </div>
               <div class="text-right font-mono">
@@ -1554,13 +1559,22 @@
                 <div id="pred-t1-2sigma" class="text-slate-300 font-bold mt-0.5">-- to --</div>
               </div>
             </div>
+            <div class="mt-2.5 text-center text-[10px] font-mono text-purple-400/80 group-hover:text-purple-300 transition flex items-center justify-center gap-1">
+              <span>Click card to inspect quantitative basis, crude impact & pillar breakdown</span>
+              <span class="text-xs">→</span>
+            </div>
           </div>
 
           <!-- T+5 Card -->
-          <div class="bg-slate-950/90 border border-cyan-500/35 rounded-2xl p-4 sm:p-5">
+          <div onclick="openPredictionDeepDiveModal('t5')" class="bg-slate-950/90 border border-cyan-500/35 hover:border-cyan-400/80 rounded-2xl p-4 sm:p-5 cursor-pointer transition-all hover:shadow-xl hover:shadow-cyan-950/40 relative group">
             <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
               <div>
-                <div class="text-[10px] font-mono uppercase text-cyan-400">HORIZON 2 • NEXT 5 TRADING DAYS (T+5 WEEKLY)</div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] font-mono uppercase text-cyan-400 font-bold">HORIZON 2 • NEXT 5 TRADING DAYS (T+5 WEEKLY)</span>
+                  <button onclick="event.stopPropagation(); openPredictionDeepDiveModal('t5')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30 transition shadow-sm">
+                    <span>🔍 Why this prediction?</span>
+                  </button>
+                </div>
                 <div id="pred-t5-verdict" class="text-base sm:text-xl font-extrabold text-white mt-0.5">LOADING...</div>
               </div>
               <div class="text-right font-mono">
@@ -1590,6 +1604,10 @@
                 <div class="text-[10px] text-slate-400">2σ 5-Day Tail Cone (95% Conf.)</div>
                 <div id="pred-t5-2sigma" class="text-slate-300 font-bold mt-0.5">-- to --</div>
               </div>
+            </div>
+            <div class="mt-2.5 text-center text-[10px] font-mono text-cyan-400/80 group-hover:text-cyan-300 transition flex items-center justify-center gap-1">
+              <span>Click card to inspect weekly structural basis & moving average regime</span>
+              <span class="text-xs">→</span>
             </div>
           </div>
         </div>
@@ -1993,15 +2011,15 @@
             <span class="text-[11px] font-mono text-slate-400">Live Cross-Asset Telemetry</span>
           </div>
           <div class="overflow-x-auto custom-scroll">
-            <table class="w-full text-left text-xs text-slate-300 font-mono">
+            <table class="w-full min-w-[660px] text-left text-xs text-slate-300 font-mono">
               <thead class="bg-slate-950/60 text-[10px] uppercase text-slate-400 border-b border-slate-800">
                 <tr>
                   <th class="p-2.5">Asset / Benchmark</th>
-                  <th class="p-2.5">Live LTP</th>
-                  <th class="p-2.5">1D %</th>
-                  <th class="p-2.5">5D %</th>
-                  <th class="p-2.5">EMA 20</th>
-                  <th class="p-2.5 text-right">Nifty Impact</th>
+                  <th class="p-2.5 whitespace-nowrap">Live LTP</th>
+                  <th class="p-2.5 whitespace-nowrap">1D %</th>
+                  <th class="p-2.5 whitespace-nowrap">5D %</th>
+                  <th class="p-2.5 whitespace-nowrap">EMA 20</th>
+                  <th class="p-2.5 pr-4 text-right whitespace-nowrap min-w-[150px]">Nifty Impact</th>
                 </tr>
               </thead>
               <tbody id="pred-global-macro-tbody" class="divide-y divide-slate-800/60">
@@ -2862,6 +2880,187 @@
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- NIFTY 50 PREDICTION DEEP-DIVE MODAL (T+1 & T+5 "WHY THIS PREDICTION?") -->
+  <!-- ===================================================================== -->
+  <div id="pred-deep-dive-modal" onclick="if(event.target === this) closePredictionDeepDiveModal()" style="display: none;" class="hidden fixed inset-0 z-[100] bg-black/85 backdrop-blur-md items-center justify-center p-2 sm:p-4">
+    <div class="bg-[#0b0f19] border border-purple-500/40 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
+      <!-- Modal Header -->
+      <div class="p-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+          <span class="w-3 h-3 rounded-full bg-purple-400 animate-pulse"></span>
+          <div>
+            <h3 class="text-base font-extrabold text-white font-mono flex items-center gap-2">
+              <span>Quantitative Prediction Deep-Dive & Data Basis</span>
+              <span id="pred-modal-horizon-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/40">T+1 NEXT SESSION</span>
+            </h3>
+            <div id="pred-modal-subheading" class="text-xs font-mono text-cyan-300">Detailed data attribution, macro shock transmission & multi-factor weights</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <!-- Horizon Switcher Tabs -->
+          <div class="bg-slate-950 p-1 rounded-xl border border-slate-800 flex items-center gap-1">
+            <button id="pred-tab-t1" onclick="switchPredictionDeepDiveTab('t1')" class="px-3 py-1 rounded-lg text-xs font-mono font-bold transition bg-purple-600 text-white shadow-sm">T+1 (Next Session)</button>
+            <button id="pred-tab-t5" onclick="switchPredictionDeepDiveTab('t5')" class="px-3 py-1 rounded-lg text-xs font-mono font-bold transition text-slate-400 hover:text-white">T+5 (5-Day Weekly)</button>
+          </div>
+          <button onclick="closePredictionDeepDiveModal()" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-sm transition">✕</button>
+        </div>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-4 sm:p-6 overflow-y-auto custom-scroll space-y-4 font-mono text-xs">
+        
+        <!-- Hero Verdict & Price Cone Bar -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div class="text-[10px] uppercase text-slate-400 font-bold" id="pred-modal-verdict-title">MODEL VERDICT</div>
+              <div class="text-xl sm:text-2xl font-black mt-0.5" id="pred-modal-verdict-text">--</div>
+              <div class="text-xs text-slate-400 mt-1" id="pred-modal-verdict-score">Composite Score: --</div>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-right">
+              <div class="bg-slate-900/90 rounded-xl p-2.5 border border-slate-800/80">
+                <div class="text-[10px] text-slate-400">Target Close</div>
+                <div id="pred-modal-target-close" class="text-base font-bold text-cyan-300 mt-0.5">--</div>
+                <div id="pred-modal-target-drift" class="text-[10px]">--</div>
+              </div>
+              <div class="bg-slate-900/90 rounded-xl p-2.5 border border-slate-800/80">
+                <div class="text-[10px] text-slate-400">1σ Expected Cone</div>
+                <div id="pred-modal-cone-1s" class="text-xs font-bold text-white mt-1">--</div>
+                <div class="text-[9px] text-slate-500">68% Statistical Band</div>
+              </div>
+              <div class="bg-slate-900/90 rounded-xl p-2.5 border border-slate-800/80 col-span-2 sm:col-span-1">
+                <div class="text-[10px] text-slate-400">2σ Tail Band</div>
+                <div id="pred-modal-cone-2s" class="text-xs font-bold text-slate-300 mt-1">--</div>
+                <div class="text-[9px] text-slate-500">95% Statistical Band</div>
+              </div>
+            </div>
+          </div>
+          <!-- Calibrated Probabilities Progress -->
+          <div class="mt-4 pt-3 border-t border-slate-800/70">
+            <div class="flex justify-between text-xs font-bold mb-1.5">
+              <span id="pred-modal-prob-up" class="text-emerald-400">Up: --%</span>
+              <span id="pred-modal-prob-flat" class="text-amber-300">Range: --%</span>
+              <span id="pred-modal-prob-down" class="text-rose-400">Down: --%</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden flex">
+              <div id="pred-modal-bar-up" class="bg-emerald-500 h-full" style="width: 33%"></div>
+              <div id="pred-modal-bar-flat" class="bg-amber-500 h-full" style="width: 34%"></div>
+              <div id="pred-modal-bar-down" class="bg-rose-500 h-full" style="width: 33%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Executive Rationale / Why this prediction? -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <h4 class="font-bold text-white text-xs uppercase flex items-center gap-2 mb-2">
+            <i data-lucide="brain-circuit" class="w-4 h-4 text-purple-400 shrink-0"></i>
+            <span>Executive Rationale: On What Basis Was This Predicted?</span>
+          </h4>
+          <p id="pred-modal-rationale" class="text-xs text-slate-300 leading-relaxed font-sans">
+            Loading quantitative basis...
+          </p>
+          <div id="pred-modal-horizon-diff-box" class="mt-3 p-3 rounded-xl bg-purple-950/20 border border-purple-500/30 text-[11px] text-purple-200 font-sans flex items-start gap-2">
+            <i data-lucide="info" class="w-4 h-4 text-purple-400 shrink-0 mt-0.5"></i>
+            <span id="pred-modal-horizon-diff-text">--</span>
+          </div>
+        </div>
+
+        <!-- Special Brent Crude Oil & Macro Shock Spotlight -->
+        <div id="pred-modal-crude-card" class="bg-slate-950/90 border border-amber-500/35 rounded-2xl p-4 sm:p-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">🛢️</span>
+              <h4 class="font-bold text-white text-xs uppercase">Brent Crude Oil Telemetry & Macro Transmission</h4>
+            </div>
+            <span id="pred-modal-crude-badge" class="px-2 py-0.5 rounded text-[10px] font-bold border">--</span>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+            <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-slate-400">Brent Crude Price</div>
+              <div id="pred-modal-crude-ltp" class="text-sm font-bold text-white mt-0.5">--</div>
+            </div>
+            <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-slate-400">1-Day Change</div>
+              <div id="pred-modal-crude-1d" class="text-sm font-bold mt-0.5">--</div>
+            </div>
+            <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-slate-400">5-Day Trend</div>
+              <div id="pred-modal-crude-5d" class="text-sm font-bold mt-0.5">--</div>
+            </div>
+            <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-slate-400">Macro Signal Score</div>
+              <div id="pred-modal-crude-score" class="text-sm font-bold mt-0.5">--</div>
+            </div>
+          </div>
+          <p id="pred-modal-crude-mechanism" class="mt-3 text-xs text-slate-300 font-sans leading-relaxed">
+            --
+          </p>
+        </div>
+
+        <!-- Top Tailwinds vs Headwinds Comparison Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Top Bullish Tailwinds -->
+          <div class="bg-slate-950/80 border border-emerald-500/30 rounded-2xl p-4">
+            <h4 class="font-bold text-emerald-400 text-xs uppercase flex items-center gap-1.5 pb-2.5 border-b border-slate-800">
+              <span>🟢</span>
+              <span>Top Bullish Tailwinds (Drivers For Up Move)</span>
+            </h4>
+            <ul id="pred-modal-tailwinds-list" class="mt-3 space-y-2 text-[11px] text-slate-300 font-sans">
+              <!-- Rendered via JS -->
+            </ul>
+          </div>
+
+          <!-- Top Bearish Headwinds -->
+          <div class="bg-slate-950/80 border border-rose-500/30 rounded-2xl p-4">
+            <h4 class="font-bold text-rose-400 text-xs uppercase flex items-center gap-1.5 pb-2.5 border-b border-slate-800">
+              <span>🔴</span>
+              <span>Top Bearish Headwinds (Risks & Drag)</span>
+            </h4>
+            <ul id="pred-modal-headwinds-list" class="mt-3 space-y-2 text-[11px] text-slate-300 font-sans">
+              <!-- Rendered via JS -->
+            </ul>
+          </div>
+        </div>
+
+        <!-- Multi-Pillar Quantitative Attribution Matrix Table -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden">
+          <div class="p-3 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between">
+            <h4 class="font-bold text-white text-xs uppercase flex items-center gap-2">
+              <i data-lucide="layers" class="w-4 h-4 text-cyan-400"></i>
+              <span>Multi-Pillar Weight & Point Attribution Matrix</span>
+            </h4>
+            <span class="text-[10px] text-slate-400">Sum of (Raw Score × Adaptive Weight) = Composite Score</span>
+          </div>
+          <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-left text-xs text-slate-300 font-mono min-w-[640px]">
+              <thead class="bg-slate-950/70 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2.5">Pillar Name</th>
+                  <th class="p-2.5 text-center">Raw Score (-100 to +100)</th>
+                  <th class="p-2.5 text-center">Adaptive Weight</th>
+                  <th class="p-2.5 text-center">Net Pts Contribution</th>
+                  <th class="p-2.5 text-center">Impact</th>
+                  <th class="p-2.5">Specific Key Data Driver</th>
+                </tr>
+              </thead>
+              <tbody id="pred-modal-pillars-tbody" class="divide-y divide-slate-800/60 text-[11px]">
+                <!-- Rendered via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 bg-slate-900/95 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 font-mono text-xs">
+        <span class="text-[11px] text-slate-500">Autonomous Quantitative Engine • Zero Hardcoding • Real-Time Data Pipeline</span>
+        <button onclick="closePredictionDeepDiveModal()" class="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition">Done</button>
       </div>
     </div>
   </div>
@@ -4151,17 +4350,25 @@
           const r1 = Number(item.ret_1d || 0);
           const r5 = Number(item.ret_5d || 0);
           const tr = item.trend || item.impact_on_nifty || 'NEUTRAL';
+          const isSevereHeadwind = tr.includes('SEVERE');
           const isTailwind = tr.includes('TAILWIND') || tr.includes('BULL');
           const isHeadwind = tr.includes('HEADWIND') || tr.includes('BEAR');
-          const badgeCls = isTailwind ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : (isHeadwind ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-slate-800 text-slate-300 border-slate-700');
+          let badgeCls = 'bg-slate-800 text-slate-300 border-slate-700';
+          if (isSevereHeadwind) {
+            badgeCls = 'bg-rose-500/30 text-rose-200 border-rose-500/60 font-black animate-pulse';
+          } else if (isTailwind) {
+            badgeCls = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold';
+          } else if (isHeadwind) {
+            badgeCls = 'bg-rose-500/20 text-rose-300 border-rose-500/40 font-bold';
+          }
           return `
             <tr class="hover:bg-slate-800/40 transition">
-              <td class="p-2.5 font-bold text-white">${item.name} <span class="text-[10px] text-slate-500">[${item.group}]</span></td>
-              <td class="p-2.5 font-bold text-cyan-300">${Number(item.ltp || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
-              <td class="p-2.5 font-bold ${r1 >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r1 >= 0 ? '+' : ''}${r1.toFixed(2)}%</td>
-              <td class="p-2.5 ${r5 >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r5 >= 0 ? '+' : ''}${r5.toFixed(2)}%</td>
-              <td class="p-2.5 text-slate-400">${Number(item.ema20 || 0).toFixed(2)}</td>
-              <td class="p-2.5 text-right"><span class="px-2 py-0.5 rounded text-[10px] border ${badgeCls}">${tr.replace(/_/g, ' ')}</span></td>
+              <td class="p-2.5 font-bold text-white whitespace-nowrap">${item.name} <span class="text-[10px] text-slate-500">[${item.group}]</span></td>
+              <td class="p-2.5 font-bold text-cyan-300 whitespace-nowrap">${Number(item.ltp || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
+              <td class="p-2.5 font-bold whitespace-nowrap ${r1 >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r1 >= 0 ? '+' : ''}${r1.toFixed(2)}%</td>
+              <td class="p-2.5 whitespace-nowrap ${r5 >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r5 >= 0 ? '+' : ''}${r5.toFixed(2)}%</td>
+              <td class="p-2.5 text-slate-400 whitespace-nowrap">${Number(item.ema20 || 0).toFixed(2)}</td>
+              <td class="p-2.5 pr-4 text-right whitespace-nowrap"><span class="px-2.5 py-0.5 rounded text-[10px] border whitespace-nowrap inline-flex items-center justify-center ${badgeCls}">${tr.replace(/_/g, ' ')}</span></td>
             </tr>
           `;
         }).join('');
@@ -4464,6 +4671,215 @@
       // Automatically sync AI analysis alongside ML prediction rendering
       if (typeof loadAiAnalysis === 'function') {
         loadAiAnalysis(false);
+      }
+    }
+
+    // =========================================================================
+    // MODULE 3.5: NIFTY 50 PREDICTION DEEP-DIVE MODAL & QUANT BASIS EXPLORER
+    // =========================================================================
+    let currentPredictionModalHorizon = 't1';
+
+    function openPredictionDeepDiveModal(horizon = 't1') {
+      currentPredictionModalHorizon = horizon || 't1';
+      const modal = document.getElementById('pred-deep-dive-modal');
+      if (!modal) return;
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+      switchPredictionDeepDiveTab(currentPredictionModalHorizon);
+    }
+
+    function closePredictionDeepDiveModal() {
+      const modal = document.getElementById('pred-deep-dive-modal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+    }
+
+    function switchPredictionDeepDiveTab(horizon) {
+      currentPredictionModalHorizon = horizon;
+      const btnT1 = document.getElementById('pred-tab-t1');
+      const btnT5 = document.getElementById('pred-tab-t5');
+      if (btnT1 && btnT5) {
+        if (horizon === 't1') {
+          btnT1.className = 'px-3 py-1 rounded-lg text-xs font-mono font-bold transition bg-purple-600 text-white shadow-sm';
+          btnT5.className = 'px-3 py-1 rounded-lg text-xs font-mono font-bold transition text-slate-400 hover:text-white';
+        } else {
+          btnT1.className = 'px-3 py-1 rounded-lg text-xs font-mono font-bold transition text-slate-400 hover:text-white';
+          btnT5.className = 'px-3 py-1 rounded-lg text-xs font-mono font-bold transition bg-cyan-600 text-white shadow-sm';
+        }
+      }
+      renderPredictionDeepDiveModalContent();
+    }
+
+    function renderPredictionDeepDiveModalContent() {
+      const data = niftyPredictionsCache;
+      if (!data) return;
+
+      const isT1 = currentPredictionModalHorizon === 't1';
+      const forecast = isT1 ? (data.t1_forecast || {}) : (data.t5_forecast || {});
+      const basis = forecast.basis_breakdown || {};
+      const crude = data.crude_oil_status || basis.crude_oil_impact || {};
+
+      // Subheading & Horizon Badge
+      const hBadge = document.getElementById('pred-modal-horizon-badge');
+      if (hBadge) {
+        hBadge.innerText = isT1 ? 'T+1 NEXT TRADING SESSION' : 'T+5 5-DAY WEEKLY PLAYBOOK';
+        hBadge.className = `px-2 py-0.5 rounded text-[10px] font-mono border ${isT1 ? 'bg-purple-500/20 text-purple-300 border-purple-500/40' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'}`;
+      }
+
+      const vTitle = document.getElementById('pred-modal-verdict-title');
+      if (vTitle) vTitle.innerText = isT1 ? 'T+1 NEXT-SESSION MODEL VERDICT' : 'T+5 5-DAY STRUCTURAL VERDICT';
+
+      const vText = document.getElementById('pred-modal-verdict-text');
+      const verdict = forecast.verdict || basis.verdict || '--';
+      if (vText) {
+        vText.innerText = verdict;
+        if (verdict.includes('BULLISH')) vText.className = 'text-xl sm:text-2xl font-black mt-0.5 text-emerald-400';
+        else if (verdict.includes('BEARISH')) vText.className = 'text-xl sm:text-2xl font-black mt-0.5 text-rose-400';
+        else vText.className = 'text-xl sm:text-2xl font-black mt-0.5 text-amber-300';
+      }
+
+      const vScore = document.getElementById('pred-modal-verdict-score');
+      const compScore = Number(basis.composite_score !== undefined ? basis.composite_score : (isT1 ? data.composite_score_t1 : data.composite_score_t5) || 0);
+      if (vScore) {
+        vScore.innerText = `Composite Multi-Factor Score: ${compScore >= 0 ? '+' : ''}${compScore.toFixed(1)} / 100`;
+      }
+
+      // Target Close & Drift
+      const tgtClose = document.getElementById('pred-modal-target-close');
+      if (tgtClose) tgtClose.innerText = `₹${Number(forecast.expected_close || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+      const tgtDrift = document.getElementById('pred-modal-target-drift');
+      if (tgtDrift) {
+        const pts = Number(forecast.expected_pts || 0);
+        const pct = Number(forecast.expected_pct || 0);
+        tgtDrift.innerText = `${pts >= 0 ? '+' : ''}${pts.toFixed(1)} pts (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
+        tgtDrift.className = `text-[10px] font-bold ${pts >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+
+      // Cones
+      const cone1s = document.getElementById('pred-modal-cone-1s');
+      if (cone1s && Array.isArray(forecast.range_1sigma)) {
+        cone1s.innerText = `₹${Number(forecast.range_1sigma[0]).toFixed(0)} – ₹${Number(forecast.range_1sigma[1]).toFixed(0)}`;
+      }
+      const cone2s = document.getElementById('pred-modal-cone-2s');
+      if (cone2s && Array.isArray(forecast.range_2sigma)) {
+        cone2s.innerText = `₹${Number(forecast.range_2sigma[0]).toFixed(0)} – ₹${Number(forecast.range_2sigma[1]).toFixed(0)}`;
+      }
+
+      // Probabilities
+      const pUp = Math.round(Number(forecast.prob_up || 0) * 1000) / 10;
+      const pFl = Math.round(Number(forecast.prob_flat || 0) * 1000) / 10;
+      const pDn = Math.round(Number(forecast.prob_down || 0) * 1000) / 10;
+      if (document.getElementById('pred-modal-prob-up')) document.getElementById('pred-modal-prob-up').innerText = `Up: ${pUp.toFixed(1)}%`;
+      if (document.getElementById('pred-modal-prob-flat')) document.getElementById('pred-modal-prob-flat').innerText = `Range: ${pFl.toFixed(1)}%`;
+      if (document.getElementById('pred-modal-prob-down')) document.getElementById('pred-modal-prob-down').innerText = `Down: ${pDn.toFixed(1)}%`;
+      if (document.getElementById('pred-modal-bar-up')) document.getElementById('pred-modal-bar-up').style.width = `${pUp}%`;
+      if (document.getElementById('pred-modal-bar-flat')) document.getElementById('pred-modal-bar-flat').style.width = `${pFl}%`;
+      if (document.getElementById('pred-modal-bar-down')) document.getElementById('pred-modal-bar-down').style.width = `${pDn}%`;
+
+      // Executive Rationale
+      const ratEl = document.getElementById('pred-modal-rationale');
+      if (ratEl) {
+        ratEl.innerText = basis.verdict_rationale || 'Evaluating live multi-pillar metrics...';
+      }
+      const diffEl = document.getElementById('pred-modal-horizon-diff-text');
+      if (diffEl) {
+        diffEl.innerText = basis.difference_from_t5 || basis.difference_from_t1 || 'T+1 and T+5 horizons are decoupled to distinguish fast daily drift from structural swing trends.';
+      }
+
+      // Brent Crude Oil Spotlight
+      const cLtp = document.getElementById('pred-modal-crude-ltp');
+      if (cLtp) cLtp.innerText = `$${Number(crude.ltp || 0).toFixed(2)}/bbl`;
+
+      const c1d = document.getElementById('pred-modal-crude-1d');
+      const r1c = Number(crude.ret_1d || 0);
+      if (c1d) {
+        c1d.innerText = `${r1c >= 0 ? '+' : ''}${r1c.toFixed(2)}%`;
+        c1d.className = `text-sm font-bold mt-0.5 ${r1c >= 2.0 ? 'text-rose-400' : (r1c <= -1.5 ? 'text-emerald-400' : 'text-slate-300')}`;
+      }
+
+      const c5d = document.getElementById('pred-modal-crude-5d');
+      const r5c = Number(crude.ret_5d || 0);
+      if (c5d) {
+        c5d.innerText = `${r5c >= 0 ? '+' : ''}${r5c.toFixed(2)}%`;
+        c5d.className = `text-sm font-bold mt-0.5 ${r5c >= 5.0 ? 'text-rose-400' : (r5c <= -3.0 ? 'text-emerald-400' : 'text-slate-300')}`;
+      }
+
+      const cScore = document.getElementById('pred-modal-crude-score');
+      const cSig = Number(crude.signal_score || 0);
+      if (cScore) {
+        cScore.innerText = `${cSig >= 0 ? '+' : ''}${cSig.toFixed(1)}`;
+        cScore.className = `text-sm font-bold mt-0.5 ${cSig <= -50 ? 'text-rose-400' : (cSig >= 50 ? 'text-emerald-400' : 'text-slate-300')}`;
+      }
+
+      const cBadge = document.getElementById('pred-modal-crude-badge');
+      const cImpact = crude.impact || (r1c >= 2.0 || r5c >= 5.0 ? 'SEVERE HEADWIND' : (cSig <= -10 ? 'HEADWIND' : (cSig >= 10 ? 'TAILWIND' : 'NEUTRAL')));
+      if (cBadge) {
+        cBadge.innerText = cImpact;
+        if (cImpact.includes('SEVERE')) cBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold border bg-rose-500/30 text-rose-200 border-rose-500/60 animate-pulse';
+        else if (cImpact.includes('HEADWIND')) cBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold border bg-rose-500/20 text-rose-300 border-rose-500/40';
+        else if (cImpact.includes('TAILWIND')) cBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold border bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+        else cBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold border bg-slate-800 text-slate-300 border-slate-700';
+      }
+
+      const cMech = document.getElementById('pred-modal-crude-mechanism');
+      if (cMech) {
+        cMech.innerText = crude.transmission_mechanism || 'Crude telemetry active.';
+      }
+
+      // Top Tailwinds & Headwinds
+      const twList = document.getElementById('pred-modal-tailwinds-list');
+      if (twList) {
+        const tw = basis.top_tailwinds || [];
+        twList.innerHTML = tw.map(t => `
+          <li class="flex items-start gap-2 bg-slate-900/60 p-2.5 rounded-xl border border-emerald-500/20">
+            <span class="text-emerald-400 font-bold shrink-0 mt-0.5">✓</span>
+            <span class="leading-relaxed text-slate-200">${t}</span>
+          </li>
+        `).join('');
+      }
+
+      const hwList = document.getElementById('pred-modal-headwinds-list');
+      if (hwList) {
+        const hw = basis.top_headwinds || [];
+        hwList.innerHTML = hw.map(h => `
+          <li class="flex items-start gap-2 bg-slate-900/60 p-2.5 rounded-xl border border-rose-500/20">
+            <span class="text-rose-400 font-bold shrink-0 mt-0.5">⚠️</span>
+            <span class="leading-relaxed text-slate-200">${h}</span>
+          </li>
+        `).join('');
+      }
+
+      // Multi-Pillar Attribution Table
+      const pTbody = document.getElementById('pred-modal-pillars-tbody');
+      if (pTbody) {
+        const pRows = basis.pillar_contributions || [];
+        pTbody.innerHTML = pRows.map(p => {
+          const raw = Number(p.raw_score || 0);
+          const w = Number(p.weight_pct || 0);
+          const net = Number(p.net_points || 0);
+          const isPos = net >= 1.0;
+          const isNeg = net <= -1.0;
+          const impBadge = isPos
+            ? '<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">BULLISH</span>'
+            : (isNeg ? '<span class="px-2 py-0.5 rounded text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">BEARISH</span>' : '<span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700">NEUTRAL</span>');
+          return `
+            <tr class="hover:bg-slate-800/40 transition">
+              <td class="p-2.5 font-bold text-white whitespace-nowrap">${p.pillar_name}</td>
+              <td class="p-2.5 text-center font-bold ${raw >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${raw >= 0 ? '+' : ''}${raw.toFixed(1)}</td>
+              <td class="p-2.5 text-center text-slate-300 font-bold">${w.toFixed(1)}%</td>
+              <td class="p-2.5 text-center font-bold ${net >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${net >= 0 ? '+' : ''}${net.toFixed(2)} pts</td>
+              <td class="p-2.5 text-center whitespace-nowrap">${impBadge}</td>
+              <td class="p-2.5 text-slate-300 font-sans text-xs">${p.key_driver}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      if (window.lucide && typeof lucide.createIcons === 'function') {
+        lucide.createIcons();
       }
     }
 

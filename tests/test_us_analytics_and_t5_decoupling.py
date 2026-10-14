@@ -194,3 +194,110 @@ def test_top_menu_bar_html_structure():
     assert 'id="us-dispersion-val"' in html
     assert 'id="us-vix-spot"' in html
     assert 'id="us-fair-gap-pts"' in html
+
+
+def test_crude_oil_spike_awareness_and_metrics_calculation():
+    """
+    Verifies that:
+      1. _calc_series_metrics uses df.attrs['meta'] for accurate live 1D returns and price.
+      2. Brent Crude Oil (BZ=F) spikes >= 2.0% trigger SEVERE HEADWIND and severe macro penalty <= -90.
+      3. Both t1_forecast and t5_forecast include basis_breakdown with pillar contributions and drivers.
+    """
+    import pandas as pd
+    import numpy as np
+
+    # Test _calc_series_metrics with meta attrs
+    dates = pd.date_range("2026-10-01", periods=30, freq="B")
+    prices = [75.0] * 30
+    df = pd.DataFrame({
+        "Open": prices,
+        "High": prices,
+        "Low": prices,
+        "Close": prices,
+        "Volume": [1000] * 30
+    }, index=dates)
+
+    # Without meta, ret_1d should be 0.0%
+    m0 = NiftyAnalyticsEngine._calc_series_metrics(df)
+    assert m0["ret_1d"] == 0.0
+
+    # With meta specifying regularMarketChangePercent = +7.15% (Brent Crude surge)
+    df.attrs["meta"] = {
+        "regularMarketChangePercent": 7.15,
+        "regularMarketPrice": 80.36,
+        "chartPreviousClose": 75.00
+    }
+    m1 = NiftyAnalyticsEngine._calc_series_metrics(df)
+    assert m1["ret_1d"] == 7.15
+    assert m1["close"] == 80.36
+
+    # Test live prediction engine output for basis_breakdown
+    preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True)
+    assert preds.get("status") == "OK"
+
+    t1 = preds.get("t1_forecast", {})
+    t5 = preds.get("t5_forecast", {})
+
+    assert "basis_breakdown" in t1
+    b1 = t1["basis_breakdown"]
+    assert "verdict_rationale" in b1
+    assert "pillar_contributions" in b1
+    assert len(b1["pillar_contributions"]) >= 6
+    assert "top_tailwinds" in b1
+    assert "top_headwinds" in b1
+    assert "crude_oil_impact" in b1
+    assert "difference_from_t5" in b1
+
+    assert "basis_breakdown" in t5
+    b5 = t5["basis_breakdown"]
+    assert "verdict_rationale" in b5
+    assert "pillar_contributions" in b5
+    assert len(b5["pillar_contributions"]) >= 6
+    assert "top_tailwinds" in b5
+    assert "top_headwinds" in b5
+    assert "crude_oil_impact" in b5
+    assert "difference_from_t1" in b5
+
+    # Verify Crude Oil Status is exposed at top level as well
+    assert "crude_oil_status" in preds
+    crude = preds["crude_oil_status"]
+    assert "ticker" in crude and crude["ticker"] == "BZ=F"
+    assert "ret_1d" in crude
+    assert "impact" in crude
+    assert "transmission_mechanism" in crude
+
+
+def test_prediction_deep_dive_modal_and_ui_elements():
+    """
+    Verifies that index.html contains:
+      1. #pred-deep-dive-modal with tabs, rationale, crude spotlight, and pillar matrix.
+      2. Clickable T+1 and T+5 cards with 'Why this prediction?' action buttons.
+      3. Global & Macro table with min-w-[660px] and whitespace-nowrap badges avoiding scrollbar collision.
+    """
+    with open("web/templates/index.html", "r", encoding="utf-8") as f:
+        html = f.read()
+
+    # Modal structure
+    assert 'id="pred-deep-dive-modal"' in html
+    assert 'id="pred-modal-horizon-badge"' in html
+    assert 'id="pred-tab-t1"' in html
+    assert 'id="pred-tab-t5"' in html
+    assert 'id="pred-modal-verdict-text"' in html
+    assert 'id="pred-modal-rationale"' in html
+    assert 'id="pred-modal-crude-card"' in html
+    assert 'id="pred-modal-crude-ltp"' in html
+    assert 'id="pred-modal-crude-mechanism"' in html
+    assert 'id="pred-modal-tailwinds-list"' in html
+    assert 'id="pred-modal-headwinds-list"' in html
+    assert 'id="pred-modal-pillars-tbody"' in html
+
+    # Clickable hero cards
+    assert "openPredictionDeepDiveModal('t1')" in html
+    assert "openPredictionDeepDiveModal('t5')" in html
+    assert "Why this prediction?" in html
+
+    # Table styling against wrapping
+    assert "min-w-[660px]" in html
+    assert "min-w-[150px]" in html
+    assert "whitespace-nowrap" in html
+
