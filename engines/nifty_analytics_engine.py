@@ -32,6 +32,7 @@ Strictly Index & Derivatives Quantitative Analytics (Zero Hardcoded / Fake Value
 
 import math
 import json
+import re
 import time
 import random
 import logging
@@ -2104,6 +2105,171 @@ class NiftyAnalyticsEngine:
             "headlines": headlines[:12],
         }
 
+    _eco_cal_cache: Dict[str, Any] = {}
+    _eco_cal_cache_time: float = 0.0
+
+    @staticmethod
+    def calc_economic_surprise(act_str: str, cons_str: str) -> Dict[str, Any]:
+        """Calculates economic surprise print relative to consensus expectation."""
+        if not act_str or act_str == "-":
+            return {"status": "UPCOMING", "label": "UPCOMING", "badge_cls": "bg-slate-800 text-slate-400 border-slate-700"}
+        if not cons_str or cons_str == "-":
+            return {"status": "REPORTED", "label": "REPORTED", "badge_cls": "bg-cyan-500/20 text-cyan-300 border-cyan-500/30 font-bold"}
+        
+        # Extract numeric portion
+        m_a = re.search(r"[-+]?\d*\.?\d+", act_str)
+        m_c = re.search(r"[-+]?\d*\.?\d+", cons_str)
+        if m_a and m_c:
+            try:
+                val_a = float(m_a.group())
+                val_c = float(m_c.group())
+                diff = round(val_a - val_c, 2)
+                if diff > 0.001:
+                    return {
+                        "status": "BEAT_ABOVE",
+                        "label": f"BEAT (+{diff:g})",
+                        "badge_cls": "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 font-bold"
+                    }
+                elif diff < -0.001:
+                    return {
+                        "status": "MISS_BELOW",
+                        "label": f"MISS ({diff:g})",
+                        "badge_cls": "bg-rose-500/20 text-rose-300 border-rose-500/30 font-bold"
+                    }
+                else:
+                    return {
+                        "status": "IN_LINE",
+                        "label": "IN-LINE",
+                        "badge_cls": "bg-amber-500/20 text-amber-300 border-amber-500/30 font-bold"
+                    }
+            except Exception:
+                pass
+        return {"status": "REPORTED", "label": "REPORTED", "badge_cls": "bg-cyan-500/20 text-cyan-300 border-cyan-500/30 font-bold"}
+
+    _calc_surprise = calc_economic_surprise
+
+    @classmethod
+    def fetch_moneycontrol_economic_calendar(cls, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Scrapes and parses live 3-Star (High-Impact) Economic Calendar events from:
+        https://www.moneycontrol.com/economic-calendar
+
+        Filters strictly for high-impact (3-star) events with exact fields:
+        Time (IST), Country Code & Name, Event Name, Actual, Previous, Consensus/Expected,
+        and computes directional beat/miss economic surprise indicators.
+        Zero hardcoded or fake numbers.
+        """
+        now = time.time()
+        if not force_refresh and cls._eco_cal_cache and (now - cls._eco_cal_cache_time < 300):
+            return cls._eco_cal_cache
+
+        url = "https://www.moneycontrol.com/economic-calendar"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+        def _clean_str(s: Optional[str]) -> str:
+            if not s:
+                return "-"
+            s = s.replace("\u00ae", "").replace("®", "").strip()
+            return s if s else "-"
+
+        flag_map = {
+            "IND": "🇮🇳", "USA": "🇺🇸", "US": "🇺🇸", "CHN": "🇨🇳", "EUR": "🇪🇺",
+            "GBR": "🇬🇧", "UK": "🇬🇧", "JPN": "🇯🇵", "DEU": "🇩🇪", "FRA": "🇫🇷",
+            "CAN": "🇨🇦", "AUS": "🇦🇺", "RUS": "🇷🇺", "BRA": "🇧🇷", "ZAF": "🇿🇦",
+            "KOR": "🇰🇷", "ITA": "🇮🇹", "ESP": "🇪🇸", "CHE": "🇨🇭"
+        }
+
+        try:
+            resp = requests.get(url, headers=headers, timeout=12)
+            if resp.status_code == 200:
+                html = resp.text
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(html, "html.parser")
+
+                date_div = soup.find("div", class_="eco_date")
+                date_text = date_div.get_text(strip=True) if date_div else now_ist().strftime("%A, %B %d, %Y")
+
+                # Filter strictly for 3-star high impact rows
+                rows = soup.find_all("tr", attrs={"data-impact": "3"})
+                events = []
+                for r in rows:
+                    tds = r.find_all("td")
+                    if len(tds) < 8:
+                        continue
+                    t_str = _clean_str(tds[1].get_text())
+                    c_code = _clean_str(tds[2].get_text()).upper()
+                    img = tds[2].find("img")
+                    c_name = img.get("title") or img.get("alt") or "" if img else ""
+                    if not c_name and len(tds) > 10:
+                        c_name = _clean_str(tds[10].get_text())
+                    
+                    ev_title = _clean_str(tds[3].get_text())
+                    act_val = _clean_str(tds[5].get_text())
+                    prev_val = _clean_str(tds[6].get_text())
+                    cons_val = _clean_str(tds[7].get_text())
+
+                    surp = _calc_surprise(act_val, cons_val)
+                    flag_emoji = flag_map.get(c_code, "🌐")
+
+                    events.append({
+                        "time": t_str,
+                        "country_code": c_code,
+                        "country_name": c_name or c_code,
+                        "country_flag": flag_emoji,
+                        "event": ev_title,
+                        "impact": 3,
+                        "impact_stars": "⭐⭐⭐",
+                        "impact_label": "HIGH IMPACT",
+                        "actual": act_val,
+                        "previous": prev_val,
+                        "consensus": cons_val,
+                        "date": date_text,
+                        "status": "REPORTED" if act_val != "-" else "UPCOMING",
+                        "surprise": surp["label"],
+                        "surprise_status": surp["status"],
+                        "surprise_badge_cls": surp["badge_cls"],
+                    })
+
+                res = {
+                    "status": "OK",
+                    "source": "Moneycontrol Economic Calendar",
+                    "url": url,
+                    "date": date_text,
+                    "total_high_impact": len(events),
+                    "reported_count": sum(1 for e in events if e["actual"] != "-"),
+                    "upcoming_count": sum(1 for e in events if e["actual"] == "-"),
+                    "updated_at_ist": format_ist(),
+                    "events": events
+                }
+                cls._eco_cal_cache = res
+                cls._eco_cal_cache_time = now
+                return res
+            else:
+                logger.warning(f"Moneycontrol Economic Calendar returned HTTP {resp.status_code}")
+        except Exception as e:
+            logger.error(f"Error fetching Moneycontrol Economic Calendar: {e}")
+
+        # Return cached if available, else clean fallback
+        if cls._eco_cal_cache:
+            return cls._eco_cal_cache
+
+        return {
+            "status": "WARNING",
+            "source": "Moneycontrol Economic Calendar",
+            "url": url,
+            "date": now_ist().strftime("%A, %B %d, %Y"),
+            "total_high_impact": 0,
+            "reported_count": 0,
+            "upcoming_count": 0,
+            "updated_at_ist": format_ist(),
+            "events": [],
+            "error": "Failed scraping live calendar feed"
+        }
+
     @classmethod
     def _run_walk_forward_validation_and_calibration(
         cls,
@@ -3075,6 +3241,7 @@ class NiftyAnalyticsEngine:
                 "basis_breakdown": t5_basis_breakdown,
             },
             "crude_oil_status": crude_oil_status,
+            "economic_calendar": self.fetch_moneycontrol_economic_calendar(force_refresh=force_refresh),
             "us_intelligence": us_intel,
             "futures_relative_radar": futures_radar,
             "validation_and_calibration": calibration,
@@ -3089,6 +3256,7 @@ class NiftyAnalyticsEngine:
                 "institutional_flows": inst_flow_data,
                 "us_market_analytics": us_intel,
                 "futures_relative_radar": futures_radar,
+                "economic_calendar": self.fetch_moneycontrol_economic_calendar(force_refresh=False),
             },
             "fii_dii_and_oi": inst_flow_data,
             "quant_suggestions": quant_suggestions,

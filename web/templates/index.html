@@ -2069,6 +2069,72 @@
         </div>
       </div>
 
+      <!-- Row 2.7: High-Impact 3-Star Economic Calendar (Scraped from Moneycontrol) -->
+      <div id="pred-economic-calendar-card" class="bg-slate-900/80 border border-amber-500/35 rounded-2xl p-4 sm:p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-base">📅</span>
+              <h3 class="font-bold text-white text-sm sm:text-base flex items-center gap-2">
+                <span>High-Impact Economic Calendar (3-Star Events)</span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">⭐⭐⭐ HIGH IMPACT</span>
+              </h3>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">
+              Live scraper from Moneycontrol Economic Calendar. Tracks key macroeconomic releases (Inflation, GDP, Trade Balance, Central Bank speeches) with expected vs actual prints and economic surprise indicators.
+            </p>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span id="eco-cal-date-badge" class="px-2.5 py-1 rounded-lg text-xs font-mono bg-slate-950 text-slate-300 border border-slate-800">Loading date...</span>
+            <button id="btn-fetch-economic-calendar" onclick="fetchLiveEconomicCalendar(true)" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition shadow-sm cursor-pointer">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <span>Fetch Latest Results</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- KPI Strip: Reported vs Pending & Total Events -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 my-3 text-xs font-mono">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase">Total High-Impact Events</div>
+            <div id="eco-cal-total" class="text-base font-bold text-amber-400 mt-0.5">--</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase">Reported / Out</div>
+            <div id="eco-cal-reported" class="text-base font-bold text-emerald-400 mt-0.5">--</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase">Upcoming Today</div>
+            <div id="eco-cal-upcoming" class="text-base font-bold text-cyan-400 mt-0.5">--</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase">Live Telemetry Source</div>
+            <div class="text-xs font-bold text-slate-200 mt-1 truncate">Moneycontrol Economic Calendar</div>
+          </div>
+        </div>
+
+        <!-- 3-Star Events Table -->
+        <div class="overflow-x-auto custom-scroll mt-2">
+          <table class="w-full min-w-[720px] text-left text-xs text-slate-300 font-mono">
+            <thead class="bg-slate-950/70 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="p-2.5 whitespace-nowrap">Time (IST)</th>
+                <th class="p-2.5 whitespace-nowrap">Country</th>
+                <th class="p-2.5">Event Name</th>
+                <th class="p-2.5 text-center whitespace-nowrap">Impact</th>
+                <th class="p-2.5 text-right whitespace-nowrap font-bold text-white">Actual</th>
+                <th class="p-2.5 text-right whitespace-nowrap text-cyan-300">Consensus (Expected)</th>
+                <th class="p-2.5 text-right whitespace-nowrap text-slate-400">Previous</th>
+                <th class="p-2.5 pr-4 text-right whitespace-nowrap min-w-[130px]">Outcome / Surprise</th>
+              </tr>
+            </thead>
+            <tbody id="eco-cal-tbody" class="divide-y divide-slate-800/60 text-xs">
+              <tr><td colspan="8" class="p-6 text-center text-slate-500 font-sans">Loading 3-star high impact economic events...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Row 2.8: Institutional Desk: FII & DII Cash Market Flows & 1-Week F&O Participant Open Interest -->
       <div class="bg-slate-900/80 border border-cyan-500/35 rounded-2xl p-4 sm:p-5">
         <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
@@ -3999,6 +4065,12 @@
             aiAnalysisCache = data.ai_analysis;
             renderAiAnalysisUI(data.ai_analysis);
           }
+          if (data.economic_calendar) {
+            economicCalendarCache = data.economic_calendar;
+            renderEconomicCalendarUI(data.economic_calendar);
+          } else {
+            fetchLiveEconomicCalendar(forceRefresh);
+          }
           if (forceRefresh) {
             showToast(`🧠 Nifty 50 T+1 & T+5 Forecast Recomputed (Spot ₹${data.spot_price ? Number(data.spot_price).toFixed(2) : '--'})!`, 'success');
           }
@@ -4668,6 +4740,12 @@
         }
       }
 
+      // Sync Economic Calendar UI
+      if (data.economic_calendar && typeof renderEconomicCalendarUI === 'function') {
+        economicCalendarCache = data.economic_calendar;
+        renderEconomicCalendarUI(data.economic_calendar);
+      }
+
       // Automatically sync AI analysis alongside ML prediction rendering
       if (typeof loadAiAnalysis === 'function') {
         loadAiAnalysis(false);
@@ -4877,6 +4955,119 @@
           `;
         }).join('');
       }
+
+      if (window.lucide && typeof lucide.createIcons === 'function') {
+        lucide.createIcons();
+      }
+    }
+
+    // =========================================================================
+    // MODULE 3.6: HIGH-IMPACT 3-STAR ECONOMIC CALENDAR (MONEYCONTROL SCRAPER)
+    // =========================================================================
+    let economicCalendarCache = null;
+
+    async function fetchLiveEconomicCalendar(forceRefresh = false) {
+      const btn = document.getElementById('btn-fetch-economic-calendar');
+      const origHtml = btn ? btn.innerHTML : '';
+      if (btn && forceRefresh) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span><span>Fetching 3-Star Events...</span>`;
+      }
+      try {
+        const res = await fetch(`/api/nifty/economic-calendar?force_refresh=${forceRefresh ? 'true' : 'false'}`);
+        if (!res.ok) {
+          console.warn("Economic Calendar fetch returned HTTP", res.status);
+          if (forceRefresh) showToast(`Economic calendar fetch returned HTTP ${res.status}`, 'warning');
+          return;
+        }
+        const data = await res.json();
+        if (data && (data.status === 'OK' || data.events)) {
+          economicCalendarCache = data;
+          renderEconomicCalendarUI(data);
+          if (forceRefresh) {
+            const count = data.total_high_impact || (data.events || []).length;
+            showToast(`📅 Scraped ${count} High-Impact (3-Star) Economic Events from Moneycontrol!`, 'success');
+          }
+        }
+      } catch (err) {
+        console.error("Failed fetching live economic calendar:", err);
+        if (forceRefresh) showToast(`Failed to fetch economic calendar: ${err.message}`, 'error');
+      } finally {
+        if (btn && forceRefresh) {
+          btn.disabled = false;
+          btn.innerHTML = origHtml || `<i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Fetch Latest Results</span>`;
+          if (window.lucide && typeof lucide.createIcons === 'function') {
+            lucide.createIcons();
+          }
+        }
+      }
+    }
+
+    function renderEconomicCalendarUI(data) {
+      if (!data) return;
+      const events = data.events || [];
+      const dateBadge = document.getElementById('eco-cal-date-badge');
+      if (dateBadge) {
+        dateBadge.innerText = data.date ? `📅 ${data.date}` : (data.updated_at_ist ? `Updated: ${data.updated_at_ist}` : 'Today');
+      }
+
+      const totalEl = document.getElementById('eco-cal-total');
+      const repEl = document.getElementById('eco-cal-reported');
+      const upEl = document.getElementById('eco-cal-upcoming');
+
+      const reportedCount = data.reported_count !== undefined ? data.reported_count : events.filter(e => e.actual && e.actual !== '-').length;
+      const upcomingCount = data.upcoming_count !== undefined ? data.upcoming_count : events.filter(e => !e.actual || e.actual === '-').length;
+
+      if (totalEl) totalEl.innerText = (data.total_high_impact !== undefined ? data.total_high_impact : events.length).toString();
+      if (repEl) repEl.innerText = reportedCount.toString();
+      if (upEl) upEl.innerText = upcomingCount.toString();
+
+      const tbody = document.getElementById('eco-cal-tbody');
+      if (!tbody) return;
+
+      if (events.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-500 font-sans">No 3-star high impact economic events scheduled for today in Moneycontrol calendar.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = events.map(ev => {
+        const cCode = ev.country_code || ev.country || 'GLB';
+        const cFlag = ev.country_flag || '🌐';
+        const cName = ev.country_name || cCode;
+
+        const actVal = ev.actual && ev.actual !== '-' ? ev.actual : `<span class="text-slate-500 font-normal">--</span>`;
+        const consVal = ev.consensus && ev.consensus !== '-' ? ev.consensus : `<span class="text-slate-600 font-normal">--</span>`;
+        const prevVal = ev.previous && ev.previous !== '-' ? ev.previous : `<span class="text-slate-600 font-normal">--</span>`;
+
+        const badgeCls = ev.surprise_badge_cls || 'bg-slate-800 text-slate-400 border-slate-700';
+        const surpLabel = ev.surprise || (ev.status === 'REPORTED' ? 'REPORTED' : 'UPCOMING');
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="p-2.5 font-bold text-white whitespace-nowrap">${ev.time || '--:--'} <span class="text-[10px] text-slate-500">IST</span></td>
+            <td class="p-2.5 whitespace-nowrap">
+              <div class="flex items-center gap-1.5 font-bold text-slate-200" title="${cName}">
+                <span class="text-base">${cFlag}</span>
+                <span class="font-mono text-xs">${cCode}</span>
+              </div>
+            </td>
+            <td class="p-2.5 font-sans font-medium text-slate-100 max-w-xs sm:max-w-md truncate" title="${ev.event}">
+              ${ev.event}
+            </td>
+            <td class="p-2.5 text-center whitespace-nowrap">
+              <span class="text-amber-400 tracking-wider font-mono text-xs">⭐⭐⭐</span>
+            </td>
+            <td class="p-2.5 text-right font-bold text-white whitespace-nowrap">${actVal}</td>
+            <td class="p-2.5 text-right font-semibold text-cyan-300 whitespace-nowrap">${consVal}</td>
+            <td class="p-2.5 text-right text-slate-400 whitespace-nowrap">${prevVal}</td>
+            <td class="p-2.5 pr-4 text-right whitespace-nowrap">
+              <span class="px-2.5 py-0.5 rounded text-[10px] border whitespace-nowrap font-mono inline-flex items-center justify-center ${badgeCls}">
+                ${surpLabel}
+              </span>
+            </td>
+          </tr>
+        `;
+      }).join('');
 
       if (window.lucide && typeof lucide.createIcons === 'function') {
         lucide.createIcons();

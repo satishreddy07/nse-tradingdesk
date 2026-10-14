@@ -640,6 +640,18 @@ def get_futures_relative_radar(force_refresh: bool = False):
         return {"status": "ERROR", "message": f"Futures Radar error: {str(e)}"}
 
 
+@app.get("/api/nifty/economic-calendar")
+def get_nifty_economic_calendar(force_refresh: bool = False):
+    """Fetches or scrapes live 3-Star (High-Impact) Economic Calendar events from Moneycontrol."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    try:
+        data = nifty_analytics_engine.fetch_moneycontrol_economic_calendar(force_refresh=force_refresh)
+        return _sanitize_for_json(data)
+    except Exception as e:
+        logger.error(f"Error fetching economic calendar: {e}", exc_info=True)
+        return {"status": "ERROR", "message": f"Economic Calendar error: {str(e)}", "events": []}
+
+
 @app.get("/api/nifty/fao-history")
 def get_nifty_fao_history():
     """

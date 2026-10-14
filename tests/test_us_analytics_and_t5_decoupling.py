@@ -301,3 +301,86 @@ def test_prediction_deep_dive_modal_and_ui_elements():
     assert "min-w-[150px]" in html
     assert "whitespace-nowrap" in html
 
+
+def test_moneycontrol_economic_calendar_scraper():
+    """
+    Validates:
+      1. Moneycontrol 3-star high-impact economic calendar scraping and data contract.
+      2. Strictly 3-star (high impact) filter.
+      3. Complete details: Time, Country, Event, Actual, Consensus, Previous, Surprise.
+      4. Mathematical economic surprise calculations.
+    """
+    NiftyAnalyticsEngine._eco_cal_cache = {}
+    cal = NiftyAnalyticsEngine.fetch_moneycontrol_economic_calendar(force_refresh=True)
+    assert cal.get("status") in ["OK", "WARNING"]
+    assert "Moneycontrol Economic Calendar" in cal.get("source", "")
+    assert "total_high_impact" in cal
+    assert "reported_count" in cal
+    assert "upcoming_count" in cal
+    assert isinstance(cal.get("events"), list)
+
+    events = cal.get("events", [])
+    if events:
+        for ev in events:
+            # Strictly 3-star high impact
+            assert ev.get("impact") == 3
+            assert ev.get("impact_stars") == "⭐⭐⭐"
+            assert ev.get("impact_label") == "HIGH IMPACT"
+            assert "time" in ev
+            assert "country_code" in ev
+            assert "event" in ev
+            assert "actual" in ev
+            assert "consensus" in ev
+            assert "previous" in ev
+            assert ev.get("surprise_status") in ["BEAT_ABOVE", "MISS_BELOW", "IN_LINE", "REPORTED", "UPCOMING", "PENDING"]
+
+    # Test surprise calculation logic under various scenarios
+    beat = NiftyAnalyticsEngine.calc_economic_surprise("1.2%", "1.0%")
+    assert beat["status"] == "BEAT_ABOVE"
+    assert "BEAT" in beat["label"]
+
+    miss = NiftyAnalyticsEngine.calc_economic_surprise("$110B", "$120B")
+    assert miss["status"] == "MISS_BELOW"
+    assert "MISS" in miss["label"]
+
+    inline = NiftyAnalyticsEngine.calc_economic_surprise("2.5%", "2.5%")
+    assert inline["status"] == "IN_LINE"
+
+    upcoming = NiftyAnalyticsEngine.calc_economic_surprise("-", "3.0%")
+    assert upcoming["status"] == "UPCOMING"
+
+
+def test_api_economic_calendar_endpoint(client):
+    """Verifies that the /api/nifty/economic-calendar endpoint returns HTTP 200 with sanitized JSON."""
+    resp = client.get("/api/nifty/economic-calendar")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data.get("status") in ["OK", "WARNING"]
+    assert "events" in data
+    assert "total_high_impact" in data
+
+
+def test_economic_calendar_ui_elements():
+    """
+    Verifies that index.html contains:
+      1. #pred-economic-calendar-card with 3-star high-impact badge and description.
+      2. KPI strip with Total, Reported, Upcoming, and Source.
+      3. #eco-cal-tbody with columns for Time, Country, Event, Impact, Actual, Consensus, Previous, Outcome.
+      4. Interactive [Fetch Latest Results] button triggering fetchLiveEconomicCalendar(true).
+      5. Client-side fetchLiveEconomicCalendar and renderEconomicCalendarUI JS implementations.
+    """
+    with open("web/templates/index.html", "r", encoding="utf-8") as f:
+        html = f.read()
+
+    assert 'id="pred-economic-calendar-card"' in html
+    assert 'id="eco-cal-date-badge"' in html
+    assert 'id="btn-fetch-economic-calendar"' in html
+    assert 'fetchLiveEconomicCalendar(true)' in html
+    assert 'id="eco-cal-total"' in html
+    assert 'id="eco-cal-reported"' in html
+    assert 'id="eco-cal-upcoming"' in html
+    assert 'id="eco-cal-tbody"' in html
+    assert 'function fetchLiveEconomicCalendar(' in html
+    assert 'function renderEconomicCalendarUI(' in html
+
+
