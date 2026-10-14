@@ -1495,6 +1495,7 @@
             <div class="flex flex-wrap items-center gap-2">
               <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">MODULE 3 • NIFTY 50 T+1 & T+5 FORECAST DESK</span>
               <span id="pred-updated-badge" class="text-[11px] font-mono text-cyan-400">🧠 6-Pillar Multi-Asset Model + 180D Walk-Forward Calibration</span>
+              <span id="pred-lock-badge" class="hidden px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold"></span>
             </div>
             <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Nifty 50 (^NSEI) T+1 & T+5 Quantitative, Macro & Cross-Asset Prediction Engine</h2>
             <p class="text-xs text-slate-400 mt-0.5">
@@ -4061,7 +4062,7 @@
         btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span><span>Computing 6 Pillars...</span>`;
       }
       try {
-        const res = await fetch(`/api/nifty/predictions?force_refresh=${forceRefresh ? 'true' : 'false'}`);
+        const res = await fetch(`/api/nifty/predictions?force_refresh=${forceRefresh ? 'true' : 'false'}&force_recalculate=${forceRefresh ? 'true' : 'false'}`);
         if (!res.ok) {
           const errText = await res.text();
           console.error("Predictions API HTTP error:", res.status, errText);
@@ -4111,7 +4112,20 @@
 
       const updBadge = document.getElementById('pred-updated-badge');
       if (updBadge) {
-        updBadge.innerText = `🧠 Updated: ${data.timestamp_ist || '--'} • Nifty Spot: ₹${Number(data.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        updBadge.innerText = `🧠 ${data.is_premarket_locked ? 'Official Forecast' : 'Calculated'}: ${data.timestamp_ist || '--'} • Pre-Market Spot: ₹${Number(data.premarket_spot_price || data.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      }
+
+      const lockBadge = document.getElementById('pred-lock-badge');
+      if (lockBadge) {
+        if (data.is_premarket_locked) {
+          lockBadge.classList.remove('hidden');
+          lockBadge.className = "px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+          lockBadge.innerHTML = `🔒 PRE-MARKET FORECAST LOCKED (${data.prediction_date || ''}) • Evaluated at 03:45 PM EOD`;
+        } else {
+          lockBadge.classList.remove('hidden');
+          lockBadge.className = "px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40";
+          lockBadge.innerHTML = `⚡ Live Rolling Model`;
+        }
       }
 
       const formatVerdictColor = (v) => {

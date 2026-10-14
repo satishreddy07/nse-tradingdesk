@@ -178,8 +178,8 @@ def scheduled_live_price_stream_job():
         nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=True)
         # 2. Reconcile stops and targets for all active options strategies
         nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
-        # 3. Regenerate complete analysis & evaluate/deploy intraday auto-strategies if active < 2
-        nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["INTRADAY"], force_refresh=True)
+        # 3. Regenerate complete analysis & evaluate/deploy intraday auto-strategies if active < 2 (uses locked pre-market forecast)
+        nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["INTRADAY"], force_refresh=False)
         # 4. Periodically evaluate AI intelligence analysis (respecting cache TTL)
         if config.AI_ENABLED:
             try:
@@ -216,6 +216,28 @@ def scheduled_intraday_flash_bulletin_job(slot_label: str):
         intraday_analytics_engine.generate_intraday_ai_flash_bulletin(slot_label=slot_label)
     except Exception as e:
         logger.warning(f"Intraday flash bulletin ({slot_label}) warning: {e}")
+
+
+def scheduled_premarket_nifty_prediction_job():
+    """
+    08:50 AM IST Weekday Job:
+    Calculates official Nifty 50 6-Pillar T+1 & T+5 Pre-Market Forecast,
+    FREEZES it for today's session, and dispatches the Telegram Pre-Market Bulletin.
+    This prediction will NOT mutate or repaint during live market trading.
+    """
+    current_dt = now_ist()
+    NSEMarketCalendar.sync_holidays_from_nse(force=False)
+    if not NSEMarketCalendar.is_trading_day(current_dt.date()):
+        logger.info("⏸️ Today is not an active trading day. 08:50 AM pre-market prediction skipped.")
+        return
+    try:
+        from engines.nifty_analytics_engine import nifty_analytics_engine
+        logger.info(f"🔒 [08:50 AM IST Trigger] Computing & Locking Official Pre-Market Forecast for {current_dt.date()}...")
+        preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
+        nifty_analytics_engine.dispatch_premarket_prediction_telegram_alert(preds)
+        logger.info("✓ [08:50 AM IST Job] Official Pre-Market Forecast LOCKED & Telegram Bulletin Dispatched.")
+    except Exception as e:
+        logger.warning(f"08:50 AM Pre-Market Prediction Job error: {e}")
 
 
 def scheduled_options_premarket_job():
@@ -370,7 +392,7 @@ def scheduled_nifty_intraday_50min_job(slot_label: Optional[str] = None):
             f"Near-ATM PCR: {snap.get('near_atm_pcr')} | State: {snap.get('market_state')}"
         )
         if slot_label in ("09:30", "12:00", "15:20", "15:30", None):
-            nifty_analytics_engine.compute_nifty_predictions(force_refresh=True)
+            nifty_analytics_engine.compute_nifty_predictions(force_refresh=False)
     except Exception as e:
         logger.warning(f"Intraday option snapshot job warning: {e}")
 
@@ -412,7 +434,8 @@ def scheduled_daily_prediction_training_job():
     """
     03:45 PM IST Trading Day Job:
     - Runs EOD prediction outcome evaluation and online training.
-    - Updates adaptive pillar weights based on day's actual close.
+    - Evaluates morning's locked pre-market forecast against actual EOD close.
+    - Updates adaptive pillar weights and sends Telegram EOD report.
     - Backs up prediction attribution ledger to Telegram Cloud Vault.
     """
     current_dt = now_ist()
@@ -421,10 +444,10 @@ def scheduled_daily_prediction_training_job():
         return
     try:
         from engines.nifty_analytics_engine import nifty_analytics_engine
-        preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True)
-        st = preds.get("self_training_engine", {})
+        res = nifty_analytics_engine.evaluate_and_grade_eod_predictions()
+        st = res.get("self_training", {})
         logger.info(
-            f"🎯 [03:45 PM EOD Training Job] Nifty Predictions Trained & Synced. "
+            f"🎯 [03:45 PM EOD Training Job] Nifty Predictions Evaluated ({res.get('outcome')}) & Trained. "
             f"Hit Rates: {st.get('t1_hit_rate_pct')}%, {st.get('t5_hit_rate_pct')}%. Cloud Vault Backed Up."
         )
     except Exception as e:
@@ -442,6 +465,16 @@ def start_scheduler():
         threading.Thread(target=scheduled_nse_holiday_sync_job, daemon=True).start()
 
         _scheduler = BackgroundScheduler(timezone=IST)
+
+        # Job 0A-1: Daily Official Pre-Market Forecast Lock & Telegram Bulletin at 08:50 AM IST Mon-Fri
+        _scheduler.add_job(
+            scheduled_premarket_nifty_prediction_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=8, minute=50, timezone=IST),
+            id="job_premarket_prediction_0850",
+            name="08:50 AM Official Pre-Market Forecast Lock & Bulletin",
+            replace_existing=True,
+            misfire_grace_time=300
+        )
 
         # Job 0A: Daily Dynamic NSE Holiday Sync at 08:55 AM IST Mon-Fri
         _scheduler.add_job(

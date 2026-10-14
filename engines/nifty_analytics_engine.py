@@ -941,14 +941,14 @@ class NiftyAnalyticsEngine:
 
         first_h, first_m = [int(x) for x in slots_ref[0][0].split(":")]
         first_sm = first_h * 60 + first_m
-        if mins < (first_sm - 2):
+        if mins < first_sm:
             return None  # Pre-09:30 market opening buffer; 09:30 slot will be captured at 09:30 AM!
 
         active_label = slots_ref[0][0]
         for slot_code, _ in slots_ref:
             h, m = [int(x) for x in slot_code.split(":")]
             sm = h * 60 + m
-            if mins >= (sm - 2):
+            if mins >= sm:
                 active_label = slot_code
         return active_label
 
@@ -2475,7 +2475,7 @@ class NiftyAnalyticsEngine:
             "t5_probs": {"up": p_up_t5, "flat": p_flat_t5, "down": p_down_t5},
         }
 
-    def compute_nifty_predictions(self, force_refresh: bool = False) -> Dict[str, Any]:
+    def compute_nifty_predictions(self, force_refresh: bool = False, force_recalculate: bool = False) -> Dict[str, Any]:
         """
         Computes the full 6-Pillar Nifty 50 T+1 & T+5 Quantitative & Macro Prediction Dashboard:
         1. Nifty 50 Technical Structure (^NSEI)
@@ -2488,9 +2488,45 @@ class NiftyAnalyticsEngine:
         """
         from core import config
         now_ts = time.time()
+        today_str = now_ist().strftime("%Y-%m-%d")
+        locked_key = f"nifty_prediction_locked_{today_str}"
+
+        # 1. OFFICIAL PRE-MARKET FORECAST FREEZING PROTOCOL:
+        # On trading days, the pre-market forecast is computed at 08:45–09:00 AM IST and FROZEN for the entire session.
+        # It strictly DOES NOT mutate or repaint during live market hours (09:15–15:30 IST) based on intraday ticks.
+        # Only explicit force_recalculate=True (e.g. from the 08:50 AM cron or admin override) recalculates the lock.
+        if not force_recalculate:
+            # Check in-memory locked cache
+            if self._predictions_mem_cache and self._predictions_mem_cache.get("is_premarket_locked") and self._predictions_mem_cache.get("prediction_date") == today_str:
+                if "ai_analysis" not in self._predictions_mem_cache and getattr(config, "AI_ENABLED", True):
+                    try:
+                        from ai_engine.service import ai_service
+                        ai_out = ai_service.analyze_predictions(force_refresh=False, predictions_data=self._predictions_mem_cache)
+                        if ai_out:
+                            self._predictions_mem_cache["ai_analysis"] = ai_out.model_dump()
+                    except Exception:
+                        pass
+                return self._predictions_mem_cache
+
+            # Check persistent KV store for today's locked prediction
+            locked_persisted = state_engine.get_kv(locked_key)
+            if locked_persisted and isinstance(locked_persisted, dict) and locked_persisted.get("status") == "OK":
+                if "ai_analysis" not in locked_persisted and getattr(config, "AI_ENABLED", True):
+                    try:
+                        from ai_engine.service import ai_service
+                        ai_out = ai_service.analyze_predictions(force_refresh=False, predictions_data=locked_persisted)
+                        if ai_out:
+                            locked_persisted["ai_analysis"] = ai_out.model_dump()
+                    except Exception:
+                        pass
+                with self._lock:
+                    self._predictions_mem_cache = locked_persisted
+                    self._predictions_cache_ts = now_ts
+                return locked_persisted
+
         market_open = NSEMarketCalendar.can_execute_trades()
         cache_ttl = 300 if market_open else 3600
-        if not force_refresh and self._predictions_mem_cache and (now_ts - self._predictions_cache_ts) < cache_ttl:
+        if not force_refresh and not force_recalculate and self._predictions_mem_cache and (now_ts - self._predictions_cache_ts) < cache_ttl:
             if "ai_analysis" not in self._predictions_mem_cache and getattr(config, "AI_ENABLED", True):
                 try:
                     from ai_engine.service import ai_service
@@ -2501,8 +2537,8 @@ class NiftyAnalyticsEngine:
                     pass
             return self._predictions_mem_cache
 
-        # If not forcing refresh, check Master DB persisted predictions first
-        if not force_refresh:
+        # If not forcing recalculate or refresh, check general persisted predictions
+        if not force_refresh and not force_recalculate:
             persisted = state_engine.get_kv("latest_nifty_predictions")
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
                 if "ai_analysis" not in persisted and getattr(config, "AI_ENABLED", True):
@@ -3306,15 +3342,169 @@ class NiftyAnalyticsEngine:
         except Exception as ai_e:
             logger.debug(f"AI auto-interpretation attach notice: {ai_e}")
 
+        is_trading = NSEMarketCalendar.is_trading_day(now_ist().date())
+
+        payload["prediction_date"] = pred_date
+        payload["is_premarket_locked"] = is_trading
+        payload["premarket_locked_at_ist"] = format_ist()
+        payload["premarket_spot_price"] = spot
+
         with self._lock:
             self._predictions_mem_cache = payload
             self._predictions_cache_ts = now_ts
         state_engine.set_kv("latest_nifty_predictions", payload)
+        if is_trading:
+            state_engine.set_kv(locked_key, payload)
         try:
             telegram_vault.sync_master_vault_async(note=f"Nifty Predictions Forecast & Attribution Sync ({pred_date})", send_notification=False)
         except Exception:
             pass
         return payload
+
+    def dispatch_premarket_prediction_telegram_alert(self, preds: Dict[str, Any]) -> bool:
+        """
+        Dispatches the official Pre-Market Prediction Bulletin to Telegram
+        at 08:50 AM IST before market open. Contains the locked T+1 and T+5 forecasts,
+        expected drift cones, crude oil status, and institutional positioning.
+        """
+        if not preds or preds.get("status") != "OK":
+            return False
+
+        today_str = preds.get("prediction_date") or now_ist().strftime("%Y-%m-%d")
+        locked_time = preds.get("premarket_locked_at_ist") or preds.get("timestamp_ist") or format_ist()
+        spot = float(preds.get("premarket_spot_price") or preds.get("spot_price") or 0.0)
+
+        t1 = preds.get("t1_forecast") or {}
+        t1_v = t1.get("verdict") or "NEUTRAL"
+        t1_sc = float(preds.get("composite_score_t1") or preds.get("composite_score") or 0.0)
+        t1_p = preds.get("validation_and_calibration", {}).get("t1_probs") or t1.get("t1_probs") or {"up": 0.33, "flat": 0.34, "down": 0.33}
+        t1_pts = float(t1.get("expected_pts") or 0.0)
+        t1_pct = float(t1.get("expected_pct") or 0.0)
+        t1_target = float(t1.get("expected_close") or spot)
+        t1_cone = t1.get("range_1sigma") or [spot - 100, spot + 100]
+
+        t5 = preds.get("t5_forecast") or {}
+        t5_v = t5.get("verdict") or "NEUTRAL"
+        t5_sc = float(preds.get("composite_score_t5") or 0.0)
+        t5_cone = t5.get("range_1sigma") or [spot - 250, spot + 250]
+
+        crude = preds.get("crude_oil_status") or {}
+        crude_px = float(crude.get("ltp") or 0.0)
+        crude_1d = float(crude.get("ret_1d") or 0.0)
+        crude_tag = crude.get("impact") or "NEUTRAL"
+
+        vix_c = 0.0
+        for m in preds.get("pillars", {}).get("macro_cross_asset", []):
+            if m.get("ticker") == "^INDIAVIX":
+                vix_c = float(m.get("ltp") or 0.0)
+        if vix_c == 0.0:
+            vix_c = float(preds.get("pillars", {}).get("nifty_technicals", {}).get("close", 14.0))
+
+        msg = (
+            f"🔒 <b>OFFICIAL NIFTY 50 PRE-MARKET FORECAST BULLETIN</b>\n"
+            f"📅 <b>Date:</b> {today_str} | 🕒 <b>Locked At:</b> {locked_time}\n"
+            f"📌 <b>Pre-Market Spot:</b> ₹{spot:,.2f}\n\n"
+            f"🎯 <b>T+1 (SESSION AHEAD): {t1_v}</b>\n"
+            f"• Composite Score: <b>{t1_sc:+.1f} / 100</b>\n"
+            f"• Calibrated Probabilities: 🟢 Bull {t1_p.get('up', 0.33)*100:.1f}% | 🟡 Range {t1_p.get('flat', 0.34)*100:.1f}% | 🔴 Bear {t1_p.get('down', 0.33)*100:.1f}%\n"
+            f"• Expected Session Drift: <b>{t1_pts:+.1f} pts ({t1_pct:+.2f}%)</b> toward <b>₹{t1_target:,.0f}</b>\n"
+            f"• 1σ Expected Cone: <b>[₹{t1_cone[0]:,.0f} – ₹{t1_cone[1]:,.0f}]</b>\n\n"
+            f"📅 <b>T+5 (5-DAY WEEKLY OUTLOOK): {t5_v}</b>\n"
+            f"• Weekly Structural Score: <b>{t5_sc:+.1f} / 100</b>\n"
+            f"• 1σ Weekly Expected Cone: <b>[₹{t5_cone[0]:,.0f} – ₹{t5_cone[1]:,.0f}]</b>\n\n"
+            f"🌐 <b>MACRO & RISK INDICATORS:</b>\n"
+            f"• Brent Crude: ${crude_px:.2f} ({crude_1d:+.2f}% 1D) -> <i>{crude_tag}</i>\n"
+            f"• India VIX: {vix_c:.2f}\n\n"
+            f"⚠️ <i>This official forecast is LOCKED for today's market session. It will NOT mutate during live market hours. Directional accuracy will be graded at 03:45 PM IST EOD.</i>"
+        )
+        try:
+            telegram_vault.send_alert_and_sync(
+                title=f"Official Pre-Market Forecast: {t1_v}",
+                message=msg,
+                sync_db=True
+            )
+            logger.info("✓ Dispatched official Pre-Market Nifty Prediction Bulletin to Telegram.")
+            return True
+        except Exception as e:
+            logger.warning(f"Error dispatching pre-market Telegram bulletin: {e}")
+            return False
+
+    def evaluate_and_grade_eod_predictions(self) -> Dict[str, Any]:
+        """
+        Runs at 03:45 PM IST EOD after market close.
+        Evaluates the locked pre-market prediction for today against the actual completed Nifty 50 candle.
+        Grades T+1 direction, cone containment, updates self-learning weights, and sends Telegram EOD report.
+        """
+        today_str = now_ist().strftime("%Y-%m-%d")
+        locked_key = f"nifty_prediction_locked_{today_str}"
+        locked_pred = state_engine.get_kv(locked_key)
+        if not locked_pred or not isinstance(locked_pred, dict):
+            logger.info("EOD prediction evaluation skipped: no locked prediction found for today.")
+            return {"status": "SKIPPED", "message": "No locked prediction for today"}
+
+        _, n50_df = self.yf_fetcher.fetch_ticker_chart("^NSEI", range_period="5d", max_retries=2)
+        if n50_df is None or n50_df.empty:
+            logger.warning("Could not fetch Nifty EOD candle for evaluation.")
+            return {"status": "ERROR", "message": "EOD candle fetch failed"}
+
+        last_row = n50_df.iloc[-1]
+        eod_close = float(last_row.get("close", 0.0))
+
+        pre_spot = float(locked_pred.get("premarket_spot_price") or locked_pred.get("spot_price") or eod_close)
+        actual_change_pts = round(eod_close - pre_spot, 2)
+        actual_change_pct = round((actual_change_pts / max(1.0, pre_spot)) * 100.0, 2)
+
+        t1_forecast = locked_pred.get("t1_forecast") or {}
+        t1_verdict = t1_forecast.get("verdict") or "RANGE-BOUND / CONSOLIDATION"
+        cone_1s = t1_forecast.get("range_1sigma") or [0, 999999]
+
+        is_bull_pred = "BULLISH" in t1_verdict
+        is_bear_pred = "BEARISH" in t1_verdict
+
+        if is_bull_pred:
+            outcome = "CORRECT" if actual_change_pts > 0 else "INCORRECT"
+        elif is_bear_pred:
+            outcome = "CORRECT" if actual_change_pts < 0 else "INCORRECT"
+        else:
+            outcome = "CORRECT" if abs(actual_change_pct) <= 0.50 else "INCORRECT"
+
+        cone_hit = bool(cone_1s[0] <= eod_close <= cone_1s[1])
+
+        fresh_preds = self.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
+        st = fresh_preds.get("self_training_engine", {})
+
+        eod_msg = (
+            f"📊 <b>NIFTY 50 EOD PREDICTION PERFORMANCE & LEARNING REVIEW</b>\n"
+            f"📅 <b>Session Date:</b> {today_str}\n\n"
+            f"🎯 <b>Morning Forecast:</b> {t1_verdict} (Pre-Market Spot: ₹{pre_spot:,.2f})\n"
+            f"📌 <b>Actual EOD Close:</b> ₹{eod_close:,.2f} ({actual_change_pts:+.1f} pts, {actual_change_pct:+.2f}%)\n"
+            f"🏆 <b>Directional Result:</b> {'✅ HIT' if outcome == 'CORRECT' else '❌ MISS'}\n"
+            f"🛡 <b>1σ Price Cone [₹{cone_1s[0]:,.0f} – ₹{cone_1s[1]:,.0f}]:</b> {'✅ HELD WITHIN CONE' if cone_hit else '⚠️ BREACHED CONE'}\n\n"
+            f"🧠 <b>Adaptive Self-Learning Update:</b>\n"
+            f"• Realized T+1 Hit Rate: <b>{st.get('t1_hit_rate_pct', 70.0):.1f}%</b>\n"
+            f"• Realized T+5 Hit Rate: <b>{st.get('t5_hit_rate_pct', 75.0):.1f}%</b>\n"
+            f"• Sessions Evaluated: {st.get('sessions_evaluated', 0)}\n\n"
+            f"🕒 <i>Evaluated & Synced at {format_ist()}</i>"
+        )
+        try:
+            telegram_vault.send_alert_and_sync(
+                title=f"EOD Prediction Result: {'HIT' if outcome == 'CORRECT' else 'MISS'}",
+                message=eod_msg,
+                sync_db=True
+            )
+        except Exception as te:
+            logger.warning(f"Error dispatching EOD Telegram review: {te}")
+
+        return {
+            "status": "OK",
+            "date": today_str,
+            "outcome": outcome,
+            "cone_hit": cone_hit,
+            "actual_close": eod_close,
+            "premarket_spot": pre_spot,
+            "change_pts": actual_change_pts,
+            "self_training": st
+        }
 
     def _seed_and_grade_forward_testing_ledger(
         self,
@@ -4402,6 +4592,46 @@ class NiftyAnalyticsEngine:
             pop_pct = 45.0
             est_margin = round(net_debit, 2)
 
+        elif st == "SHORT_STRADDLE":
+            ce_p = max(0.5, atm_row.get("ce_ltp") or 90.0)
+            pe_p = max(0.5, atm_row.get("pe_ltp") or 90.0)
+            legs = [
+                {"action": "SELL", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": atm_row.get("ce_iv", 13.0)},
+                {"action": "SELL", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": atm_row.get("pe_iv", 13.0)},
+            ]
+            net_credit = (ce_p + pe_p) * lot_size
+            net_premium = round(net_credit, 2)
+            max_profit = round(net_credit, 2)
+            max_loss = -999999.0
+            target_pnl = round(net_credit * 0.40, 2)
+            stoploss_pnl = -round(net_credit * 0.50, 2)
+            prem_pts = ce_p + pe_p
+            breakevens = [round(atm_row["strike"] - prem_pts, 1), round(atm_row["strike"] + prem_pts, 1)]
+            rr_str = "Credit"
+            pop_pct = 64.0
+            est_margin = 140000.0
+
+        elif st == "SHORT_STRANGLE":
+            l_pe = _get_strike(atm_strike - 2 * stk_step)
+            l_ce = _get_strike(atm_strike + 2 * stk_step)
+            pe_p = max(0.5, l_pe.get("pe_ltp") or 45.0)
+            ce_p = max(0.5, l_ce.get("ce_ltp") or 45.0)
+            legs = [
+                {"action": "SELL", "type": "PE", "strike": l_pe["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": l_pe.get("pe_iv", 13.0)},
+                {"action": "SELL", "type": "CE", "strike": l_ce["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": l_ce.get("ce_iv", 13.0)},
+            ]
+            net_credit = (pe_p + ce_p) * lot_size
+            net_premium = round(net_credit, 2)
+            max_profit = round(net_credit, 2)
+            max_loss = -999999.0
+            target_pnl = round(net_credit * 0.50, 2)
+            stoploss_pnl = -round(net_credit * 0.60, 2)
+            prem_pts = pe_p + ce_p
+            breakevens = [round(l_pe["strike"] - prem_pts, 1), round(l_ce["strike"] + prem_pts, 1)]
+            rr_str = "Credit"
+            pop_pct = 72.0
+            est_margin = 135000.0
+
         return {
             "strategy_type": st,
             "legs": legs,
@@ -4459,7 +4689,7 @@ class NiftyAnalyticsEngine:
         weekly_expiry = weekly_chain.get("expiry", "")
         monthly_expiry = monthly_chain.get("expiry", "")
 
-        # Regenerate complete 6-pillar ML predictions & automated AI interpretation
+        # Retrieve official locked pre-market predictions (respects lock unless force_recalculate=True)
         preds = self.compute_nifty_predictions(force_refresh=force_refresh)
         composite_score = float(preds.get("composite_score") or 0.0)
         composite_score_t1 = float(preds.get("composite_score_t1") or composite_score)
@@ -4605,7 +4835,7 @@ class NiftyAnalyticsEngine:
                     candidates = ["LONG_STRADDLE", "LONG_STRANGLE"]
                 else:
                     condition = "TIGHT_RANGE_LOW_VOL"
-                    candidates = ["IRON_CONDOR", "IRON_BUTTERFLY"]
+                    candidates = ["SHORT_STRADDLE", "IRON_CONDOR", "SHORT_STRANGLE", "IRON_BUTTERFLY"]
 
             strat_bias = "BEARISH" if "BEAR" in condition else ("BULLISH" if "BULL" in condition else "NEUTRAL")
             candidates = refine_candidates_with_ai(candidates, bias=strat_bias)

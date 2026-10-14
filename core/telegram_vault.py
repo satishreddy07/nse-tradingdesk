@@ -580,8 +580,34 @@ class TelegramVaultManager:
         logger.info(f"🔄 Telegram Cloud Sync ({reason}): Restoring Single Master File from Telegram...")
         return self.restore_master_file_from_cloud(file_id=cloud_fid)
 
+    def send_message(self, text: str, parse_mode: str = "HTML"):
+        """Sends a direct message to Telegram with automatic plain-text fallback on parse errors."""
+        creds = self.get_credentials()
+        if not creds["enabled"]:
+            return
+
+        def _worker():
+            try:
+                resp = requests.post(
+                    f"https://api.telegram.org/bot{creds['bot_token']}/sendMessage",
+                    data={"chat_id": creds["chat_id"], "text": text, "parse_mode": parse_mode},
+                    timeout=15
+                )
+                if resp.status_code != 200 and parse_mode:
+                    import re
+                    plain = re.sub(r'<[^>]+>', '', text).replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+                    requests.post(
+                        f"https://api.telegram.org/bot{creds['bot_token']}/sendMessage",
+                        data={"chat_id": creds["chat_id"], "text": plain},
+                        timeout=15
+                    )
+            except Exception as e:
+                logger.warning(f"Telegram direct message error: {e}")
+
+        threading.Thread(target=_worker, daemon=True).start()
+
     def send_alert_and_sync(self, title: str, message: str, sync_db: bool = True, sync_ohlcv: bool = False):
-        """Dispatches a Telegram alert and immediately syncs the Single Master File in a background thread."""
+        """Dispatches a Telegram alert with guaranteed delivery (HTML with plain-text fallback) and syncs master file."""
         creds = self.get_credentials()
         if not creds["enabled"]:
             return
@@ -594,16 +620,28 @@ class TelegramVaultManager:
                     f"{message}\n\n"
                     f"🕒 <i>{format_ist()}</i>"
                 )
-                requests.post(
+                resp = requests.post(
                     f"https://api.telegram.org/bot{creds['bot_token']}/sendMessage",
                     data={"chat_id": creds["chat_id"], "text": html, "parse_mode": "HTML"},
-                    timeout=12
+                    timeout=15
                 )
+                if resp.status_code != 200:
+                    logger.warning(f"Telegram HTML send rejected ({resp.status_code}): {resp.text}. Falling back to plain text.")
+                    import re
+                    plain = re.sub(r'<[^>]+>', '', html).replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+                    requests.post(
+                        f"https://api.telegram.org/bot{creds['bot_token']}/sendMessage",
+                        data={"chat_id": creds["chat_id"], "text": plain},
+                        timeout=15
+                    )
             except Exception as e:
-                logger.debug(f"Telegram alert error: {e}")
+                logger.warning(f"Telegram alert error: {e}")
 
             if sync_db or sync_ohlcv:
-                self.backup_master_file_to_cloud(custom_note=title)
+                try:
+                    self.backup_master_file_to_cloud(custom_note=title)
+                except Exception as be:
+                    logger.warning(f"Background master file sync error: {be}")
 
         threading.Thread(target=_worker, daemon=True).start()
 

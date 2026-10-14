@@ -611,11 +611,11 @@ def _sanitize_for_json(obj):
 
 
 @app.get("/api/nifty/predictions")
-def get_nifty_predictions(force_refresh: bool = False):
-    """Computes live 6-pillar Nifty 50 T+1 & T+5 predictions with forward-testing attribution & self-learning weights."""
+def get_nifty_predictions(force_refresh: bool = False, force_recalculate: bool = False):
+    """Computes live 6-pillar Nifty 50 T+1 & T+5 predictions with forward-testing attribution & self-learning weights. Returns locked forecast during market hours."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     try:
-        data = nifty_analytics_engine.compute_nifty_predictions(force_refresh=force_refresh)
+        data = nifty_analytics_engine.compute_nifty_predictions(force_refresh=force_refresh, force_recalculate=force_recalculate)
         return _sanitize_for_json(data)
     except Exception as e:
         logger.error(f"Error computing live predictions: {e}", exc_info=True)
@@ -623,6 +623,39 @@ def get_nifty_predictions(force_refresh: bool = False):
         if cached and isinstance(cached, dict) and cached.get("status") == "OK":
             return _sanitize_for_json(cached)
         return {"status": "ERROR", "message": f"Prediction service error: {str(e)}"}
+
+
+@app.post("/api/nifty/premarket-forecast/lock")
+def lock_premarket_forecast():
+    """Explicitly calculates the official pre-market forecast, locks it for today's session, and dispatches the Telegram Bulletin."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    try:
+        data = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
+        bulletin_sent = nifty_analytics_engine.dispatch_premarket_prediction_telegram_alert(data)
+        return {
+            "status": "OK",
+            "message": "Pre-market forecast computed, locked, and Telegram bulletin dispatched.",
+            "telegram_sent": bulletin_sent,
+            "prediction_date": data.get("prediction_date"),
+            "premarket_locked_at_ist": data.get("premarket_locked_at_ist"),
+            "t1_verdict": data.get("t1_forecast", {}).get("verdict"),
+            "t5_verdict": data.get("t5_forecast", {}).get("verdict")
+        }
+    except Exception as e:
+        logger.error(f"Error locking pre-market forecast: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
+@app.post("/api/nifty/eod-evaluation/run")
+def run_eod_prediction_evaluation():
+    """Runs the 03:45 PM EOD prediction outcome evaluation, grades direction and cones, updates learning weights, and sends Telegram review."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    try:
+        res = nifty_analytics_engine.evaluate_and_grade_eod_predictions()
+        return _sanitize_for_json(res)
+    except Exception as e:
+        logger.error(f"Error running EOD prediction evaluation: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
 
 
 @app.get("/api/nifty/us-market-intelligence")
