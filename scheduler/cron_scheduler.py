@@ -25,6 +25,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from core.data_quality import IST, now_ist, format_ist
 from core.market_calendar import NSEMarketCalendar
+from core import config
 from core.config import (
     SCHEDULE_MORNING_HOUR, SCHEDULE_MORNING_MINUTE,
     SCHEDULE_AFTERNOON_HOUR, SCHEDULE_AFTERNOON_MINUTE

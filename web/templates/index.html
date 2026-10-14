@@ -2459,7 +2459,7 @@
           <div class="flex flex-wrap items-center gap-2">
             <div class="flex items-center gap-1.5 bg-slate-950/90 border border-slate-800 rounded-xl px-2.5 py-1.5">
               <span class="text-[10px] text-slate-400 uppercase font-mono">Strategy:</span>
-              <input type="text" id="strat-name-input" value="Bull Call Spread" placeholder="Strategy Name" class="bg-transparent text-xs font-bold text-white font-mono focus:outline-none w-36 sm:w-44 border-b border-cyan-500/40 pb-0.5">
+              <input type="text" id="strat-name-input" value="" oninput="this.dataset.userEdited = this.value.trim() ? 'true' : ''" placeholder="Strategy Name (e.g. Short Straddle)" class="bg-transparent text-xs font-bold text-white font-mono focus:outline-none w-36 sm:w-48 border-b border-cyan-500/40 pb-0.5">
             </div>
 
             <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800">
@@ -2684,7 +2684,7 @@
             <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Options Strategies Tracker & Performance Analytics</h3>
             <p class="text-xs text-slate-400">Track complete strategy structures with live MTM valuation, Greeks, strategy-level square-off, and cloud vault backups.</p>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <button onclick="triggerAutoDeployOptions()" id="btn-auto-deploy-options" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black text-xs font-mono font-extrabold flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition cursor-pointer">
               <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
               <span>🤖 Run ML Auto-Trader</span>
@@ -2692,6 +2692,10 @@
             <button onclick="loadOptionsPortfolioDesk()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold flex items-center gap-1.5 border border-slate-700 transition">
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
               <span>Refresh Portfolio</span>
+            </button>
+            <button onclick="resetOptionsPortfolio()" id="btn-reset-options-portfolio" class="px-3 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-rose-300 text-xs font-mono font-bold flex items-center gap-1.5 border border-rose-800/60 transition" title="Reset Options Portfolio to ₹0 and clear all strategies">
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+              <span>Reset Portfolio</span>
             </button>
           </div>
         </div>
@@ -6145,7 +6149,10 @@
     function clearStrategyBuilderLegs() {
       strategyLegs = [];
       const nameInput = document.getElementById('strat-name-input');
-      if (nameInput) nameInput.value = '';
+      if (nameInput) {
+        nameInput.value = '';
+        delete nameInput.dataset.userEdited;
+      }
       renderStrategyLegs();
       recalculateStrategyMetrics();
       drawPayoffGraph();
@@ -6502,8 +6509,69 @@
       drawPayoffGraph();
     }
 
+    function detectStrategyNameFromLegs(legs) {
+      if (!legs || legs.length === 0) return "";
+      const buyLegs = legs.filter(l => l.action === 'BUY');
+      const sellLegs = legs.filter(l => l.action === 'SELL');
+      const ceLegs = legs.filter(l => l.type === 'CE');
+      const peLegs = legs.filter(l => l.type === 'PE');
+
+      if (legs.length === 1) {
+        const l = legs[0];
+        return `${l.action === 'BUY' ? 'Long' : 'Short'} ${l.strike} ${l.type}`;
+      }
+
+      if (legs.length === 2) {
+        if (legs[0].strike === legs[1].strike && ceLegs.length === 1 && peLegs.length === 1) {
+          if (sellLegs.length === 2) return `Short Straddle ${legs[0].strike}`;
+          if (buyLegs.length === 2) return `Long Straddle ${legs[0].strike}`;
+        }
+        if (ceLegs.length === 1 && peLegs.length === 1) {
+          if (sellLegs.length === 2) return `Short Strangle (${peLegs[0].strike} PE / ${ceLegs[0].strike} CE)`;
+          if (buyLegs.length === 2) return `Long Strangle (${peLegs[0].strike} PE / ${ceLegs[0].strike} CE)`;
+          if (buyLegs[0].type === 'CE' && sellLegs[0].type === 'PE') return `Bullish Risk Reversal`;
+          if (buyLegs[0].type === 'PE' && sellLegs[0].type === 'CE') return `Bearish Risk Reversal`;
+        }
+        if (ceLegs.length === 2) {
+          const buyCe = ceLegs.find(l => l.action === 'BUY');
+          const sellCe = ceLegs.find(l => l.action === 'SELL');
+          if (buyCe && sellCe) {
+            return buyCe.strike < sellCe.strike ? "Bull Call Spread" : "Bear Call Credit Spread";
+          }
+        }
+        if (peLegs.length === 2) {
+          const buyPe = peLegs.find(l => l.action === 'BUY');
+          const sellPe = peLegs.find(l => l.action === 'SELL');
+          if (buyPe && sellPe) {
+            return buyPe.strike > sellPe.strike ? "Bear Put Spread" : "Bull Put Credit Spread";
+          }
+        }
+      }
+
+      if (legs.length === 4) {
+        if (ceLegs.length === 2 && peLegs.length === 2 && buyLegs.length === 2 && sellLegs.length === 2) {
+          const sellCe = ceLegs.find(l => l.action === 'SELL');
+          const sellPe = peLegs.find(l => l.action === 'SELL');
+          if (sellCe && sellPe && sellCe.strike === sellPe.strike) {
+            return `Iron Butterfly ${sellCe.strike}`;
+          }
+          return "Iron Condor";
+        }
+      }
+
+      if (legs.length === 3) {
+        if (sellLegs.length === 2 && buyLegs.length === 1) return "Jade Lizard";
+      }
+
+      return "Custom Options Strategy";
+    }
+
     function recalculateStrategyMetrics() {
       if (strategyLegs.length === 0) {
+        const nameInput = document.getElementById('strat-name-input');
+        if (nameInput && !nameInput.dataset.userEdited) {
+          nameInput.value = '';
+        }
         document.getElementById('strat-metric-maxprofit').innerText = '--';
         document.getElementById('strat-metric-maxloss').innerText = '--';
         document.getElementById('strat-metric-rr').innerText = '--';
@@ -6515,6 +6583,14 @@
         document.getElementById('strat-metric-greeks-sub').innerText = 'Γ: 0 | V: ₹0';
         latestPayoffCurveData = null;
         return;
+      }
+
+      const nameInput = document.getElementById('strat-name-input');
+      if (nameInput && (!nameInput.value.trim() || !nameInput.dataset.userEdited)) {
+        const detected = detectStrategyNameFromLegs(strategyLegs);
+        if (detected) {
+          nameInput.value = detected;
+        }
       }
 
       const active = (selectedOptionsExpiryType === 'monthly')
@@ -6943,12 +7019,47 @@
       }
 
       try {
+        let netPrem = 0;
+        strategyLegs.forEach(l => {
+          const sign = l.action === 'SELL' ? 1 : -1;
+          netPrem += sign * l.price * l.qty;
+        });
+
+        // Est. Margin Proxy
+        const totalShortLots = strategyLegs.filter(l => l.action === 'SELL').reduce((acc, l) => acc + (l.qty / 75), 0);
+        const totalLongLots = strategyLegs.filter(l => l.action === 'BUY').reduce((acc, l) => acc + (l.qty / 75), 0);
+        let estMargin = 0;
+        if (totalShortLots > 0) {
+          const unhedgedLots = Math.max(0, totalShortLots - totalLongLots);
+          const hedgedLots = Math.min(totalShortLots, totalLongLots);
+          estMargin = (unhedgedLots * 128000) + (hedgedLots * 38000);
+        } else {
+          estMargin = Math.max(0, -netPrem);
+        }
+
+        const maxProfVal = latestPayoffCurveData ? latestPayoffCurveData.maxPnl : (netPrem > 0 ? netPrem : 0);
+        const maxLossVal = latestPayoffCurveData ? Math.abs(latestPayoffCurveData.minPnl) : 0;
+        const targetPnlVal = netPrem > 0 ? (netPrem * 0.5) : (estMargin > 0 ? estMargin * 0.02 : 2500);
+        const slPnlVal = netPrem > 0 ? (netPrem * 1.0) : (estMargin > 0 ? estMargin * 0.03 : 3000);
+        const popText = document.getElementById('strat-metric-pop')?.innerText || '50%';
+        const popVal = parseFloat(popText) || 50.0;
+        const rrText = document.getElementById('strat-metric-rr')?.innerText || '--';
+
         const payload = {
           strategy_name: stratName,
           symbol: "NIFTY",
           expiry_date: expiryDate,
           expiry_type: selectedOptionsExpiryType.toUpperCase(),
           spot_at_entry: spot,
+          net_premium: netPrem,
+          max_profit: maxProfVal,
+          max_loss: maxLossVal,
+          breakevens: latestPayoffCurveData?.breakevens || [],
+          risk_reward: rrText,
+          est_margin: estMargin,
+          pop_pct: popVal,
+          target_pnl: targetPnlVal,
+          stoploss_pnl: slPnlVal,
           legs: strategyLegs.map(l => ({
             strike: Number(l.strike),
             type: l.type,
@@ -7164,9 +7275,9 @@
               <tr class="hover:bg-slate-800/30 transition">
                 <td class="p-2 font-bold text-white">${st.strategy_name} <span class="text-[10px] text-slate-500">(${st.strategy_id})</span></td>
                 <td class="p-2 text-slate-300">${st.expiry_date || '--'}</td>
-                <td class="p-2 text-slate-400">${(st.entry_time || '').slice(0, 16)}</td>
-                <td class="p-2 text-slate-400">${(st.exit_time || '').slice(0, 16)}</td>
-                <td class="p-2 text-amber-300 font-bold">${st.exit_spot || '--'}</td>
+                <td class="p-2 text-slate-400">${(st.entry_time || st.created_at || '').slice(0, 16) || '--'}</td>
+                <td class="p-2 text-slate-400">${(st.exit_time || st.closed_at || '').slice(0, 16) || '--'}</td>
+                <td class="p-2 text-amber-300 font-bold">${st.exit_spot || st.spot_at_exit || '--'}</td>
                 <td class="p-2 font-extrabold ${pnlCls}">${isProfit ? '+' : ''}₹${Number(st.realized_pnl || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                 <td class="p-2 font-bold ${pnlCls}">${(st.roi_pct || 0) >= 0 ? '+' : ''}${Number(st.roi_pct || 0).toFixed(2)}%</td>
                 <td class="p-2 text-right">
@@ -7176,6 +7287,30 @@
             `;
           }).join('');
         }
+      }
+    }
+
+    async function resetOptionsPortfolio() {
+      if (!confirm("Are you sure you want to RESET the Options Portfolio to ₹0.00?\n\nThis will clear all active strategies, clear closed trade history, and reset realized PnL back to zero in the database and cloud vault.")) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/options/reset-portfolio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'OK') {
+          showToast("Options Portfolio reset to ₹0 realized PnL and 0 strategies!", "success");
+          await loadOptionsPortfolioDesk();
+          await loadAllEquityCurves();
+        } else {
+          showToast(`Reset failed: ${data.detail || data.message || 'Server error'}`, "error");
+        }
+      } catch (err) {
+        console.error("Reset options portfolio error:", err);
+        showToast(`Reset failed: ${err.message}`, "error");
       }
     }
 

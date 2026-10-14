@@ -728,6 +728,14 @@ def get_options_portfolio_endpoint():
     return nifty_analytics_engine.get_options_portfolio()
 
 
+@app.post("/api/options/reset-portfolio")
+def reset_options_portfolio_endpoint():
+    """Resets the Options Trading Portfolio: clears all active and closed strategies, wipes realized PnL to ₹0, and syncs cloud vault."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    return nifty_analytics_engine.reset_options_portfolio()
+
+
+
 @app.post("/api/options/deploy-strategy")
 def deploy_options_strategy_endpoint(req: DeployStrategyRequest):
     """Deploys a multi-leg options strategy into the Options Trading Portfolio and syncs to Telegram Cloud Vault."""

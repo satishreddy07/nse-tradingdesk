@@ -3750,6 +3750,20 @@ class NiftyAnalyticsEngine:
         market_condition = str(data.get("market_condition") or "")
         ai_rationale = str(data.get("ai_rationale") or "").strip()
 
+        # Auto-derive calculated metrics if not supplied by caller
+        if net_premium == 0.0 and legs:
+            prem = sum(((-1 if l.get("action") == "BUY" else 1) * float(l.get("entry_price", l.get("price", 0.0)))) * int(l.get("qty", 75)) for l in legs)
+            net_premium = round(prem, 2)
+
+        if target_pnl == 0.0:
+            target_pnl = round(0.50 * (net_premium if net_premium > 0 else abs(net_premium)), 2)
+
+        if stoploss_pnl == 0.0:
+            stoploss_pnl = round(-1.0 * (net_premium if net_premium > 0 else 0.5 * abs(net_premium)), 2)
+
+        if est_margin == 0.0:
+            est_margin = round(max(35000.0, abs(net_premium) + 20000.0), 2)
+
         ts_now = format_ist()
         strat_id = f"OPT-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100, 999)}"
 
@@ -3844,13 +3858,24 @@ class NiftyAnalyticsEngine:
         monthly_chain = opt_chain_data.get("monthly", {}).get("strikes", []) or opt_chain_data.get("monthly", {}).get("chain", [])
         spot_price = opt_chain_data.get("spot_price", d.get("spot_at_entry", 0.0))
 
-        ltp_map = {}
-        for r in (weekly_chain + monthly_chain):
+        weekly_ltp_map = {}
+        monthly_ltp_map = {}
+        for r in weekly_chain:
             stk = r.get("strike")
             if stk:
-                if stk not in ltp_map: ltp_map[stk] = {}
-                if "ce_ltp" in r: ltp_map[stk]["CE"] = r["ce_ltp"]
-                if "pe_ltp" in r: ltp_map[stk]["PE"] = r["pe_ltp"]
+                if stk not in weekly_ltp_map: weekly_ltp_map[stk] = {}
+                if "ce_ltp" in r: weekly_ltp_map[stk]["CE"] = float(r["ce_ltp"])
+                if "pe_ltp" in r: weekly_ltp_map[stk]["PE"] = float(r["pe_ltp"])
+        for r in monthly_chain:
+            stk = r.get("strike")
+            if stk:
+                if stk not in monthly_ltp_map: monthly_ltp_map[stk] = {}
+                if "ce_ltp" in r: monthly_ltp_map[stk]["CE"] = float(r["ce_ltp"])
+                if "pe_ltp" in r: monthly_ltp_map[stk]["PE"] = float(r["pe_ltp"])
+
+        is_monthly = (d.get("expiry_type") == "MONTHLY")
+        active_map = monthly_ltp_map if is_monthly else weekly_ltp_map
+        fallback_map = weekly_ltp_map if is_monthly else monthly_ltp_map
 
         legs = json.loads(d.get("legs_json") or "[]")
         total_pnl = 0.0
@@ -3860,8 +3885,11 @@ class NiftyAnalyticsEngine:
             opt_type = leg.get("type", "CE")
             action = leg.get("action", "BUY")
             qty = leg.get("qty", 75)
-            entry_px = leg.get("entry_price", leg.get("price", 0.0))
-            cmp = ltp_map.get(stk, {}).get(opt_type, entry_px)
+            entry_px = float(leg.get("entry_price", leg.get("price", 0.0)))
+            cmp_val = active_map.get(stk, {}).get(opt_type)
+            if cmp_val is None:
+                cmp_val = fallback_map.get(stk, {}).get(opt_type, entry_px)
+            cmp = float(cmp_val)
             leg_pnl = ((cmp - entry_px) if action == "BUY" else (entry_px - cmp)) * qty
             total_pnl += leg_pnl
             closed_legs.append({
@@ -3922,6 +3950,24 @@ class NiftyAnalyticsEngine:
             "message": f"Strategy '{d.get('strategy_name')}' closed with PnL ₹{total_pnl:,.2f}!"
         }
 
+    def reset_options_portfolio(self) -> Dict[str, Any]:
+        """
+        Resets the entire Options Trading Portfolio to zero:
+        deletes all active and closed strategies from `options_strategies` table in SQLite,
+        invalidates equity curve cache, and syncs master cloud vault.
+        """
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                conn.execute("DELETE FROM options_strategies")
+                conn.commit()
+        self.invalidate_equity_curves_cache()
+        telegram_vault.sync_master_vault_async(note="Options Portfolio Reset to ₹0")
+        return {
+            "status": "SUCCESS",
+            "message": "Options Trading Portfolio reset to zero.",
+            "timestamp": format_ist()
+        }
+
     def get_options_portfolio(self) -> Dict[str, Any]:
         """
         Retrieves all active and closed option strategies from SQLite.
@@ -3944,16 +3990,20 @@ class NiftyAnalyticsEngine:
             monthly_chain = []
             spot_price = 0.0
 
-        ltp_map = {}
-        for row in (weekly_chain + monthly_chain):
+        weekly_ltp_map = {}
+        monthly_ltp_map = {}
+        for row in weekly_chain:
             stk = row.get("strike")
             if stk:
-                if stk not in ltp_map:
-                    ltp_map[stk] = {}
-                if "ce_ltp" in row:
-                    ltp_map[stk]["CE"] = row["ce_ltp"]
-                if "pe_ltp" in row:
-                    ltp_map[stk]["PE"] = row["pe_ltp"]
+                if stk not in weekly_ltp_map: weekly_ltp_map[stk] = {}
+                if "ce_ltp" in row: weekly_ltp_map[stk]["CE"] = float(row["ce_ltp"])
+                if "pe_ltp" in row: weekly_ltp_map[stk]["PE"] = float(row["pe_ltp"])
+        for row in monthly_chain:
+            stk = row.get("strike")
+            if stk:
+                if stk not in monthly_ltp_map: monthly_ltp_map[stk] = {}
+                if "ce_ltp" in row: monthly_ltp_map[stk]["CE"] = float(row["ce_ltp"])
+                if "pe_ltp" in row: monthly_ltp_map[stk]["PE"] = float(row["pe_ltp"])
 
         active_strategies = []
         closed_strategies = []
@@ -3969,6 +4019,10 @@ class NiftyAnalyticsEngine:
             legs = json.loads(d.get("legs_json") or "[]")
             is_active = (d.get("status") == "ACTIVE")
 
+            is_monthly = (d.get("expiry_type") == "MONTHLY")
+            active_map = monthly_ltp_map if is_monthly else weekly_ltp_map
+            fallback_map = weekly_ltp_map if is_monthly else monthly_ltp_map
+
             strat_unrealized = 0.0
             updated_legs = []
             for leg in legs:
@@ -3976,9 +4030,13 @@ class NiftyAnalyticsEngine:
                 opt_type = leg.get("type", "CE")
                 action = leg.get("action", "BUY")
                 qty = leg.get("qty", 75)
-                entry_px = leg.get("entry_price", leg.get("price", 0.0))
+                entry_px = float(leg.get("entry_price", leg.get("price", 0.0)))
 
-                current_px = ltp_map.get(stk, {}).get(opt_type, entry_px)
+                val = active_map.get(stk, {}).get(opt_type)
+                if val is None:
+                    val = fallback_map.get(stk, {}).get(opt_type, entry_px)
+                current_px = float(val)
+
                 leg_pnl = ((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty
                 strat_unrealized += leg_pnl
 
@@ -3986,7 +4044,9 @@ class NiftyAnalyticsEngine:
                     **leg,
                     "entry_price": entry_px,
                     "current_price": round(current_px, 2),
-                    "leg_pnl": round(leg_pnl, 2)
+                    "leg_pnl": round(leg_pnl, 2),
+                    "unrealized_pnl": round(leg_pnl, 2),
+                    "pnl": round(leg_pnl, 2)
                 })
 
             d["legs"] = updated_legs
@@ -3995,15 +4055,16 @@ class NiftyAnalyticsEngine:
             except Exception:
                 d["breakevens_list"] = []
 
+            capital_base = float(d.get("est_margin") or abs(d.get("net_premium", 1000)) or 50000.0)
+
             if is_active:
                 d["unrealized_pnl"] = round(strat_unrealized, 2)
-                capital_base = d.get("est_margin") or abs(d.get("net_premium", 1000)) or 50000.0
                 d["roi_pct"] = round((strat_unrealized / max(1.0, capital_base)) * 100.0, 2)
                 d["current_spot"] = spot_price
                 total_unrealized_pnl += strat_unrealized
                 active_strategies.append(d)
             else:
-                pnl = d.get("realized_pnl", 0.0)
+                pnl = float(d.get("realized_pnl", 0.0))
                 total_realized_pnl += pnl
                 if pnl > 0:
                     wins += 1
@@ -4011,6 +4072,11 @@ class NiftyAnalyticsEngine:
                 elif pnl < 0:
                     losses += 1
                     if pnl < max_loss: max_loss = pnl
+
+                d["entry_time"] = d.get("created_at") or d.get("entry_date") or "--"
+                d["exit_time"] = d.get("closed_at") or d.get("exit_date") or "--"
+                d["exit_spot"] = d.get("spot_at_exit") or d.get("exit_spot") or "--"
+                d["roi_pct"] = round((pnl / max(1.0, capital_base)) * 100.0, 2)
                 closed_strategies.append(d)
 
         base_capital = 200000.0
