@@ -391,6 +391,8 @@ def _intraday_collector_watchdog():
                     from engines.nifty_analytics_engine import nifty_analytics_engine
                     nifty_analytics_engine.auto_gapfill_missed_intraday_slots(interval_mode="30m")
                     active_slot = nifty_analytics_engine._determine_current_slot(dt_now, interval_mode="30m")
+                    if not active_slot:
+                        continue
                     today_str = dt_now.strftime("%Y-%m-%d")
                     snaps = nifty_analytics_engine._get_snapshots_for_date(today_str)
                     existing_slots = {s["slot_time"] for s in snaps}

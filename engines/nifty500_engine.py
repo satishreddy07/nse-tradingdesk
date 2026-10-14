@@ -259,6 +259,12 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
 
         bar_date_str = str(latest_bar["date"])[:10]
         entry_date_str = str(pos.get("entry_date") or "")[:10]
+
+        # PRE-ENTRY DATA GUARD: If latest bar is older than entry date, do not trigger false exits
+        if entry_date_str and bar_date_str < entry_date_str:
+            state_engine.update_position_price(sym, current_price=c, stop_loss=current_sl, highest_price=highest_seen)
+            continue
+
         is_same_entry_day = (bar_date_str == entry_date_str)
         check_low = c if is_same_entry_day else min(l, c)
         check_high = c if is_same_entry_day else max(h, c)

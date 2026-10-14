@@ -1156,6 +1156,16 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
             bar_idx = df.index[-1]
             bar_date_str = str(bar_idx)[:10]
             entry_date_str = str(pos.get("entry_date") or "")[:10]
+
+            # PRE-ENTRY DATA GUARD: If latest bar is older than entry date, do not trigger false exits
+            if entry_date_str and bar_date_str < entry_date_str:
+                state_engine.update_position_price(
+                    sym,
+                    current_price=c,
+                    highest_price=max(float(pos.get("highest_price") or entry_px), c)
+                )
+                continue
+
             is_same_entry_day = (bar_date_str == entry_date_str)
 
             # On the entry day itself, daily Low/High includes 9:15 AM bars BEFORE the trade was opened.

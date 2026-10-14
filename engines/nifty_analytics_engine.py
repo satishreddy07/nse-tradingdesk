@@ -939,6 +939,11 @@ class NiftyAnalyticsEngine:
         else:
             slots_ref = INTRADAY_30M_SLOTS
 
+        first_h, first_m = [int(x) for x in slots_ref[0][0].split(":")]
+        first_sm = first_h * 60 + first_m
+        if mins < (first_sm - 2):
+            return None  # Pre-09:30 market opening buffer; 09:30 slot will be captured at 09:30 AM!
+
         active_label = slots_ref[0][0]
         for slot_code, _ in slots_ref:
             h, m = [int(x) for x in slot_code.split(":")]
@@ -958,12 +963,17 @@ class NiftyAnalyticsEngine:
         snapshots from today (09:30 AM onwards), writes to `intraday_option_snapshots` inside
         `data/swing_trades.db`, and computes "What is Happening Now" & "What Could Happen".
         """
+        dt_now = now_ist()
+        slot_time = slot_override or self._determine_current_slot(dt_now, interval_mode=interval_mode)
+        if not slot_time:
+            logger.info("⏳ Market is within pre-09:30 opening buffer; 09:30 slot capture will commence at 09:30 AM IST.")
+            return self.get_intraday_expiry_dashboard(interval_mode=interval_mode)
+
         oc = self.fetch_and_analyze_option_chain(force_refresh=True)
         if oc.get("status") != "OK":
             return self.get_intraday_expiry_dashboard(interval_mode=interval_mode)
 
         w = oc["weekly"]
-        dt_now = now_ist()
         session_date = dt_now.strftime("%Y-%m-%d")
         nse_ts = w.get("nse_timestamp") or ""
         if len(nse_ts) >= 11:
@@ -971,7 +981,6 @@ class NiftyAnalyticsEngine:
             if parsed_nse_dt:
                 session_date = parsed_nse_dt.strftime("%Y-%m-%d")
 
-        slot_time = slot_override or self._determine_current_slot(dt_now, interval_mode=interval_mode)
         ts_ist = format_ist(dt_now)
 
         spot = float(w["spot_price"])
@@ -1307,7 +1316,10 @@ class NiftyAnalyticsEngine:
         # Automatically gapfill any elapsed slots that were missed
         self.auto_gapfill_missed_intraday_slots(session_date=session_date, interval_mode=interval_mode)
         snaps = self._get_snapshots_for_date(session_date)
-        if not snaps:
+        dt_now = now_ist()
+        is_today = (session_date == dt_now.strftime("%Y-%m-%d"))
+        mins_now = dt_now.hour * 60 + dt_now.minute
+        if not snaps and (not is_today or mins_now >= (9 * 60 + 28)):
             oc = self.fetch_and_analyze_option_chain(force_refresh=False)
             if oc.get("status") == "OK":
                 self.capture_intraday_50min_snapshot(sync_cloud=False, interval_mode=interval_mode)
@@ -1341,7 +1353,8 @@ class NiftyAnalyticsEngine:
             )
 
         snap_by_slot = {s["slot_time"]: s for s in snaps}
-        now_time_str = now_ist().strftime("%H:%M")
+        now_dt = now_ist()
+        now_mins = now_dt.hour * 60 + now_dt.minute
 
         # Fuzzy matching: if exact slot code isn't in DB, check if any snapshot occurred within ±14 minutes
         def _find_nearest_snap(target_code: str):
@@ -1365,11 +1378,15 @@ class NiftyAnalyticsEngine:
 
         schedule_slots = []
         for slot_code, slot_desc in slots_ref:
-            recorded = _find_nearest_snap(slot_code)
+            h, m = [int(x) for x in slot_code.split(":")]
+            sm = h * 60 + m
+            is_due = (not is_today) or (now_mins >= sm - 2)
+            recorded = _find_nearest_snap(slot_code) if is_due else None
+
             schedule_slots.append({
                 "slot_time": slot_code,
                 "description": slot_desc,
-                "status": "CAPTURED" if recorded else ("UPCOMING" if slot_code > now_time_str else "MISSED_OR_PRE_CAPTURE"),
+                "status": "CAPTURED" if (recorded and is_due) else ("UPCOMING" if not is_due else "MISSED_OR_PRE_CAPTURE"),
                 "spot_price": recorded["spot_price"] if recorded else None,
                 "straddle_premium": recorded["straddle_premium"] if recorded else None,
                 "near_atm_pcr": recorded["near_atm_pcr"] if recorded else None,
@@ -4379,6 +4396,9 @@ class NiftyAnalyticsEngine:
         # Regenerate complete 6-pillar ML predictions & automated AI interpretation
         preds = self.compute_nifty_predictions(force_refresh=force_refresh)
         composite_score = float(preds.get("composite_score") or 0.0)
+        composite_score_t1 = float(preds.get("composite_score_t1") or composite_score)
+        composite_score_t5 = float(preds.get("composite_score_t5") or composite_score)
+        t1_verdict = str(preds.get("t1_forecast", {}).get("verdict") or "").upper()
         t5_verdict = str(preds.get("t5_forecast", {}).get("verdict") or "").upper()
         w_iv = float(weekly_chain.get("volatility_and_gex", {}).get("atm_iv") or 12.0)
         m_iv = float(monthly_chain.get("volatility_and_gex", {}).get("atm_iv") or 13.0)
@@ -4395,7 +4415,7 @@ class NiftyAnalyticsEngine:
         has_naked_risk = any(w in ai_avoid_str for w in ["naked", "unhedged", "decay", "resistance", "overbought", "support", "oversold"])
         has_divergence = bool(ai_conflict_str and any(w in ai_conflict_str for w in ["divergence", "conflict", "opposing", "caution", "mixed"]))
 
-        def refine_candidates_with_ai(c_list: List[str]) -> List[str]:
+        def refine_candidates_with_ai(c_list: List[str], bias: str = "NEUTRAL") -> List[str]:
             refined: List[str] = []
             for c in c_list:
                 if c == "LONG_CALL" and (has_naked_risk or has_divergence):
@@ -4410,9 +4430,14 @@ class NiftyAnalyticsEngine:
                     if c not in refined:
                         refined.append(c)
 
-            # If AI explicitly recommends a strategy type, prioritize it
+            # If AI explicitly recommends a strategy type, only prioritize or add if directionally compatible
             for known_strat in ["BULL_CALL_SPREAD", "BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "BEAR_PUT_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY", "LONG_STRADDLE", "LONG_STRANGLE"]:
                 if known_strat.replace("_", " ") in ai_rec_action:
+                    # Direction compatibility check:
+                    if bias == "BEARISH" and ("BULL" in known_strat or known_strat == "LONG_CALL"):
+                        continue  # Never inject bullish trade when regime is bearish!
+                    if bias == "BULLISH" and ("BEAR" in known_strat or known_strat == "LONG_PUT"):
+                        continue  # Never inject bearish trade when regime is bullish!
                     if known_strat in refined and refined[0] != known_strat:
                         refined.remove(known_strat)
                         refined.insert(0, known_strat)
@@ -4456,52 +4481,35 @@ class NiftyAnalyticsEngine:
                     if st_code.replace("_", " ") in s_name or st_code in s_name:
                         existing_strat_types.add(st_code)
 
-            if m_upper == "WEEKLY":
-                strikes_source = weekly_strikes
-                atm_source = weekly_atm
-                expiry_source = weekly_expiry
-                expiry_type_lbl = "WEEKLY"
+            if m_upper in ("WEEKLY", "MONTHLY"):
+                strikes_source = weekly_strikes if m_upper == "WEEKLY" else monthly_strikes
+                atm_source = weekly_atm if m_upper == "WEEKLY" else monthly_atm
+                expiry_source = weekly_expiry if m_upper == "WEEKLY" else monthly_expiry
+                expiry_type_lbl = m_upper
+                target_iv = w_iv if m_upper == "WEEKLY" else m_iv
+                high_iv_thresh = 14.5 if m_upper == "WEEKLY" else 15.0
 
-                if composite_score >= 20.0 or "STRONG BULLISH" in t5_verdict:
-                    condition = "STRONG_BULLISH"
-                    candidates = ["BULL_CALL_SPREAD", "BULL_PUT_SPREAD"]
-                elif composite_score >= 6.0 or "BULLISH" in t5_verdict:
-                    condition = "MILD_BULLISH"
-                    candidates = ["BULL_PUT_SPREAD", "BULL_CALL_SPREAD"]
-                elif composite_score <= -20.0 or "STRONG BEARISH" in t5_verdict:
-                    condition = "STRONG_BEARISH"
-                    candidates = ["BEAR_PUT_SPREAD", "BEAR_CALL_SPREAD"]
-                elif composite_score <= -6.0 or "BEARISH" in t5_verdict:
-                    condition = "MILD_BEARISH"
-                    candidates = ["BEAR_CALL_SPREAD", "BEAR_PUT_SPREAD"]
-                else:
-                    if w_iv >= 14.5:
-                        condition = "NEUTRAL_HIGH_VOL"
-                        candidates = ["LONG_STRADDLE", "LONG_STRANGLE"]
+                # WEEKLY & MONTHLY Horizon MUST strictly adhere to the structural T+5 Weekly Forecast!
+                # Tactical 1-day noise or intraday bounce must never flip a multi-day/weekly trade against the weekly verdict.
+                is_weekly_bearish = "BEARISH" in t5_verdict or composite_score_t5 <= -6.0
+                is_weekly_bullish = "BULLISH" in t5_verdict or composite_score_t5 >= 6.0
+
+                if is_weekly_bearish and not is_weekly_bullish:
+                    if composite_score_t5 <= -20.0 or "STRONG BEARISH" in t5_verdict:
+                        condition = "STRONG_BEARISH"
+                        candidates = ["BEAR_PUT_SPREAD", "BEAR_CALL_SPREAD"]
                     else:
-                        condition = "NEUTRAL_LOW_VOL"
-                        candidates = ["IRON_CONDOR", "IRON_BUTTERFLY"]
-
-            elif m_upper == "MONTHLY":
-                strikes_source = monthly_strikes
-                atm_source = monthly_atm
-                expiry_source = monthly_expiry
-                expiry_type_lbl = "MONTHLY"
-
-                if composite_score >= 20.0 or "STRONG BULLISH" in t5_verdict:
-                    condition = "STRONG_BULLISH"
-                    candidates = ["BULL_CALL_SPREAD", "BULL_PUT_SPREAD"]
-                elif composite_score >= 6.0 or "BULLISH" in t5_verdict:
-                    condition = "MILD_BULLISH"
-                    candidates = ["BULL_PUT_SPREAD", "BULL_CALL_SPREAD"]
-                elif composite_score <= -20.0 or "STRONG BEARISH" in t5_verdict:
-                    condition = "STRONG_BEARISH"
-                    candidates = ["BEAR_PUT_SPREAD", "BEAR_CALL_SPREAD"]
-                elif composite_score <= -6.0 or "BEARISH" in t5_verdict:
-                    condition = "MILD_BEARISH"
-                    candidates = ["BEAR_CALL_SPREAD", "BEAR_PUT_SPREAD"]
+                        condition = "MILD_BEARISH"
+                        candidates = ["BEAR_CALL_SPREAD", "BEAR_PUT_SPREAD"]
+                elif is_weekly_bullish and not is_weekly_bearish:
+                    if composite_score_t5 >= 20.0 or "STRONG BULLISH" in t5_verdict:
+                        condition = "STRONG_BULLISH"
+                        candidates = ["BULL_CALL_SPREAD", "BULL_PUT_SPREAD"]
+                    else:
+                        condition = "MILD_BULLISH"
+                        candidates = ["BULL_PUT_SPREAD", "BULL_CALL_SPREAD"]
                 else:
-                    if m_iv >= 15.0:
+                    if target_iv >= high_iv_thresh:
                         condition = "NEUTRAL_HIGH_VOL"
                         candidates = ["LONG_STRADDLE", "LONG_STRANGLE"]
                     else:
@@ -4533,7 +4541,8 @@ class NiftyAnalyticsEngine:
                     condition = "TIGHT_RANGE_LOW_VOL"
                     candidates = ["IRON_CONDOR", "IRON_BUTTERFLY"]
 
-            candidates = refine_candidates_with_ai(candidates)
+            strat_bias = "BEARISH" if "BEAR" in condition else ("BULLISH" if "BULL" in condition else "NEUTRAL")
+            candidates = refine_candidates_with_ai(candidates, bias=strat_bias)
             viable_candidates = [c for c in candidates if c not in existing_strat_types]
             if not viable_candidates:
                 skipped_list.append({
@@ -4634,13 +4643,20 @@ class NiftyAnalyticsEngine:
             strat_name = d.get("strategy_name", "")
             target_pnl = float(d.get("target_pnl") or 0.0)
             stoploss_pnl = float(d.get("stoploss_pnl") or 0.0)
-            trailing_stop_pnl = float(d.get("trailing_stop_pnl") if d.get("trailing_stop_pnl") is not None else stoploss_pnl)
-            highest_pnl = float(d.get("highest_pnl_reached") or 0.0)
             trailing_status = str(d.get("trailing_status") or "INACTIVE")
+            # If trailing status is INACTIVE, stop-loss is the initial stoploss_pnl
+            if trailing_status == "INACTIVE":
+                trailing_stop_pnl = stoploss_pnl
+            else:
+                trailing_stop_pnl = float(d.get("trailing_stop_pnl") if d.get("trailing_stop_pnl") is not None else stoploss_pnl)
+            highest_pnl = float(d.get("highest_pnl_reached") or 0.0)
             mode = str(d.get("auto_trade_mode") or "MANUAL").upper()
 
             live_info = active_strats.get(strat_id)
-            unrealized_pnl = float(live_info.get("unrealized_pnl", 0.0)) if live_info else 0.0
+            if not live_info:
+                # Live quote data not available in active_strats for this strategy; cannot evaluate stops/targets
+                continue
+            unrealized_pnl = float(live_info.get("unrealized_pnl", 0.0))
 
             # Dynamic Multi-Tier Trailing Stop-Loss calculation
             updated_highest = max(highest_pnl, unrealized_pnl)
@@ -4687,7 +4703,7 @@ class NiftyAnalyticsEngine:
             exit_reason = None
             if target_pnl > 0 and unrealized_pnl >= target_pnl:
                 exit_reason = f"TARGET_REACHED (+₹{unrealized_pnl:,.0f} >= Target ₹{target_pnl:,.0f})"
-            elif new_trail_sl > stoploss_pnl and unrealized_pnl <= new_trail_sl:
+            elif new_status != "INACTIVE" and new_trail_sl > stoploss_pnl and unrealized_pnl <= new_trail_sl:
                 # Trailing stop hit (protects locked profits or breakeven)
                 exit_reason = f"TRAILING_STOP_HIT (PnL: {'+' if unrealized_pnl >= 0 else ''}₹{unrealized_pnl:,.0f} <= Trailed SL ₹{new_trail_sl:,.0f} | Peak: +₹{updated_highest:,.0f})"
             elif stoploss_pnl < 0 and unrealized_pnl <= stoploss_pnl:

@@ -86,9 +86,12 @@ def test_smart_ai_consensus_filtering_and_rationale_persistence():
     2. Persists ai_rationale in the SQLite database options_strategies record.
     3. Respects maximum 2 active strategies and diversity constraint.
     """
+    saved_dicts = []
     with state_engine._lock:
         with state_engine._get_connection() as conn:
-            conn.execute("DELETE FROM options_strategies WHERE status = 'ACTIVE'")
+            saved_rows = conn.execute("SELECT * FROM options_strategies WHERE auto_trade_mode = 'INTRADAY'").fetchall()
+            saved_dicts = [dict(r) for r in saved_rows]
+            conn.execute("DELETE FROM options_strategies WHERE auto_trade_mode = 'INTRADAY'")
             conn.commit()
 
     mock_preds = {
@@ -135,30 +138,41 @@ def test_smart_ai_consensus_filtering_and_rationale_persistence():
         }
     }
 
-    with patch.object(nifty_analytics_engine, "compute_nifty_predictions", return_value=mock_preds) as mock_compute:
-        with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=mock_opt_chain) as mock_chain:
-            with patch.object(nifty_analytics_engine, "get_intraday_expiry_dashboard", return_value=mock_intraday):
-                # Trigger auto deployment for INTRADAY
-                res = nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["INTRADAY"], force_refresh=True)
-                assert res["status"] == "OK"
-                assert res["deployed_count"] >= 1
-                mock_compute.assert_called_once_with(force_refresh=True)
-                mock_chain.assert_called_once_with(force_refresh=True)
+    try:
+        with patch.object(nifty_analytics_engine, "compute_nifty_predictions", return_value=mock_preds) as mock_compute:
+            with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=mock_opt_chain) as mock_chain:
+                with patch.object(nifty_analytics_engine, "get_intraday_expiry_dashboard", return_value=mock_intraday):
+                    # Trigger auto deployment for INTRADAY
+                    res = nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["INTRADAY"], force_refresh=True)
+                    assert res["status"] == "OK"
+                    assert res["deployed_count"] >= 1
+                    mock_compute.assert_called_once_with(force_refresh=True)
+                    mock_chain.assert_called_once_with(force_refresh=True)
 
-                # Verify deployed strategies do NOT contain unhedged LONG_CALL (substituted due to AI caution)
-                deployed_types = [d["strategy_type"] for d in res["deployed"]]
-                assert "LONG_CALL" not in deployed_types
-                assert any("SPREAD" in t for t in deployed_types)
+                    # Verify deployed strategies do NOT contain unhedged LONG_CALL (substituted due to AI caution)
+                    deployed_types = [d["strategy_type"] for d in res["deployed"]]
+                    assert "LONG_CALL" not in deployed_types
+                    assert any("SPREAD" in t for t in deployed_types)
 
-                # Verify ai_rationale is in deployment results
-                assert any(d.get("ai_rationale") for d in res["deployed"])
+                    # Verify ai_rationale is in deployment results
+                    assert any(d.get("ai_rationale") for d in res["deployed"])
 
-                # Verify ai_rationale persisted into SQLite table
-                with state_engine._lock:
-                    with state_engine._get_connection() as conn:
-                        rows = conn.execute("SELECT * FROM options_strategies WHERE status = 'ACTIVE'").fetchall()
-                        assert len(rows) >= 1
-                        for r in rows:
-                            d = dict(r)
-                            assert "ai_rationale" in d
-                            assert len(d["ai_rationale"]) > 0
+                    # Verify ai_rationale persisted into SQLite table for newly deployed intraday strategies
+                    with state_engine._lock:
+                        with state_engine._get_connection() as conn:
+                            rows = conn.execute("SELECT * FROM options_strategies WHERE status = 'ACTIVE' AND auto_trade_mode = 'INTRADAY'").fetchall()
+                            assert len(rows) >= 1
+                            for r in rows:
+                                d = dict(r)
+                                assert "ai_rationale" in d
+                                assert len(d["ai_rationale"]) > 0
+    finally:
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                conn.execute("DELETE FROM options_strategies WHERE auto_trade_mode = 'INTRADAY'")
+                for d in saved_dicts:
+                    cols = list(d.keys())
+                    vals = [d[c] for c in cols]
+                    placeholders = ", ".join(["?"] * len(cols))
+                    conn.execute(f"INSERT OR REPLACE INTO options_strategies ({', '.join(cols)}) VALUES ({placeholders})", vals)
+                conn.commit()

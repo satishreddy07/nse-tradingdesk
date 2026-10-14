@@ -49,10 +49,10 @@ def test_trailing_stop_loss_progression():
     - Tier 2: PnL reaches ₹3,200 (>= 75% target) -> Trailed to Lock 50% profit (+₹2,000)
     - Exit: PnL drops to ₹1,900 -> Exited via TRAILING_STOP_HIT protecting +₹2,000 profit!
     """
-    # Clean any dangling active test rows to isolate this test
+    # Clean any dangling test rows to isolate this test without affecting live active strategies
     with state_engine._lock:
         with state_engine._get_connection() as conn:
-            conn.execute("DELETE FROM options_strategies WHERE status = 'ACTIVE'")
+            conn.execute("DELETE FROM options_strategies WHERE strategy_name LIKE 'Test Trailing%'")
             conn.commit()
 
     strat_payload = {
@@ -153,6 +153,8 @@ def test_trailing_stop_loss_progression():
             d = dict(conn.execute("SELECT * FROM options_strategies WHERE strategy_id = ?", (strat_id,)).fetchone())
             assert d["status"] == "CLOSED"
             assert "TRAILING_STOP_HIT" in d["exit_reason"]
+            conn.execute("DELETE FROM options_strategies WHERE strategy_name LIKE 'Test Trailing%'")
+            conn.commit()
 
 
 def test_safe_yfinance_graceful_fallback():
