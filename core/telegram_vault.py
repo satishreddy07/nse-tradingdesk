@@ -560,11 +560,11 @@ class TelegramVaultManager:
         if not DB_PATH.exists() or stats.get("stocks_count", 0) < 50:
             needs_restore = True
             reason = "Local Master File missing or empty"
-        elif cloud_fid and (cloud_active > local_active or cloud_closed > local_closed):
+        elif cloud_fid and cloud_fid != local_fid and local_active == 0 and cloud_active > 0:
             needs_restore = True
-            reason = f"Telegram Cloud has more trades ({cloud_active} active / {cloud_closed} closed vs local {local_active} / {local_closed})"
-        elif cloud_fid and cloud_fid != local_fid and local_active <= cloud_active:
-            if not local_ts or (cloud_ts and cloud_ts[:19] >= local_ts[:19]):
+            reason = f"Cold boot recovery: Telegram Cloud has {cloud_active} active trades vs 0 local"
+        elif cloud_fid and cloud_fid != local_fid and local_active <= cloud_active and not local_last:
+            if not local_ts or (cloud_ts and cloud_ts[:19] > local_ts[:19]):
                 needs_restore = True
                 reason = f"Telegram Cloud has newer Master Vault (Cloud: {cloud_ts} vs Local: {local_ts or 'None'})"
 

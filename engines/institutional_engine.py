@@ -1148,6 +1148,14 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
             if df is None or df.empty:
                 continue
 
+            entry_px = float(pos["entry_price"])
+            sl = float(pos["stop_loss"])
+            orig_sl = float(pos.get("original_stop_loss") or sl)
+            t1 = float(pos["target"])
+            t2 = float(pos.get("target_2") or (entry_px + 3.0 * (entry_px - orig_sl)))
+            qty = int(pos["quantity"])
+            t1_hit = bool(pos.get("t1_hit", 0))
+
             latest_bar = df.iloc[-1]
             c = float(latest_bar["Close"])
             h = float(latest_bar["High"])
@@ -1174,14 +1182,6 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
             # never be used to falsely stop out active positions trading well in profit.
             check_low = c
             check_high = max(h, c)
-
-            entry_px = float(pos["entry_price"])
-            sl = float(pos["stop_loss"])
-            orig_sl = float(pos.get("original_stop_loss") or sl)
-            t1 = float(pos["target"])
-            t2 = float(pos.get("target_2") or (entry_px + 3.0 * (entry_px - orig_sl)))
-            qty = int(pos["quantity"])
-            t1_hit = bool(pos.get("t1_hit", 0))
 
             # Always update MTM price so dashboard reflects latest price
             if not can_trade:
