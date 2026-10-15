@@ -591,7 +591,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "rationale": f"Sell CE @ 1-Sigma strike with {int(sl_pct * 100)}% premium stop-loss. Price-triggered 1-time re-entry when premium drops to <= P0."
             }
 
-        elif "MILD" in v_upper and "BULL" in v_upper:
+        elif ("MILD" in v_upper or "MODERATE" in v_upper) and "BULL" in v_upper:
             regime = "MILD_BULLISH"
             strategy = {
                 "name": f"{horizon.capitalize()} Mild Bullish Put Short",
@@ -601,7 +601,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "rationale": f"Sell PE @ 1-Sigma strike with {int(sl_pct * 100)}% premium stop-loss. Price-triggered 1-time re-entry when premium drops to <= P0."
             }
 
-        elif "MILD" in v_upper and "BEAR" in v_upper:
+        elif ("MILD" in v_upper or "MODERATE" in v_upper) and "BEAR" in v_upper:
             regime = "MILD_BEARISH"
             strategy = {
                 "name": f"{horizon.capitalize()} Mild Bearish Call Short",
@@ -717,6 +717,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
 
         return {
             "status": "OK",
+            "decision_source": f"WEEKLY_PREDICTION_MODEL_T5 ({horizon.capitalize()})",
             "horizon": horizon,
             "specified_sl_pct": default_sl,
             "sessions_evaluated": len(sessions_data),
@@ -920,6 +921,92 @@ class WeeklyMonthlyOptionsStrategyEngine:
         insights.append(f"Expected move-based 1-Sigma strike selection placed short wings safely outside historical weekly/monthly distribution boundaries.")
         return insights
 
+    @classmethod
+    def get_weekly_prediction_model_regime(cls, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Derives market regime for Weekly and Monthly strategies strictly from the 
+        WEEKLY PREDICTION MODEL (T+5 Structural Multi-Day Framework):
+        - Evaluates structural moving averages (EMA50, EMA200)
+        - Internal constituent medium-term breadth (% of stocks > EMA50 / EMA200)
+        - FII weekly futures participant positioning & long %
+        - US & global structural trends (S&P 500, Nasdaq, VIX)
+        - Macro cross-asset weekly trends (DXY, 10Y Yield, Brent Crude)
+        - Self-trained adaptive weekly pillar weights (Ridge regressor + Logistic Calibrator)
+        - Output is decoupled from 1-day noise and temporary intraday headlines
+        """
+        t5_verdict = "RANGE BOUND"
+        composite_score_t5 = 0.0
+        t5_probs = {"p_up": 0.33, "p_flat": 0.34, "p_down": 0.33}
+        spot_price = 22600.0
+
+        # 1. Inspect Nifty analytics predictions
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=force_refresh)
+            t5_fc = preds.get("t5_forecast") or {}
+            if t5_fc and t5_fc.get("verdict"):
+                t5_verdict = str(t5_fc.get("verdict")).upper()
+                composite_score_t5 = float(t5_fc.get("composite_score") or preds.get("composite_score_t5") or 0.0)
+                t5_probs = t5_fc.get("probabilities") or t5_probs
+                spot_price = float(preds.get("spot_price") or spot_price)
+        except Exception as e:
+            logger.debug(f"Weekly prediction engine lookup notice: {e}")
+
+        # 2. Check persistent nifty_predictions_log in SQLite if needed
+        if composite_score_t5 == 0.0 and t5_verdict == "RANGE BOUND":
+            try:
+                with state_engine._lock:
+                    with state_engine._get_connection() as conn:
+                        p_row = conn.execute("""
+                            SELECT t5_verdict, composite_score_t5, t5_prob_up, t5_prob_flat, t5_prob_down, spot_at_prediction
+                            FROM nifty_predictions_log
+                            ORDER BY id DESC LIMIT 1
+                        """).fetchone()
+                        if p_row and p_row["t5_verdict"]:
+                            t5_verdict = str(p_row["t5_verdict"]).upper()
+                            composite_score_t5 = float(p_row["composite_score_t5"] or 0.0)
+                            t5_probs = {
+                                "p_up": float(p_row["t5_prob_up"] or 0.33),
+                                "p_flat": float(p_row["t5_prob_flat"] or 0.34),
+                                "p_down": float(p_row["t5_prob_down"] or 0.33),
+                            }
+                            if p_row["spot_at_prediction"]:
+                                spot_price = float(p_row["spot_at_prediction"])
+            except Exception as e:
+                logger.debug(f"Weekly prediction DB lookup notice: {e}")
+
+        # Map T+5 Weekly Prediction Verdict to 5 Exact Strategy Regimes:
+        # "STRONG BULLISH" -> Strong Bullish
+        # "MODERATELY BULLISH" -> Mild Bullish
+        # "STRONG BEARISH" -> Strong Bearish
+        # "MODERATELY BEARISH" -> Mild Bearish
+        # "RANGE-BOUND" / "CONSOLIDATION" -> Range-Bound
+        if "STRONG" in t5_verdict and "BULL" in t5_verdict:
+            regime = "STRONG BULLISH"
+            rationale = f"Weekly Prediction Model (T+5): Strong structural bullish trend (Score: {composite_score_t5:+.1f}, P_up: {t5_probs['p_up']:.2f})"
+        elif "BULL" in t5_verdict:
+            regime = "MILD BULLISH"
+            rationale = f"Weekly Prediction Model (T+5): Moderate structural bullish trend (Score: {composite_score_t5:+.1f}, P_up: {t5_probs['p_up']:.2f})"
+        elif "STRONG" in t5_verdict and "BEAR" in t5_verdict:
+            regime = "STRONG BEARISH"
+            rationale = f"Weekly Prediction Model (T+5): Strong structural bearish trend (Score: {composite_score_t5:+.1f}, P_down: {t5_probs['p_down']:.2f})"
+        elif "BEAR" in t5_verdict:
+            regime = "MILD BEARISH"
+            rationale = f"Weekly Prediction Model (T+5): Moderate structural bearish trend (Score: {composite_score_t5:+.1f}, P_down: {t5_probs['p_down']:.2f})"
+        else:
+            regime = "RANGE-BOUND"
+            rationale = f"Weekly Prediction Model (T+5): Structural consolidation & range-bound pinning (Score: {composite_score_t5:+.1f}, P_flat: {t5_probs['p_flat']:.2f})"
+
+        return {
+            "regime": regime,
+            "weekly_composite_score": composite_score_t5,
+            "t5_verdict": t5_verdict,
+            "rationale": rationale,
+            "spot_price": spot_price,
+            "probabilities": t5_probs,
+            "decision_source": "WEEKLY_PREDICTION_MODEL_T5"
+        }
+
     # =========================================================================
     # 4. AUTO-TRADES EXECUTION & LIVE DEPLOYMENT
     # =========================================================================
@@ -932,32 +1019,27 @@ class WeeklyMonthlyOptionsStrategyEngine:
     ) -> Dict[str, Any]:
         """
         Executes Weekly or Monthly auto-trades when system feels confident:
-        - Inspects official Nifty 50 predictions
-        - Checks risk limits and market hours
-        - Formulates the exact 1-sigma strikes for the horizon
-        - Enters trade into options_strategies and dedicated trade log
-        - Completely separates Weekly vs Monthly vs Intraday tables
+        - Strictly evaluates the WEEKLY PREDICTION MODEL (T+5 Structural Multi-Day Framework).
+        - Checks risk limits and market hours.
+        - Formulates the exact 1-sigma strikes for the horizon.
+        - Enters trade into options_strategies and dedicated trade log.
+        - Completely separates Weekly vs Monthly vs Intraday tables.
         """
         horizon = horizon.upper()
         now_dt = now_ist()
         now_str = format_ist()
 
-        # Prediction lookups
-        t1_verdict = "RANGE BOUND"
-        composite_score = 0.0
-        try:
-            with state_engine._lock:
-                with state_engine._get_connection() as conn:
-                    p_row = conn.execute("""
-                        SELECT t1_prediction_verdict, composite_score
-                        FROM nifty_predictions_log
-                        ORDER BY id DESC LIMIT 1
-                    """).fetchone()
-                    if p_row and p_row["t1_prediction_verdict"]:
-                        t1_verdict = str(p_row["t1_prediction_verdict"])
-                        composite_score = float(p_row["composite_score"] or 0.0)
-        except Exception as e:
-            logger.warning(f"Failed to fetch latest prediction: {e}")
+        # Retrieve prediction strictly from the Weekly Prediction Model
+        weekly_model_info = self.get_weekly_prediction_model_regime(force_refresh=force_refresh)
+        composite_score = float(weekly_model_info["weekly_composite_score"])
+        weekly_verdict = weekly_model_info["regime"]
+        spot_price = float(weekly_model_info["spot_price"])
+
+        is_confident = (
+            (abs(composite_score) >= confidence_threshold)
+            or ("STRONG" in weekly_verdict)
+            or (weekly_verdict == "RANGE-BOUND")
+        )
 
         # Check existing active trades in this horizon
         table_name = "weekly_options_trade_log" if horizon == "WEEKLY" else "monthly_options_trade_log"
@@ -973,24 +1055,30 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "status": "SKIPPED",
                 "reason": f"Active {horizon.capitalize()} positions already open ({existing} active legs).",
                 "horizon": horizon,
+                "regime": weekly_verdict,
+                "confidence_score": composite_score,
+                "is_confident": is_confident,
+                "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
+                "weekly_prediction_model": weekly_model_info,
                 "timestamp_ist": now_str
             }
 
         # Spot & IV lookups
-        spot_price = 22600.0
         iv_val = 13.2
         expiry_date = None
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
             deep_chain = nifty_analytics_engine.get_deep_option_chain()
-            spot_price = float(deep_chain.get("spot", 22600.0))
+            spot_chain = float(deep_chain.get("spot", 0.0))
+            if spot_chain > 0:
+                spot_price = spot_chain
             chain_sec = deep_chain.get("weekly" if horizon == "WEEKLY" else "monthly", {})
             iv_val = float(chain_sec.get("atm_iv", 13.2))
             expiry_date = chain_sec.get("expiry_date")
         except Exception:
             pass
 
-        rules = self.get_strategy_rules(t1_verdict, horizon=horizon)
+        rules = self.get_strategy_rules(weekly_verdict, horizon=horizon)
         regime = rules["regime"]
         strat = rules["strategy"]
         sl_pct = rules["sl_pct"]
@@ -1082,16 +1170,20 @@ class WeeklyMonthlyOptionsStrategyEngine:
                     round(net_credit + 55000.0, 2), json.dumps(legs_json),
                     round(net_credit * 0.75, 2), round(-net_credit * sl_pct, 2),
                     f"POSITIONAL_{horizon}", regime, round(-net_credit * sl_pct, 2),
-                    f"Auto-deployed {horizon} 5-Regime strategy for prediction {t1_verdict}. 1-Sigma strikes, {int(sl_pct*100)}% SL with price-triggered 1-time re-entry."
+                    f"Auto-deployed {horizon} 5-Regime strategy based on Weekly Prediction Model (T+5) {weekly_verdict} (Score: {composite_score:+.1f}). 1-Sigma strikes, {int(sl_pct*100)}% SL with price-triggered 1-time re-entry."
                 ))
                 conn.commit()
 
         return {
             "status": "OK",
+            "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
             "horizon": horizon,
             "strategy_id": strat_id,
             "strategy_name": strat["name"],
             "regime": regime,
+            "weekly_verdict": weekly_verdict,
+            "weekly_composite_score": composite_score,
+            "weekly_prediction_model": weekly_model_info,
             "legs": [l.to_dict() for l in deployed_legs],
             "net_credit": net_credit,
             "timestamp_ist": now_str

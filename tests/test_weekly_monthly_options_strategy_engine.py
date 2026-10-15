@@ -264,3 +264,23 @@ def test_ml_training_strict_isolation():
     assert m_ml["horizon"] == "MONTHLY"
     assert m_ml["status"] == "TRAINED_ONLINE"
     assert "days_to_expiry" in m_ml["feature_importance"]
+
+
+def test_weekly_monthly_trades_based_on_weekly_prediction_model():
+    """Verify that Weekly & Monthly trades are derived strictly from the Weekly Prediction Model (T+5 Structural)."""
+    weekly_info = weekly_monthly_options_strategy_engine.get_weekly_prediction_model_regime(force_refresh=True)
+    assert weekly_info["decision_source"] == "WEEKLY_PREDICTION_MODEL_T5"
+    assert weekly_info["regime"] in ["STRONG BULLISH", "MILD BULLISH", "STRONG BEARISH", "MILD BEARISH", "RANGE-BOUND"]
+    assert "weekly_composite_score" in weekly_info
+    assert "probabilities" in weekly_info
+    assert "t5_verdict" in weekly_info
+
+    # Test auto deployment returns WEEKLY_PREDICTION_MODEL_T5 for Weekly
+    w_deploy = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades(horizon="WEEKLY", force_refresh=True)
+    assert w_deploy["decision_source"] == "WEEKLY_PREDICTION_MODEL_T5"
+    assert "weekly_prediction_model" in w_deploy
+
+    # Test auto deployment returns WEEKLY_PREDICTION_MODEL_T5 for Monthly
+    m_deploy = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades(horizon="MONTHLY", force_refresh=True)
+    assert m_deploy["decision_source"] == "WEEKLY_PREDICTION_MODEL_T5"
+    assert "weekly_prediction_model" in m_deploy

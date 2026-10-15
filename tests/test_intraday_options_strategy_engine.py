@@ -246,3 +246,22 @@ def test_train_options_ml_model():
     assert "expectancy_r2" in ml_meta
     assert "feature_importance" in ml_meta
     assert len(ml_meta["feature_importance"]) == 5
+
+def test_intraday_trades_based_on_intraday_analysis():
+    """Verify that intraday trades are strictly derived from pure intraday analysis (VWAP, ORB, GEX, Intraday ML)."""
+    regime_info = intraday_options_strategy_engine.get_intraday_market_regime(force_refresh=True)
+    assert regime_info["decision_source"] == "INTRADAY_ANALYSIS"
+    assert regime_info["regime"] in ["STRONG BULLISH", "MILD BULLISH", "STRONG BEARISH", "MILD BEARISH", "RANGE-BOUND"]
+    assert "intraday_composite_score" in regime_info
+    assert "vwap" in regime_info
+    assert "orb_status" in regime_info
+    assert "choppiness_index" in regime_info
+    assert "zero_gamma_flip" in regime_info
+    assert "writer_dominance_score" in regime_info
+    assert "probabilities" in regime_info
+    assert "near_atm_pcr" in regime_info
+    
+    # Auto deploy evaluation should also flag decision_source as INTRADAY_ANALYSIS
+    deploy_res = intraday_options_strategy_engine.evaluate_and_execute_auto_trades(force_refresh=True)
+    assert deploy_res["decision_source"] == "INTRADAY_ANALYSIS"
+    assert "intraday_analysis" in deploy_res

@@ -650,6 +650,7 @@ class IntradayOptionsStrategyEngine:
 
         return {
             "status": "OK",
+            "decision_source": "INTRADAY_ANALYSIS",
             "sessions_evaluated": len(sessions_data),
             "date_range": f"{sessions_data[0]['date']} to {sessions_data[-1]['date']}",
             "lot_size": lot_size,
@@ -881,6 +882,154 @@ class IntradayOptionsStrategyEngine:
 
         return insights
 
+    @classmethod
+    def get_intraday_market_regime(cls, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Derives real-time Nifty 50 market regime strictly from pure INTRADAY analysis:
+        1. Intraday VWAP & 15m/30m Opening Range Breakout (ORB)
+        2. Intraday Choppiness Index (CHOP) & False-Breakout Filter
+        3. Strike-by-Strike Gamma Exposure (GEX) & Zero-Gamma Flip Level
+        4. Real-Time Intraday Sectoral Breadth & Bank vs IT Divergence
+        5. Pure-Data Intraday ML Engine (Writer Dominance Score, Slot Transitions, P_up / P_flat / P_down)
+        6. Near-ATM Option Chain Momentum (near_atm_pcr, chg_oi_pcr, net PE/CE OI change)
+        
+        Synthesizes an Intraday Composite Score (-100 to +100) and maps strictly to the 5 regimes:
+        - Strong Bullish
+        - Strong Bearish
+        - Mild Bullish
+        - Mild Bearish
+        - Range-Bound
+        """
+        try:
+            from engines.intraday_analytics_engine import intraday_analytics_engine
+            suite = intraday_analytics_engine.get_full_intraday_suite(force_refresh=force_refresh)
+        except Exception as e:
+            logger.warning(f"Intraday suite fetch notice: {e}")
+            suite = {}
+
+        vwap_m = suite.get("vwap_and_orb") or {}
+        gex_m = suite.get("gamma_exposure") or {}
+        sec_m = suite.get("sectoral_divergence") or {}
+        ml_m = suite.get("intraday_ml") or {}
+
+        spot_price = float(suite.get("spot_price") or vwap_m.get("spot_price") or 22600.0)
+
+        # 1. Intraday ML / Writer Dominance Sub-Score (-100 to +100)
+        writer_dominance = float(ml_m.get("writer_dominance_score") or 0.0)
+        probs = ml_m.get("probabilities") or {}
+        p_up = float(probs.get("p_up", 0.33))
+        p_down = float(probs.get("p_down", 0.33))
+        p_flat = float(probs.get("p_flat", 0.34))
+        if writer_dominance == 0.0 and (p_up != 0.33 or p_down != 0.33):
+            writer_dominance = (p_up - p_down) * 100.0
+        ml_subscore = float(np.clip(writer_dominance, -100.0, 100.0))
+
+        # 2. Price Action Sub-Score (VWAP & 30m ORB) (-100 to +100)
+        vwap = float(vwap_m.get("vwap") or spot_price)
+        dist_vwap_pts = float(vwap_m.get("vwap_distance_pts") or (spot_price - vwap))
+        dist_vwap_pct = (dist_vwap_pts / max(1.0, vwap)) * 100.0
+        orb_status = str(vwap_m.get("orb_30m", {}).get("status") or "INSIDE_RANGE").upper()
+        chop_val = vwap_m.get("choppiness_index")
+        if isinstance(chop_val, dict):
+            chop = float(chop_val.get("chop") or 50.0)
+        elif chop_val is not None:
+            chop = float(chop_val)
+        else:
+            chop = 50.0
+
+        pa_score = float(np.clip(dist_vwap_pct * 35.0, -50.0, 50.0))
+        if "BULLISH_BREAKOUT" in orb_status:
+            pa_score += 35.0
+        elif "BEARISH_BREAKDOWN" in orb_status:
+            pa_score -= 35.0
+        elif "EXPANDING_UP" in orb_status:
+            pa_score += 15.0
+        elif "EXPANDING_DOWN" in orb_status:
+            pa_score -= 15.0
+
+        if chop >= 55.0:
+            pa_score = pa_score * 0.4
+        pa_score = float(np.clip(pa_score, -100.0, 100.0))
+
+        # 3. Gamma Exposure (GEX & Zero-Gamma Flip) Sub-Score (-100 to +100)
+        flip = float(gex_m.get("zero_gamma_flip_level") or spot_price)
+        gex_regime = str(gex_m.get("market_gex_regime") or "LONG_GAMMA_STABILIZING")
+        dist_flip_pts = spot_price - flip
+
+        if dist_flip_pts > 25.0 and "SHORT_GAMMA" in gex_regime:
+            gex_score = 40.0
+        elif dist_flip_pts < -25.0 and "SHORT_GAMMA" in gex_regime:
+            gex_score = -40.0
+        elif "LONG_GAMMA" in gex_regime and abs(dist_flip_pts) < 30.0:
+            gex_score = 0.0
+        else:
+            gex_score = float(np.clip(dist_flip_pts * 0.8, -50.0, 50.0))
+
+        # 4. Sectoral Breadth & Divergence Sub-Score (-100 to +100)
+        breadth_pct = float(sec_m.get("breadth_pct_green") or 50.0)
+        bank_chg = float(sec_m.get("bank_change_pct") or 0.0)
+        it_chg = float(sec_m.get("it_change_pct") or 0.0)
+        sec_score = (breadth_pct - 50.0) * 1.2
+        if bank_chg > 0.15 and it_chg > 0.15:
+            sec_score += 25.0
+        elif bank_chg < -0.15 and it_chg < -0.15:
+            sec_score -= 25.0
+        elif "SECTORAL_DIVERGENCE" in str(sec_m.get("bank_vs_it_alignment")):
+            sec_score *= 0.3
+        sec_score = float(np.clip(sec_score, -100.0, 100.0))
+
+        # 5. Near-ATM Option Chain Momentum (-100 to +100)
+        near_pcr = float(ml_m.get("features_summary", {}).get("near_atm_pcr") or 1.0)
+        atm_pcr = float(ml_m.get("features_summary", {}).get("atm_pcr") or 1.0)
+        pcr_score = float(np.clip((near_pcr - 1.0) * 60.0 + (atm_pcr - 1.0) * 30.0, -100.0, 100.0))
+
+        # Weighted Synthesis for Intraday Composite Score (-100 to +100)
+        intraday_composite = (
+            ml_subscore * 0.35 +
+            pa_score * 0.25 +
+            gex_score * 0.15 +
+            sec_score * 0.15 +
+            pcr_score * 0.10
+        )
+        if chop >= 60.0 and abs(intraday_composite) < 35.0:
+            intraday_composite = intraday_composite * 0.3
+        intraday_composite = float(np.clip(round(intraday_composite, 1), -100.0, 100.0))
+
+        # Map strictly to 5 Exact Regimes
+        if intraday_composite >= 25.0:
+            regime = "STRONG BULLISH"
+            rationale = f"Intraday Analysis: Bullish expansion confirmed (Score: {intraday_composite:+.1f}, Spot > VWAP {dist_vwap_pts:+.1f}pts, Writer Dominance: {writer_dominance:+.1f})"
+        elif intraday_composite >= 8.0:
+            regime = "MILD BULLISH"
+            rationale = f"Intraday Analysis: Moderate upward drift (Score: {intraday_composite:+.1f}, Put writing defending ATM PCR: {near_pcr:.2f})"
+        elif intraday_composite <= -25.0:
+            regime = "STRONG BEARISH"
+            rationale = f"Intraday Analysis: Bearish breakdown confirmed (Score: {intraday_composite:+.1f}, Spot < VWAP {dist_vwap_pts:+.1f}pts, Writer Dominance: {writer_dominance:+.1f})"
+        elif intraday_composite <= -8.0:
+            regime = "MILD BEARISH"
+            rationale = f"Intraday Analysis: Moderate downward drift (Score: {intraday_composite:+.1f}, Call writing capping upside PCR: {near_pcr:.2f})"
+        else:
+            regime = "RANGE-BOUND"
+            rationale = f"Intraday Analysis: Range-bound pinning & consolidation (Score: {intraday_composite:+.1f}, CHOP: {chop:.1f}, Zero-Gamma Flip: {flip:.0f})"
+
+        return {
+            "regime": regime,
+            "intraday_composite_score": intraday_composite,
+            "rationale": rationale,
+            "spot_price": spot_price,
+            "vwap": vwap,
+            "dist_vwap_pts": dist_vwap_pts,
+            "orb_status": orb_status,
+            "choppiness_index": chop,
+            "zero_gamma_flip": flip,
+            "gex_regime": gex_regime,
+            "writer_dominance_score": writer_dominance,
+            "probabilities": {"p_up": p_up, "p_flat": p_flat, "p_down": p_down},
+            "near_atm_pcr": near_pcr,
+            "sector_breadth_green": breadth_pct,
+            "decision_source": "INTRADAY_ANALYSIS"
+        }
+
     # =========================================================================
     # 4. AUTO-TRADES EXECUTION & LIVE DEPLOYMENT
     # =========================================================================
@@ -892,23 +1041,28 @@ class IntradayOptionsStrategyEngine:
     ) -> Dict[str, Any]:
         """
         Executes auto-trades whenever the system feels confident:
-        - Inspects official Nifty 50 predictions, composite score, and market hours lock.
+        - Strictly evaluates real-time INTRADAY analysis (VWAP, 30m ORB, GEX Zero-Gamma Flip, Sectoral Breadth & Intraday ML).
         - Checks if market is alive and risk constraints permit.
         - Formulates the exact primary & experimental asymmetric strategy.
         - Deploys orders into options_strategies and intraday_options_trade_log.
         - Persists complete trade data to SQLite for ML model training.
         """
         from engines.nifty_analytics_engine import nifty_analytics_engine
-        preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=force_refresh)
 
-        composite_score = float(preds.get("composite_score") or 0.0)
-        t1_verdict = str(preds.get("t1_forecast", {}).get("verdict") or "RANGE-BOUND / CONSOLIDATION").upper()
-        spot_price = float(preds.get("spot_price") or 22600.0)
+        # Derive regime strictly from pure INTRADAY analysis
+        intraday_regime_info = self.get_intraday_market_regime(force_refresh=force_refresh)
+        composite_score = float(intraday_regime_info["intraday_composite_score"])
+        intraday_verdict = intraday_regime_info["regime"]
+        spot_price = float(intraday_regime_info["spot_price"])
 
-        # Check confidence: composite score magnitude >= threshold (e.g. 8.0 points) or strong regime
-        is_confident = (abs(composite_score) >= confidence_threshold) or ("STRONG" in t1_verdict) or ("RANGE-BOUND" in t1_verdict)
+        # Check confidence: composite score magnitude >= threshold or strong regime or heavy range-bound chop
+        is_confident = (
+            (abs(composite_score) >= confidence_threshold)
+            or ("STRONG" in intraday_verdict)
+            or (intraday_verdict == "RANGE-BOUND" and intraday_regime_info["choppiness_index"] >= 55.0)
+        )
 
-        rules = self.get_strategy_rules(t1_verdict)
+        rules = self.get_strategy_rules(intraday_verdict)
         regime = rules["regime"]
         primary = rules["primary"]
         asym = rules["experimental_asymmetric"]
@@ -917,7 +1071,7 @@ class IntradayOptionsStrategyEngine:
         oc_data = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=force_refresh)
         w_oc = oc_data.get("weekly", {})
         iv_val = float(w_oc.get("volatility_and_gex", {}).get("atm_iv") or 12.8)
-        expiry_date = w_oc.get("expiry") or preds.get("target_date") or now_ist().strftime("%Y-%m-%d")
+        expiry_date = w_oc.get("expiry") or now_ist().strftime("%Y-%m-%d")
 
         # Sigma Strikes
         sigma_calc = self.calculate_sigma_strikes(spot=spot_price, iv_pct=iv_val, time_to_expiry_years=1.0 / 365.0)
@@ -941,7 +1095,9 @@ class IntradayOptionsStrategyEngine:
                 "reason": f"Maximum active intraday options strategies limit reached ({existing}/2 active).",
                 "regime": regime,
                 "confidence_score": composite_score,
-                "is_confident": is_confident
+                "is_confident": is_confident,
+                "decision_source": "INTRADAY_ANALYSIS",
+                "intraday_analysis": intraday_regime_info
             }
 
         # Deploy Primary Strategy
@@ -1022,7 +1178,7 @@ class IntradayOptionsStrategyEngine:
                     round(net_credit_prim + 45000.0, 2), json.dumps(legs_json_prim),
                     round(net_credit_prim * 0.70, 2), round(-net_credit_prim * primary["sl_pct"], 2),
                     regime, round(-net_credit_prim * primary["sl_pct"], 2),
-                    f"Auto-deployed based on confident prediction {t1_verdict} (Score: {composite_score:+.1f}). Price-triggered 1-time re-entry active."
+                    f"Auto-deployed based on Intraday Analysis {intraday_verdict} (Score: {composite_score:+.1f}, VWAP dist: {intraday_regime_info['dist_vwap_pts']:+.1f}pts, Writer Dominance: {intraday_regime_info['writer_dominance_score']:+.1f}). Price-triggered 1-time re-entry active."
                 ))
                 conn.commit()
 
@@ -1111,7 +1267,7 @@ class IntradayOptionsStrategyEngine:
                         round(net_credit_asym + 55000.0, 2), json.dumps(legs_json_asym),
                         round(net_credit_asym * 0.70, 2), round(-net_credit_asym * asym["sl_pct"], 2),
                         regime, round(-net_credit_asym * asym["sl_pct"], 2),
-                        f"Experimental Asymmetric trade deployed for {regime}. Independent 30% SL and price-triggered re-entry active per leg."
+                        f"Experimental Asymmetric trade deployed for {regime} from Intraday Analysis. Independent 30% SL and price-triggered re-entry active per leg."
                     ))
                     conn.commit()
 
@@ -1123,15 +1279,17 @@ class IntradayOptionsStrategyEngine:
                 "net_credit": net_credit_asym
             })
 
-        logger.info(f"⚡ [Auto Options Engine] Deployed {len(deployed_strategies)} strategies for {regime} (Composite: {composite_score:+.1f}).")
+        logger.info(f"⚡ [Auto Options Engine] Deployed {len(deployed_strategies)} strategies for {regime} via Intraday Analysis (Score: {composite_score:+.1f}).")
 
         return {
             "status": "DEPLOYED",
+            "decision_source": "INTRADAY_ANALYSIS",
             "regime": regime,
-            "prediction_verdict": t1_verdict,
-            "composite_score": composite_score,
+            "intraday_verdict": intraday_verdict,
+            "intraday_composite_score": composite_score,
             "spot_price": spot_price,
             "sigma_calculation": sigma_calc,
+            "intraday_analysis": intraday_regime_info,
             "deployed_strategies": deployed_strategies,
             "timestamp_ist": now_str
         }

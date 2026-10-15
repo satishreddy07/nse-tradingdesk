@@ -1053,6 +1053,16 @@ def post_options_auto_deploy_endpoint(req: Optional[AutoDeploy5RegimeRequest] = 
     )
 
 
+@app.get("/api/options/intraday-rules/regime")
+def get_options_intraday_regime_endpoint(force_refresh: bool = False):
+    """
+    Returns real-time Nifty 50 regime strictly derived from pure INTRADAY analysis:
+    VWAP, 30m ORB, Choppiness Index (CHOP), Strike Gamma Exposure (GEX), Sectoral Breadth, and Intraday ML.
+    """
+    from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+    return intraday_options_strategy_engine.get_intraday_market_regime(force_refresh=force_refresh)
+
+
 @app.get("/api/options/intraday-rules/active-trades")
 def get_options_active_trades_endpoint():
     """Returns live active intraday options legs, execution status, and re-entry state."""
@@ -1136,6 +1146,16 @@ def post_options_positional_auto_deploy_endpoint(req: Optional[AutoDeployPositio
         confidence_threshold=conf,
         lot_size=lots
     )
+
+
+@app.get("/api/options/positional-rules/regime")
+def get_options_positional_regime_endpoint(force_refresh: bool = False):
+    """
+    Returns real-time Nifty 50 regime strictly derived from the WEEKLY PREDICTION MODEL (T+5 Structural Framework):
+    Structural moving averages (EMA50, EMA200), constituent breadth % > EMA50/200, FII weekly futures OI, and global macro trends.
+    """
+    from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+    return weekly_monthly_options_strategy_engine.get_weekly_prediction_model_regime(force_refresh=force_refresh)
 
 
 @app.get("/api/options/positional-rules/active-trades")
