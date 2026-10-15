@@ -22,9 +22,11 @@ from core import config
 from web.api import app
 
 
+import gc
+
 @pytest.fixture
 def temp_db_and_backup_dir():
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         tmp_path = Path(tmp_dir)
         source_db = tmp_path / "test_source.db"
         backup_dir = tmp_path / "backups" / "daily"
@@ -38,6 +40,7 @@ def temp_db_and_backup_dir():
             conn.commit()
 
         yield source_db, backup_dir
+        gc.collect()
 
 
 def test_daily_moc_backup_execution_and_integrity(temp_db_and_backup_dir, monkeypatch):
