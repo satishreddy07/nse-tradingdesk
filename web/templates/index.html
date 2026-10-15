@@ -9107,6 +9107,14 @@
         if (document.getElementById('cnt-p1-wait')) document.getElementById('cnt-p1-wait').innerText = `(${cWait})`;
         if (document.getElementById('cnt-p1-avoid')) document.getElementById('cnt-p1-avoid').innerText = `(${cAvoid})`;
 
+        const subSigBadge = document.getElementById('p1-sub-badge-signals');
+        if (subSigBadge) {
+          subSigBadge.innerText = `${cBuy} BUY NOW`;
+          subSigBadge.className = cBuy > 0
+            ? "px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-500/40"
+            : "px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400";
+        }
+
         filterP1Signals(currentP1FilterBucket);
       } else if (p1SignalsCache && p1SignalsCache.length > 0 && currentP1SubSection === 'p1-sec-signals') {
         filterP1Signals(currentP1FilterBucket);
@@ -10326,19 +10334,31 @@
           if (btnP1Text) btnP1Text.innerText = "Scan P1 Universe (Chartink Live)";
           if (wasScanRunning) {
             wasScanRunning = false;
+            const stageText = (prog.stage || '').toLowerCase();
+            const isAborted = stageText.includes('abort') || stageText.includes('failed') || stageText.includes('error');
             if (titleEl) {
-              titleEl.innerText = "SCAN COMPLETED SUCCESSFULLY";
-              titleEl.className = "text-xs font-mono font-bold uppercase tracking-wider text-emerald-400";
+              if (isAborted) {
+                titleEl.innerText = "SCAN ABORTED / FAILED";
+                titleEl.className = "text-xs font-mono font-bold uppercase tracking-wider text-rose-400";
+              } else {
+                titleEl.innerText = "SCAN COMPLETED SUCCESSFULLY";
+                titleEl.className = "text-xs font-mono font-bold uppercase tracking-wider text-emerald-400";
+              }
             }
-            if (pulseDot) pulseDot.className = "w-3 h-3 rounded-full bg-emerald-400";
-            if (pctEl) pctEl.innerText = "100%";
-            if (barEl) barEl.style.width = "100%";
+            if (pulseDot) {
+              pulseDot.className = isAborted ? "w-2.5 h-2.5 rounded-full bg-rose-500" : "w-2.5 h-2.5 rounded-full bg-emerald-400";
+            }
+            if (pctEl) pctEl.innerText = isAborted ? "ABORTED" : "100%";
+            if (barEl) {
+              barEl.style.width = "100%";
+              barEl.className = isAborted ? "h-full bg-rose-500 rounded-full transition-all duration-300" : "h-full bg-gradient-to-r from-cyan-500 via-emerald-400 to-violet-500 transition-all duration-300";
+            }
             if (stageEl && prog.stage) stageEl.innerText = prog.stage;
             if (logFeedEl && Array.isArray(prog.logs)) {
               logFeedEl.innerHTML = prog.logs.map(line => `<div>${line}</div>`).join('');
               logFeedEl.scrollTop = logFeedEl.scrollHeight;
             }
-            showToast(prog.stage || "Scan completed! Updating Master File...", 'success');
+            showToast(prog.stage || (isAborted ? "Scan aborted!" : "Scan completed! Updating Master File..."), isAborted ? 'error' : 'success');
             await refreshAllData();
             if (currentTab === 'tab-scheduler') loadScanLogs();
           }

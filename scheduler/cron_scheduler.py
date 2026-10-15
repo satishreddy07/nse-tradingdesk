@@ -326,17 +326,30 @@ def scheduled_morning_scan_job():
             b_now = int((signals["bucket"] == "BUY_NOW").sum()) if not signals.empty and "bucket" in signals.columns else 0
             p_brk = int((signals["bucket"] == "PRE_BREAKOUT").sum()) if not signals.empty and "bucket" in signals.columns else 0
             w_pb = int((signals["bucket"] == "WAIT_PULLBACK").sum()) if not signals.empty and "bucket" in signals.columns else 0
-            state_engine.record_scheduled_scan_outcome(
-                run_key="morning_1020",
-                status="SUCCESS",
-                buy_now_count=b_now,
-                total_scanned=len(signals),
-                pre_breakout_count=p_brk,
-                wait_pullback_count=w_pb,
-                execution_time_sec=elapsed,
-                note=f"{b_now} BUY NOW stocks found out of {len(signals)} analyzed"
-            )
-            logger.info(f"✓ 10:20 AM Morning Institutional Scan completed. {len(signals)} stocks evaluated, {b_now} BUY_NOW.")
+            eng_status = get_institutional_status()
+            eng_st = eng_status.get("status", "")
+            if eng_st == "FAILED" or (signals.empty and eng_st != "NO_CANDIDATES" and eng_status.get("universe_size", 0) == 0):
+                state_engine.record_scheduled_scan_outcome(
+                    run_key="morning_1020",
+                    status="FAILED",
+                    buy_now_count=0,
+                    total_scanned=0,
+                    execution_time_sec=elapsed,
+                    note="Scan aborted: No valid OHLCV data retrieved or screener unreachable"
+                )
+                logger.warning(f"❌ 10:20 AM Morning Institutional Scan aborted or returned 0 valid candidates.")
+            else:
+                state_engine.record_scheduled_scan_outcome(
+                    run_key="morning_1020",
+                    status="SUCCESS",
+                    buy_now_count=b_now,
+                    total_scanned=len(signals),
+                    pre_breakout_count=p_brk,
+                    wait_pullback_count=w_pb,
+                    execution_time_sec=elapsed,
+                    note=f"{b_now} BUY NOW stocks found out of {len(signals)} analyzed"
+                )
+                logger.info(f"✓ 10:20 AM Morning Institutional Scan completed. {len(signals)} stocks evaluated, {b_now} BUY_NOW.")
         except Exception as e:
             logger.error(f"Error in 10:20 AM Institutional scan: {e}", exc_info=True)
             state_engine.record_scheduled_scan_outcome(
@@ -401,17 +414,30 @@ def scheduled_afternoon_scan_job():
             b_now = int((signals_p1["bucket"] == "BUY_NOW").sum()) if not signals_p1.empty and "bucket" in signals_p1.columns else 0
             p_brk = int((signals_p1["bucket"] == "PRE_BREAKOUT").sum()) if not signals_p1.empty and "bucket" in signals_p1.columns else 0
             w_pb = int((signals_p1["bucket"] == "WAIT_PULLBACK").sum()) if not signals_p1.empty and "bucket" in signals_p1.columns else 0
-            state_engine.record_scheduled_scan_outcome(
-                run_key="afternoon_305",
-                status="SUCCESS",
-                buy_now_count=b_now,
-                total_scanned=len(signals_p1),
-                pre_breakout_count=p_brk,
-                wait_pullback_count=w_pb,
-                execution_time_sec=elapsed,
-                note=f"{b_now} BUY NOW stocks found out of {len(signals_p1)} analyzed"
-            )
-            logger.info(f"✓ 3:00 PM Afternoon Institutional Scan completed. {len(signals_p1)} stocks evaluated, {b_now} BUY_NOW.")
+            eng_status = get_institutional_status()
+            eng_st = eng_status.get("status", "")
+            if eng_st == "FAILED" or (signals_p1.empty and eng_st != "NO_CANDIDATES" and eng_status.get("universe_size", 0) == 0):
+                state_engine.record_scheduled_scan_outcome(
+                    run_key="afternoon_305",
+                    status="FAILED",
+                    buy_now_count=0,
+                    total_scanned=0,
+                    execution_time_sec=elapsed,
+                    note="Scan aborted: No valid OHLCV data retrieved or screener unreachable"
+                )
+                logger.warning(f"❌ 3:00 PM Afternoon Institutional Scan aborted or returned 0 valid candidates.")
+            else:
+                state_engine.record_scheduled_scan_outcome(
+                    run_key="afternoon_305",
+                    status="SUCCESS",
+                    buy_now_count=b_now,
+                    total_scanned=len(signals_p1),
+                    pre_breakout_count=p_brk,
+                    wait_pullback_count=w_pb,
+                    execution_time_sec=elapsed,
+                    note=f"{b_now} BUY NOW stocks found out of {len(signals_p1)} analyzed"
+                )
+                logger.info(f"✓ 3:00 PM Afternoon Institutional Scan completed. {len(signals_p1)} stocks evaluated, {b_now} BUY_NOW.")
         except Exception as e:
             logger.error(f"Error in 3:00 PM Institutional scan: {e}", exc_info=True)
             state_engine.record_scheduled_scan_outcome(

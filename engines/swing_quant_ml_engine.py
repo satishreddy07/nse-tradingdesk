@@ -1241,13 +1241,24 @@ class SwingQuantMLEngine:
 
         results = []
         now_dt = now_ist()
+        active_map = {p.get("symbol"): p for p in state_engine.get_active_positions()}
+
         for r in rows:
             d = dict(r)
             sym = d.get("symbol", "")
+            trade_type = d.get("trade_type", "SHADOW")
             ep = float(d.get("entry_price") or 0.0)
             sl = float(d.get("stop_loss") or 0.0)
             t1 = float(d.get("target") or 0.0)
             qty = int(d.get("quantity") or 0)
+
+            # For REAL trades, always reflect actual active portfolio position quantity & live stop
+            if trade_type == "REAL":
+                real_pos = active_map.get(sym)
+                if real_pos:
+                    qty = int(real_pos.get("quantity") or qty)
+                    sl = float(real_pos.get("stop_loss") or sl)
+                    ep = float(real_pos.get("entry_price") or ep)
 
             # Fetch latest price from OHLCV store
             ltp = ep
@@ -1265,7 +1276,8 @@ class SwingQuantMLEngine:
                 dist_sl_pct = 0.0
                 dist_t1_pct = 0.0
 
-            risk_unit = max(0.01, ep - sl)
+            # Guard risk unit: if trailing stop is above or equal to entry (breakeven/profit ratchet), default to 2% base risk
+            risk_unit = (ep - sl) if sl < ep and (ep - sl) > 0.5 else max(1.0, ep * 0.02)
             rr = round((t1 - ep) / risk_unit, 2) if ep > 0 else 0.0
 
             if qty <= 0 and ep > 0:

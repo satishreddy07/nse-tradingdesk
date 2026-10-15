@@ -365,13 +365,14 @@ class DirectYahooFinanceFetcher:
             now_dt = now_ist()
             is_post_market = (now_dt.time() >= datetime.time(15, 30)) if NSEMarketCalendar.is_trading_day(now_dt.date()) else False
             is_stale_partial_bar = (last_bar_date == target_date and is_post_market and age_hours > 0.25)
+            gap_days = (target_date - last_bar_date).days if target_date and last_bar_date else 999
 
             # Case 1: Already up to date in Single Master File (outside market hours, or refreshed within the last 30 mins during live market hours)
             if gap_days <= 0 and not is_stale_partial_bar and (not is_market_open or age_hours <= 0.50):
                 return ticker, cached_df, "CACHE_HIT"
 
             # Case 2: Cached in Master File up to a past date (e.g. Oct 08 -> 20 days gap) or live intraday bar update (>15m old)
-            if 0 <= gap_days <= 300:
+            if gap_days <= 300:
                 if gap_days <= 4:
                     delta_range = "5d"
                 elif gap_days <= 26:
@@ -413,7 +414,7 @@ class DirectYahooFinanceFetcher:
 
         return ticker, cached_df, "FAILED"
 
-    def fetch_universe_ohlcv(self, tickers: List[str], min_bars: int = 105) -> Tuple[Dict[str, pd.DataFrame], Dict[str, int]]:
+    def fetch_universe_ohlcv(self, tickers: List[str], min_bars: int = 80) -> Tuple[Dict[str, pd.DataFrame], Dict[str, int]]:
         """
         Multi-threaded universe OHLCV fetcher backed by the Single Master File (`data/swing_trades.db`):
         1. Always checks & syncs with the Telegram Cloud Master Vault first (`auto_restore_on_cold_boot`).
@@ -465,6 +466,7 @@ class DirectYahooFinanceFetcher:
             }
             for future in concurrent.futures.as_completed(future_to_ticker):
                 completed += 1
+                sym_key = future_to_ticker.get(future)
                 try:
                     sym, df, mode = future.result()
                     if mode == "CACHE_HIT":
@@ -481,11 +483,12 @@ class DirectYahooFinanceFetcher:
                     if df is not None and len(df) >= min_bars:
                         last_close = float(df["Close"].iloc[-1])
                         avg_vol_20d = float(df["Volume"].iloc[-20:].mean()) if len(df) >= 20 else 0
-                        if last_close >= 100.0 and avg_vol_20d >= 100000:
+                        # Liquid criteria: price >= 50 and avg volume >= 25,000 (standard NSE swing liquidity)
+                        if last_close >= 50.0 and avg_vol_20d >= 25000:
                             results[sym] = df
                             stats["eligible"] += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Notice during fetch of {sym_key}: {e}")
 
                 if completed % 40 == 0 or completed == total_tickers:
                     pct = 22 + int((completed / max(1, total_tickers)) * 43)
@@ -1362,7 +1365,7 @@ class InstitutionalEngine:
             benchmarks = self.yahoo.fetch_benchmarks()
 
             # Step 3: Multi-Threaded Incremental Gap-Fill OHLCV Fetch
-            ohlcv_dict, dl_stats = self.yahoo.fetch_universe_ohlcv(tickers, min_bars=105)
+            ohlcv_dict, dl_stats = self.yahoo.fetch_universe_ohlcv(tickers, min_bars=80)
             _institutional_engine_state["cache_hits_count"] = dl_stats.get("cache_hits", 0)
             _institutional_engine_state["gap_filled_count"] = dl_stats.get("gap_filled", 0)
             _institutional_engine_state["full_downloads_count"] = dl_stats.get("full_downloads", 0)
