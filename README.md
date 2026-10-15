@@ -91,6 +91,43 @@ Every candidate is ranked across six independent statistical dimensions against 
 5. **Pillar 5 — Relative Strength Spread (15%)**: 6-month benchmark alpha and real sector excess momentum spread.
 6. **Pillar 6 — Pivot Proximity (10%)**: Distance to 50-day pivot high, consolidation base tightness.
 
+### Portfolio 2: Nifty 500 Momentum Compounded Engine (Exact Mathematical Rules)
+
+The Nifty 500 Momentum Engine (`engines/nifty500_engine.py`) operates as a fully rule-based, institutional momentum breakout and trend-following model designed for end-of-day market-on-close (MOC, 3:00–3:20 PM IST) execution:
+
+#### 1. Filter Dimensions & Entry Rules (7-Point Matrix)
+
+| # | Filter Dimension | Mathematical Rule | Purpose & Rationale |
+| :-: | :--- | :--- | :--- |
+| **0** | **Macro Regime Gate** | $\text{Nifty 500 Close} > \text{EMA}_{50}(\text{Nifty 500})$ | **Market Direction Filter**: If the broad index is below its 50 EMA, all 500 stocks are blocked—zero long entries allowed. |
+| **1** | **Structural Uptrend** | $\text{EMA}_{20} > \text{EMA}_{50} \land \text{LTP} > \text{EMA}_{50}$ | **Trend Alignment**: Confirms the stock is in an established institutional markup phase, not a counter-trend bounce. |
+| **2** | **Relative Strength (RS)** | $\text{Return}_{63d}(\text{Stock}) - \text{Return}_{63d}(\text{Nifty 500}) > 0.0$ | **Market Leadership**: 3-month trailing return must beat the benchmark. Capital is deployed only to market leaders. |
+| **3** | **Value Pullback Pocket** | $0.985 \times \text{EMA}_{20} \le \text{LTP} \le 1.020 \times \text{EMA}_{20}$ | **Mean Reversion Anchor**: Price must trade within $-1.5\%$ to $+2.0\%$ of its 20 EMA to avoid chasing extended moves. |
+| **4** | **Momentum Cooldown** | $40 \le \text{RSI}_{14} \le 62$ | **Bullish Reload Zone**: Confirms the stock cooled off from overbought levels ($>70$) without breaking into bearish momentum ($<40$). |
+| **5** | **Bullish Bounce Bar** | $\text{LTP} > \text{Open} \land \text{LTP} > \text{Close}_{t-1}$ | **Demand Confirmation**: At 3:20 PM, today's candle must be green and higher than yesterday's close, preventing knife-catching. |
+| **6** | **Volume Expansion** | $\text{Volume}_{\text{intraday}} \ge 0.80 \times \text{SMA}_{20}(\text{Volume})$ | **Liquidity Participation**: Prevents entering low-volume, illiquid drifts. |
+
+#### 2. Position Sizing & Compounded Risk Allocation
+- **Dynamic Compounded Equity**: Base ₹1,00,000 compounding with realized gains + live MTM cash.
+- **Risk Budget Per Trade**: $1.5\%$ of current compounded equity:
+  $$\text{Risk Budget} = \text{Compounded Equity} \times 0.015$$
+- **Initial Stop-Loss**:
+  $$\text{Stop Loss} = \text{Entry} - (2.0 \times \text{ATR}_{14})$$
+  $$\text{Risk Per Share } (R) = \text{Entry} - \text{Stop Loss} = 2.0 \times \text{ATR}_{14}$$
+- **Share Sizing**:
+  $$\text{Shares} = \min\left(\left\lfloor \frac{\text{Risk Budget}}{R} \right\rfloor,\; \left\lfloor \frac{\text{Compounded Equity} / 10}{\text{Entry}} \right\rfloor\right)$$
+
+#### 3. Exit Rules (Strict 4-Tier Hierarchy)
+
+Every open position is evaluated against a deterministic 4-priority execution hierarchy on every tick/candle:
+
+| Priority | Exit Rule | Timing / Trigger | Execution Math | Primary Function |
+| :-: | :--- | :--- | :--- | :--- |
+| **1** | **Initial Stop-Loss (`INITIAL_SL`)** | Continuous Intraday | $\text{Price} \le \text{Entry} - (2.0 \times \text{ATR}_{14})$ | **Catastrophic Protection**: Caps trade loss at 1.5% of total capital. |
+| **2** | **Trailing Stop-Loss (`TRAILING_SL`)** | Daily Ratchet (once gain $\ge +2\text{R}$) | $\text{Price} \le \text{Rolling 5-Day Low}$ | **Multi-Bagger Capture**: Secures unrealized gains as the trend develops. |
+| **3** | **Fast Cut (`FAST_EMA20_CUT`)** | Evaluated at 3:20 PM / Next Open | $\text{Close} < 20\text{ EMA}$ (while not in trailing mode) | **Noise Elimination**: Exits failed setups early for a minor scratch. |
+| **4** | **Time Stop (`TIME_EXIT`)** | Day 8 Close | $\text{Days Held} \ge 8 \land \text{Gain} < +1\text{R}$ | **Capital Recycling**: Liquidates stagnant positions to free up cash. |
+
 ---
 
 ## 3. Closed-Loop Quant ML & AI Feedback Engine
