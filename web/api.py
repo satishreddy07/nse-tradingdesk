@@ -664,6 +664,25 @@ def restore_vault_from_cloud():
     }
 
 
+@app.post("/api/system/backup/daily")
+def trigger_daily_backup():
+    """Triggers an immediate atomic MOC daily backup with integrity check and retention pruning."""
+    from core.backup_manager import daily_backup_manager
+    return daily_backup_manager.run_daily_moc_backup(retention_days=14, sync_cloud=True)
+
+
+@app.get("/api/system/backup/list")
+def list_daily_backups():
+    """Lists recent daily MOC backups and retention status."""
+    from core.backup_manager import daily_backup_manager
+    return {
+        "status": "OK",
+        "retention_days": daily_backup_manager.retention_days,
+        "backup_directory": str(daily_backup_manager.backup_dir),
+        "backups": daily_backup_manager.list_backups()
+    }
+
+
 # --------------------------------------------------------------------------
 # NIFTY 50 QUANT DESK ENDPOINTS (INTRADAY 50M EXPIRY, DEEP OPTIONS, T+1/T+5 PREDICTIONS)
 # --------------------------------------------------------------------------

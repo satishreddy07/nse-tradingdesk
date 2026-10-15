@@ -1505,6 +1505,9 @@ class InstitutionalEngine:
                 f"BUY_NOW Candidates: {len(buy_now_candidates)} | Auto-Execute: {auto_execute} | Can-Trade: {can_trade}"
             )
 
+            from engines.swing_quant_ml_engine import swing_quant_ml_engine
+            market_regime = swing_quant_ml_engine.capture_market_regime()
+
             for _, r in buy_now_candidates.iterrows():
                 ticker = str(r['ticker']).replace(".NS", "").replace(".BO", "").strip().upper()
                 cand_id = f"cand_{ticker}_{int(start_time)}"
@@ -1526,7 +1529,7 @@ class InstitutionalEngine:
                 }
 
                 # Step 1: Pre-Trade ML Gatekeeper
-                eval_res = swing_quant_ml_engine.evaluate_candidate(r.to_dict(), market_regime=regime)
+                eval_res = swing_quant_ml_engine.evaluate_candidate(r.to_dict(), market_regime=market_regime)
                 ml_decision = str(eval_res.get("decision", "PASS_TO_AI"))
                 ml_prob = float(eval_res.get("win_prob", 0.55))
                 ml_score = float(eval_res.get("prediction_score", r['score']))
@@ -1938,12 +1941,7 @@ class InstitutionalEngine:
                 note=f"{b_now} BUY NOW stocks found out of {len(signals_df)} analyzed"
             )
 
-            # Backup Single Master File to Telegram Cloud Vault in background
-            threading.Thread(
-                target=telegram_vault.backup_master_file_to_cloud,
-                kwargs={"custom_note": f"P1 Scan Complete ({len(tickers)} Chartink, {b_now} BUY_NOW)"},
-                daemon=True
-            ).start()
+            # Master Database backup is scheduled daily at 15:45 IST via DailyBackupManager
 
             logger.info(summary_msg)
             return signals_df

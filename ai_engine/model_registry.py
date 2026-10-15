@@ -18,8 +18,29 @@ class ModelMetadata:
     recommended_temperature: float = 0.2
 
 
-# The five candidate models to support:
+# The candidate models to support:
 CANDIDATE_MODELS: Dict[str, ModelMetadata] = {
+    # 0. Groq - Production Standard LLaMA 3.3 70B
+    "llama-3.3-70b-versatile": ModelMetadata(
+        model_id="llama-3.3-70b-versatile",
+        provider="groq",
+        role="Primary High-Speed LPU Deep Reasoning",
+        free_tier_eligible=True,
+        context_window=8192,
+        max_output_tokens=2048,
+        description="Meta LLaMA 3.3 70B hosted on Groq LPUs for rapid, accurate swing trade and prediction evaluation.",
+        recommended_temperature=0.2,
+    ),
+    "llama-3.1-8b-instant": ModelMetadata(
+        model_id="llama-3.1-8b-instant",
+        provider="groq",
+        role="Fast Low-Latency LPU Explanations & Fallback",
+        free_tier_eligible=True,
+        context_window=8192,
+        max_output_tokens=1536,
+        description="Meta LLaMA 3.1 8B hosted on Groq LPUs for rapid fallback inference.",
+        recommended_temperature=0.2,
+    ),
     # 1. Groq - Primary for complex interpretation & reasoning
     "openai/gpt-oss-120b": ModelMetadata(
         model_id="openai/gpt-oss-120b",
@@ -108,6 +129,6 @@ class ModelRegistry:
         if meta:
             return meta.provider
         # Heuristic fallback based on model prefix
-        if model_id.startswith("openai/"):
+        if model_id.startswith("openai/") or model_id.startswith("llama") or "groq" in model_id.lower():
             return "groq"
         return "openrouter"

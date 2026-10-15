@@ -209,11 +209,6 @@ async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
 
     if dirty_dfs:
         state_engine.save_ohlcv_batch(dirty_dfs)
-        threading.Thread(
-            target=telegram_vault.backup_master_file_to_cloud,
-            kwargs={"custom_note": f"Nifty 500 Scan Sync ({len(dirty_dfs)} updated)"},
-            daemon=True
-        ).start()
 
     combined_df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     elapsed = time.time() - start_t
@@ -690,12 +685,7 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     })
     state_engine.finish_scan_progress(summary_msg)
 
-    # Backup Single Master File to Telegram Cloud Vault in background
-    threading.Thread(
-        target=telegram_vault.backup_master_file_to_cloud,
-        kwargs={"custom_note": f"P2 Nifty 500 Scan Complete ({len(candidates)} RS Candidates)"},
-        daemon=True
-    ).start()
+    # Master Database backup is scheduled daily at 15:45 IST via DailyBackupManager
 
     logger.info(f"=== 🎯 {summary_msg} ===")
     return {

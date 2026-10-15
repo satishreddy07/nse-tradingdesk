@@ -135,11 +135,14 @@
       pointer-events: auto;
     }
     #mobile-nav-drawer {
-      transform: translateX(100%);
-      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      transform: translate3d(100%, 0, 0);
+      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: transform;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
     }
     #mobile-nav-drawer.open {
-      transform: translateX(0);
+      transform: translate3d(0, 0, 0);
     }
   </style>
 </head>
@@ -333,29 +336,11 @@
 
       <!-- SWING TRADING SUB-NAVIGATION BAR (Single Non-Duplicated Segmented Strip) -->
       <div class="bg-[#0b0f19]/90 border border-slate-800/90 rounded-2xl p-1.5 sm:p-2 shadow-lg">
-        <!-- Mobile Dropdown Selector for Sub-Desks -->
-        <div class="sm:hidden mb-2">
-          <div class="relative">
-            <select id="mobile-subdesk-select" onchange="switchTab(this.value)" class="w-full bg-slate-900 border border-cyan-500/40 rounded-xl px-3 py-2 text-xs font-semibold text-cyan-300 focus:outline-none focus:border-cyan-400 appearance-none pr-8">
-              <option value="tab-p1">📊 P1: 6-Pillar Institutional Engine</option>
-              <option value="tab-p2">🚀 P2: Nifty 500 Compounded Momentum</option>
-              <option value="tab-charts">📈 Candlestick Charts & OHLCV</option>
-              <option value="tab-signals">🎯 Signals Screener</option>
-              <option value="tab-history">📜 Trade History & Outcomes</option>
-              <option value="tab-scheduler">☁️ Telegram Vault & Cron Scheduler</option>
-              <option value="tab-analytics">📉 Portfolio Analytics & Equity Curves</option>
-              <option value="tab-ml-training">🧠 ML Training Desk</option>
-            </select>
-            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-cyan-400">
-              <i data-lucide="chevron-down" class="w-4 h-4"></i>
-            </div>
-          </div>
-        </div>
-        <div class="hidden sm:flex items-center justify-between gap-2 mb-1.5 px-2 pt-0.5">
+        <div class="flex items-center justify-between gap-2 mb-1 px-2 pt-0.5">
           <span class="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-bold flex items-center gap-1">
             <i data-lucide="trending-up" class="w-3 h-3"></i> Swing Trading Sub-Desks
           </span>
-          <span class="text-[10px] font-mono text-slate-500">Select Desk</span>
+          <span class="text-[10px] font-mono text-slate-500 hidden sm:inline">Select Desk</span>
         </div>
         <nav class="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs font-semibold">
           <button onclick="switchTab('tab-p1')" id="nav-tab-p1" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shrink-0">
@@ -5022,30 +5007,42 @@
   <!-- CENTRAL DATA WATCHDOG & GATEKEEPER TELEMETRY MODAL                    -->
   <!-- ===================================================================== -->
   <div id="watchdog-modal" onclick="if(event.target === this) closeWatchdogModal()" style="display: none;" class="hidden fixed inset-0 z-[110] bg-black/80 backdrop-blur-md items-center justify-center p-2 sm:p-4">
-    <div class="bg-[#0b0f19] border border-cyan-500/40 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div class="bg-[#0b0f19] border border-cyan-500/40 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh] my-auto">
       <!-- Modal Header -->
-      <div class="p-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <div class="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-bold text-base">
-            🛡️
+      <div class="p-3 sm:p-4 bg-slate-900/95 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-2.5">
+        <div class="flex items-center justify-between gap-2 min-w-0">
+          <div class="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-bold text-sm sm:text-base shrink-0">
+              🛡️
+            </div>
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <h3 class="text-sm sm:text-base font-extrabold text-white font-mono truncate">
+                  Pipeline Watchdog
+                </h3>
+                <span id="watchdog-modal-summary-badge" class="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shrink-0 font-mono font-bold">4/4 LIVE</span>
+              </div>
+              <p class="text-[10px] sm:text-xs text-slate-400 font-mono truncate hidden sm:block">
+                Live telemetry monitoring: Swing, Intraday, Options & ML
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 class="text-base sm:text-lg font-extrabold text-white font-mono flex items-center gap-2">
-              <span>Data Gatekeeper & Pipeline Watchdog</span>
-              <span id="watchdog-modal-summary-badge" class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">4/4 FEEDS LIVE</span>
-            </h3>
-            <p class="text-xs text-slate-400 font-mono mt-0.5">
-              Live telemetry monitoring across Swing Trading, Intraday, Options Desk & Predictions ML
-            </p>
-          </div>
-        </div>
-        <div class="flex items-center gap-2">
-          <button onclick="probeWatchdogFeeds()" id="btn-probe-feeds" class="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs font-mono flex items-center gap-1.5 transition">
-            <span>⚡ Probe All Feeds</span>
-          </button>
-          <button onclick="closeWatchdogModal()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs font-mono transition">
+          <!-- Mobile Close Button (top-right on phone) -->
+          <button onclick="closeWatchdogModal()" class="sm:hidden w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 active:scale-95" aria-label="Close modal">
             ✕
           </button>
+        </div>
+        <!-- Action Row (Probe button + Desktop Close button) -->
+        <div class="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1.5 sm:pt-0 border-t sm:border-0 border-slate-800/60">
+          <span class="text-[10px] font-mono text-slate-400 sm:hidden">Auto-Probed & Verified</span>
+          <div class="flex items-center gap-1.5">
+            <button onclick="probeWatchdogFeeds()" id="btn-probe-feeds" class="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-[11px] sm:text-xs font-mono flex items-center gap-1 transition active:scale-95">
+              <span>⚡ Probe All Feeds</span>
+            </button>
+            <button onclick="closeWatchdogModal()" class="hidden sm:flex px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs font-mono transition items-center justify-center" aria-label="Close">
+              ✕
+            </button>
+          </div>
         </div>
       </div>
 
@@ -5608,9 +5605,9 @@
   </nav>
 
   <!-- MOBILE SLIDE-OVER NAVIGATION DRAWER & BACKDROP -->
-  <div id="mobile-nav-backdrop" onclick="toggleMobileDrawer(false)" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 transition-opacity"></div>
+  <div id="mobile-nav-backdrop" onclick="toggleMobileDrawer(false)" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[90] transition-opacity"></div>
 
-  <div id="mobile-nav-drawer" class="fixed top-0 right-0 bottom-0 w-[88vw] max-w-sm bg-[#0b0f19] border-l border-cyan-500/30 z-50 shadow-2xl flex flex-col justify-between overflow-hidden">
+  <div id="mobile-nav-drawer" class="fixed top-0 right-0 bottom-0 w-[88vw] max-w-sm bg-[#0b0f19] border-l border-cyan-500/30 z-[100] shadow-2xl flex flex-col justify-between overflow-hidden">
     <!-- Drawer Header -->
     <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
       <div class="flex items-center gap-2.5">
@@ -5629,7 +5626,7 @@
     </div>
 
     <!-- Drawer Scrollable Body -->
-    <div class="flex-1 p-4 space-y-4 overflow-y-auto custom-scroll text-xs">
+    <div class="flex-1 p-4 pb-28 space-y-4 overflow-y-auto custom-scroll text-xs overscroll-contain" style="-webkit-overflow-scrolling: touch;">
       
       <!-- Primary Desks Switcher -->
       <div>
@@ -6027,14 +6024,19 @@
       if (!drawer || !backdrop) return;
       
       const isOpen = forceState !== null ? forceState : !drawer.classList.contains('open');
+      const botNav = document.querySelector('nav.lg\\:hidden.fixed.bottom-0');
       if (isOpen) {
         drawer.classList.add('open');
         backdrop.classList.add('open');
+        document.body.classList.add('overflow-hidden');
+        if (botNav) botNav.classList.add('pointer-events-none');
         updateDrawerContent();
         if (icon) icon.setAttribute('data-lucide', 'x');
       } else {
         drawer.classList.remove('open');
         backdrop.classList.remove('open');
+        document.body.classList.remove('overflow-hidden');
+        if (botNav) botNav.classList.remove('pointer-events-none');
         if (icon) icon.setAttribute('data-lucide', 'menu');
       }
       lucide.createIcons();
@@ -11963,12 +11965,6 @@
           mobVault.className = 'mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-400';
           mobSwing.className = 'mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-cyan-400 bg-cyan-500/10';
         }
-      }
-
-      // Sync mobile dropdown selector
-      const mobSelect = document.getElementById('mobile-subdesk-select');
-      if (mobSelect && mobSelect.value !== tabId) {
-        mobSelect.value = tabId;
       }
 
       lucide.createIcons();

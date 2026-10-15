@@ -681,6 +681,30 @@ def scheduled_daily_prediction_training_job():
         logger.warning(f"03:40 PM Positional Options ML Training Job error: {e}")
 
 
+def scheduled_daily_moc_backup_job():
+    """
+    03:45 PM IST Trading Day Job:
+    - Runs atomic Market-On-Close SQLite backup.
+    - Executes PRAGMA integrity_check to verify zero corruption.
+    - Auto-prunes snapshots older than 14 days to prevent disk bloat.
+    - Syncs snapshot to Telegram Cloud Vault if configured.
+    """
+    curr = now_ist()
+    NSEMarketCalendar.sync_holidays_from_nse(force=False)
+    if not NSEMarketCalendar.is_trading_day(curr.date()):
+        return
+    try:
+        from core.backup_manager import daily_backup_manager
+        res = daily_backup_manager.run_daily_moc_backup(retention_days=14, sync_cloud=True)
+        logger.info(
+            f"💾 [03:45 PM Daily MOC Backup Job] {res.get('status')} | "
+            f"File: {res.get('backup_filename')} ({res.get('backup_size_mb')} MB) | "
+            f"Integrity: {res.get('integrity_check')} | Pruned: {res.get('pruned_count')}"
+        )
+    except Exception as e:
+        logger.error(f"03:45 PM Daily MOC Backup Job error: {e}")
+
+
 def start_scheduler():
     """Initializes and starts the BackgroundScheduler with IST triggers & Render Anti-Sleep Guard."""
     global _scheduler
@@ -803,6 +827,16 @@ def start_scheduler():
             trigger=CronTrigger(day_of_week="mon-fri", hour=15, minute=40, timezone=IST),
             id="job_daily_prediction_training_1540",
             name="03:40 PM Daily Prediction Outcomes & Online Training Sync",
+            replace_existing=True,
+            misfire_grace_time=600
+        )
+
+        # Job 3B: 03:45 PM Market-On-Close Daily Master Database Backup & Pruning (Mon-Fri)
+        _scheduler.add_job(
+            scheduled_daily_moc_backup_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=15, minute=45, timezone=IST),
+            id="job_daily_moc_backup_1545",
+            name="03:45 PM Market-On-Close Daily Master Database Backup & Retention Prune",
             replace_existing=True,
             misfire_grace_time=600
         )
