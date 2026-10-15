@@ -66,8 +66,8 @@ TELEGRAM_CHAT_ID = os.environ.get(
     "TELEGRAM_CHAT_ID",
     "8183911891"
 )
-VAULT_MANIFEST_PATH = DATA_DIR / "vault_manifest.json"
-VAULT_CONFIG_PATH = DATA_DIR / "vault_config.json"
+VAULT_MANIFEST_PATH = Path(os.environ.get("VAULT_MANIFEST_PATH", str(DB_PATH.parent / "vault_manifest.json")))
+VAULT_CONFIG_PATH = Path(os.environ.get("VAULT_CONFIG_PATH", str(DB_PATH.parent / "vault_config.json")))
 
 # ==============================================================================
 # AI Intelligence Layer Configuration (Groq & OpenRouter Free Tier)

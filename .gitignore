@@ -17,9 +17,14 @@ env/
 data/historical_data/*.pkl
 data/historical_data/*.csv
 
-# SQLite WAL/SHM temporary files
+# SQLite databases, WAL, and local backups
+data/*.db
+data/*.sqlite*
 data/*.db-wal
 data/*.db-shm
+data/*backup*
+data/vault_manifest.json
+data/vault_config.json
 
 # Model registry binary bundles (regenerated/trained online)
 models/registry/*.bundle
