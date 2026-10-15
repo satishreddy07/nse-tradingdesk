@@ -530,6 +530,11 @@ class StateEngine:
                         logger.debug(f"Failed to decode OHLCV blob for {sym}: {e}")
         return None, 9999.0
 
+    def get_ohlcv(self, symbol: str) -> Optional[pd.DataFrame]:
+        """Convenience helper returning just the DataFrame for symbol or None."""
+        df, _ = self.get_ohlcv_df(symbol)
+        return df
+
     def get_ohlcv_stats(self) -> Dict[str, Any]:
         """Returns total count and latest bar date across all stocks in ohlcv_master_store."""
         with self._lock:

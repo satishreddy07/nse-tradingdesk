@@ -1036,3 +1036,16 @@ def reconcile_shadow_trades_endpoint():
         "message": "Shadow counterfactual reconciliation complete.",
         "audit": audit
     }
+
+
+@app.get("/api/ml/swing/active-setups")
+def get_active_training_setups_endpoint():
+    """Retrieves all active training setups with live MTM, PnL, return %, dist to SL and T1."""
+    from engines.swing_quant_ml_engine import swing_quant_ml_engine
+    setups = swing_quant_ml_engine.get_active_training_setups()
+    return {
+        "status": "OK",
+        "count": len(setups),
+        "setups": setups
+    }
+

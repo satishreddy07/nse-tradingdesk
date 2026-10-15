@@ -229,3 +229,31 @@ def test_swing_quant_ml_rest_endpoints(api_client):
     r_recon = api_client.post("/api/ml/swing/reconcile-shadow")
     assert r_recon.status_code == 200
     assert r_recon.json()["status"] == "OK"
+
+    # 6. Active Training Setups Endpoint
+    r_active = api_client.get("/api/ml/swing/active-setups")
+    assert r_active.status_code == 200
+    act_data = r_active.json()
+    assert act_data["status"] == "OK"
+    assert "count" in act_data
+    assert isinstance(act_data["setups"], list)
+    if act_data["count"] > 0:
+        first = act_data["setups"][0]
+        assert "symbol" in first
+        assert "ltp" in first
+        assert "unrealized_pnl" in first
+        assert "dist_to_sl_pct" in first
+        assert "dist_to_t1_pct" in first
+
+
+def test_get_active_training_setups_method():
+    """Verify get_active_training_setups returns active setups with computed real-time metrics."""
+    setups = swing_quant_ml_engine.get_active_training_setups()
+    assert isinstance(setups, list)
+    for s in setups:
+        assert s["status"] == "ACTIVE"
+        assert "ltp" in s
+        assert "quantity" in s
+        assert "unrealized_pnl" in s
+        assert "rr_ratio" in s
+

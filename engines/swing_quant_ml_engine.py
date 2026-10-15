@@ -134,11 +134,23 @@ class SwingQuantMLEngine:
                     sector_holding_return_pct REAL DEFAULT 0.0,
                     root_cause_attribution TEXT,
                     ai_post_mortem_notes TEXT,
+                    quantity INTEGER DEFAULT 0,
+                    capital_at_risk REAL DEFAULT 0.0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(symbol, trade_type, created_at)
                 );
                 """)
+                # Migrations for existing databases
+                try:
+                    conn.execute("ALTER TABLE quant_trade_dataset ADD COLUMN quantity INTEGER DEFAULT 0;")
+                except Exception:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE quant_trade_dataset ADD COLUMN capital_at_risk REAL DEFAULT 0.0;")
+                except Exception:
+                    pass
+
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_qtd_symbol ON quant_trade_dataset(symbol);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_qtd_status ON quant_trade_dataset(status);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_qtd_type ON quant_trade_dataset(trade_type);")
@@ -367,6 +379,12 @@ class SwingQuantMLEngine:
         regime = self.capture_market_regime()
         _, feat_dict = self.vectorize_features(candidate_meta, regime)
 
+        qty = int(candidate_meta.get("shares") or candidate_meta.get("quantity") or 0)
+        risk_per_share = max(0.01, entry_price - stop_loss)
+        if qty <= 0:
+            qty = max(1, int(3750.0 / risk_per_share))
+        cap_at_risk = round(float(candidate_meta.get("capital_at_risk") or (qty * risk_per_share)), 2)
+
         with self._lock:
             with self._get_connection() as conn:
                 try:
@@ -377,14 +395,16 @@ class SwingQuantMLEngine:
                         dist_to_pivot, dist_to_ema20, vol_ratio, inst_score, week_confluence,
                         is_vcp, bb_sq_ratio, adx14, features_json, nifty_trend, nifty_ret_5d,
                         nifty_rsi14, vix_val, sector_excess_6m, market_regime_json,
-                        created_at, updated_at
+                        quantity, capital_at_risk, created_at, updated_at
                     ) VALUES (
-                        ?, ?, 'REAL', 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        ?, ?, 'REAL', 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     ON CONFLICT(symbol, trade_type, created_at) DO UPDATE SET
                         entry_price = excluded.entry_price,
                         stop_loss = excluded.stop_loss,
                         target = excluded.target,
+                        quantity = excluded.quantity,
+                        capital_at_risk = excluded.capital_at_risk,
                         updated_at = excluded.updated_at;
                     """, (
                         sym_clean, portfolio_type, entry_price, stop_loss, target, target_2,
@@ -395,10 +415,11 @@ class SwingQuantMLEngine:
                         int(feat_dict["is_vcp"]), feat_dict["bb_sq_ratio"], feat_dict["adx14"],
                         json.dumps(feat_dict), regime.get("nifty_trend", "SIDEWAYS"),
                         feat_dict["nifty_ret_5d"], feat_dict["nifty_rsi14"], feat_dict["vix_val"],
-                        feat_dict["sector_excess_6m"], json.dumps(regime), now_str, now_str
+                        feat_dict["sector_excess_6m"], json.dumps(regime),
+                        qty, cap_at_risk, now_str, now_str
                     ))
                     conn.commit()
-                    logger.info(f"Recorded REAL trade entry for {sym_clean} in quant_trade_dataset")
+                    logger.info(f"Recorded REAL trade entry for {sym_clean} in quant_trade_dataset ({qty} shs, risk ₹{cap_at_risk:,.2f})")
                     return True
                 except Exception as e:
                     logger.error(f"Failed to record real trade entry for {sym_clean}: {e}")
@@ -435,6 +456,12 @@ class SwingQuantMLEngine:
         regime = self.capture_market_regime()
         _, feat_dict = self.vectorize_features(candidate_meta, regime)
 
+        qty = int(candidate_meta.get("shares") or candidate_meta.get("quantity") or 0)
+        risk_per_share = max(0.01, entry_price - stop_loss)
+        if qty <= 0:
+            qty = max(1, int(3750.0 / risk_per_share))
+        cap_at_risk = round(float(candidate_meta.get("capital_at_risk") or (qty * risk_per_share)), 2)
+
         with self._lock:
             with self._get_connection() as conn:
                 try:
@@ -445,9 +472,9 @@ class SwingQuantMLEngine:
                         dist_to_pivot, dist_to_ema20, vol_ratio, inst_score, week_confluence,
                         is_vcp, bb_sq_ratio, adx14, features_json, nifty_trend, nifty_ret_5d,
                         nifty_rsi14, vix_val, sector_excess_6m, market_regime_json,
-                        root_cause_attribution, created_at, updated_at
+                        root_cause_attribution, quantity, capital_at_risk, created_at, updated_at
                     ) VALUES (
-                        ?, ?, 'SHADOW', 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        ?, ?, 'SHADOW', 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     """, (
                         sym_clean, portfolio_type, entry_price, stop_loss, target, target_2,
@@ -459,10 +486,10 @@ class SwingQuantMLEngine:
                         json.dumps(feat_dict), regime.get("nifty_trend", "SIDEWAYS"),
                         feat_dict["nifty_ret_5d"], feat_dict["nifty_rsi14"], feat_dict["vix_val"],
                         feat_dict["sector_excess_6m"], json.dumps(regime),
-                        f"INITIAL_SHADOW_REASON: {rejection_reason}", now_str, now_str
+                        f"INITIAL_SHADOW_REASON: {rejection_reason}", qty, cap_at_risk, now_str, now_str
                     ))
                     conn.commit()
-                    logger.info(f"👻 Logged SHADOW trade for {sym_clean} (SL: ₹{stop_loss:.2f}, T1: ₹{target:.2f}) [Reason: {rejection_reason}]")
+                    logger.info(f"👻 Logged SHADOW trade for {sym_clean} ({qty} shs, risk ₹{cap_at_risk:,.2f}, SL: ₹{stop_loss:.2f}, T1: ₹{target:.2f}) [Reason: {rejection_reason}]")
                     return True
                 except Exception as e:
                     logger.debug(f"Failed to log shadow candidate {sym_clean}: {e}")
@@ -605,17 +632,32 @@ class SwingQuantMLEngine:
             if df is None or df.empty or "Close" not in df.columns:
                 continue
 
-            last_bar = df.iloc[-1]
-            high_px = float(last_bar.get("High", last_bar.get("Close", 0.0)))
-            low_px = float(last_bar.get("Low", last_bar.get("Close", 0.0)))
-            close_px = float(last_bar.get("Close", 0.0))
-
-            # Calculate hold days
+            # Evaluate all trading bars since candidate entry date to accurately catch target/stop hits
             try:
-                created_date = datetime.strptime(item["created_at"][:10], "%Y-%m-%d").date()
+                created_date_str = item["created_at"][:10]
+                created_date = datetime.strptime(created_date_str, "%Y-%m-%d").date()
                 hold_days = max(1, (now_dt.date() - created_date).days)
+                if hasattr(df.index, 'date'):
+                    df_since = df[df.index.date >= created_date]
+                elif "date" in df.columns:
+                    df_since = df[pd.to_datetime(df["date"]).dt.date >= created_date]
+                else:
+                    df_since = df
+                if df_since.empty:
+                    df_since = df.iloc[-1:]
             except Exception:
                 hold_days = int(item.get("hold_days") or 1)
+                df_since = df.iloc[-1:]
+
+            high_px = float(df_since["High"].max() if "High" in df_since.columns else df_since["Close"].max())
+            low_px = float(df_since["Low"].min() if "Low" in df_since.columns else df_since["Close"].min())
+            close_px = float(df["Close"].iloc[-1])
+
+            # Quantity and capital at risk
+            qty = int(item.get("quantity") or 0)
+            if qty <= 0:
+                risk_unit = max(0.01, entry_px - sl)
+                qty = max(1, int(3750.0 / risk_unit))
 
             status = None
             exit_px = None
@@ -658,13 +700,29 @@ class SwingQuantMLEngine:
                     losers += 1
 
             if status:
+                realized_pnl = round((exit_px - entry_px) * qty, 2)
                 attribution = self._compute_root_cause_attribution(
                     is_win=is_win,
                     exit_reason=exit_reason,
                     features=item,
                     nifty_hold_return=0.0
                 )
-                ai_notes = f"[Shadow Counterfactual Resolution] Stock {sym} hit {status} ({ret_pct:+.2f}%, {r_mult:+.2f}R). Attribution: {attribution}"
+                ai_notes = self._synthesize_ai_post_mortem(
+                    symbol=sym,
+                    sector=item.get("sector", "DIVERSIFIED"),
+                    entry_px=entry_px,
+                    exit_px=exit_px,
+                    stop_loss=sl,
+                    pnl=realized_pnl,
+                    r_multiple=r_mult,
+                    return_pct=ret_pct,
+                    hold_days=hold_days,
+                    exit_reason=exit_reason,
+                    is_winner=is_win,
+                    attribution=attribution,
+                    features=item,
+                    nifty_hold_ret=0.0
+                )
 
                 with self._lock:
                     with self._get_connection() as conn:
@@ -672,6 +730,7 @@ class SwingQuantMLEngine:
                         UPDATE quant_trade_dataset
                         SET status = ?,
                             exit_price = ?,
+                            pnl = ?,
                             r_multiple = ?,
                             return_pct = ?,
                             hold_days = ?,
@@ -681,11 +740,11 @@ class SwingQuantMLEngine:
                             ai_post_mortem_notes = ?,
                             updated_at = ?
                         WHERE id = ?
-                        """, (status, exit_px, r_mult, ret_pct, hold_days, exit_reason, is_win, attribution, ai_notes, now_str, rec_id))
+                        """, (status, exit_px, realized_pnl, r_mult, ret_pct, hold_days, exit_reason, is_win, attribution, ai_notes, now_str, rec_id))
                         conn.commit()
 
                 resolved_count += 1
-                logger.info(f"👻 Resolved SHADOW trade for {sym}: {status} ({ret_pct:+.2f}%)")
+                logger.info(f"👻 Resolved SHADOW trade for {sym}: {status} (PnL: ₹{realized_pnl:+,.2f}, {ret_pct:+.2f}%) | Attribution: {attribution}")
 
         if resolved_count > 0:
             threading.Thread(target=self.train_model, daemon=True).start()
@@ -773,6 +832,20 @@ class SwingQuantMLEngine:
                         prompt=base_prompt,
                         system_prompt="You are a senior quantitative swing trading risk manager. Provide concise, high-signal post-mortem analysis.",
                         model_id=model_id,
+                        temperature=0.2,
+                        max_tokens=300
+                    )
+                    if res and len(res.strip()) > 20:
+                        return res.strip()
+
+                # Secondary failover provider (e.g. OpenRouter if primary is Groq)
+                alt_prov = "openrouter" if active_prov == "groq" else "groq"
+                if provider.is_provider_configured(alt_prov):
+                    alt_model = config.AI_FALLBACK_MODEL or ("google/gemini-2.5-flash" if alt_prov == "openrouter" else "llama-3.3-70b-versatile")
+                    res = provider.complete(
+                        prompt=base_prompt,
+                        system_prompt="You are a senior quantitative swing trading risk manager. Provide concise, high-signal post-mortem analysis.",
+                        model_id=alt_model,
                         temperature=0.2,
                         max_tokens=300
                     )
@@ -974,14 +1047,24 @@ class SwingQuantMLEngine:
                 "r_multiple": float(r["r_multiple"] or 0.0)
             })
 
-        # Blend with prior if empirical samples < 50
-        prior_df = self._generate_synthetic_prior_dataset()
-        if total_empirical > 0:
-            emp_df = pd.DataFrame(empirical_rows)
-            # Give real trades 3x weight, shadow trades 1x weight
-            combined_df = pd.concat([prior_df, emp_df], ignore_index=True)
+        # Determine dataset source:
+        # If total_empirical >= 10 and both classes (winners and losers) are present,
+        # train 100% on real empirical market outcomes with zero synthetic prior rows.
+        classes_present = len(set(r["is_winner"] for r in empirical_rows)) if empirical_rows else 0
+        if total_empirical >= 10 and classes_present >= 2:
+            combined_df = pd.DataFrame(empirical_rows)
+            training_mode = "100%_REAL_EMPIRICAL"
+            prior_count = 0
         else:
-            combined_df = prior_df
+            prior_df = self._generate_synthetic_prior_dataset()
+            prior_count = len(prior_df)
+            if total_empirical > 0:
+                emp_df = pd.DataFrame(empirical_rows)
+                combined_df = pd.concat([prior_df, emp_df], ignore_index=True)
+                training_mode = "COLD_START_HYBRID"
+            else:
+                combined_df = prior_df
+                training_mode = "COLD_START_PRIOR"
 
         X = combined_df[ML_FEATURE_COLS].values
         y_class = combined_df["is_winner"].values.astype(int)
@@ -990,19 +1073,26 @@ class SwingQuantMLEngine:
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
 
-        # Train Classifier with 3-fold cross-validated probability calibration
+        # Train Classifier with probability calibration
         base_hgb = HistGradientBoostingClassifier(
             max_iter=120,
             learning_rate=0.08,
             min_samples_leaf=5,
             random_state=42
         )
-        calibrated_clf = CalibratedClassifierCV(
-            estimator=base_hgb,
-            method="sigmoid",
-            cv=3
-        )
-        calibrated_clf.fit(X_scaled, y_class)
+        min_class_count = int(np.min(np.bincount(y_class))) if len(np.bincount(y_class)) > 1 else 0
+        cv_folds = min(3, min_class_count)
+
+        if cv_folds >= 2:
+            calibrated_clf = CalibratedClassifierCV(
+                estimator=base_hgb,
+                method="sigmoid",
+                cv=cv_folds
+            )
+            calibrated_clf.fit(X_scaled, y_class)
+        else:
+            base_hgb.fit(X_scaled, y_class)
+            calibrated_clf = base_hgb
 
         # Train Regressor for Expected R
         reg = Ridge(alpha=2.0)
@@ -1015,11 +1105,12 @@ class SwingQuantMLEngine:
 
         metadata = {
             "trained_at": format_ist(),
+            "training_mode": training_mode,
             "total_samples": int(len(combined_df)),
             "empirical_samples": int(total_empirical),
             "real_samples": int(real_count),
             "shadow_samples": int(shadow_count),
-            "prior_samples": int(len(prior_df)),
+            "prior_samples": int(prior_count),
             "win_rate": round(win_rate, 3),
             "brier_score": round(brier, 4),
             "features": ML_FEATURE_COLS,
@@ -1135,6 +1226,74 @@ class SwingQuantMLEngine:
                     "SELECT * FROM quant_trade_dataset WHERE trade_type = 'SHADOW' AND status = 'ACTIVE' ORDER BY id DESC"
                 ).fetchall()
                 return [dict(r) for r in rows]
+
+    def get_active_training_setups(self) -> List[Dict[str, Any]]:
+        """
+        Returns all currently active training setups (both SHADOW and REAL)
+        with live/latest MTM, unrealized PnL, return %, distance to SL, distance to T1,
+        and risk-reward ratio.
+        """
+        with self._lock:
+            with self._get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM quant_trade_dataset WHERE status = 'ACTIVE' ORDER BY id DESC"
+                ).fetchall()
+
+        results = []
+        now_dt = now_ist()
+        for r in rows:
+            d = dict(r)
+            sym = d.get("symbol", "")
+            ep = float(d.get("entry_price") or 0.0)
+            sl = float(d.get("stop_loss") or 0.0)
+            t1 = float(d.get("target") or 0.0)
+            qty = int(d.get("quantity") or 0)
+
+            # Fetch latest price from OHLCV store
+            ltp = ep
+            df, _ = state_engine.get_ohlcv_df(sym)
+            if df is not None and not df.empty and "Close" in df.columns:
+                ltp = round(float(df["Close"].iloc[-1]), 2)
+
+            # Compute real-time metrics
+            if ep > 0:
+                ret_pct = round(((ltp - ep) / ep) * 100.0, 2)
+                dist_sl_pct = round(((ltp - sl) / ep) * 100.0, 2)
+                dist_t1_pct = round(((t1 - ltp) / ep) * 100.0, 2)
+            else:
+                ret_pct = 0.0
+                dist_sl_pct = 0.0
+                dist_t1_pct = 0.0
+
+            risk_unit = max(0.01, ep - sl)
+            rr = round((t1 - ep) / risk_unit, 2) if ep > 0 else 0.0
+
+            if qty <= 0 and ep > 0:
+                qty = max(1, int(3750.0 / risk_unit))
+
+            unrealized_pnl = round((ltp - ep) * qty, 2)
+
+            # Compute days in trade
+            hold_days = 0
+            created_str = d.get("created_at") or d.get("entry_date") or ""
+            if created_str:
+                try:
+                    c_date = datetime.strptime(created_str[:10], "%Y-%m-%d").date()
+                    hold_days = max(0, (now_dt.date() - c_date).days)
+                except Exception:
+                    hold_days = int(d.get("hold_days") or 0)
+
+            d["ltp"] = ltp
+            d["quantity"] = qty
+            d["unrealized_pnl"] = unrealized_pnl
+            d["return_pct"] = ret_pct
+            d["dist_to_sl_pct"] = dist_sl_pct
+            d["dist_to_t1_pct"] = dist_t1_pct
+            d["rr_ratio"] = rr
+            d["days_in_trade"] = hold_days
+            results.append(d)
+
+        return results
 
 
 # Global instance
