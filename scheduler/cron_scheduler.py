@@ -765,10 +765,16 @@ def start_scheduler():
         threading.Thread(target=scheduled_nifty_intraday_50min_job, daemon=True).start()
         # Launch dedicated continuous Intraday Watchdog
         threading.Thread(target=_intraday_collector_watchdog, daemon=True, name="IntradayWatchdog").start()
+        # Launch dedicated zero-broker live options & spot background streamer
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            nifty_analytics_engine.start_live_options_streamer()
+        except Exception:
+            pass
         logger.info(
             "✓ Automated Scheduler active on Asia/Kolkata timezone: "
             "08:55 AM NSE Holiday Sync, 09:00–15:50 Render Anti-Sleep Guard, 5m Live Price Stream, "
-            "30m/50m Nifty Weekly Option Expiry Collector (09:30–15:30), 10:20 AM & 3:00 PM Scans, with Continuous Auto-Gapfill Watchdog."
+            "30m/50m Nifty Weekly Option Expiry Collector (09:30–15:30), 10:20 AM & 3:00 PM Scans, with Continuous Auto-Gapfill Watchdog & Zero-Broker 12s Streamer."
         )
         return _scheduler
 

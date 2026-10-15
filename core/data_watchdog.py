@@ -254,11 +254,22 @@ class DataWatchdog:
             # 3. OPTIONS DESK EVALUATION
             try:
                 from engines.nifty_analytics_engine import nifty_analytics_engine
-                oc_cache = getattr(nifty_analytics_engine, "_option_chain_cache", {})
+                oc_cache = getattr(nifty_analytics_engine, "_option_chain_mem_cache", None) or getattr(nifty_analytics_engine, "_option_chain_cache", {})
+                if not oc_cache:
+                    oc_cache = state_engine.get_kv("latest_nifty_option_chain_deep") or {}
                 w_chain = oc_cache.get("weekly", {})
                 m_chain = oc_cache.get("monthly", {})
                 cache_ts = getattr(nifty_analytics_engine, "_option_chain_cache_ts", 0.0)
                 chain_age = max(0, int(now_ts - cache_ts)) if cache_ts > 0 else None
+                if chain_age is None and oc_cache.get("fetched_at_ist"):
+                    try:
+                        import datetime
+                        clean_ts = oc_cache["fetched_at_ist"].replace(" IST", "")
+                        dt_fetched = datetime.datetime.strptime(clean_ts, "%Y-%m-%d %H:%M:%S")
+                        dt_now_unaware = now_ist().replace(tzinfo=None)
+                        chain_age = max(0, int((dt_now_unaware - dt_fetched).total_seconds()))
+                    except Exception:
+                        pass
 
                 ep_opt = self._endpoints["options_desk"]
                 if w_chain:
@@ -272,9 +283,9 @@ class DataWatchdog:
                         "call_wall": w_chain.get("walls_and_pain", {}).get("call_wall_1"),
                     }
                     if is_market_open:
-                        if chain_age is not None and chain_age <= 120:
+                        if chain_age is not None and chain_age <= 45:
                             ep_opt["status"] = "HEALTHY"
-                        elif chain_age is not None and chain_age <= 300:
+                        elif chain_age is not None and chain_age <= 120:
                             ep_opt["status"] = "DEGRADED"
                         else:
                             ep_opt["status"] = "OFFLINE_ALERT"

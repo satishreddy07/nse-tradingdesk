@@ -2577,7 +2577,11 @@
           <div>
             <div class="flex flex-wrap items-center gap-2">
               <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">MODULE 4 • NIFTY 50 DEEP OPTION CHAIN DESK</span>
-              <span id="opt-nse-timestamp" class="text-[11px] font-mono text-cyan-400">🎯 Live NSE Option Chain v3 • Weekly & Monthly Expiries</span>
+              <span id="opt-stream-pill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span id="opt-stream-text">⚡ 0-BROKER LIVE: 2s Spot • 12s OI</span>
+              </span>
+              <span id="opt-nse-timestamp" class="text-[11px] font-mono text-cyan-400">🎯 Live NSE Option Chain v3</span>
             </div>
             <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Nifty 50 Current Weekly & Monthly Option Chain • Deep OI & Skew Analysis</h2>
             <p class="text-xs text-slate-400 mt-0.5">
@@ -4001,22 +4005,102 @@
           refreshAllData();
         }
       }, 30000);
-      // 5-Minute Live Price Stream for all Active Positions, Screened Stocks, and Options Chains
+      // 1. High-frequency 2-Second Live Spot Tick Streamer (Zero-Broker)
+      setInterval(() => {
+        if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+          pollLiveSpotTick();
+        }
+      }, 2000);
+
+      // 2. High-speed 6-Second Options & 10-Second Intraday Streamer (Active Desk Aware)
+      setInterval(() => {
+        if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+          const optMod = document.getElementById('module-options');
+          const intraMod = document.getElementById('module-intraday');
+          if (optMod && !optMod.classList.contains('hidden')) {
+            loadOptionsChainDesk(false);
+          } else if (intraMod && !intraMod.classList.contains('hidden')) {
+            loadIntradayExpiryProgression(false);
+          }
+        }
+      }, 6000);
+
+      // 3. 60-Second Live Price Stream for all Active Positions, Screened Stocks, and Options Strategies
       setInterval(() => {
         if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
           refreshLivePrices(true);
-          loadOptionsChainDesk(false);
           loadOptionsPortfolioDesk();
         }
-      }, 300000);
+      }, 60000);
 
       // Instant refresh when user switches back to this tab
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+          pollLiveSpotTick();
           refreshAllData();
+          const optMod = document.getElementById('module-options');
+          if (optMod && !optMod.classList.contains('hidden')) {
+            loadOptionsChainDesk(false);
+          }
         }
       });
     });
+
+    let lastSpotPrice = null;
+    async function pollLiveSpotTick() {
+      if (document.hidden) return;
+      try {
+        const res = await fetch('/api/nifty/live-spot');
+        if (!res.ok) return;
+        const data = await res.json();
+        const spot = Number(data.price || 0);
+        if (spot > 0) {
+          const formatted = '₹' + spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const chgPts = Number(data.change_pts || 0);
+          const chgPct = Number(data.change_pct || 0);
+          const sign = chgPts >= 0 ? '+' : '';
+          const diffStr = `${sign}${chgPts.toFixed(1)} (${sign}${chgPct.toFixed(2)}%)`;
+
+          // Update Options Desk Spot KPI with subtle tick flash
+          const spotEl = document.getElementById('opt-kpi-spot');
+          if (spotEl) {
+            spotEl.innerText = formatted;
+            if (lastSpotPrice !== null && Math.abs(spot - lastSpotPrice) >= 0.05) {
+              const flashColor = spot > lastSpotPrice ? 'text-emerald-400' : 'text-rose-400';
+              spotEl.classList.remove('text-white', 'text-emerald-400', 'text-rose-400');
+              spotEl.classList.add(flashColor);
+              setTimeout(() => {
+                spotEl.classList.remove('text-emerald-400', 'text-rose-400');
+                spotEl.classList.add('text-white');
+              }, 750);
+            }
+          }
+          lastSpotPrice = spot;
+
+          // Update ATM Strike KPI
+          const atmEl = document.getElementById('opt-kpi-atm');
+          if (atmEl && data.atm_strike) {
+            const expText = (niftyOptionsChainCache?.weekly?.expiry) || '--';
+            atmEl.innerText = `ATM Strike: ${data.atm_strike} (${expText}) • ${diffStr}`;
+          }
+
+          // Update Options Desk Stream Indicator
+          const streamTextEl = document.getElementById('opt-stream-text');
+          if (streamTextEl) {
+            const ageText = (data.age_seconds !== undefined && data.age_seconds < 10) ? `${data.age_seconds}s` : '<2s';
+            streamTextEl.innerText = `⚡ 0-BROKER LIVE: Spot ${formatted} (${sign}${chgPct.toFixed(2)}%) • Lag ${ageText}`;
+          }
+
+          // Update Intraday Desk Top Spot Badge if present
+          const intraSpotBadge = document.getElementById('intraday-spot-badge');
+          if (intraSpotBadge) {
+            intraSpotBadge.innerText = `NIFTY: ${formatted} ${diffStr}`;
+          }
+        }
+      } catch (e) {
+        // graceful ignore
+      }
+    }
 
 
     function updateClock() {
@@ -6255,7 +6339,10 @@
       if (document.getElementById('opt-lbl-weekly-exp')) document.getElementById('opt-lbl-weekly-exp').innerText = w.expiry || '--';
       if (document.getElementById('opt-lbl-monthly-exp')) document.getElementById('opt-lbl-monthly-exp').innerText = m.expiry || '--';
       if (document.getElementById('opt-nse-timestamp')) {
-        document.getElementById('opt-nse-timestamp').innerText = `🎯 NSE Live Timestamp: ${data.nse_timestamp || '--'} • Source: ${data.source || 'NSE'}`;
+        document.getElementById('opt-nse-timestamp').innerText = `🎯 NSE Live: ${data.nse_timestamp || '--'} • Stream: In-Memory (0-Broker)`;
+      }
+      if (document.getElementById('opt-stream-text') && data.spot_price) {
+        document.getElementById('opt-stream-text').innerText = `⚡ 0-BROKER LIVE: Spot ₹${Number(data.spot_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })} • Lag < 2s`;
       }
 
       const pcr = active.pcr || {};

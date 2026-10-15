@@ -665,6 +665,16 @@ def get_nifty_options_chain(force_refresh: bool = False):
     return nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=force_refresh)
 
 
+@app.get("/api/nifty/live-spot")
+def get_nifty_live_spot(force_refresh: bool = False):
+    """
+    Returns ultra-fast real-time Nifty 50 spot tick, daily change, and live ATM strike with sub-second latency.
+    Zero-broker stream powered by Yahoo Finance chart quote (^NSEI) with NSE allIndices fallback.
+    """
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    return nifty_analytics_engine.get_live_nifty_spot(force_refresh=force_refresh)
+
+
 @app.get("/api/nifty/intraday-expiry")
 def get_nifty_intraday_expiry(session_date: Optional[str] = None, interval_mode: str = "30m", force_refresh: bool = False):
     """Returns the Intraday Weekly Option Expiry progression (15m / 30m Institutional Standard / 50m)."""
