@@ -323,6 +323,27 @@ class TreeQuantMLEngine:
                 # Persist active metadata to SQLite
                 state_engine.set_kv("tree_model_registry", self._active_metadata)
 
+        # Record into ML Performance Engine audit history
+        try:
+            from engines.ml_performance_engine import ml_performance_engine
+            ml_performance_engine.record_training_run(
+                model_name=f"{horizon}_TREE_QUANT",
+                model_version=version,
+                horizon=horizon,
+                duration_sec=time.time() - t0,
+                status=status_label,
+                dataset_version="UNIFIED_TRADE_LEARNING_V1",
+                train_records=len(X_train),
+                val_records=len(X_test),
+                test_records=len(X_test),
+                feature_count=len(feature_cols),
+                metrics=bundle["metrics"],
+                artifact_path=str(artifact_path),
+                hyperparameters={"lgb_leaves": 15, "xgb_depth": 4, "learning_rate": 0.05}
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to record training run in ML Performance Engine: {exc}")
+
         logger.info(f"✓ Trained {horizon} Tree ML Models: Ensemble AUC {ensemble_auc:.3f}, Brier {ensemble_brier:.4f} (Baseline: {baseline_brier:.4f}) -> {status_label}")
         return metadata
 

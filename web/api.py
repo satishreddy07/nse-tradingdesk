@@ -1390,6 +1390,137 @@ def post_nifty_forecast_rollback_endpoint(horizon: str = "T+1"):
 
 
 # ==============================================================================
+# ML PERFORMANCE & MODEL INTELLIGENCE DASHBOARD ENDPOINTS
+# ==============================================================================
+@app.get("/ml-performance", response_class=HTMLResponse)
+def get_ml_performance_page_endpoint(request: Request):
+    """Direct route to the ML Performance & Model Intelligence Dashboard."""
+    index_file = TEMPLATES_DIR / "index.html"
+    if index_file.exists():
+        with open(index_file, "r", encoding="utf-8") as f:
+            html = f.read()
+            html = html.replace("let currentModule = 'module-swing';", "let currentModule = 'module-ml-performance';")
+            return HTMLResponse(content=html)
+    return HTMLResponse("<h1>Quant Trading Desk</h1><p>index.html not found</p>")
+
+
+@app.get("/api/ml-performance/overview")
+def get_ml_performance_overview_endpoint():
+    """Returns overview statistics, counters, and system-wide ML health."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_overview()
+
+
+@app.get("/api/ml-performance/registry")
+def get_ml_performance_registry_endpoint():
+    """Returns autonomously discovered registry details for every ML model."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_model_registry()
+
+
+@app.get("/api/ml-performance/training-history")
+def get_ml_performance_training_history_endpoint(
+    model_name: Optional[str] = None,
+    horizon: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50
+):
+    """Returns verified historical training execution runs."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_training_history(
+        model_name=model_name,
+        horizon=horizon,
+        status=status,
+        limit=limit
+    )
+
+
+@app.get("/api/ml-performance/predictions")
+def get_ml_performance_predictions_endpoint(
+    horizon: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100
+):
+    """Returns predictions alongside actual finalized outcomes, errors, and confusion matrix."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_prediction_performance(
+        horizon=horizon,
+        status=status,
+        limit=limit
+    )
+
+
+@app.get("/api/ml-performance/nifty-forecasts")
+def get_ml_performance_nifty_forecasts_endpoint(horizon: str = "T+1"):
+    """Returns dedicated evaluation metrics and attribution for NIFTY T+1 or T+5."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_t1_t5_performance(horizon=horizon)
+
+
+@app.get("/api/ml-performance/trade-outcomes")
+def get_ml_performance_trade_outcomes_endpoint(horizon: str = "ALL"):
+    """Returns financial expectancy, win rate, PnL, and stop-loss re-entries."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_trade_outcome_learning(horizon=horizon)
+
+
+@app.get("/api/ml-performance/explainability")
+def get_ml_performance_explainability_endpoint(
+    horizon: str = "INTRADAY",
+    tree_index: int = 0
+):
+    """Returns exact decision tree topology, learned split thresholds, and TreeSHAP ranking."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_trees_and_explainability(
+        horizon=horizon,
+        tree_index=tree_index
+    )
+
+
+@app.get("/api/ml-performance/regimes")
+def get_ml_performance_regimes_endpoint():
+    """Returns performance breakdown across all 5 official market regimes."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_market_regime_performance()
+
+
+@app.get("/api/ml-performance/dataset-audit")
+def get_ml_performance_dataset_audit_endpoint():
+    """Returns database tables audit, record freshness, missing rates, and feature leakage checks."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_dataset_feature_audit()
+
+
+@app.get("/api/ml-performance/comparison")
+def get_ml_performance_comparison_endpoint(horizon: str = "T+1"):
+    """Returns tournament comparison between ensemble, standalone trees, baselines, and non-ML."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_model_comparison(horizon=horizon)
+
+
+@app.get("/api/ml-performance/drift")
+def get_ml_performance_drift_endpoint():
+    """Returns statistical feature drift, prediction distribution shifts, and model health alerts."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_monitoring_and_drift()
+
+
+@app.get("/api/ml-performance/audit-logs")
+def get_ml_performance_audit_logs_endpoint(
+    severity: Optional[str] = None,
+    category: Optional[str] = None,
+    limit: int = 100
+):
+    """Returns searchable operational audit event stream."""
+    from engines.ml_performance_engine import ml_performance_engine
+    return ml_performance_engine.get_audit_logs(
+        severity=severity,
+        category=category,
+        limit=limit
+    )
+
+
+# ==============================================================================
 # AI INTELLIGENCE LAYER ENDPOINTS (GROQ + OPENROUTER FREE TIER)
 # ==============================================================================
 class AIAnalyzeRequest(BaseModel):

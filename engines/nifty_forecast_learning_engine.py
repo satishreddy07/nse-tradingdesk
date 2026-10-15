@@ -406,6 +406,27 @@ class NiftyForecastLearningEngine:
         duration = round(time.time() - t0, 2)
         logger.info(f"✨ Trained {horizon} Nifty Models: Acc {avg_acc*100:.1f}%, Brier {avg_brier:.4f} (Baseline: {baseline_brier:.4f}) -> {status_label} ({duration}s)")
 
+        # Record into ML Performance Engine audit history
+        try:
+            from engines.ml_performance_engine import ml_performance_engine
+            ml_performance_engine.record_training_run(
+                model_name=f"NIFTY_{horizon.replace('+', '')}_TACTICAL" if horizon == "T+1" else f"NIFTY_{horizon.replace('+', '')}_STRUCTURAL",
+                model_version=version_tag,
+                horizon=horizon,
+                duration_sec=duration,
+                status=status_label,
+                dataset_version="NSE_DAILY_OHLCV_V1",
+                train_records=int(len(df) * 0.7),
+                val_records=int(len(df) * 0.15),
+                test_records=int(len(df) * 0.15),
+                feature_count=len(NIFTY_FEATURE_COLS),
+                metrics=bundle["metrics"],
+                artifact_path=str(bundle_path),
+                hyperparameters={"num_leaves": 15, "cv_purge_window": 1 if horizon == "T+1" else 5}
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to record training run in ML Performance Engine: {exc}")
+
         return {
             "status": status_label,
             "horizon": horizon,
