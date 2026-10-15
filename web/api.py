@@ -167,6 +167,7 @@ def get_system_status():
         "next_scan": scheduler_info["next_scan"],
         "scheduler_running": scheduler_info["scheduler_running"],
         "jobs": scheduler_info["jobs"],
+        "auto_workers": scheduler_info.get("auto_workers", {}),
         "render_keepalive": scheduler_info.get("render_keepalive", {}),
         "nse_holidays_meta": scheduler_info.get("nse_holidays_meta", {}),
         "telegram_vault": vault_info,
@@ -685,13 +686,29 @@ def get_nifty_intraday_expiry(session_date: Optional[str] = None, interval_mode:
 
 @app.get("/api/nifty/intraday-advanced")
 def get_nifty_intraday_advanced(force_refresh: bool = False):
-    """Returns Institutional Intraday Suite: VWAP, 15m/30m ORB, Choppiness Index, GEX, Zero-Gamma Flip, and Sector Breadth."""
+    """Returns Institutional Intraday Suite: VWAP, 15m/30m ORB, Choppiness Index, GEX, Zero-Gamma Flip, Sector Breadth, and Intraday ML."""
     from engines.intraday_analytics_engine import intraday_analytics_engine
     try:
         suite = intraday_analytics_engine.get_full_intraday_suite(force_refresh=force_refresh)
         return _sanitize_for_json(suite)
     except Exception as e:
         logger.error(f"Error fetching intraday advanced suite: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
+@app.get("/api/nifty/intraday-ml")
+def get_nifty_intraday_ml(force_refresh: bool = False):
+    """
+    Returns live pure-data Intraday ML Model predictions trained on prior slots of the day:
+    Next-slot expected price delta, directional probabilities (P_up, P_flat, P_down),
+    Writer Dominance Score (-100 to +100), and quantitative strategy recommendation.
+    """
+    from engines.intraday_ml_engine import intraday_ml_engine
+    try:
+        res = intraday_ml_engine.train_and_predict(force_refresh=force_refresh)
+        return _sanitize_for_json(res)
+    except Exception as e:
+        logger.error(f"Error running intraday ML engine: {e}", exc_info=True)
         return {"status": "ERROR", "message": str(e)}
 
 

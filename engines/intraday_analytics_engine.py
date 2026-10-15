@@ -480,15 +480,19 @@ class IntradayAnalyticsEngine:
         oc = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=force_refresh)
         w_chain = oc.get("weekly", {})
 
+        from engines.intraday_ml_engine import intraday_ml_engine
+
         # Run components concurrently
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
             f_vwap = ex.submit(self.compute_vwap_and_orb)
             f_gex = ex.submit(self.compute_gamma_exposure_and_flip, w_chain)
             f_sec = ex.submit(self.compute_sectoral_divergence)
+            f_ml = ex.submit(intraday_ml_engine.train_and_predict, force_refresh)
 
             vwap_data = f_vwap.result()
             gex_data = f_gex.result()
             sec_data = f_sec.result()
+            ml_data = f_ml.result()
 
         payload = {
             "status": "OK",
@@ -497,6 +501,7 @@ class IntradayAnalyticsEngine:
             "vwap_and_orb": vwap_data,
             "gamma_exposure": gex_data,
             "sectoral_divergence": sec_data,
+            "intraday_ml": ml_data,
         }
 
         self._cache = payload

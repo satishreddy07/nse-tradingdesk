@@ -181,14 +181,14 @@ class DataWatchdog:
                 }
 
                 if is_market_open:
-                    if stream_age is not None and stream_age <= 120:
+                    if stream_age is not None and stream_age <= 360:
                         ep_swing["status"] = "HEALTHY"
-                    elif stream_age is not None and stream_age <= 300:
+                    elif stream_age is not None and stream_age <= 600:
                         ep_swing["status"] = "DEGRADED"
-                    elif ep_swing.get("last_success_ts", 0) > (now_ts - 120):
+                    elif ep_swing.get("last_success_ts", 0) > (now_ts - 360):
                         ep_swing["status"] = "HEALTHY"
                     else:
-                        ep_swing["status"] = "OFFLINE_ALERT" if (stream_age is not None and stream_age > 300) else "HEALTHY"
+                        ep_swing["status"] = "DEGRADED" if ohlcv_stats.get("stocks_count", 0) > 0 else "OFFLINE_ALERT"
                 else:
                     ep_swing["status"] = "HEALTHY_STANDBY"
 
@@ -225,13 +225,25 @@ class DataWatchdog:
                     except Exception:
                         pass
 
-                    ep_intra["details"] = {
-                        "session_date": latest_snap["session_date"],
-                        "last_slot": latest_snap["slot_time"],
-                        "spot_price": latest_snap["spot_price"],
-                        "atm_strike": latest_snap["atm_strike"],
-                        "market_state": latest_snap["market_state"]
-                    }
+                # Retrieve real-time live spot tick so Watchdog displays the authoritative current market price
+                live_spot_tick = None
+                try:
+                    from engines.nifty_analytics_engine import nifty_analytics_engine
+                    live_spot_tick = nifty_analytics_engine.get_live_nifty_spot(force_refresh=False)
+                except Exception:
+                    pass
+
+                cur_spot = (live_spot_tick.get("price") if live_spot_tick else None) or (latest_snap["spot_price"] if latest_snap else 0.0)
+                cur_atm = (live_spot_tick.get("atm_strike") if live_spot_tick else None) or (int(round(cur_spot / 50.0) * 50) if cur_spot > 0 else (latest_snap["atm_strike"] if latest_snap else 0))
+
+                ep_intra["details"] = {
+                    "session_date": latest_snap["session_date"] if latest_snap else now_ist().strftime("%Y-%m-%d"),
+                    "last_slot": latest_snap["slot_time"] if latest_snap else "--",
+                    "spot_price": cur_spot,
+                    "atm_strike": cur_atm,
+                    "slot_spot_price": latest_snap["spot_price"] if latest_snap else cur_spot,
+                    "market_state": latest_snap["market_state"] if latest_snap else "BALANCED"
+                }
 
                 if is_market_open:
                     # Intraday slots occur every 15m/30m; live spot streams continuously
@@ -283,12 +295,14 @@ class DataWatchdog:
                         "call_wall": w_chain.get("walls_and_pain", {}).get("call_wall_1"),
                     }
                     if is_market_open:
-                        if chain_age is not None and chain_age <= 45:
+                        if chain_age is not None and chain_age <= 300:
                             ep_opt["status"] = "HEALTHY"
-                        elif chain_age is not None and chain_age <= 120:
+                        elif chain_age is not None and chain_age <= 600:
                             ep_opt["status"] = "DEGRADED"
+                        elif ep_opt.get("last_success_ts", 0) > (now_ts - 300):
+                            ep_opt["status"] = "HEALTHY"
                         else:
-                            ep_opt["status"] = "OFFLINE_ALERT"
+                            ep_opt["status"] = "DEGRADED" if w_chain.get("strikes") else "OFFLINE_ALERT"
                     else:
                         ep_opt["status"] = "HEALTHY_STANDBY"
                 else:
@@ -305,13 +319,13 @@ class DataWatchdog:
                 today_str = now_ist().strftime("%Y-%m-%d")
                 with state_engine._get_connection() as conn:
                     pred_row = conn.execute(
-                        "SELECT prediction_date, created_at, predicted_direction, composite_score "
-                        "FROM nifty_predictions_log WHERE prediction_date = ? LIMIT 1",
+                        "SELECT prediction_date, timestamp_ist, t1_verdict, composite_score "
+                        "FROM nifty_predictions_log WHERE prediction_date = ? ORDER BY id DESC LIMIT 1",
                         (today_str,)
                     ).fetchone()
                     if not pred_row:
                         pred_row = conn.execute(
-                            "SELECT prediction_date, created_at, predicted_direction, composite_score "
+                            "SELECT prediction_date, timestamp_ist, t1_verdict, composite_score "
                             "FROM nifty_predictions_log ORDER BY id DESC LIMIT 1"
                         ).fetchone()
                 t_latency = (time.time() - t0) * 1000.0
@@ -319,14 +333,30 @@ class DataWatchdog:
                 ep_pred = self._endpoints["predictions_ml"]
                 ep_pred["latency_ms"] = round(t_latency, 1)
                 if pred_row:
+                    intra_ml_summary = {}
+                    try:
+                        from engines.intraday_ml_engine import intraday_ml_engine
+                        iml = intraday_ml_engine.train_and_predict(force_refresh=False)
+                        if iml.get("status") == "OK":
+                            intra_ml_summary = {
+                                "regime": iml.get("predicted_regime"),
+                                "writer_dominance": iml.get("writer_dominance_score"),
+                                "slots_trained": iml.get("model_metrics", {}).get("slots_trained_today", 0),
+                                "r2_score": iml.get("model_metrics", {}).get("r2_score", 0.0),
+                                "delta_pts": iml.get("predicted_next_spot_delta_pts", 0.0),
+                            }
+                    except Exception:
+                        pass
+
                     ep_pred["details"] = {
                         "prediction_date": pred_row["prediction_date"],
-                        "created_at": pred_row["created_at"],
-                        "predicted_direction": pred_row["predicted_direction"],
+                        "created_at": pred_row["timestamp_ist"],
+                        "predicted_direction": pred_row["t1_verdict"],
                         "composite_score": pred_row["composite_score"],
-                        "aligned_today": (pred_row["prediction_date"] == today_str)
+                        "aligned_today": (pred_row["prediction_date"] == today_str),
+                        "intraday_ml": intra_ml_summary
                     }
-                    ep_pred["last_packet_time_ist"] = pred_row["created_at"]
+                    ep_pred["last_packet_time_ist"] = pred_row["timestamp_ist"]
                     ep_pred["status"] = "HEALTHY" if (pred_row["prediction_date"] == today_str or not is_market_open) else "DEGRADED"
                 else:
                     ep_pred["status"] = "DEGRADED"

@@ -1544,6 +1544,78 @@ class NiftyAnalyticsEngine:
             logger.debug(f"Intraday advanced suite load notice: {aie}")
 
         live_spot = self.get_live_nifty_spot()
+        spot_p = float(live_spot.get("price") or (latest.get("spot_price") if latest else 22700.0))
+        cur_atm = int(round(spot_p / 50.0) * 50)
+        live_spot["atm_strike"] = cur_atm
+
+        # Extract live weekly option chain to synchronize all derived options metrics
+        oc_cache = getattr(self, "_option_chain_mem_cache", None) or getattr(self, "_option_chain_cache", {})
+        if not oc_cache:
+            oc_cache = state_engine.get_kv("latest_nifty_option_chain_deep") or {}
+        w_chain = oc_cache.get("weekly", {})
+        strikes = w_chain.get("strikes", [])
+
+        # Find exact ATM strike in options chain
+        atm_strike_row = next((s for s in strikes if int(s.get("strike", 0)) == cur_atm), None)
+        if not atm_strike_row and strikes:
+            atm_strike_row = min(strikes, key=lambda s: abs(int(s.get("strike", 0)) - cur_atm))
+
+        if atm_strike_row:
+            atm_ce_ltp = float(atm_strike_row.get("ce_ltp") or 0.0)
+            atm_pe_ltp = float(atm_strike_row.get("pe_ltp") or 0.0)
+            atm_straddle = round(atm_ce_ltp + atm_pe_ltp, 2)
+            atm_pcr = float(atm_strike_row.get("strike_pcr") or round(float(atm_strike_row.get("pe_oi") or 0) / max(1.0, float(atm_strike_row.get("ce_oi") or 0)), 2))
+        else:
+            atm_ce_ltp = float(latest.get("atm_ce_ltp") or 0.0)
+            atm_pe_ltp = float(latest.get("atm_pe_ltp") or 0.0)
+            atm_straddle = float(latest.get("straddle_premium") or 0.0)
+            atm_pcr = float(latest.get("atm_pcr") or 1.0)
+
+        near_atm_strikes = [s for s in strikes if abs(int(s.get("strike", 0)) - cur_atm) <= 100]
+        if near_atm_strikes:
+            near_pe_oi = sum(float(s.get("pe_oi") or 0) for s in near_atm_strikes)
+            near_ce_oi = sum(float(s.get("ce_oi") or 0) for s in near_atm_strikes)
+            near_atm_pcr = round(near_pe_oi / max(1.0, near_ce_oi), 2)
+        else:
+            near_atm_pcr = float(w_chain.get("pcr", {}).get("near_atm_pcr") or latest.get("near_atm_pcr") or 1.0)
+
+        overall_pcr = float(w_chain.get("pcr", {}).get("overall_pcr") or latest.get("overall_pcr") or 1.0)
+        chg_oi_pcr = float(w_chain.get("pcr", {}).get("chg_oi_pcr") or latest.get("chg_oi_pcr") or 1.0)
+
+        walls_and_pain = w_chain.get("walls_and_pain", {})
+        call_wall = walls_and_pain.get("call_wall_1") or latest.get("call_wall")
+        put_wall = walls_and_pain.get("put_wall_1") or latest.get("put_wall")
+        max_pain = walls_and_pain.get("max_pain") or latest.get("max_pain")
+
+        net_pe_oi_chg = int(w_chain.get("oi_flow", {}).get("net_pe_oi_chg") or latest.get("net_pe_oi_chg") or 0)
+        net_ce_oi_chg = int(w_chain.get("oi_flow", {}).get("net_ce_oi_chg") or latest.get("net_ce_oi_chg") or 0)
+
+        live_synced_metrics = {
+            "spot_price": spot_p,
+            "atm_strike": cur_atm,
+            "straddle_premium": atm_straddle,
+            "atm_ce_ltp": atm_ce_ltp,
+            "atm_pe_ltp": atm_pe_ltp,
+            "near_atm_pcr": near_atm_pcr,
+            "atm_pcr": atm_pcr,
+            "overall_pcr": overall_pcr,
+            "chg_oi_pcr": chg_oi_pcr,
+            "call_wall": call_wall,
+            "put_wall": put_wall,
+            "max_pain": max_pain,
+            "net_pe_oi_chg": net_pe_oi_chg,
+            "net_ce_oi_chg": net_ce_oi_chg,
+            "synced_at_ist": format_ist(),
+            "source": live_spot.get("source", "FAST_STREAM_SYNC")
+        }
+
+        # Intraday ML Model inference on prior slots
+        intraday_ml_res = {}
+        try:
+            from engines.intraday_ml_engine import intraday_ml_engine
+            intraday_ml_res = intraday_ml_engine.train_and_predict(force_refresh=False)
+        except Exception as mle:
+            logger.debug(f"Intraday ML load notice: {mle}")
 
         res = {
             "status": "OK" if latest else "EMPTY",
@@ -1556,6 +1628,8 @@ class NiftyAnalyticsEngine:
             "latest_snapshot": latest,
             "opening_snapshot": first,
             "live_spot": live_spot,
+            "live_synced_metrics": live_synced_metrics,
+            "intraday_ml": intraday_ml_res,
             "is_market_open": market_open,
             "scheduled_slots": schedule_slots,
             "scheduled_50m_slots": schedule_slots,

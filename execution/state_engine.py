@@ -52,7 +52,7 @@ class StateEngine:
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=45.0)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=10000;")
+        conn.execute("PRAGMA busy_timeout=15000;")
         conn.execute("PRAGMA synchronous=NORMAL;")
         return conn
 
@@ -68,10 +68,11 @@ class StateEngine:
         with self._lock:
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
             with self._get_connection() as conn:
-                # Switch out of WAL mode into single-file DELETE mode so no .db-wal / .db-shm files exist
+                # Enable SQLite WAL (Write-Ahead Logging) mode for concurrent readers & zero collision
                 try:
-                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-                    conn.execute("PRAGMA journal_mode=DELETE;")
+                    conn.execute("PRAGMA journal_mode=WAL;")
+                    conn.execute("PRAGMA synchronous=NORMAL;")
+                    conn.execute("PRAGMA wal_autocheckpoint=1000;")
                 except Exception:
                     pass
 
