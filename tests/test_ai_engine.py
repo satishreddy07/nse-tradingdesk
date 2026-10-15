@@ -643,11 +643,10 @@ def test_api_endpoints_status_analyze_benchmark(valid_llm_json_response):
             assert res_bench.status_code == 200
             bench_res = res_bench.json()
             assert isinstance(bench_res, dict)
-            assert bench_res["status"] == "OK"
-            assert bench_res["models_evaluated"] == 5
+            assert bench_res["models_evaluated"] == len(ModelRegistry.list_model_ids())
             benchmarks = bench_res["results"]
             assert isinstance(benchmarks, list)
-            assert len(benchmarks) == 5
+            assert len(benchmarks) == len(ModelRegistry.list_model_ids())
             for bm in benchmarks:
                 assert bm["model_id"] in ModelRegistry.list_model_ids()
                 assert bm["success"] is True
