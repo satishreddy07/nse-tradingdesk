@@ -216,6 +216,13 @@ class NiftyAnalyticsEngine:
                     except Exception as fe:
                         logger.debug(f"Options streamer background fetch notice: {fe}")
 
+                    # 3. Monitor active options legs for Stop-Loss & Re-Entry
+                    try:
+                        from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+                        intraday_options_strategy_engine.tick_active_options_reentry_monitor()
+                    except Exception:
+                        pass
+
                     elapsed = time.time() - t0
                     time.sleep(max(6.0, 12.0 - elapsed))
                 else:

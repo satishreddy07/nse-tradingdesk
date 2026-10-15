@@ -520,6 +520,13 @@ def _intraday_collector_watchdog():
                                 slot_override=active_slot, sync_cloud=True, interval_mode="30m"
                             )
 
+                    # Monitor Intraday Options Strategy Legs for Stop Loss & Price-Triggered Re-Entry
+                    try:
+                        from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+                        intraday_options_strategy_engine.tick_active_options_reentry_monitor()
+                    except Exception:
+                        pass
+
                     # Central Data Gatekeeper SLA monitoring
                     try:
                         from core.data_watchdog import data_watchdog
@@ -591,6 +598,16 @@ def scheduled_daily_prediction_training_job():
         )
     except Exception as e:
         logger.warning(f"03:40 PM Swing Quant ML Training Job error: {e}")
+
+    try:
+        from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+        opt_ml = intraday_options_strategy_engine.train_options_ml_model()
+        logger.info(
+            f"🎯 [03:40 PM Intraday Options ML Training] Samples: {opt_ml.get('total_samples', 0)}, "
+            f"Win Rate Accuracy: {opt_ml.get('win_rate_accuracy_pct', 0)}%, R²: {opt_ml.get('expectancy_r2', 0)}."
+        )
+    except Exception as e:
+        logger.warning(f"03:40 PM Intraday Options ML Training Job error: {e}")
 
 
 def start_scheduler():

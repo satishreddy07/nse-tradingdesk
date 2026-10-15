@@ -2671,6 +2671,11 @@
               <span>Options Portfolio & Equity</span>
               <span id="opt-subtab-port-badge" class="px-1.5 py-0.2 rounded text-[10px] bg-purple-500/20 text-purple-300 font-bold">0</span>
             </button>
+            <button onclick="switchOptionsSubTab('intraday_rules')" id="opt-tab-btn-intraday-rules" class="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800/70 flex items-center justify-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i>
+              <span>5-Regime Auto Strategies & Backtest</span>
+              <span id="opt-subtab-rules-badge" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-500/20 text-amber-300 font-bold">5 RULES</span>
+            </button>
           </div>
         </div>
       </div>
@@ -3163,6 +3168,558 @@
         </div>
       </div>
     </div> <!-- Close Sub-Tab 3: opt-sub-portfolio -->
+
+    <!-- =================================================================== -->
+    <!-- SUB-TAB 4: 5-REGIME INTRADAY OPTIONS STRATEGIES, BACKTEST & ML       -->
+    <!-- =================================================================== -->
+    <div id="opt-sub-intraday-rules" class="space-y-5 hidden font-mono text-xs">
+
+      <!-- 1. Header Banner & Dynamic Control Desk -->
+      <div class="bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                INTRADAY OPTIONS ENGINE
+              </span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                5 PREDICTION REGIMES
+              </span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                PRICE-TRIGGERED RE-ENTRY (P0)
+              </span>
+            </div>
+            <h2 class="text-base sm:text-lg font-bold text-white mt-1">
+              5-Regime Intraday Options Strategies & ML Execution Engine
+            </h2>
+            <p class="text-[11px] text-slate-400 mt-0.5 font-sans">
+              Rule-based execution on Nifty 50 predictions: Dynamic 1&sigma;/2&sigma; strike selection, per-leg 30%/40% stop-loss, 
+              strict 1-time price-triggered re-entry when premium drops to &le; P0, independent backtesting, and full ML feedback loop.
+            </p>
+          </div>
+
+          <!-- Action Buttons Bar -->
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <div class="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1">
+              <span class="text-[10px] text-slate-500 uppercase">Backtest Sessions:</span>
+              <select id="sel-intraday-backtest-sessions" class="bg-transparent text-cyan-300 text-xs font-bold focus:outline-none">
+                <option value="25" class="bg-slate-900 text-white">25 Sessions</option>
+                <option value="50" selected class="bg-slate-900 text-white">50 Sessions</option>
+                <option value="100" class="bg-slate-900 text-white">100 Sessions</option>
+              </select>
+            </div>
+
+            <button onclick="runIntradayOptionsBacktest()" id="btn-run-intraday-backtest" class="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition">
+              <i data-lucide="play" class="w-3.5 h-3.5 fill-black"></i>
+              <span>Run Backtest</span>
+            </button>
+
+            <button onclick="triggerIntradayAutoTrades()" id="btn-trigger-intraday-autotrade" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition">
+              <i data-lucide="zap" class="w-3.5 h-3.5 fill-black"></i>
+              <span>Auto-Deploy (Live)</span>
+            </button>
+
+            <button onclick="retrainOptionsMLModel()" id="btn-retrain-options-ml" class="px-3 py-2 rounded-xl bg-purple-600/80 hover:bg-purple-600 text-white font-bold text-xs flex items-center gap-1.5 border border-purple-500/40 transition">
+              <i data-lucide="brain-circuit" class="w-3.5 h-3.5"></i>
+              <span>Retrain ML</span>
+            </button>
+
+            <button onclick="loadIntradayRulesData(true)" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="Refresh Data">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Dynamic Sigma Strike Calculator & Formulation Inputs -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-3 border-b border-slate-800 gap-2">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+            <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+              Dynamic Sigma Strike Selection & Mathematical Inputs
+            </h3>
+          </div>
+          <div class="text-[11px] text-cyan-300 bg-cyan-500/10 px-2.5 py-1 rounded-lg border border-cyan-500/20">
+            Formula: Expected Move = Underlying Price &times; Implied Volatility &times; &radic;(Time to Expiry)
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+          <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-500 uppercase">Underlying Spot (S)</div>
+            <div id="calc-spot-val" class="text-sm font-bold text-white mt-0.5">₹22,600.00</div>
+            <div class="text-[9px] text-slate-400">NSE Live Nifty 50</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-500 uppercase">Implied Vol (IV)</div>
+            <div id="calc-iv-val" class="text-sm font-bold text-cyan-300 mt-0.5">13.2%</div>
+            <div class="text-[9px] text-slate-400">ATM Implied Volatility</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-500 uppercase">Expiry Horizon (T)</div>
+            <div id="calc-t-val" class="text-sm font-bold text-purple-300 mt-0.5">1-Day (0DTE)</div>
+            <div class="text-[9px] text-slate-400">T = 1 / 365 = 0.00274 yr</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5">
+            <div class="text-[10px] text-slate-500 uppercase">Expected Move (&plusmn;)</div>
+            <div id="calc-em-val" class="text-sm font-bold text-amber-300 mt-0.5">&plusmn; 156.4 pts</div>
+            <div class="text-[9px] text-slate-400">Unrounded 1-Sigma Move</div>
+          </div>
+          <div class="bg-slate-950/80 border border-emerald-900/40 rounded-xl p-2.5">
+            <div class="text-[10px] text-emerald-400 uppercase font-bold">1-Sigma PE Strike</div>
+            <div id="calc-1s-pe" class="text-sm font-bold text-emerald-300 mt-0.5">22450 PE</div>
+            <div class="text-[9px] text-slate-400">Put Short @ 1&sigma; Floor</div>
+          </div>
+          <div class="bg-slate-950/80 border border-rose-900/40 rounded-xl p-2.5">
+            <div class="text-[10px] text-rose-400 uppercase font-bold">1-Sigma CE Strike</div>
+            <div id="calc-1s-ce" class="text-sm font-bold text-rose-300 mt-0.5">22750 CE</div>
+            <div class="text-[9px] text-slate-400">Call Short @ 1&sigma; Ceiling</div>
+          </div>
+          <div class="bg-slate-950/80 border border-emerald-950/60 rounded-xl p-2.5">
+            <div class="text-[10px] text-emerald-500 uppercase font-bold">2-Sigma PE Strike</div>
+            <div id="calc-2s-pe" class="text-sm font-bold text-emerald-400 mt-0.5">22300 PE</div>
+            <div class="text-[9px] text-slate-400">Wing Short @ 2&sigma; Move</div>
+          </div>
+          <div class="bg-slate-950/80 border border-rose-950/60 rounded-xl p-2.5">
+            <div class="text-[10px] text-rose-500 uppercase font-bold">2-Sigma CE Strike</div>
+            <div id="calc-2s-ce" class="text-sm font-bold text-rose-400 mt-0.5">22900 CE</div>
+            <div class="text-[9px] text-slate-400">Wing Short @ 2&sigma; Move</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. The 5 Prediction Regime Rule Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <!-- 1. Strong Bullish -->
+        <div class="bg-slate-900/90 border border-emerald-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-emerald-500 transition">
+          <div>
+            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
+                1. Strong Bullish
+              </span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">SL 30%</span>
+            </div>
+            <div class="space-y-2 text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                <div class="text-[10px] text-emerald-300 font-bold uppercase">Primary Strategy:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1-Sigma Strike</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 30% increase in premium</div>
+              </div>
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-purple-500/20">
+                <div class="text-[10px] text-purple-300 font-bold uppercase">Experimental Asymmetric:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1&sigma; + Sell CE @ 2&sigma;</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; 30% SL independently per leg</div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+            <span>Re-entry:</span>
+            <span class="text-emerald-300 font-bold">1-Time @ &le; P0</span>
+          </div>
+        </div>
+
+        <!-- 2. Strong Bearish -->
+        <div class="bg-slate-900/90 border border-rose-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-rose-500 transition">
+          <div>
+            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                <i data-lucide="trending-down" class="w-3.5 h-3.5"></i>
+                2. Strong Bearish
+              </span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">SL 30%</span>
+            </div>
+            <div class="space-y-2 text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                <div class="text-[10px] text-rose-300 font-bold uppercase">Primary Strategy:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1-Sigma Strike</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 30% increase in premium</div>
+              </div>
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-purple-500/20">
+                <div class="text-[10px] text-purple-300 font-bold uppercase">Experimental Asymmetric:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1&sigma; + Sell PE @ 2&sigma;</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; 30% SL independently per leg</div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+            <span>Re-entry:</span>
+            <span class="text-rose-300 font-bold">1-Time @ &le; P0</span>
+          </div>
+        </div>
+
+        <!-- 3. Mild Bullish -->
+        <div class="bg-slate-900/90 border border-teal-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-teal-500 transition">
+          <div>
+            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-teal-400 flex items-center gap-1.5">
+                <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
+                3. Mild Bullish
+              </span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">SL 40%</span>
+            </div>
+            <div class="space-y-2 text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                <div class="text-[10px] text-teal-300 font-bold uppercase">Primary Strategy:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1-Sigma Strike</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 40% increase in premium</div>
+              </div>
+              <div class="p-2 rounded-lg bg-slate-950/40 border border-slate-800/40 text-slate-500">
+                <div class="text-[10px] uppercase">Asymmetric Leg:</div>
+                <div class="mt-0.5 italic text-[10px]">None (Single directional short)</div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+            <span>Re-entry:</span>
+            <span class="text-teal-300 font-bold">1-Time @ &le; P0</span>
+          </div>
+        </div>
+
+        <!-- 4. Mild Bearish -->
+        <div class="bg-slate-900/90 border border-amber-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-amber-500 transition">
+          <div>
+            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                <i data-lucide="arrow-down-right" class="w-3.5 h-3.5"></i>
+                4. Mild Bearish
+              </span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">SL 40%</span>
+            </div>
+            <div class="space-y-2 text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                <div class="text-[10px] text-amber-300 font-bold uppercase">Primary Strategy:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1-Sigma Strike</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 40% increase in premium</div>
+              </div>
+              <div class="p-2 rounded-lg bg-slate-950/40 border border-slate-800/40 text-slate-500">
+                <div class="text-[10px] uppercase">Asymmetric Leg:</div>
+                <div class="mt-0.5 italic text-[10px]">None (Single directional short)</div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+            <span>Re-entry:</span>
+            <span class="text-amber-300 font-bold">1-Time @ &le; P0</span>
+          </div>
+        </div>
+
+        <!-- 5. Range-Bound -->
+        <div class="bg-slate-900/90 border border-cyan-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-cyan-500 transition">
+          <div>
+            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                <i data-lucide="split" class="w-3.5 h-3.5"></i>
+                5. Range-Bound
+              </span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">SL 40%</span>
+            </div>
+            <div class="space-y-2 text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                <div class="text-[10px] text-cyan-300 font-bold uppercase">Primary Strategy:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1&sigma; + Sell PE @ 1&sigma;</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; Short Strangle (40% SL per leg)</div>
+              </div>
+              <div class="p-2 rounded-lg bg-slate-950/40 border border-slate-800/40 text-slate-500">
+                <div class="text-[10px] uppercase">Leg Independence:</div>
+                <div class="mt-0.5 text-slate-400 text-[10px]">Each leg managed strictly independently</div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+            <span>Re-entry:</span>
+            <span class="text-cyan-300 font-bold">1-Time @ &le; P0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Stop-Loss & Re-Entry State Machine Workflow Diagram -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+        <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
+            <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+              Exact Stop-Loss &amp; Price-Triggered Re-Entry Architecture (Per-Leg State Machine)
+            </h3>
+          </div>
+          <span class="text-[11px] text-purple-300 bg-purple-500/10 px-2.5 py-0.5 rounded border border-purple-500/30">
+            Reference Anchor: Original Entry Premium P0 (NOT Index Spot)
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-3 text-[11px]">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="flex items-center gap-2 text-cyan-400 font-bold">
+              <span class="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-[10px]">1</span>
+              <span>Initial Sell Entry</span>
+            </div>
+            <div class="text-white mt-2 font-semibold">Sell Option @ P0 (e.g. ₹100)</div>
+            <p class="text-[10px] text-slate-400 mt-1">
+              Leg set to ACTIVE. Calculate initial stop trigger: P0 &times; (1 + SL%) = ₹130 (30% SL) or ₹140 (40% SL).
+            </p>
+          </div>
+
+          <div class="bg-slate-950/80 border border-rose-500/30 rounded-xl p-3">
+            <div class="flex items-center gap-2 text-rose-400 font-bold">
+              <span class="w-5 h-5 rounded-full bg-rose-500/20 text-rose-300 flex items-center justify-center text-[10px]">2</span>
+              <span>Stop-Loss Exit</span>
+            </div>
+            <div class="text-white mt-2 font-semibold">Premium reaches SL Trigger</div>
+            <p class="text-[10px] text-slate-400 mt-1">
+              Trigger buy exit on executable quotes (handling gap slippage). Record actual exit fill. State &rarr; SL_EXITED.
+            </p>
+          </div>
+
+          <div class="bg-slate-950/80 border border-amber-500/30 rounded-xl p-3">
+            <div class="flex items-center gap-2 text-amber-400 font-bold">
+              <span class="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center text-[10px]">3</span>
+              <span>Monitor Same Strike</span>
+            </div>
+            <div class="text-white mt-2 font-semibold">Track Contract &amp; Quotes</div>
+            <p class="text-[10px] text-slate-400 mt-1">
+              Do not require a new prediction. Continuous watchdog monitors live bid/ask quotes for the exact same strike.
+            </p>
+          </div>
+
+          <div class="bg-slate-950/80 border border-emerald-500/30 rounded-xl p-3">
+            <div class="flex items-center gap-2 text-emerald-400 font-bold">
+              <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center text-[10px]">4</span>
+              <span>Price-Triggered Re-Entry</span>
+            </div>
+            <div class="text-white mt-2 font-semibold">Premium &le; P0 (e.g. &le; ₹100)</div>
+            <p class="text-[10px] text-slate-400 mt-1">
+              Submit new sell order. Strictly 1 re-entry per cycle. New SL trigger = Actual Re-entry Fill &times; (1 + SL%). State &rarr; RE_ENTERED.
+            </p>
+          </div>
+
+          <div class="bg-slate-950/80 border border-purple-500/30 rounded-xl p-3">
+            <div class="flex items-center gap-2 text-purple-400 font-bold">
+              <span class="w-5 h-5 rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center text-[10px]">5</span>
+              <span>Final Exit / MOC Decay</span>
+            </div>
+            <div class="text-white mt-2 font-semibold">Final SL or 15:25 MOC</div>
+            <p class="text-[10px] text-slate-400 mt-1">
+              If re-entered leg hits new SL &rarr; FINAL_SL_EXITED (no more re-entries). Else hold into afternoon theta decay for full credit.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. Comprehensive Backtest Matrix & Regime Performance -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+              <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+                Independent Strategy Backtest Matrix (Historical Predictions)
+              </h3>
+            </div>
+            <div id="backtest-meta-banner" class="text-[11px] text-slate-400 mt-0.5">
+              Evaluating 50 Sessions across all 5 regimes with tick-by-tick brownian trajectory simulation &amp; regulatory costs.
+            </div>
+          </div>
+          <span id="backtest-timestamp-badge" class="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 font-bold">
+            READY
+          </span>
+        </div>
+
+        <!-- KPI Metric Cards for Primary Strategy with Re-entry -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-500 uppercase">Win Rate (Primary)</div>
+            <div id="bt-kpi-winrate" class="text-base sm:text-lg font-bold text-emerald-400 mt-0.5">--%</div>
+            <div class="text-[9px] text-slate-400">Wins / Total Trades</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-500 uppercase">Total Net P&amp;L (INR)</div>
+            <div id="bt-kpi-netpnl" class="text-base sm:text-lg font-bold text-white mt-0.5">₹--</div>
+            <div class="text-[9px] text-slate-400">Net of All Indian Taxes</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-500 uppercase">Expectancy / Trade</div>
+            <div id="bt-kpi-expectancy" class="text-base sm:text-lg font-bold text-cyan-300 mt-0.5">₹--</div>
+            <div class="text-[9px] text-slate-400">Avg Return per Session</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-500 uppercase">Profit Factor</div>
+            <div id="bt-kpi-pf" class="text-base sm:text-lg font-bold text-purple-300 mt-0.5">--</div>
+            <div class="text-[9px] text-slate-400">Gross Wins / Gross Losses</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-500 uppercase">Max Drawdown</div>
+            <div id="bt-kpi-maxdd" class="text-base sm:text-lg font-bold text-rose-400 mt-0.5">₹--</div>
+            <div class="text-[9px] text-slate-400">Peak-to-Trough Drop</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-500 uppercase">Tail Loss (Worst 5%)</div>
+            <div id="bt-kpi-tailloss" class="text-base sm:text-lg font-bold text-amber-400 mt-0.5">₹--</div>
+            <div class="text-[9px] text-slate-400">Average of Tail Losses</div>
+          </div>
+        </div>
+
+        <!-- Comparison Table: 30% vs 40% SL, With vs Without Re-entry, Primary vs Asymmetric -->
+        <div class="bg-slate-950/90 border border-slate-800 rounded-xl overflow-hidden">
+          <div class="p-2.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+            <div class="font-bold text-white text-[11px] uppercase tracking-wide">
+              Strategy Variant Comparison Matrix (Empirical Backtest Evidence)
+            </div>
+            <div class="text-[10px] text-slate-400">
+              Regulatory Costs Deducted: STT (0.1% sell), Exch (0.0505%), GST (18%), Stamp (0.003%), SEBI
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono">
+              <thead class="bg-slate-900/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2.5">Strategy Configuration</th>
+                  <th class="p-2.5">Stop-Loss</th>
+                  <th class="p-2.5">Price Re-Entry (P0)</th>
+                  <th class="p-2.5 text-right">Win Rate</th>
+                  <th class="p-2.5 text-right">Profit Factor</th>
+                  <th class="p-2.5 text-right">Trade Expectancy</th>
+                  <th class="p-2.5 text-right">Net P&amp;L (INR)</th>
+                  <th class="p-2.5 text-right">Max Drawdown</th>
+                  <th class="p-2.5 text-right">Tail Loss (5%)</th>
+                </tr>
+              </thead>
+              <tbody id="backtest-comparison-tbody" class="divide-y divide-slate-800/60">
+                <tr><td colspan="9" class="p-4 text-center text-slate-500">Click &quot;Run Backtest&quot; to compute empirical matrix.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Breakdown by Market Regime -->
+        <div class="bg-slate-950/90 border border-slate-800 rounded-xl overflow-hidden">
+          <div class="p-2.5 bg-slate-950 border-b border-slate-800 font-bold text-white text-[11px] uppercase tracking-wide">
+            Performance Breakdown Across 5 Market Regimes
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono">
+              <thead class="bg-slate-900/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2.5">Market Regime</th>
+                  <th class="p-2.5">Sessions</th>
+                  <th class="p-2.5 text-right">Primary Win%</th>
+                  <th class="p-2.5 text-right">Primary Net P&amp;L</th>
+                  <th class="p-2.5 text-right">Primary Profit Factor</th>
+                  <th class="p-2.5 text-right">Asymmetric Win%</th>
+                  <th class="p-2.5 text-right">Asymmetric Net P&amp;L</th>
+                  <th class="p-2.5 text-right">Asymmetric PF</th>
+                </tr>
+              </thead>
+              <tbody id="backtest-regime-tbody" class="divide-y divide-slate-800/60">
+                <tr><td colspan="8" class="p-4 text-center text-slate-500">Loading regime breakdown...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Statistical Insights Box -->
+        <div id="backtest-insights-box" class="bg-slate-950/90 border border-cyan-500/30 rounded-xl p-3.5 space-y-1.5 text-[11px]">
+          <div class="text-cyan-300 font-bold text-xs flex items-center gap-1.5">
+            <i data-lucide="lightbulb" class="w-3.5 h-3.5 text-cyan-400"></i>
+            <span>Empirical Statistical Insights:</span>
+          </div>
+          <ul id="backtest-insights-list" class="list-disc list-inside text-slate-300 space-y-1 font-sans">
+            <li>Price-Triggered 1-Time Re-entry turns multiple false-breakout spikes into profitable trades as option premiums decay back to full credit.</li>
+            <li>30% Stop-Loss limits tail drawdowns during strong unidirectional trending breakouts.</li>
+            <li>40% Stop-Loss provides essential breathing room for Range-Bound short strangles during morning volatility expansions.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- 6. Active Strategy Trades & Re-Entry Execution Ledger -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+            <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+              Active Strategy Trades &amp; Re-Entry Execution Ledger
+            </h3>
+          </div>
+          <div class="text-[10px] text-slate-400">
+            Source: <code class="text-amber-300">intraday_options_trade_log</code> (SQLite WAL)
+          </div>
+        </div>
+
+        <div class="bg-slate-950/90 border border-slate-800 rounded-xl overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono">
+              <thead class="bg-slate-900/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2.5">Date / Time (IST)</th>
+                  <th class="p-2.5">Strategy / Regime</th>
+                  <th class="p-2.5">Category</th>
+                  <th class="p-2.5">Leg (Strike &amp; Type)</th>
+                  <th class="p-2.5 text-right">P0 (Entry Fill)</th>
+                  <th class="p-2.5 text-right">SL Trigger</th>
+                  <th class="p-2.5 text-center">SL Hit?</th>
+                  <th class="p-2.5 text-right">Re-Entry Fill</th>
+                  <th class="p-2.5 text-right">New SL Trigger</th>
+                  <th class="p-2.5 text-center">Status</th>
+                  <th class="p-2.5 text-right">Net P&amp;L (INR)</th>
+                </tr>
+              </thead>
+              <tbody id="intraday-trades-ledger-tbody" class="divide-y divide-slate-800/60">
+                <tr><td colspan="11" class="p-4 text-center text-slate-500">No active trades in ledger. Click &quot;Auto-Deploy (Live)&quot; to execute.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. Machine Learning Continuous Feedback & Meta-Learning Desk -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
+            <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+              Machine Learning Continuous Feedback &amp; Execution Optimizer
+            </h3>
+          </div>
+          <div id="ml-model-badge" class="text-[10px] text-purple-300 bg-purple-500/10 px-2.5 py-0.5 rounded border border-purple-500/30">
+            ONLINE LOGISTIC + RIDGE REGRESSION
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-500 uppercase">Win Rate Classifier Acc</div>
+            <div id="ml-win-acc" class="text-base font-bold text-emerald-400 mt-0.5">--%</div>
+            <div class="text-[9px] text-slate-400">Logistic Meta-Model Accuracy</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-500 uppercase">Expectancy Regressor R&sup2;</div>
+            <div id="ml-r2-score" class="text-base font-bold text-cyan-300 mt-0.5">--</div>
+            <div class="text-[9px] text-slate-400">Ridge PnL Expectancy Fit</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-500 uppercase">Training Samples</div>
+            <div id="ml-samples-count" class="text-base font-bold text-purple-300 mt-0.5">--</div>
+            <div id="ml-ledger-count" class="text-[9px] text-slate-400">Real Ledger: --</div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div class="text-[10px] text-slate-500 uppercase">Last Retrained (IST)</div>
+            <div id="ml-last-trained" class="text-xs font-bold text-white mt-1">--</div>
+            <div class="text-[9px] text-slate-400">Scheduled 03:40 PM Daily + On-Demand</div>
+          </div>
+        </div>
+
+        <!-- Feature Importance Grid -->
+        <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5">
+          <div class="font-bold text-white text-[11px] uppercase mb-2">
+            Dynamic Model Feature Weights &amp; Importance
+          </div>
+          <div id="ml-feature-importance-bars" class="space-y-2 text-[10px]">
+            <!-- Filled by JS -->
+          </div>
+        </div>
+      </div>
+
+    </div> <!-- Close Sub-Tab 4: opt-sub-intraday-rules -->
   </section>
 
   </main>
@@ -6427,7 +6984,8 @@
       const tabConfigs = [
         { id: 'chain', panel: 'opt-sub-chain', btn: 'opt-tab-btn-chain' },
         { id: 'builder', panel: 'opt-sub-builder', btn: 'opt-tab-btn-builder' },
-        { id: 'portfolio', panel: 'opt-sub-portfolio', btn: 'opt-tab-btn-portfolio' }
+        { id: 'portfolio', panel: 'opt-sub-portfolio', btn: 'opt-tab-btn-portfolio' },
+        { id: 'intraday_rules', panel: 'opt-sub-intraday-rules', btn: 'opt-tab-btn-intraday-rules' }
       ];
 
       tabConfigs.forEach(tc => {
@@ -6460,6 +7018,10 @@
       } else if (tab === 'portfolio') {
         setTimeout(() => {
           loadOptionsPortfolioDesk();
+        }, 50);
+      } else if (tab === 'intraday_rules') {
+        setTimeout(() => {
+          loadIntradayRulesData();
         }, 50);
       }
       if (window.lucide) lucide.createIcons();
@@ -8452,6 +9014,413 @@
           btn.disabled = false;
           btn.innerHTML = origHtml;
           lucide.createIcons();
+        }
+      }
+    }
+
+    // =========================================================================
+    // MODULE 4D: 5-REGIME INTRADAY OPTIONS STRATEGIES, BACKTEST & ML CONTROLLER
+    // =========================================================================
+    let intradayBacktestCache = null;
+    let intradayActiveTradesCache = null;
+    let intradayMLMetricsCache = null;
+
+    function updateDynamicSigmaDisplay(spot = null, iv = null) {
+      // Determine underlying spot price
+      let s = spot;
+      if (!s || s <= 0) {
+        if (niftyOptionsChainCache && niftyOptionsChainCache.spot) {
+          s = Number(niftyOptionsChainCache.spot);
+        } else if (window.niftyLiveSpotPrice && window.niftyLiveSpotPrice > 0) {
+          s = Number(window.niftyLiveSpotPrice);
+        } else {
+          s = 22600.0;
+        }
+      }
+
+      // Determine ATM implied volatility
+      let ivVal = iv;
+      if (!ivVal || ivVal <= 0) {
+        if (niftyOptionsChainCache && niftyOptionsChainCache.summary && niftyOptionsChainCache.summary.atm_iv) {
+          ivVal = Number(niftyOptionsChainCache.summary.atm_iv);
+        } else {
+          ivVal = 13.2;
+        }
+      }
+
+      // Exact mathematical formula: Expected Move = Underlying Price * IV * sqrt(Time to Expiry in Years)
+      const tYears = 1.0 / 365.0; // Intraday 1-day 0DTE horizon
+      const sigmaDec = ivVal / 100.0;
+      const expectedMove = s * sigmaDec * Math.sqrt(tYears);
+
+      // Strike selection rounded to eligible listed NSE strikes (multiples of 50)
+      const strike1sPe = Math.round((s - expectedMove) / 50) * 50;
+      const strike1sCe = Math.round((s + expectedMove) / 50) * 50;
+      const strike2sPe = Math.round((s - 2 * expectedMove) / 50) * 50;
+      const strike2sCe = Math.round((s + 2 * expectedMove) / 50) * 50;
+
+      const spotEl = document.getElementById('calc-spot-val');
+      const ivEl = document.getElementById('calc-iv-val');
+      const tEl = document.getElementById('calc-t-val');
+      const emEl = document.getElementById('calc-em-val');
+      const s1peEl = document.getElementById('calc-1s-pe');
+      const s1ceEl = document.getElementById('calc-1s-ce');
+      const s2peEl = document.getElementById('calc-2s-pe');
+      const s2ceEl = document.getElementById('calc-2s-ce');
+
+      if (spotEl) spotEl.innerText = `₹${s.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      if (ivEl) ivEl.innerText = `${ivVal.toFixed(1)}%`;
+      if (tEl) tEl.innerText = `1-Day (T = ${(tYears).toFixed(5)} yr)`;
+      if (emEl) emEl.innerText = `± ${expectedMove.toFixed(1)} pts`;
+      if (s1peEl) s1peEl.innerText = `${strike1sPe} PE`;
+      if (s1ceEl) s1ceEl.innerText = `${strike1sCe} CE`;
+      if (s2peEl) s2peEl.innerText = `${strike2sPe} PE`;
+      if (s2ceEl) s2ceEl.innerText = `${strike2sCe} CE`;
+    }
+
+    async function loadIntradayRulesData(forceRefresh = false) {
+      updateDynamicSigmaDisplay();
+
+      try {
+        // Fetch active trade ledger
+        const ledgerPromise = fetch('/api/options/intraday-rules/active-trades')
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            if (data && data.trades) {
+              intradayActiveTradesCache = data.trades;
+              renderIntradayTradesLedger(data.trades);
+            }
+          }).catch(e => console.error("Error loading intraday trade ledger:", e));
+
+        // Fetch ML model metrics
+        const mlPromise = fetch('/api/options/intraday-rules/ml-metrics')
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            if (data) {
+              intradayMLMetricsCache = data;
+              renderIntradayMLMetrics(data);
+            }
+          }).catch(e => console.error("Error loading intraday ML metrics:", e));
+
+        // If backtest not loaded or forced, run backtest
+        if (!intradayBacktestCache || forceRefresh) {
+          runIntradayOptionsBacktest(false);
+        }
+
+        await Promise.all([ledgerPromise, mlPromise]);
+      } catch (err) {
+        console.error("Failed loading intraday rules data:", err);
+      }
+    }
+
+    async function runIntradayOptionsBacktest(userInitiated = true) {
+      const btn = document.getElementById('btn-run-intraday-backtest');
+      const origHtml = btn ? btn.innerHTML : '';
+      const sessionsSel = document.getElementById('sel-intraday-backtest-sessions');
+      const sessions = sessionsSel ? parseInt(sessionsSel.value) || 50 : 50;
+
+      if (btn && userInitiated) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Backtesting ${sessions} Sessions...`;
+      }
+
+      try {
+        const res = await fetch(`/api/options/intraday-rules/backtest?lookback_sessions=${sessions}&lot_size=75`);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        const data = await res.json();
+        intradayBacktestCache = data;
+        renderIntradayBacktestUI(data);
+
+        if (userInitiated) {
+          showToast(`Backtest complete across ${data.sessions_evaluated} sessions (${data.date_range}).`, 'success');
+        }
+      } catch (err) {
+        console.error("Backtest error:", err);
+        if (userInitiated) {
+          showToast(`Backtest error: ${err.message}`, 'error');
+        }
+      } finally {
+        if (btn && userInitiated) {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
+          if (window.lucide) lucide.createIcons();
+        }
+      }
+    }
+
+    function renderIntradayBacktestUI(data) {
+      if (!data || !data.comparison_matrix) return;
+
+      const matrix = data.comparison_matrix;
+      const primaryRe = matrix.PRIMARY_WITH_REENTRY || {};
+      const primaryNoRe = matrix.PRIMARY_WITHOUT_REENTRY || {};
+      const asymRe = matrix.ASYMMETRIC_WITH_REENTRY || {};
+      const asymNoRe = matrix.ASYMMETRIC_WITHOUT_REENTRY || {};
+      const sl30 = matrix.SL_30_SENSITIVITY || {};
+      const sl40 = matrix.SL_40_SENSITIVITY || {};
+
+      // 1. KPI Cards for Primary with Re-entry
+      const kpiWin = document.getElementById('bt-kpi-winrate');
+      const kpiPnl = document.getElementById('bt-kpi-netpnl');
+      const kpiExp = document.getElementById('bt-kpi-expectancy');
+      const kpiPf = document.getElementById('bt-kpi-pf');
+      const kpiDd = document.getElementById('bt-kpi-maxdd');
+      const kpiTail = document.getElementById('bt-kpi-tailloss');
+
+      if (kpiWin) kpiWin.innerText = `${primaryRe.win_rate_pct || 0}%`;
+      if (kpiPnl) {
+        const pnl = primaryRe.total_net_pnl_inr || 0;
+        kpiPnl.innerText = `${pnl >= 0 ? '+' : ''}₹${Number(pnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        kpiPnl.className = `text-base sm:text-lg font-bold mt-0.5 ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      if (kpiExp) {
+        const exp = primaryRe.expectancy_inr || 0;
+        kpiExp.innerText = `${exp >= 0 ? '+' : ''}₹${Number(exp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      }
+      if (kpiPf) kpiPf.innerText = `${primaryRe.profit_factor || 0}`;
+      if (kpiDd) kpiDd.innerText = `₹${Number(primaryRe.max_drawdown_inr || 0).toLocaleString('en-IN')}`;
+      if (kpiTail) kpiTail.innerText = `₹${Number(primaryRe.tail_loss_worst_5pct_inr || 0).toLocaleString('en-IN')}`;
+
+      // Update banner and timestamp
+      const banner = document.getElementById('backtest-meta-banner');
+      const badge = document.getElementById('backtest-timestamp-badge');
+      if (banner) {
+        banner.innerText = `Evaluated ${data.sessions_evaluated} Historical Sessions (${data.date_range}) • Net P&L Deducts All Regulatory Costs`;
+      }
+      if (badge) {
+        badge.innerText = `UPDATED ${data.timestamp_ist || ''}`;
+      }
+
+      // 2. Comparison Matrix Table
+      const compRows = [
+        { name: "Primary Strategy (With 1-Time Re-Entry)", sl: "30% / 40% (Regime-based)", re: "ENABLED (&le; P0)", m: primaryRe, highlight: true },
+        { name: "Primary Strategy (Without Re-Entry)", sl: "30% / 40% (Regime-based)", re: "DISABLED (Vanilla SL)", m: primaryNoRe, highlight: false },
+        { name: "Experimental Asymmetric (With Re-Entry)", sl: "30% per leg", re: "ENABLED (&le; P0)", m: asymRe, highlight: true },
+        { name: "Experimental Asymmetric (Without Re-Entry)", sl: "30% per leg", re: "DISABLED (Vanilla SL)", m: asymNoRe, highlight: false },
+        { name: "30% Stop-Loss Sensitivity Run", sl: "Strict 30% all regimes", re: "ENABLED (&le; P0)", m: sl30, highlight: false },
+        { name: "40% Stop-Loss Sensitivity Run", sl: "Strict 40% all regimes", re: "ENABLED (&le; P0)", m: sl40, highlight: false },
+      ];
+
+      const compTbody = document.getElementById('backtest-comparison-tbody');
+      if (compTbody) {
+        compTbody.innerHTML = compRows.map(r => {
+          const m = r.m || {};
+          const pnl = m.total_net_pnl_inr || 0;
+          const pnlCls = pnl >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold';
+          const bgCls = r.highlight ? 'bg-cyan-950/20' : 'hover:bg-slate-800/30';
+          return `
+            <tr class="${bgCls} transition">
+              <td class="p-2.5 font-bold text-white flex items-center gap-1.5">
+                ${r.highlight ? '<span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>' : ''}
+                <span>${r.name}</span>
+              </td>
+              <td class="p-2.5 text-slate-300">${r.sl}</td>
+              <td class="p-2.5">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${r.re.includes('ENABLED') ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'}">
+                  ${r.re}
+                </span>
+              </td>
+              <td class="p-2.5 text-right font-bold text-emerald-300">${m.win_rate_pct || 0}%</td>
+              <td class="p-2.5 text-right text-purple-300 font-semibold">${m.profit_factor || 0}</td>
+              <td class="p-2.5 text-right text-cyan-300 font-semibold">${(m.expectancy_inr || 0) >= 0 ? '+' : ''}₹${Number(m.expectancy_inr || 0).toLocaleString('en-IN', { minimumFractionDigits: 1 })}</td>
+              <td class="p-2.5 text-right ${pnlCls}">${pnl >= 0 ? '+' : ''}₹${Number(pnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              <td class="p-2.5 text-right text-rose-400">₹${Number(m.max_drawdown_inr || 0).toLocaleString('en-IN')}</td>
+              <td class="p-2.5 text-right text-amber-400">₹${Number(m.tail_loss_worst_5pct_inr || 0).toLocaleString('en-IN')}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // 3. Regime Breakdown Table
+      const regTbody = document.getElementById('backtest-regime-tbody');
+      if (regTbody && data.regime_breakdown) {
+        const rb = data.regime_breakdown;
+        const regKeys = ["STRONG_BULLISH", "STRONG_BEARISH", "MILD_BULLISH", "MILD_BEARISH", "RANGE_BOUND"];
+        regTbody.innerHTML = regKeys.map(k => {
+          const item = rb[k];
+          if (!item) return '';
+          const p = item.primary || {};
+          const a = item.asymmetric;
+          const isAsymObj = typeof a === 'object' && a !== null;
+          const pPnl = p.net_pnl_inr || 0;
+          const aPnl = isAsymObj ? (a.net_pnl_inr || 0) : 0;
+
+          return `
+            <tr class="hover:bg-slate-800/30 transition">
+              <td class="p-2.5 font-bold text-white">${k.replace('_', ' ')}</td>
+              <td class="p-2.5 text-slate-300">${item.sessions_count}</td>
+              <td class="p-2.5 text-right font-bold text-emerald-300">${p.win_rate_pct || 0}%</td>
+              <td class="p-2.5 text-right font-bold ${pPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${pPnl >= 0 ? '+' : ''}₹${Number(pPnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              <td class="p-2.5 text-right text-purple-300">${p.profit_factor || 0}</td>
+              <td class="p-2.5 text-right font-bold ${isAsymObj ? 'text-emerald-300' : 'text-slate-500'}">
+                ${isAsymObj ? `${a.win_rate_pct || 0}%` : 'N/A'}
+              </td>
+              <td class="p-2.5 text-right font-bold ${isAsymObj ? (aPnl >= 0 ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-500'}">
+                ${isAsymObj ? `${aPnl >= 0 ? '+' : ''}₹${Number(aPnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'N/A (Primary Only)'}
+              </td>
+              <td class="p-2.5 text-right text-purple-300">${isAsymObj ? (a.profit_factor || '--') : '--'}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // 4. Insights list
+      const insList = document.getElementById('backtest-insights-list');
+      if (insList && data.summary_insights && data.summary_insights.length > 0) {
+        insList.innerHTML = data.summary_insights.map(s => `<li>${s}</li>`).join('');
+      }
+    }
+
+    function renderIntradayTradesLedger(trades) {
+      const tbody = document.getElementById('intraday-trades-ledger-tbody');
+      if (!tbody) return;
+
+      if (!trades || trades.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="11" class="p-4 text-center text-slate-500">No active trades in ledger. Click &quot;Auto-Deploy (Live)&quot; to execute.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = trades.map(t => {
+        const pnl = t.net_pnl_inr || 0;
+        const pnlCls = pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        let stateBadgeCls = 'bg-slate-800 text-slate-300';
+        if (t.status === 'ACTIVE') stateBadgeCls = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        else if (t.status === 'SL_EXITED') stateBadgeCls = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+        else if (t.status === 'RE_ENTERED') stateBadgeCls = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
+        else if (t.status === 'FINAL_SL_EXITED') stateBadgeCls = 'bg-rose-500/20 text-rose-300 border border-rose-500/30';
+        else if (t.status === 'CLOSED') stateBadgeCls = 'bg-purple-500/20 text-purple-300 border border-purple-500/30';
+
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="p-2.5 text-slate-300">${(t.timestamp_ist || t.entry_time || '').slice(0, 19)}</td>
+            <td class="p-2.5 font-bold text-white">${t.regime || '--'}</td>
+            <td class="p-2.5 text-[10px] text-purple-300 font-semibold">${t.strategy_category || 'PRIMARY'}</td>
+            <td class="p-2.5 font-bold ${t.option_type === 'CE' ? 'text-rose-400' : 'text-emerald-400'}">${t.strike} ${t.option_type}</td>
+            <td class="p-2.5 text-right font-bold text-white">₹${Number(t.original_entry_premium || 0).toFixed(2)}</td>
+            <td class="p-2.5 text-right text-rose-300 font-semibold">₹${Number(t.initial_sl_trigger || 0).toFixed(2)}</td>
+            <td class="p-2.5 text-center">
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold ${t.initial_sl_hit ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-800 text-slate-400'}">
+                ${t.initial_sl_hit ? 'YES' : 'NO'}
+              </span>
+            </td>
+            <td class="p-2.5 text-right text-cyan-300 font-semibold">${t.re_entered ? `₹${Number(t.re_entry_fill || 0).toFixed(2)}` : '--'}</td>
+            <td class="p-2.5 text-right text-amber-300 font-semibold">${t.re_entered ? `₹${Number(t.re_entry_sl_trigger || 0).toFixed(2)}` : '--'}</td>
+            <td class="p-2.5 text-center">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold ${stateBadgeCls}">
+                ${t.status || 'ACTIVE'}
+              </span>
+            </td>
+            <td class="p-2.5 text-right font-bold ${pnlCls}">${pnl >= 0 ? '+' : ''}₹${Number(pnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderIntradayMLMetrics(meta) {
+      if (!meta) return;
+
+      const winAccEl = document.getElementById('ml-win-acc');
+      const r2El = document.getElementById('ml-r2-score');
+      const sampEl = document.getElementById('ml-samples-count');
+      const ledgEl = document.getElementById('ml-ledger-count');
+      const lastTrEl = document.getElementById('ml-last-trained');
+      const badgeEl = document.getElementById('ml-model-badge');
+
+      if (winAccEl) winAccEl.innerText = `${meta.win_rate_accuracy_pct || 0}%`;
+      if (r2El) r2El.innerText = `${meta.expectancy_r2 !== undefined ? meta.expectancy_r2 : '--'}`;
+      if (sampEl) sampEl.innerText = `${meta.total_samples || 0}`;
+      if (ledgEl) ledgEl.innerText = `Real Ledger: ${meta.real_ledger_samples || 0}`;
+      if (lastTrEl) lastTrEl.innerText = `${meta.last_trained_ist || '--'}`;
+      if (badgeEl && meta.model_type) badgeEl.innerText = meta.model_type.toUpperCase();
+
+      // Feature Importance Bars
+      const barsEl = document.getElementById('ml-feature-importance-bars');
+      if (barsEl && meta.feature_importance) {
+        const fi = meta.feature_importance;
+        barsEl.innerHTML = Object.keys(fi).map(k => {
+          const pct = fi[k] || 0;
+          return `
+            <div>
+              <div class="flex justify-between text-slate-300 mb-0.5">
+                <span class="capitalize font-mono">${k.replace('_', ' ')}</span>
+                <span class="text-cyan-300 font-bold">${pct}%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div class="bg-gradient-to-r from-purple-500 to-cyan-400 h-1.5 rounded-full" style="width: ${Math.min(100, Math.max(5, pct))}%"></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    async function triggerIntradayAutoTrades() {
+      const btn = document.getElementById('btn-trigger-intraday-autotrade');
+      const origHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Evaluating Confidence &amp; Executing...`;
+      }
+
+      try {
+        const res = await fetch('/api/options/intraday-rules/auto-deploy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force_refresh: true, confidence_threshold: 8.0, lot_size: 75 })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'OK') {
+          const depList = data.deployed_strategies || [];
+          if (depList.length > 0) {
+            const names = depList.map(s => `${s.name} [${s.category}]`).join(', ');
+            showToast(`Auto-Trades Executed: Deployed ${depList.length} strategies: ${names}`, 'success');
+          } else {
+            showToast(`Auto-Trader notice: ${data.reason || 'Active intraday strategy already active or confidence threshold not met.'}`, 'info');
+          }
+          await loadIntradayRulesData(true);
+        } else {
+          showToast(`Execution notice: ${data.detail || data.reason || 'Unable to deploy'}`, 'info');
+        }
+      } catch (err) {
+        console.error("Auto trade execution error:", err);
+        showToast(`Auto trade error: ${err.message}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
+          if (window.lucide) lucide.createIcons();
+        }
+      }
+    }
+
+    async function retrainOptionsMLModel() {
+      const btn = document.getElementById('btn-retrain-options-ml');
+      const origHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Retraining Online Models...`;
+      }
+
+      try {
+        const res = await fetch('/api/options/intraday-rules/train-ml', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+          intradayMLMetricsCache = data;
+          renderIntradayMLMetrics(data);
+          showToast(`ML Model retrained successfully on ${data.total_samples} samples. Win Acc: ${data.win_rate_accuracy_pct}%`, 'success');
+        } else {
+          showToast(`ML Retrain failed: ${data.detail || 'Server error'}`, 'error');
+        }
+      } catch (err) {
+        console.error("ML retrain error:", err);
+        showToast(`ML retrain error: ${err.message}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
+          if (window.lucide) lucide.createIcons();
         }
       }
     }

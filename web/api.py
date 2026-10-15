@@ -1012,6 +1012,83 @@ def get_portfolio_equity_curves_endpoint():
 
 
 # ==============================================================================
+# INTRADAY OPTIONS 5-REGIME RULES: AUTO-TRADES, RE-ENTRY & BACKTEST API
+# ==============================================================================
+class AutoDeploy5RegimeRequest(BaseModel):
+    force_refresh: bool = False
+    confidence_threshold: float = 8.0
+    lot_size: int = 75
+
+
+@app.get("/api/options/intraday-rules/backtest")
+def get_options_intraday_backtest_endpoint(lookback_sessions: int = 50, lot_size: int = 75):
+    """
+    Backtests the 5 prediction regimes independently:
+    - Compares 30% vs 40% stop-losses
+    - Compares with vs without price-triggered 1-time re-entry
+    - Compares Primary vs Experimental Asymmetric strategies
+    - Net P&L after transaction costs, Win Rate %, Expectancy, Profit Factor, Max Drawdown, and Tail Losses.
+    """
+    from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+    return intraday_options_strategy_engine.run_comprehensive_backtest(
+        lookback_sessions=lookback_sessions,
+        lot_size=lot_size
+    )
+
+
+@app.post("/api/options/intraday-rules/auto-deploy")
+def post_options_auto_deploy_endpoint(req: Optional[AutoDeploy5RegimeRequest] = None):
+    """
+    Executes auto-trades whenever the system feels confident based on the 5-regime rules.
+    Logs trades with exact timestamps, sigma strikes, and inputs to SQLite for ML model training.
+    """
+    from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+    force = req.force_refresh if req else False
+    conf = req.confidence_threshold if req else 8.0
+    lots = req.lot_size if req else 75
+    return intraday_options_strategy_engine.evaluate_and_execute_auto_trades(
+        force_refresh=force,
+        confidence_threshold=conf,
+        lot_size=lots
+    )
+
+
+@app.get("/api/options/intraday-rules/active-trades")
+def get_options_active_trades_endpoint():
+    """Returns live active intraday options legs, execution status, and re-entry state."""
+    from execution.state_engine import state_engine
+    with state_engine._lock:
+        with state_engine._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT * FROM intraday_options_trade_log
+                ORDER BY id DESC LIMIT 50
+            """).fetchall()
+    return {
+        "status": "OK",
+        "trades": [dict(r) for r in rows],
+        "timestamp_ist": format_ist()
+    }
+
+
+@app.get("/api/options/intraday-rules/ml-metrics")
+def get_options_ml_metrics_endpoint():
+    """Returns Options ML model metrics, training sample count, and feature importances."""
+    from execution.state_engine import state_engine
+    from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+    meta = state_engine.get_kv("options_strategy_ml_metadata")
+    if not meta:
+        meta = intraday_options_strategy_engine.train_options_ml_model()
+    return meta
+
+
+@app.post("/api/options/intraday-rules/train-ml")
+def post_options_train_ml_endpoint():
+    """Retrains the options machine learning meta-model on all completed trade lifecycle logs."""
+    from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+    return intraday_options_strategy_engine.train_options_ml_model()
+
+
+# ==============================================================================
 # AI INTELLIGENCE LAYER ENDPOINTS (GROQ + OPENROUTER FREE TIER)
 # ==============================================================================
 class AIAnalyzeRequest(BaseModel):
