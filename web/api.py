@@ -107,12 +107,11 @@ async def capture_public_host_middleware(request: Request, call_next):
 # --------------------------------------------------------------------------
 @app.api_route("/health", methods=["GET", "HEAD"])
 def health_check():
-    keepalive_active, keepalive_reason = NSEMarketCalendar.is_render_keepalive_window()
     return {
         "status": "ok",
         "timestamp": format_ist(),
-        "render_keepalive_active": keepalive_active,
-        "render_keepalive_reason": keepalive_reason
+        "host": "RackNerd KVM VPS (104.168.91.147)",
+        "uptime_mode": "24/7 DEDICATED HOST (NO SLEEP TIMEOUT)"
     }
 
 

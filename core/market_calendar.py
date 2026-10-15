@@ -346,32 +346,10 @@ class NSEMarketCalendar:
     @classmethod
     def is_render_keepalive_window(cls, dt: datetime.datetime = None) -> Tuple[bool, str]:
         """
-        Strict Render Anti-Sleep Guard Window:
-        Returns (True, reason) ONLY between 08:40:00 AM and 03:50:00 PM IST
-        on active NSE trading days (Monday-Friday, excluding NSE holidays).
-        Outside 08:40–15:50 IST or on weekends/holidays, returns (False, reason)
-        so Render is allowed to sleep and conserve resources.
+        24/7 Dedicated Host Status:
+        Always returns (True, reason) because the system runs on a dedicated RackNerd VPS with no sleep timeouts.
         """
-        cls._load_cached_holidays_from_db()
-        if dt is None:
-            dt = now_ist()
-        elif dt.tzinfo is None:
-            dt = IST.localize(dt)
-
-        curr_date = dt.date()
-        curr_time = dt.time()
-
-        if not cls.is_trading_day(curr_date):
-            reason = cls.get_holiday_reason(curr_date)
-            return False, f"SLEEP ALLOWED — Non-trading day ({reason})"
-
-        t_wake = datetime.time(8, 40, 0)
-        t_sleep = datetime.time(15, 50, 0)
-
-        if t_wake <= curr_time <= t_sleep:
-            return True, f"NO-SLEEP GUARD ACTIVE (08:40 AM – 03:50 PM IST Trading Window • Now {curr_time.strftime('%H:%M:%S')} IST)"
-
-        return False, f"SLEEP ALLOWED — Outside 08:40 AM – 03:50 PM IST window (Now {curr_time.strftime('%H:%M:%S')} IST)"
+        return True, "24/7 DEDICATED HOST ACTIVE (RackNerd VPS • Zero Sleep Timeout)"
 
     @classmethod
     def get_market_status(cls, dt: datetime.datetime = None) -> Dict[str, Any]:
@@ -425,7 +403,7 @@ class NSEMarketCalendar:
                 "is_open": False,
                 "session_phase": "PRE_SESSION",
                 "holiday_reason": None,
-                "message": "Market opens at 09:15 AM IST (Render Anti-Sleep activates at 09:00 AM).",
+                "message": "Market opens at 09:15 AM IST (24/7 Dedicated Host).",
                 "ist_time": dt.strftime("%H:%M:%S"),
                 "keepalive_active": keepalive_active,
                 "keepalive_message": keepalive_msg
@@ -435,7 +413,7 @@ class NSEMarketCalendar:
                 "is_open": False,
                 "session_phase": "PRE_MARKET",
                 "holiday_reason": None,
-                "message": "Pre-Market Session (09:00 - 09:15 IST) • Render Awake.",
+                "message": "Pre-Market Session (09:00 - 09:15 IST) • 24/7 Host Online.",
                 "ist_time": dt.strftime("%H:%M:%S"),
                 "keepalive_active": keepalive_active,
                 "keepalive_message": keepalive_msg

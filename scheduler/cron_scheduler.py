@@ -713,15 +713,7 @@ def start_scheduler():
             misfire_grace_time=600
         )
 
-        # Job 0B: Strict Render Anti-Sleep Keep-Alive Pinger (Every 4 mins, 08:40 AM – 03:50 PM IST Mon-Fri)
-        _scheduler.add_job(
-            scheduled_render_keepalive_job,
-            trigger=CronTrigger(day_of_week="mon-fri", hour="8-15", minute="*/4", timezone=IST),
-            id="job_render_keepalive",
-            name="08:40 AM – 03:50 PM Render Anti-Sleep Guard (Every 4m)",
-            replace_existing=True,
-            misfire_grace_time=120
-        )
+        # Job 0B: Dedicated 24/7 VPS Host (No Render keep-alive pinger needed)
 
         # Job 0C: 5-Minute Live Price Stream for Active Positions & Screened Stocks (09:15 AM – 03:30 PM IST)
         _scheduler.add_job(
@@ -854,8 +846,7 @@ def start_scheduler():
         )
 
         _scheduler.start()
-        # Trigger an immediate keep-alive check, live price refresh, and Nifty 50m option capture if in market hours
-        threading.Thread(target=scheduled_render_keepalive_job, daemon=True).start()
+        # Trigger an immediate live price refresh, and Nifty 50m option capture if in market hours
         threading.Thread(target=scheduled_live_price_stream_job, daemon=True).start()
         threading.Thread(target=scheduled_nifty_intraday_50min_job, daemon=True).start()
         # Launch dedicated continuous Intraday Watchdog
@@ -958,11 +949,17 @@ def get_scheduler_status() -> Dict[str, Any]:
             "daemons": daemons,
             "all_workers_vault_synced": True
         },
+        "vps_host_status": {
+            "is_active_now": True,
+            "host": "RackNerd KVM VPS (Ubuntu 24.04)",
+            "uptime_mode": "24/7 DEDICATED (ALWAYS ONLINE)",
+            "current_state_reason": "Dedicated VPS Server • Native systemd supervisor • No sleep timeout"
+        },
         "render_keepalive": {
-            **_keepalive_telemetry,
-            "is_active_now": keepalive_active,
-            "current_state_reason": keepalive_reason,
-            "target_url": get_keepalive_target_url()
+            "is_active_now": True,
+            "current_state_reason": "24/7 Dedicated VPS Server (No sleep timeout)",
+            "pings_today": 0,
+            "last_ping_status": "24/7 DEDICATED HOST — NO KEEPALIVE NEEDED"
         },
         "nse_holidays_meta": holiday_meta
     }

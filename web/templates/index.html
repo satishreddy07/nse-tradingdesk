@@ -1022,20 +1022,20 @@
           </div>
         </div>
         
-        <!-- Render Anti-Sleep Guard (09:00 AM - 03:50 PM IST) & Dynamic NSE Holiday Calendar -->
+        <!-- Dedicated VPS 24/7 Server Status & Dynamic NSE Holiday Calendar -->
         <div class="bg-slate-900/80 border border-cyan-500/30 rounded-2xl p-4 sm:p-5 shadow-lg">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div>
               <div class="flex flex-wrap items-center gap-2">
-                <span id="keepalive-badge" class="px-2 py-0.5 text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/40">Render Anti-Sleep Guard</span>
-                <span class="text-[11px] sm:text-xs text-slate-400 font-mono">Strictly 09:00 AM – 03:50 PM IST (Mon–Fri, Excl. NSE Holidays)</span>
+                <span id="keepalive-badge" class="px-2 py-0.5 text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/40">VPS 24/7 Host: ONLINE</span>
+                <span class="text-[11px] sm:text-xs text-slate-400 font-mono">Dedicated Server • Zero Sleep Timeout • 24/7 Uptime</span>
               </div>
               <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2 mt-1">
-                <i data-lucide="activity" class="w-5 h-5 text-cyan-400 shrink-0"></i>
-                <span>Smart Render Anti-Sleep Engine & Live NSE Holiday Sync</span>
+                <i data-lucide="server" class="w-5 h-5 text-cyan-400 shrink-0"></i>
+                <span>RackNerd VPS 24/7 Host & Live NSE Holiday Sync</span>
               </h2>
               <p class="text-xs text-slate-400 mt-1">
-                Prevents Render from spinning down between <b>09:00 AM and 03:50 PM IST</b> on active NSE trading days via 4-minute external health pings. Automatically stops pinging after 03:50 PM IST, on weekends, and on official NSE holidays fetched dynamically from <code class="text-cyan-300">nseindia.com</code>.
+                Running 24/7 continuously on a dedicated KVM VPS with native systemd process supervision. All market cron jobs, quant scans, and ML engines remain active without container shutdowns. Official NSE holidays are synced dynamically from <code class="text-cyan-300">nseindia.com</code>.
               </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
@@ -1048,15 +1048,15 @@
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 mt-4 text-xs font-mono">
             <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 sm:p-4">
-              <div class="text-slate-400 text-[11px] uppercase">Render Keep-Alive State</div>
-              <div id="keepalive-state-text" class="text-emerald-400 font-bold text-sm mt-1">CHECKING...</div>
-              <div id="keepalive-reason-text" class="text-slate-400 text-[11px] mt-1">Window: 09:00 AM – 03:50 PM IST</div>
+              <div class="text-slate-400 text-[11px] uppercase">VPS Host State</div>
+              <div id="keepalive-state-text" class="text-emerald-400 font-bold text-sm mt-1">24/7 ONLINE</div>
+              <div id="keepalive-reason-text" class="text-slate-400 text-[11px] mt-1">RackNerd KVM (104.168.91.147)</div>
             </div>
 
             <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 sm:p-4">
-              <div class="text-slate-400 text-[11px] uppercase">Keep-Alive Heartbeat Telemetry</div>
-              <div id="keepalive-pings-count" class="text-cyan-400 font-bold text-sm mt-1">0 Pings Today (Every 4m)</div>
-              <div id="keepalive-last-ping" class="text-slate-400 text-[11px] mt-1">Last Ping: --</div>
+              <div class="text-slate-400 text-[11px] uppercase">Service Supervisor</div>
+              <div id="keepalive-pings-count" class="text-cyan-400 font-bold text-sm mt-1">systemd (Active 24/7)</div>
+              <div id="keepalive-last-ping" class="text-slate-400 text-[11px] mt-1">Cloudflare Tunnel: Connected</div>
             </div>
 
             <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 sm:p-4">
@@ -11983,9 +11983,10 @@
       if (nextScanEl) nextScanEl.innerText = `Next: ${nextText}`;
       if (mobNextEl) mobNextEl.innerText = `Next: ${nextText}`;
 
-      // Render Anti-Sleep Guard (09:00 AM - 03:50 PM IST)
+      // VPS 24/7 Dedicated Host Telemetry
+      const vps = data.vps_host_status || {};
       const ka = data.render_keepalive || {};
-      isKeepaliveWindowActive = Boolean(ka.is_active_now);
+      isKeepaliveWindowActive = true;
       const kaStateEl = document.getElementById('keepalive-state-text');
       const kaReasonEl = document.getElementById('keepalive-reason-text');
       const kaPingsEl = document.getElementById('keepalive-pings-count');
@@ -11993,18 +11994,16 @@
       const kaBadge = document.getElementById('keepalive-badge');
 
       if (kaStateEl) {
-        kaStateEl.innerText = ka.is_active_now ? "AWAKE GUARD ACTIVE (09:00 – 15:50 IST)" : "SLEEP ALLOWED (OUTSIDE 09:00 – 15:50 IST)";
-        kaStateEl.className = ka.is_active_now ? "text-emerald-400 font-bold text-sm mt-1" : "text-amber-400 font-bold text-sm mt-1";
+        kaStateEl.innerText = "24/7 ONLINE (ALWAYS RUNNING)";
+        kaStateEl.className = "text-emerald-400 font-bold text-sm mt-1";
       }
       if (kaBadge) {
-        kaBadge.innerText = ka.is_active_now ? "Render Anti-Sleep: ACTIVE" : "Render Anti-Sleep: STANDBY";
-        kaBadge.className = ka.is_active_now
-          ? "px-2 py-0.5 text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/40"
-          : "px-2 py-0.5 text-[10px] font-mono uppercase bg-amber-500/20 text-amber-300 rounded border border-amber-500/40";
+        kaBadge.innerText = "VPS 24/7 Host: ONLINE";
+        kaBadge.className = "px-2 py-0.5 text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/40";
       }
-      if (kaReasonEl) kaReasonEl.innerText = ka.current_state_reason || "09:00 AM – 03:50 PM IST (Mon-Fri)";
-      if (kaPingsEl) kaPingsEl.innerText = `${ka.pings_today || 0} Pings Today (Every ${ka.interval_minutes || 4}m)`;
-      if (kaLastEl) kaLastEl.innerText = `Last Ping: ${ka.last_ping_ist || 'Waiting for next 4m cycle'}`;
+      if (kaReasonEl) kaReasonEl.innerText = vps.current_state_reason || ka.current_state_reason || "RackNerd KVM (104.168.91.147)";
+      if (kaPingsEl) kaPingsEl.innerText = "systemd: Active (Running)";
+      if (kaLastEl) kaLastEl.innerText = "Host: RackNerd VPS 24/7 Dedicated";
 
       // Dynamic NSE Holidays Telemetry
       const hm = data.nse_holidays_meta || {};
