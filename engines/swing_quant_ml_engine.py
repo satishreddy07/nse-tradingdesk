@@ -249,6 +249,54 @@ class SwingQuantMLEngine:
         vector = np.array([feat_dict[k] for k in ML_FEATURE_COLS], dtype=float)
         return vector, feat_dict
 
+    def _build_unified_features(
+        self,
+        feat_dict: Dict[str, Any],
+        regime: Dict[str, Any],
+        entry_price: float,
+        stop_loss: float
+    ) -> Dict[str, float]:
+        """Converts swing features into 32 standardized unified ML features."""
+        ep = max(0.01, entry_price)
+        sl_pct = round(abs(entry_price - stop_loss) / ep * 100.0, 2)
+        nifty_trend = str(regime.get("nifty_trend", "SIDEWAYS")).upper()
+        regime_code = 2 if "BULL" in nifty_trend else (-2 if "BEAR" in nifty_trend else 0)
+
+        return {
+            "nifty_spot": float(regime.get("nifty_spot") or 25000.0),
+            "nifty_ret_1d": 0.0,
+            "nifty_ret_5d": float(feat_dict.get("nifty_ret_5d") or 0.0),
+            "composite_score": float(regime.get("composite_score") or 0.0),
+            "vix_spot": float(feat_dict.get("vix_val") or 14.0),
+            "realized_vol_daily": float(feat_dict.get("atr_pct") or 2.0),
+            "realized_vol_5d": float(feat_dict.get("atr_pct") or 2.0) * 1.5,
+            "fii_net_flow_cr": float(regime.get("fii_net_cash") or 0.0),
+            "fii_fut_long_pct": 50.0,
+            "breadth_ratio": float(regime.get("breadth_ratio") or 1.0),
+            "rsi14": float(feat_dict.get("rsi14") or 50.0),
+            "atr_pct": float(feat_dict.get("atr_pct") or 2.0),
+            "dist_to_ema20_pct": float(feat_dict.get("dist_to_ema20") or 0.0),
+            "dist_to_ema50_pct": float(feat_dict.get("dist_to_pivot") or 0.0),
+            "dist_to_pivot_pct": float(feat_dict.get("dist_to_pivot") or 0.0),
+            "volume_ratio_50d": float(feat_dict.get("vol_ratio") or 1.0),
+            "trend_strength_adx": float(feat_dict.get("adx14") or 25.0),
+            "overnight_gap_pct": 0.0,
+            "near_atm_pcr": 1.0,
+            "chg_oi_pcr": 1.0,
+            "iv_spot": float(feat_dict.get("vix_val") or 14.0),
+            "iv_skew": 0.0,
+            "straddle_decay_pct": 0.0,
+            "dist_to_call_wall_pct": 5.0,
+            "dist_to_put_wall_pct": -5.0,
+            "sigma_distance": 2.0,
+            "time_to_expiry_years": 8.0 / 252.0,
+            "horizon_code": 4,  # SWING
+            "regime_code": regime_code,
+            "reward_to_risk_est": float(feat_dict.get("rr_ratio") or 2.0),
+            "sl_threshold_pct": sl_pct,
+            "time_of_day_mins": 930
+        }
+
     # ==========================================================================
     # 3. PRE-TRADE ML GATEKEEPER
     # ==========================================================================
@@ -420,6 +468,46 @@ class SwingQuantMLEngine:
                     ))
                     conn.commit()
                     logger.info(f"Recorded REAL trade entry for {sym_clean} in quant_trade_dataset ({qty} shs, risk ₹{cap_at_risk:,.2f})")
+
+                    # Ingest into Unified Multi-Horizon Dataset
+                    try:
+                        from core.unified_ml_dataset import unified_ml_dataset
+                        u_feats = self._build_unified_features(feat_dict, regime, entry_price, stop_loss)
+                        trade_id = f"SWING_{sym_clean}_{now_str.replace(':', '').replace('-', '').replace(' ', '_')}"
+                        unified_ml_dataset.record_signal_and_trade(
+                            signal_id=f"SIG_{trade_id}",
+                            trade_id=trade_id,
+                            instrument=sym_clean,
+                            trading_horizon="SWING",
+                            strategy_name="INSTITUTIONAL_6PILLAR",
+                            record_type="LIVE",
+                            market_session="AFTERNOON",
+                            accept_reject_verdict="ACCEPTED",
+                            decision_source="HYBRID",
+                            features=u_feats,
+                            regime=regime.get("nifty_trend", "SIDEWAYS"),
+                            spot_at_entry=entry_price,
+                            intended_entry=entry_price,
+                            intended_target=target,
+                            intended_sl=stop_loss,
+                            sl_threshold_pct=u_feats["sl_threshold_pct"],
+                            quantity=qty,
+                            capital_at_risk=cap_at_risk,
+                            rationale={
+                                "score": feat_dict.get("score"),
+                                "confidence": feat_dict.get("confidence"),
+                                "sector": candidate_meta.get("sector"),
+                                "strategy": "6-pillar momentum breakout"
+                            },
+                            strike=0.0,
+                            dte_days=8.0,
+                            sigma_distance=2.0,
+                            actual_entry=entry_price,
+                            model_version="prod_v1.0"
+                        )
+                    except Exception as ue:
+                        logger.debug(f"Failed to record REAL swing trade in unified_ml_dataset: {ue}")
+
                     return True
                 except Exception as e:
                     logger.error(f"Failed to record real trade entry for {sym_clean}: {e}")
@@ -490,6 +578,44 @@ class SwingQuantMLEngine:
                     ))
                     conn.commit()
                     logger.info(f"👻 Logged SHADOW trade for {sym_clean} ({qty} shs, risk ₹{cap_at_risk:,.2f}, SL: ₹{stop_loss:.2f}, T1: ₹{target:.2f}) [Reason: {rejection_reason}]")
+
+                    # Ingest into Unified Multi-Horizon Dataset as Counterfactual
+                    try:
+                        from core.unified_ml_dataset import unified_ml_dataset
+                        u_feats = self._build_unified_features(feat_dict, regime, entry_price, stop_loss)
+                        trade_id = f"SWING_SHADOW_{sym_clean}_{now_str.replace(':', '').replace('-', '').replace(' ', '_')}"
+                        unified_ml_dataset.record_signal_and_trade(
+                            signal_id=f"SIG_{trade_id}",
+                            trade_id=trade_id,
+                            instrument=sym_clean,
+                            trading_horizon="SWING",
+                            strategy_name="INSTITUTIONAL_6PILLAR",
+                            record_type="COUNTERFACTUAL",
+                            market_session="AFTERNOON",
+                            accept_reject_verdict="REJECTED",
+                            decision_source="ML_GATEKEEPER",
+                            features=u_feats,
+                            regime=regime.get("nifty_trend", "SIDEWAYS"),
+                            spot_at_entry=entry_price,
+                            intended_entry=entry_price,
+                            intended_target=target,
+                            intended_sl=stop_loss,
+                            sl_threshold_pct=u_feats["sl_threshold_pct"],
+                            quantity=qty,
+                            capital_at_risk=cap_at_risk,
+                            rationale={
+                                "rejection_reason": rejection_reason,
+                                "score": feat_dict.get("score"),
+                                "confidence": feat_dict.get("confidence")
+                            },
+                            strike=0.0,
+                            dte_days=8.0,
+                            sigma_distance=2.0,
+                            model_version="prod_v1.0"
+                        )
+                    except Exception as ue:
+                        logger.debug(f"Failed to record SHADOW swing trade in unified_ml_dataset: {ue}")
+
                     return True
                 except Exception as e:
                     logger.debug(f"Failed to log shadow candidate {sym_clean}: {e}")
@@ -590,6 +716,31 @@ class SwingQuantMLEngine:
                 conn.commit()
 
         logger.info(f"Resolved REAL trade for {sym_clean} ({resolved_status}) | Attribution: {attribution}")
+
+        # Resolve in Unified Multi-Horizon Dataset
+        try:
+            from core.unified_ml_dataset import unified_ml_dataset
+            with unified_ml_dataset._get_connection() as uconn:
+                urow = uconn.execute(
+                    "SELECT trade_id FROM unified_trade_learning_dataset WHERE instrument = ? AND trading_horizon = 'SWING' AND status = 'ACTIVE' ORDER BY id DESC LIMIT 1",
+                    (sym_clean,)
+                ).fetchone()
+                if urow:
+                    u_trade_id = urow["trade_id"]
+                    statutory_costs = round(abs(pnl) * 0.0012 + 40.0, 2)
+                    unified_ml_dataset.record_trade_outcome(
+                        trade_id=u_trade_id,
+                        actual_exit=exit_price,
+                        exit_reason=exit_reason,
+                        gross_pnl=pnl,
+                        net_pnl=pnl - statutory_costs,
+                        total_costs=statutory_costs,
+                        hold_duration_mins=hold_days * 375.0,
+                        rules_followed=1
+                    )
+        except Exception as ue:
+            logger.debug(f"Failed to resolve REAL trade in unified_ml_dataset: {ue}")
+
         # Trigger incremental model retraining
         threading.Thread(target=self.train_model, daemon=True).start()
         return True
@@ -745,6 +896,30 @@ class SwingQuantMLEngine:
 
                 resolved_count += 1
                 logger.info(f"👻 Resolved SHADOW trade for {sym}: {status} (PnL: ₹{realized_pnl:+,.2f}, {ret_pct:+.2f}%) | Attribution: {attribution}")
+
+                # Resolve in Unified Multi-Horizon Dataset (Counterfactual)
+                try:
+                    from core.unified_ml_dataset import unified_ml_dataset
+                    with unified_ml_dataset._get_connection() as uconn:
+                        urow = uconn.execute(
+                            "SELECT trade_id FROM unified_trade_learning_dataset WHERE instrument = ? AND trading_horizon = 'SWING' AND record_type = 'COUNTERFACTUAL' AND status = 'REJECTED_SIM' ORDER BY id DESC LIMIT 1",
+                            (sym,)
+                        ).fetchone()
+                        if urow:
+                            u_trade_id = urow["trade_id"]
+                            statutory_costs = round(abs(realized_pnl) * 0.0012 + 40.0, 2)
+                            unified_ml_dataset.record_trade_outcome(
+                                trade_id=u_trade_id,
+                                actual_exit=exit_px,
+                                exit_reason=exit_reason,
+                                gross_pnl=realized_pnl,
+                                net_pnl=realized_pnl - statutory_costs,
+                                total_costs=statutory_costs,
+                                hold_duration_mins=hold_days * 375.0,
+                                rules_followed=1
+                            )
+                except Exception as ue:
+                    logger.debug(f"Failed to resolve SHADOW trade in unified_ml_dataset: {ue}")
 
         if resolved_count > 0:
             threading.Thread(target=self.train_model, daemon=True).start()

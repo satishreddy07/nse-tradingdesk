@@ -1671,6 +1671,45 @@ class WeeklyMonthlyOptionsStrategyEngine:
                     ))
                     conn.commit()
 
+            # Record into Unified ML Learning Dataset (Trade-Level Learning)
+            try:
+                from core.unified_ml_dataset import unified_ml_dataset
+                for l in deployed_legs:
+                    unified_ml_dataset.record_signal_and_trade(
+                        signal_id=strat_id,
+                        trade_id=l.leg_id,
+                        instrument="NIFTY",
+                        trading_horizon=horizon,
+                        strategy_name=strat["name"],
+                        record_type="LIVE",
+                        market_session="REGULAR_HOURS",
+                        accept_reject_verdict="ACCEPTED",
+                        decision_source="WEEKLY_PREDICTION_MODEL_T5",
+                        features={
+                            "nifty_spot": float(spot_price),
+                            "composite_score": float(composite_score),
+                            "iv_spot": float(iv_val),
+                            "sigma_distance": 1.0,
+                            "horizon_code": 2.0 if horizon == "WEEKLY" else 3.0,
+                            "regime_code": 2.0 if "STRONG_BULL" in regime else (1.0 if "MILD_BULL" in regime else (0.0 if "RANGE" in regime else (-1.0 if "MILD_BEAR" in regime else -2.0))),
+                            "sl_threshold_pct": float(l.sl_pct),
+                            "time_to_expiry_years": float(l.dte_at_entry) / 252.0 if getattr(l, "dte_at_entry", None) else (7.0 / 252.0)
+                        },
+                        regime=regime,
+                        spot_at_entry=float(spot_price),
+                        intended_entry=float(l.original_entry_premium),
+                        intended_target=0.0,
+                        intended_sl=float(l.initial_sl_trigger),
+                        sl_threshold_pct=float(l.sl_pct),
+                        quantity=int(l.qty),
+                        capital_at_risk=float(l.original_entry_premium * l.sl_pct * l.qty),
+                        strike=float(l.strike),
+                        expiry_date=l.expiry_date,
+                        dte_days=float(l.dte_at_entry)
+                    )
+            except Exception as e_uds:
+                logger.debug(f"Unified ML dataset positional entry ingest notice: {e_uds}")
+
         # Also register in shared options_strategies table for unified portfolio view
         legs_json = [
             {
@@ -1870,6 +1909,23 @@ class WeeklyMonthlyOptionsStrategyEngine:
                             leg.leg_id
                         ))
                         conn.commit()
+
+                # If leg reached terminal state, record outcome into Unified ML Learning Dataset
+                if leg.state in ("CLOSED", "FINAL_SL_EXITED"):
+                    try:
+                        from core.unified_ml_dataset import unified_ml_dataset
+                        unified_ml_dataset.record_trade_outcome(
+                            trade_id=leg.leg_id,
+                            actual_exit=float(leg.final_exit_price or leg.settlement_price or leg.first_exit_price or 0.0),
+                            exit_reason=str(result["event"]),
+                            gross_pnl=float(leg.total_gross_pnl_inr),
+                            net_pnl=float(leg.net_pnl_inr),
+                            total_costs=float(leg.transaction_costs_inr),
+                            re_entry_count=1 if leg.re_entered else 0
+                        )
+                    except Exception as e_ud_out:
+                        logger.debug(f"Unified ML outcome record notice: {e_ud_out}")
+
                 updated_count += 1
                 logger.info(f"[{horizon} OPTIONS MONITOR] Leg {leg.leg_id} fired event: {result['event']} -> New State: {leg.state}")
 

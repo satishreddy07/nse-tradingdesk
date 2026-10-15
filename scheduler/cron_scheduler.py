@@ -640,6 +640,13 @@ def scheduled_daily_prediction_training_job():
         logger.warning(f"03:40 PM Swing Quant ML Training Job error: {e}")
 
     try:
+        from engines.horizon_learning_orchestrator import horizon_learning_orchestrator
+        orch_res = horizon_learning_orchestrator.retrain_and_evaluate_all_horizons()
+        logger.info(f"🌳 [03:40 PM Multi-Horizon Tree ML Pipeline] Completed retraining: {list(orch_res.get('results', {}).keys())}")
+    except Exception as e_orch:
+        logger.warning(f"03:40 PM Horizon ML Training Job warning: {e_orch}")
+
+    try:
         from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
         opt_ml = intraday_options_strategy_engine.train_options_ml_model()
         logger.info(

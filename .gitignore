@@ -21,6 +21,11 @@ data/historical_data/*.csv
 data/*.db-wal
 data/*.db-shm
 
+# Model registry binary bundles (regenerated/trained online)
+models/registry/*.bundle
+!models/registry/.gitkeep
+
+
 # IDE & OS files
 .vscode/
 .idea/

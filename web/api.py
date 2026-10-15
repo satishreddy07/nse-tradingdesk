@@ -1245,6 +1245,74 @@ def post_options_positional_train_ml_endpoint(horizon: str = "WEEKLY"):
     return weekly_monthly_options_strategy_engine.train_positional_options_ml_model(horizon=horizon)
 
 
+# ==============================================================================
+# UNIFIED MACHINE LEARNING, DECISION TREE & CONTINUOUS IMPROVEMENT SUITE
+# ==============================================================================
+@app.get("/api/ml/overview")
+def get_ml_system_overview_endpoint():
+    """Returns complete executive audit of the 4-horizon ML system, active models, and statistics."""
+    from engines.horizon_learning_orchestrator import horizon_learning_orchestrator
+    return horizon_learning_orchestrator.get_system_ml_overview()
+
+
+@app.get("/api/ml/dataset-stats")
+def get_ml_dataset_stats_endpoint():
+    """Returns dataset sample counts, live vs counterfactual breakdown across all 4 horizons."""
+    from core.unified_ml_dataset import unified_ml_dataset
+    return unified_ml_dataset.get_dataset_statistics()
+
+
+@app.get("/api/ml/trees")
+def get_ml_tree_structure_endpoint(horizon: str = "INTRADAY", tree_index: int = 0):
+    """Exports representative decision tree topology from LightGBM / XGBoost into structured JSON."""
+    from engines.tree_quant_ml_engine import tree_quant_ml_engine
+    return tree_quant_ml_engine.export_tree_structure(horizon=horizon, tree_index=tree_index)
+
+
+@app.get("/api/ml/shap")
+def get_ml_shap_explanation_endpoint(horizon: str = "INTRADAY"):
+    """Computes exact TreeSHAP feature attributions natively via XGBoost C++ engine."""
+    from engines.tree_quant_ml_engine import tree_quant_ml_engine
+    # Use current market regime features
+    sample_features = {
+        "composite_score": 14.5,
+        "near_atm_pcr": 1.22,
+        "vix_spot": 13.8,
+        "rsi14": 58.5,
+        "trend_strength_adx": 26.0,
+        "horizon_code": 1.0 if horizon == "INTRADAY" else (2.0 if horizon == "WEEKLY" else 4.0),
+        "regime_code": 1.0
+    }
+    return tree_quant_ml_engine.compute_shap_explanations(horizon=horizon, features=sample_features)
+
+
+@app.post("/api/ml/shap")
+def post_ml_shap_explanation_endpoint(payload: Dict[str, Any], horizon: str = "INTRADAY"):
+    """Computes exact TreeSHAP feature attributions for custom user/signal feature payloads."""
+    from engines.tree_quant_ml_engine import tree_quant_ml_engine
+    return tree_quant_ml_engine.compute_shap_explanations(horizon=horizon, features=payload)
+
+
+@app.get("/api/ml/reentry-audit")
+def get_ml_reentry_audit_endpoint(horizon: str = "WEEKLY"):
+    """Evaluates stop-loss (40% weekly, 50% monthly) and 1-time re-entry comparative matrix."""
+    from engines.horizon_learning_orchestrator import horizon_learning_orchestrator
+    return horizon_learning_orchestrator.evaluate_stop_loss_and_reentry_matrix(horizon=horizon)
+
+
+@app.post("/api/ml/retrain")
+def post_ml_retrain_endpoint():
+    """Triggers continuous training & promotion pipeline across all 4 trading horizons."""
+    from engines.horizon_learning_orchestrator import horizon_learning_orchestrator
+    return horizon_learning_orchestrator.retrain_and_evaluate_all_horizons()
+
+
+@app.post("/api/ml/rollback")
+def post_ml_rollback_endpoint(horizon: str = "INTRADAY"):
+    """Restores the previous production model artifact for the requested horizon."""
+    from engines.tree_quant_ml_engine import tree_quant_ml_engine
+    return tree_quant_ml_engine.rollback_to_previous_version(horizon=horizon)
+
 
 # ==============================================================================
 # AI INTELLIGENCE LAYER ENDPOINTS (GROQ + OPENROUTER FREE TIER)

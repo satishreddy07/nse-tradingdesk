@@ -1349,6 +1349,43 @@ class IntradayOptionsStrategyEngine:
                     ))
                     conn.commit()
 
+            # Record into Unified ML Learning Dataset
+            try:
+                from core.unified_ml_dataset import unified_ml_dataset
+                unified_ml_dataset.record_signal_and_trade(
+                    signal_id=strat_id_prim,
+                    trade_id=leg_tracker.leg_id,
+                    instrument="NIFTY",
+                    trading_horizon="INTRADAY",
+                    strategy_name=f"INTRADAY_{regime}",
+                    record_type="LIVE",
+                    market_session="REGULAR_HOURS",
+                    accept_reject_verdict="ACCEPTED",
+                    decision_source="RULE_BASED",
+                    features={
+                        "nifty_spot": float(spot_price),
+                        "composite_score": float(confidence_pct),
+                        "iv_spot": float(iv_val),
+                        "sigma_distance": float(sig),
+                        "horizon_code": 1.0,
+                        "regime_code": 2.0 if "STRONG_BULL" in regime else (1.0 if "MILD_BULL" in regime else (0.0 if "RANGE" in regime else (-1.0 if "MILD_BEAR" in regime else -2.0))),
+                        "sl_threshold_pct": float(l["sl_pct"]),
+                        "time_to_expiry_years": float(sigma_calc["time_to_expiry_years"])
+                    },
+                    regime=regime,
+                    spot_at_entry=float(spot_price),
+                    intended_entry=float(p0),
+                    intended_target=0.0,
+                    intended_sl=float(leg_tracker.initial_sl_trigger),
+                    sl_threshold_pct=float(l["sl_pct"]),
+                    quantity=int(lot_size),
+                    capital_at_risk=float(p0 * l["sl_pct"] * lot_size),
+                    strike=float(stk),
+                    dte_days=float(dte)
+                )
+            except Exception as e_uds:
+                logger.debug(f"Unified ML dataset entry ingest notice: {e_uds}")
+
         # Register in options_strategies table so UI, portfolio curves, and stop monitors track it seamlessly
         legs_json_prim = [
             {
@@ -1601,6 +1638,19 @@ class IntradayOptionsStrategyEngine:
                             WHERE leg_id = ?
                             """, (close_px, now_str, pnl_pts, pnl_inr, round(pnl_inr - 95.0, 2), 1 if pnl_inr > 95 else 0, leg_id))
                             conn.commit()
+                    try:
+                        from core.unified_ml_dataset import unified_ml_dataset
+                        unified_ml_dataset.record_trade_outcome(
+                            trade_id=leg_id,
+                            actual_exit=close_px,
+                            exit_reason="MOC_SETTLEMENT",
+                            gross_pnl=pnl_inr,
+                            net_pnl=round(pnl_inr - 95.0, 2),
+                            total_costs=95.0,
+                            re_entry_count=0
+                        )
+                    except Exception:
+                        pass
                     events_fired.append(f"MOC Settlement for {leg_id} @ ₹{close_px:.2f} (Net: ₹{pnl_inr - 95:.0f})")
                 elif exec_buy >= initial_sl_trigger:
                     exit_px = round(exec_buy, 2)
@@ -1655,6 +1705,19 @@ class IntradayOptionsStrategyEngine:
                             WHERE leg_id = ?
                             """, (settle_px, now_str, tot_pts, tot_inr, round(tot_inr - 180.0, 2), 1 if tot_inr > 180 else 0, leg_id))
                             conn.commit()
+                    try:
+                        from core.unified_ml_dataset import unified_ml_dataset
+                        unified_ml_dataset.record_trade_outcome(
+                            trade_id=leg_id,
+                            actual_exit=settle_px,
+                            exit_reason="MOC_SETTLEMENT_REENTRY",
+                            gross_pnl=tot_inr,
+                            net_pnl=round(tot_inr - 180.0, 2),
+                            total_costs=180.0,
+                            re_entry_count=1
+                        )
+                    except Exception:
+                        pass
                     events_fired.append(f"[MOC] Re-entry MOC Settled for {leg_id}: Net PnL Rs.{tot_inr - 180:.0f}")
                 elif re_entry_sl_trig and exec_buy >= re_entry_sl_trig:
                     fin_exit = round(exec_buy, 2)
@@ -1671,6 +1734,19 @@ class IntradayOptionsStrategyEngine:
                             WHERE leg_id = ?
                             """, (fin_exit, now_str, tot_pts, tot_inr, round(tot_inr - 180.0, 2), 1 if tot_inr > 180 else 0, leg_id))
                             conn.commit()
+                    try:
+                        from core.unified_ml_dataset import unified_ml_dataset
+                        unified_ml_dataset.record_trade_outcome(
+                            trade_id=leg_id,
+                            actual_exit=fin_exit,
+                            exit_reason="FINAL_STOP_LOSS_HIT",
+                            gross_pnl=tot_inr,
+                            net_pnl=round(tot_inr - 180.0, 2),
+                            total_costs=180.0,
+                            re_entry_count=1
+                        )
+                    except Exception:
+                        pass
                     events_fired.append(f"[FINAL-SL-HIT] Re-entry Final SL Hit for {leg_id}: Filled @ Rs.{fin_exit:.2f}. Further re-entry prohibited.")
 
         return {
