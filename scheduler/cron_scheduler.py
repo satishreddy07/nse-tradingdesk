@@ -30,7 +30,11 @@ from core.config import (
     SCHEDULE_MORNING_HOUR, SCHEDULE_MORNING_MINUTE,
     SCHEDULE_AFTERNOON_HOUR, SCHEDULE_AFTERNOON_MINUTE
 )
-from engines.institutional_engine import InstitutionalEngine, refresh_live_market_prices
+from engines.institutional_engine import (
+    InstitutionalEngine,
+    get_institutional_status,
+    refresh_live_market_prices,
+)
 from engines.nifty500_engine import run_nifty500_pipeline_sync
 from execution.state_engine import state_engine
 from core.execution_queue import execution_queue
@@ -338,6 +342,10 @@ def scheduled_morning_scan_job():
             b_now = int((signals["bucket"] == "BUY_NOW").sum()) if not signals.empty and "bucket" in signals.columns else 0
             p_brk = int((signals["bucket"] == "PRE_BREAKOUT").sum()) if not signals.empty and "bucket" in signals.columns else 0
             w_pb = int((signals["bucket"] == "WAIT_PULLBACK").sum()) if not signals.empty and "bucket" in signals.columns else 0
+            try:
+                from engines.institutional_engine import get_institutional_status
+            except ImportError:
+                pass
             eng_status = get_institutional_status()
             eng_st = eng_status.get("status", "")
             if eng_st == "FAILED" or (signals.empty and eng_st != "NO_CANDIDATES" and eng_status.get("universe_size", 0) == 0):
@@ -426,6 +434,10 @@ def scheduled_afternoon_scan_job():
             b_now = int((signals_p1["bucket"] == "BUY_NOW").sum()) if not signals_p1.empty and "bucket" in signals_p1.columns else 0
             p_brk = int((signals_p1["bucket"] == "PRE_BREAKOUT").sum()) if not signals_p1.empty and "bucket" in signals_p1.columns else 0
             w_pb = int((signals_p1["bucket"] == "WAIT_PULLBACK").sum()) if not signals_p1.empty and "bucket" in signals_p1.columns else 0
+            try:
+                from engines.institutional_engine import get_institutional_status
+            except ImportError:
+                pass
             eng_status = get_institutional_status()
             eng_st = eng_status.get("status", "")
             if eng_st == "FAILED" or (signals_p1.empty and eng_st != "NO_CANDIDATES" and eng_status.get("universe_size", 0) == 0):
