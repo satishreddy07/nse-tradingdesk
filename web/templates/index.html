@@ -9567,7 +9567,8 @@
         }
         if (scoreText) {
           const sc = Number(data.intraday_composite_score || 0);
-          scoreText.innerText = `(Intraday Score: ${sc >= 0 ? '+' : ''}${sc.toFixed(1)})`;
+          const conf = data.daytime_confidence ? ` | Daytime Conf: ${data.daytime_confidence.intraday_confidence_pct}% [${data.daytime_confidence.confidence_grade}]` : '';
+          scoreText.innerText = `(Intraday Score: ${sc >= 0 ? '+' : ''}${sc.toFixed(1)}${conf})`;
         }
       } else {
         if (srcBadge) {
@@ -9576,7 +9577,10 @@
         }
         if (scoreText) {
           const sc = Number(data.weekly_composite_score || 0);
-          scoreText.innerText = `(Weekly Score: ${sc >= 0 ? '+' : ''}${sc.toFixed(1)})`;
+          const winner = (data.pre_trade_strategy_tournament && data.pre_trade_strategy_tournament.tournament_winner)
+            ? ` | Best P(win): ${data.pre_trade_strategy_tournament.tournament_winner.p_win_pct}% [${data.pre_trade_strategy_tournament.tournament_winner.architecture}]`
+            : '';
+          scoreText.innerText = `(Weekly Score: ${sc >= 0 ? '+' : ''}${sc.toFixed(1)}${winner})`;
         }
       }
 
@@ -9584,7 +9588,11 @@
         regText.className = `text-sm sm:text-base font-bold font-mono ${regColor}`;
         regText.innerText = reg;
       }
-      if (ratText) ratText.innerText = data.rationale || 'Real-time quantitative analysis active.';
+      let summaryText = data.rationale || 'Real-time quantitative analysis active.';
+      if (h !== 'INTRADAY' && data.pre_trade_strategy_tournament && data.pre_trade_strategy_tournament.analysis_summary) {
+        summaryText += ' • ' + data.pre_trade_strategy_tournament.analysis_summary;
+      }
+      if (ratText) ratText.innerText = summaryText;
       if (window.lucide) lucide.createIcons();
     }
 

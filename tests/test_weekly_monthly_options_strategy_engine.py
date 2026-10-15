@@ -284,3 +284,42 @@ def test_weekly_monthly_trades_based_on_weekly_prediction_model():
     m_deploy = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades(horizon="MONTHLY", force_refresh=True)
     assert m_deploy["decision_source"] == "WEEKLY_PREDICTION_MODEL_T5"
     assert "weekly_prediction_model" in m_deploy
+
+
+def test_pre_trade_strategy_tournament_highest_win_probability():
+    """Verify that the system analyzes candidate strategies and initiates the one with highest win probability."""
+    # 1. Test tournament on Strong Bullish
+    tourn_bull = WeeklyMonthlyOptionsStrategyEngine.analyze_highest_win_probability_strategy(
+        verdict="STRONG BULLISH",
+        spot=22600.0,
+        iv_pct=13.5,
+        horizon="WEEKLY",
+        weekly_model_info={"probabilities": {"p_up": 0.65, "p_flat": 0.25, "p_down": 0.10}, "weekly_composite_score": 24.0}
+    )
+    assert tourn_bull["status"] == "OK"
+    assert len(tourn_bull["candidates_ranked"]) == 4
+    winner = tourn_bull["tournament_winner"]
+    # Winner must have the highest win probability among candidates
+    max_p_win = max(c["p_win_pct"] for c in tourn_bull["candidates_ranked"])
+    assert winner["p_win_pct"] == max_p_win
+    assert winner["tournament_rank"] == 1
+    assert winner["expectancy_inr"] > 0
+    assert "analysis_summary" in tourn_bull
+
+    # 2. Test tournament on Range-Bound
+    tourn_range = WeeklyMonthlyOptionsStrategyEngine.analyze_highest_win_probability_strategy(
+        verdict="RANGE-BOUND",
+        spot=22600.0,
+        iv_pct=13.5,
+        horizon="WEEKLY",
+        weekly_model_info={"probabilities": {"p_up": 0.20, "p_flat": 0.60, "p_down": 0.20}, "weekly_composite_score": 0.0}
+    )
+    assert tourn_range["status"] == "OK"
+    assert tourn_range["tournament_winner"]["tournament_rank"] == 1
+
+    # 3. Test execution deploys tournament winner
+    deploy = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades(horizon="WEEKLY", force_refresh=True)
+    assert "win_probability_pct" in deploy
+    assert "strategy_tournament" in deploy
+    assert deploy["win_probability_pct"] == deploy["strategy_tournament"]["tournament_winner"]["p_win_pct"]
+

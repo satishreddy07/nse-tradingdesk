@@ -265,3 +265,49 @@ def test_intraday_trades_based_on_intraday_analysis():
     deploy_res = intraday_options_strategy_engine.evaluate_and_execute_auto_trades(force_refresh=True)
     assert deploy_res["decision_source"] == "INTRADAY_ANALYSIS"
     assert "intraday_analysis" in deploy_res
+
+
+def test_intraday_everyday_0dte_and_non_0dte_confidence():
+    """Verify that intraday trades support 0DTE and non-0DTE cycles and execute based on daytime confidence."""
+    # 1. Test 0DTE calculation
+    res_0dte = IntradayOptionsStrategyEngine.calculate_sigma_strikes(
+        spot=22600.0,
+        iv_pct=13.5,
+        dte=0
+    )
+    assert res_0dte["is_zero_dte"] is True
+    assert res_0dte["expiry_cycle"] == "0DTE"
+    assert res_0dte["dist_1sigma"] > 0
+
+    # 2. Test Non-0DTE calculation (e.g. 2DTE Wednesday before Thursday weekly expiry)
+    res_2dte = IntradayOptionsStrategyEngine.calculate_sigma_strikes(
+        spot=22600.0,
+        iv_pct=13.5,
+        dte=2
+    )
+    assert res_2dte["is_zero_dte"] is False
+    assert res_2dte["expiry_cycle"] == "2DTE_INTRADAY"
+    # Expected move for 2DTE must be strictly larger than 0DTE
+    assert res_2dte["dist_1sigma"] > res_0dte["dist_1sigma"]
+
+    # 3. Test Daytime Confidence calculation
+    mock_regime_info = {
+        "regime": "STRONG BULLISH",
+        "intraday_composite_score": 28.5,
+        "dist_vwap_pts": 32.0,
+        "orb_status": "BREAKOUT_UP",
+        "choppiness_index": 38.0,
+        "writer_dominance_score": 14.0,
+        "near_atm_pcr": 1.25
+    }
+    conf = IntradayOptionsStrategyEngine.calculate_daytime_confidence(mock_regime_info)
+    assert conf["intraday_confidence_pct"] >= 65.0
+    assert conf["is_confident_for_0dte"] is True
+    assert conf["is_confident_for_intraday"] is True
+    assert "breakdown" in conf
+
+    # 4. Auto deploy evaluation passes cycle & confidence metrics
+    deploy_res = intraday_options_strategy_engine.evaluate_and_execute_auto_trades(force_refresh=True)
+    assert "intraday_confidence_pct" in deploy_res
+    assert "expiry_cycle" in deploy_res
+

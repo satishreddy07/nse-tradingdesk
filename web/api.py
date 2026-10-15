@@ -1066,9 +1066,28 @@ def get_options_intraday_regime_endpoint(force_refresh: bool = False):
     """
     Returns real-time Nifty 50 regime strictly derived from pure INTRADAY analysis:
     VWAP, 30m ORB, Choppiness Index (CHOP), Strike Gamma Exposure (GEX), Sectoral Breadth, and Intraday ML.
+    Also returns real-time daytime confidence metrics for 0DTE and non-0DTE intraday execution.
     """
     from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
-    return intraday_options_strategy_engine.get_intraday_market_regime(force_refresh=force_refresh)
+    reg = intraday_options_strategy_engine.get_intraday_market_regime(force_refresh=force_refresh)
+    conf = intraday_options_strategy_engine.calculate_daytime_confidence(reg)
+    reg["daytime_confidence"] = conf
+    return reg
+
+
+@app.get("/api/options/intraday-rules/daytime-confidence")
+def get_options_intraday_daytime_confidence_endpoint(force_refresh: bool = False):
+    """Returns real-time daytime confidence metrics and breakdown for 0DTE and non-0DTE intraday execution."""
+    from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+    reg = intraday_options_strategy_engine.get_intraday_market_regime(force_refresh=force_refresh)
+    conf = intraday_options_strategy_engine.calculate_daytime_confidence(reg)
+    return {
+        "status": "OK",
+        "regime": reg.get("regime"),
+        "intraday_composite_score": reg.get("intraday_composite_score"),
+        "daytime_confidence": conf,
+        "timestamp_ist": format_ist()
+    }
 
 
 @app.get("/api/options/intraday-rules/active-trades")
@@ -1157,13 +1176,32 @@ def post_options_positional_auto_deploy_endpoint(req: Optional[AutoDeployPositio
 
 
 @app.get("/api/options/positional-rules/regime")
-def get_options_positional_regime_endpoint(force_refresh: bool = False):
+def get_options_positional_regime_endpoint(horizon: str = "WEEKLY", force_refresh: bool = False):
     """
-    Returns real-time Nifty 50 regime strictly derived from the WEEKLY PREDICTION MODEL (T+5 Structural Framework):
-    Structural moving averages (EMA50, EMA200), constituent breadth % > EMA50/200, FII weekly futures OI, and global macro trends.
+    Returns real-time Nifty 50 regime strictly derived from the WEEKLY PREDICTION MODEL (T+5 Structural Framework)
+    and includes the Pre-Trade Strategy Tournament ranking the candidate architecture with the highest winning probability.
     """
     from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
-    return weekly_monthly_options_strategy_engine.get_weekly_prediction_model_regime(force_refresh=force_refresh)
+    reg = weekly_monthly_options_strategy_engine.get_weekly_prediction_model_regime(force_refresh=force_refresh)
+    try:
+        tournament = weekly_monthly_options_strategy_engine.get_pre_trade_strategy_tournament(horizon=horizon, force_refresh=force_refresh)
+        reg["pre_trade_strategy_tournament"] = tournament
+    except Exception as e:
+        reg["pre_trade_strategy_tournament"] = {"status": "ERROR", "message": str(e)}
+    return reg
+
+
+@app.get("/api/options/positional-rules/tournament")
+def get_options_positional_tournament_endpoint(horizon: str = "WEEKLY", force_refresh: bool = False):
+    """
+    Analyzes which candidate option strategy architecture has the HIGHEST PROBABILITY OF WINNING (P_win)
+    and positive expectancy for the current Weekly Prediction Model regime before trade initiation.
+    """
+    from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+    return weekly_monthly_options_strategy_engine.get_pre_trade_strategy_tournament(
+        horizon=horizon,
+        force_refresh=force_refresh
+    )
 
 
 @app.get("/api/options/positional-rules/active-trades")

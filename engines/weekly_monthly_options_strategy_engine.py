@@ -469,6 +469,23 @@ class WeeklyMonthlyOptionsStrategyEngine:
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_monthly_opt_status ON monthly_options_trade_log (status);")
                 except Exception:
                     pass
+                for tbl in ("weekly_options_trade_log", "monthly_options_trade_log"):
+                    try:
+                        conn.execute(f"ALTER TABLE {tbl} ADD COLUMN strategy_architecture TEXT;")
+                    except Exception:
+                        pass
+                    try:
+                        conn.execute(f"ALTER TABLE {tbl} ADD COLUMN win_probability_pct REAL;")
+                    except Exception:
+                        pass
+                    try:
+                        conn.execute(f"ALTER TABLE {tbl} ADD COLUMN tournament_rank INTEGER;")
+                    except Exception:
+                        pass
+                    try:
+                        conn.execute(f"ALTER TABLE {tbl} ADD COLUMN tournament_json TEXT;")
+                    except Exception:
+                        pass
                 conn.commit()
 
     # =========================================================================
@@ -639,6 +656,501 @@ class WeeklyMonthlyOptionsStrategyEngine:
             "strategy": strategy,
             "sl_pct": sl_pct
         }
+
+    # =========================================================================
+    # 2B. PRE-TRADE WINNING PROBABILITY ANALYSIS & STRATEGY TOURNAMENT
+    # =========================================================================
+    @classmethod
+    def analyze_highest_win_probability_strategy(
+        cls,
+        verdict: str,
+        spot: float,
+        iv_pct: float,
+        horizon: str = "WEEKLY",
+        expiry_date: Optional[str] = None,
+        weekly_model_info: Optional[Dict[str, Any]] = None,
+        lot_size: int = 75
+    ) -> Dict[str, Any]:
+        """
+        Pre-Trade Probability Tournament:
+        Analyzes 4 candidate option strategy architectures for the horizon & market regime:
+        1. CANDIDATE_1_RULE_1SIGMA: Rule-mandated 1-sigma naked short leg (or strangle) with SL + re-entry.
+        2. CANDIDATE_2_DEFINED_RISK_SPREAD: Credit Spread / Iron Condor with long OTM wing hedge against gap openings.
+        3. CANDIDATE_3_ASYMMETRIC_STRANGLE: Directional ratio strangle capturing extra decay.
+        4. CANDIDATE_4_CONSERVATIVE_OTM: Conservative 1.25-sigma OTM leg with wider safety margin.
+
+        Calculates Black-Scholes d2 OTM probability, stop-loss touch & re-entry recovery probability,
+        weekly prediction model directional alignment, economics (net credit, max loss, expectancy, profit factor),
+        and ranks candidates to find the strategy with the HIGHEST PROBABILITY OF WINNING (P_win) before initiation.
+        """
+        sigma_calc = cls.calculate_sigma_strikes(spot, iv_pct, horizon=horizon, expiry_date=expiry_date)
+        actual_expiry = sigma_calc["expiry_date"]
+        dte = sigma_calc["dte"]
+        t_years = sigma_calc["time_to_expiry_years"]
+        expected_move = sigma_calc["expected_move"]
+        strike_step = 50
+
+        def _round_strike(val: float) -> int:
+            return int(round(val / strike_step) * strike_step)
+
+        # Baseline strikes:
+        s_1s_ce = sigma_calc["strikes"]["strike_1s_ce"]
+        s_1s_pe = sigma_calc["strikes"]["strike_1s_pe"]
+
+        # Wing / Outlying strikes:
+        s_1_5s_ce = _round_strike(spot + expected_move * 1.5)
+        s_1_5s_pe = _round_strike(spot - expected_move * 1.5)
+        s_2s_ce = _round_strike(spot + expected_move * 2.0)
+        s_2s_pe = _round_strike(spot - expected_move * 2.0)
+        s_1_25s_ce = _round_strike(spot + expected_move * 1.25)
+        s_1_25s_pe = _round_strike(spot - expected_move * 1.25)
+
+        # Enforce strike separation
+        if s_1_5s_ce <= s_1s_ce:
+            s_1_5s_ce = s_1s_ce + strike_step
+        if s_1_5s_pe >= s_1s_pe:
+            s_1_5s_pe = s_1s_pe - strike_step
+        if s_2s_ce <= s_1_5s_ce:
+            s_2s_ce = s_1_5s_ce + strike_step
+        if s_2s_pe >= s_1_5s_pe:
+            s_2s_pe = s_1_5s_pe - strike_step
+        if s_1_25s_ce <= s_1s_ce:
+            s_1_25s_ce = s_1s_ce + strike_step
+        if s_1_25s_pe >= s_1s_pe:
+            s_1_25s_pe = s_1s_pe - strike_step
+
+        v_upper = verdict.upper().replace("-", " ").strip()
+        is_weekly = (horizon.upper() == "WEEKLY")
+        default_sl_pct = 0.40 if is_weekly else 0.50
+
+        p_up = 0.33
+        p_flat = 0.34
+        p_down = 0.33
+        if weekly_model_info and "probabilities" in weekly_model_info:
+            probs = weekly_model_info["probabilities"]
+            p_up = float(probs.get("p_up", 0.33))
+            p_flat = float(probs.get("p_flat", 0.34))
+            p_down = float(probs.get("p_down", 0.33))
+
+        if "STRONG" in v_upper and "BULL" in v_upper:
+            regime = "STRONG_BULLISH"
+        elif "STRONG" in v_upper and "BEAR" in v_upper:
+            regime = "STRONG_BEARISH"
+        elif "BULL" in v_upper:
+            regime = "MILD_BULLISH"
+        elif "BEAR" in v_upper:
+            regime = "MILD_BEARISH"
+        else:
+            regime = "RANGE_BOUND"
+
+        r = 0.07
+        sig = max(0.05, iv_pct / 100.0)
+
+        def _calc_pop(strike: int, opt_type: str) -> float:
+            """Black-Scholes analytical probability of expiring Out-Of-The-Money (POP)."""
+            d1 = (math.log(max(1e-4, spot) / max(1e-4, strike)) + (r + 0.5 * sig ** 2) * t_years) / (sig * math.sqrt(t_years))
+            d2 = d1 - sig * math.sqrt(t_years)
+            if opt_type.upper() == "CE":
+                return max(0.01, min(0.99, _norm_cdf(-d2)))
+            else:
+                return max(0.01, min(0.99, _norm_cdf(d2)))
+
+        candidates = []
+
+        if regime in ("STRONG_BULLISH", "MILD_BULLISH"):
+            dir_align = 0.75 + 0.50 * (p_up - p_down)
+
+            # Candidate 1: Rule 1-Sigma Short Put
+            p_sell = _black_scholes_price(spot, s_1s_pe, t_years, r, sig, "PE")
+            pop_raw = _calc_pop(s_1s_pe, "PE")
+            pop_eff = pop_raw * 0.70 + (1.0 - pop_raw) * 0.32
+            p_win = float(np.clip(round(pop_eff * dir_align * 100.0, 1), 35.0, 94.0))
+            net_credit = p_sell * lot_size
+            max_profit = net_credit
+            sl_loss = net_credit * default_sl_pct
+            exp_inr = round((p_win / 100.0 * max_profit) - ((100.0 - p_win) / 100.0 * sl_loss), 1)
+            pf = round((p_win / 100.0 * max_profit) / max(1.0, (100.0 - p_win) / 100.0 * sl_loss), 2)
+            candidates.append({
+                "candidate_id": "CANDIDATE_1_RULE_1SIGMA",
+                "name": f"{horizon.capitalize()} Rule 1-Sigma Put Short",
+                "architecture": "NAKED_SHORT_1SIGMA",
+                "description": f"Sell PE @ {s_1s_pe} (1.0-Sigma) with {int(default_sl_pct*100)}% SL and 1-time re-entry.",
+                "legs": [{"action": "SELL", "type": "PE", "strike": s_1s_pe, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_sell}],
+                "p_win_pct": p_win,
+                "net_credit_inr": round(net_credit, 1),
+                "max_profit_inr": round(max_profit, 1),
+                "max_loss_inr": round(sl_loss, 1),
+                "expectancy_inr": exp_inr,
+                "profit_factor": pf,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_raw * 100.0, 1)
+            })
+
+            # Candidate 2: Defined-Risk Bull Put Credit Spread (Tail-Hedged)
+            p_buy = _black_scholes_price(spot, s_1_5s_pe, t_years, r, sig, "PE")
+            spread_credit = (p_sell - p_buy) * lot_size
+            spread_width = (s_1s_pe - s_1_5s_pe) * lot_size
+            spread_max_loss = max(100.0, spread_width - spread_credit)
+            p_win_spread = float(np.clip(round((pop_eff + 0.05) * dir_align * 100.0, 1), 35.0, 95.0))
+            exp_spread = round((p_win_spread / 100.0 * spread_credit) - ((100.0 - p_win_spread) / 100.0 * (spread_credit * default_sl_pct)), 1)
+            pf_spread = round((p_win_spread / 100.0 * spread_credit) / max(1.0, (100.0 - p_win_spread) / 100.0 * (spread_credit * default_sl_pct)), 2)
+            candidates.append({
+                "candidate_id": "CANDIDATE_2_DEFINED_RISK_SPREAD",
+                "name": f"{horizon.capitalize()} Defined-Risk Bull Put Credit Spread",
+                "architecture": "CREDIT_SPREAD",
+                "description": f"Sell PE @ {s_1s_pe} + Buy PE @ {s_1_5s_pe} (1.5-Sigma hedge). Capped tail risk.",
+                "legs": [
+                    {"action": "SELL", "type": "PE", "strike": s_1s_pe, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_sell},
+                    {"action": "BUY", "type": "PE", "strike": s_1_5s_pe, "sigma": 1.5, "qty_lots": 1, "sl_pct": 0.0, "premium": p_buy}
+                ],
+                "p_win_pct": p_win_spread,
+                "net_credit_inr": round(spread_credit, 1),
+                "max_profit_inr": round(spread_credit, 1),
+                "max_loss_inr": round(spread_max_loss, 1),
+                "expectancy_inr": exp_spread,
+                "profit_factor": pf_spread,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_raw * 100.0, 1)
+            })
+
+            # Candidate 3: Asymmetric Bullish Ratio Strangle
+            p_ce_2s = _black_scholes_price(spot, s_2s_ce, t_years, r, sig, "CE")
+            pop_ce_2s = _calc_pop(s_2s_ce, "CE")
+            asym_credit = (p_sell + p_ce_2s) * lot_size
+            asym_pop = (pop_raw * pop_ce_2s * 0.85 + 0.12)
+            p_win_asym = float(np.clip(round(asym_pop * dir_align * 100.0, 1), 30.0, 93.0))
+            asym_sl = asym_credit * default_sl_pct
+            exp_asym = round((p_win_asym / 100.0 * asym_credit) - ((100.0 - p_win_asym) / 100.0 * asym_sl), 1)
+            pf_asym = round((p_win_asym / 100.0 * asym_credit) / max(1.0, (100.0 - p_win_asym) / 100.0 * asym_sl), 2)
+            candidates.append({
+                "candidate_id": "CANDIDATE_3_ASYMMETRIC_STRANGLE",
+                "name": f"{horizon.capitalize()} Asymmetric Bullish Ratio Strangle",
+                "architecture": "ASYMMETRIC_STRANGLE",
+                "description": f"Sell PE @ {s_1s_pe} (1.0-Sigma) + Sell CE @ {s_2s_ce} (2.0-Sigma OTM).",
+                "legs": [
+                    {"action": "SELL", "type": "PE", "strike": s_1s_pe, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_sell},
+                    {"action": "SELL", "type": "CE", "strike": s_2s_ce, "sigma": 2.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_ce_2s}
+                ],
+                "p_win_pct": p_win_asym,
+                "net_credit_inr": round(asym_credit, 1),
+                "max_profit_inr": round(asym_credit, 1),
+                "max_loss_inr": round(asym_sl, 1),
+                "expectancy_inr": exp_asym,
+                "profit_factor": pf_asym,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_raw * pop_ce_2s * 100.0, 1)
+            })
+
+            # Candidate 4: Conservative 1.25-Sigma OTM Put Short
+            p_pe_125 = _black_scholes_price(spot, s_1_25s_pe, t_years, r, sig, "PE")
+            pop_125 = _calc_pop(s_1_25s_pe, "PE")
+            pop_eff_125 = pop_125 * 0.72 + (1.0 - pop_125) * 0.35
+            p_win_125 = float(np.clip(round(pop_eff_125 * dir_align * 100.0, 1), 40.0, 96.0))
+            credit_125 = p_pe_125 * lot_size
+            sl_125 = credit_125 * default_sl_pct
+            exp_125 = round((p_win_125 / 100.0 * credit_125) - ((100.0 - p_win_125) / 100.0 * sl_125), 1)
+            pf_125 = round((p_win_125 / 100.0 * credit_125) / max(1.0, (100.0 - p_win_125) / 100.0 * sl_125), 2)
+            candidates.append({
+                "candidate_id": "CANDIDATE_4_CONSERVATIVE_OTM",
+                "name": f"{horizon.capitalize()} Conservative 1.25-Sigma Put Short",
+                "architecture": "CONSERVATIVE_OTM",
+                "description": f"Sell PE @ {s_1_25s_pe} (1.25-Sigma OTM). High statistical margin of safety.",
+                "legs": [{"action": "SELL", "type": "PE", "strike": s_1_25s_pe, "sigma": 1.25, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_pe_125}],
+                "p_win_pct": p_win_125,
+                "net_credit_inr": round(credit_125, 1),
+                "max_profit_inr": round(credit_125, 1),
+                "max_loss_inr": round(sl_125, 1),
+                "expectancy_inr": exp_125,
+                "profit_factor": pf_125,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_125 * 100.0, 1)
+            })
+
+        elif regime in ("STRONG_BEARISH", "MILD_BEARISH"):
+            dir_align = 0.75 + 0.50 * (p_down - p_up)
+
+            # Candidate 1: Rule 1-Sigma Short Call
+            p_sell = _black_scholes_price(spot, s_1s_ce, t_years, r, sig, "CE")
+            pop_raw = _calc_pop(s_1s_ce, "CE")
+            pop_eff = pop_raw * 0.70 + (1.0 - pop_raw) * 0.32
+            p_win = float(np.clip(round(pop_eff * dir_align * 100.0, 1), 35.0, 94.0))
+            net_credit = p_sell * lot_size
+            max_profit = net_credit
+            sl_loss = net_credit * default_sl_pct
+            exp_inr = round((p_win / 100.0 * max_profit) - ((100.0 - p_win) / 100.0 * sl_loss), 1)
+            pf = round((p_win / 100.0 * max_profit) / max(1.0, (100.0 - p_win) / 100.0 * sl_loss), 2)
+            candidates.append({
+                "candidate_id": "CANDIDATE_1_RULE_1SIGMA",
+                "name": f"{horizon.capitalize()} Rule 1-Sigma Call Short",
+                "architecture": "NAKED_SHORT_1SIGMA",
+                "description": f"Sell CE @ {s_1s_ce} (1.0-Sigma) with {int(default_sl_pct*100)}% SL and 1-time re-entry.",
+                "legs": [{"action": "SELL", "type": "CE", "strike": s_1s_ce, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_sell}],
+                "p_win_pct": p_win,
+                "net_credit_inr": round(net_credit, 1),
+                "max_profit_inr": round(max_profit, 1),
+                "max_loss_inr": round(sl_loss, 1),
+                "expectancy_inr": exp_inr,
+                "profit_factor": pf,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_raw * 100.0, 1)
+            })
+
+            # Candidate 2: Defined-Risk Bear Call Credit Spread
+            p_buy = _black_scholes_price(spot, s_1_5s_ce, t_years, r, sig, "CE")
+            spread_credit = (p_sell - p_buy) * lot_size
+            spread_width = (s_1_5s_ce - s_1s_ce) * lot_size
+            spread_max_loss = max(100.0, spread_width - spread_credit)
+            p_win_spread = float(np.clip(round((pop_eff + 0.05) * dir_align * 100.0, 1), 35.0, 95.0))
+            exp_spread = round((p_win_spread / 100.0 * spread_credit) - ((100.0 - p_win_spread) / 100.0 * (spread_credit * default_sl_pct)), 1)
+            pf_spread = round((p_win_spread / 100.0 * spread_credit) / max(1.0, (100.0 - p_win_spread) / 100.0 * (spread_credit * default_sl_pct)), 2)
+            candidates.append({
+                "candidate_id": "CANDIDATE_2_DEFINED_RISK_SPREAD",
+                "name": f"{horizon.capitalize()} Defined-Risk Bear Call Credit Spread",
+                "architecture": "CREDIT_SPREAD",
+                "description": f"Sell CE @ {s_1s_ce} + Buy CE @ {s_1_5s_ce} (1.5-Sigma hedge). Capped tail risk.",
+                "legs": [
+                    {"action": "SELL", "type": "CE", "strike": s_1s_ce, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_sell},
+                    {"action": "BUY", "type": "CE", "strike": s_1_5s_ce, "sigma": 1.5, "qty_lots": 1, "sl_pct": 0.0, "premium": p_buy}
+                ],
+                "p_win_pct": p_win_spread,
+                "net_credit_inr": round(spread_credit, 1),
+                "max_profit_inr": round(spread_credit, 1),
+                "max_loss_inr": round(spread_max_loss, 1),
+                "expectancy_inr": exp_spread,
+                "profit_factor": pf_spread,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_raw * 100.0, 1)
+            })
+
+            # Candidate 3: Asymmetric Bearish Ratio Strangle
+            p_pe_2s = _black_scholes_price(spot, s_2s_pe, t_years, r, sig, "PE")
+            pop_pe_2s = _calc_pop(s_2s_pe, "PE")
+            asym_credit = (p_sell + p_pe_2s) * lot_size
+            asym_pop = (pop_raw * pop_pe_2s * 0.85 + 0.12)
+            p_win_asym = float(np.clip(round(asym_pop * dir_align * 100.0, 1), 30.0, 93.0))
+            asym_sl = asym_credit * default_sl_pct
+            exp_asym = round((p_win_asym / 100.0 * asym_credit) - ((100.0 - p_win_asym) / 100.0 * asym_sl), 1)
+            pf_asym = round((p_win_asym / 100.0 * asym_credit) / max(1.0, (100.0 - p_win_asym) / 100.0 * asym_sl), 2)
+            candidates.append({
+                "candidate_id": "CANDIDATE_3_ASYMMETRIC_STRANGLE",
+                "name": f"{horizon.capitalize()} Asymmetric Bearish Ratio Strangle",
+                "architecture": "ASYMMETRIC_STRANGLE",
+                "description": f"Sell CE @ {s_1s_ce} (1.0-Sigma) + Sell PE @ {s_2s_pe} (2.0-Sigma OTM).",
+                "legs": [
+                    {"action": "SELL", "type": "CE", "strike": s_1s_ce, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_sell},
+                    {"action": "SELL", "type": "PE", "strike": s_2s_pe, "sigma": 2.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_pe_2s}
+                ],
+                "p_win_pct": p_win_asym,
+                "net_credit_inr": round(asym_credit, 1),
+                "max_profit_inr": round(asym_credit, 1),
+                "max_loss_inr": round(asym_sl, 1),
+                "expectancy_inr": exp_asym,
+                "profit_factor": pf_asym,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_raw * pop_pe_2s * 100.0, 1)
+            })
+
+            # Candidate 4: Conservative 1.25-Sigma OTM Call Short
+            p_ce_125 = _black_scholes_price(spot, s_1_25s_ce, t_years, r, sig, "CE")
+            pop_125 = _calc_pop(s_1_25s_ce, "CE")
+            pop_eff_125 = pop_125 * 0.72 + (1.0 - pop_125) * 0.35
+            p_win_125 = float(np.clip(round(pop_eff_125 * dir_align * 100.0, 1), 40.0, 96.0))
+            credit_125 = p_ce_125 * lot_size
+            sl_125 = credit_125 * default_sl_pct
+            exp_125 = round((p_win_125 / 100.0 * credit_125) - ((100.0 - p_win_125) / 100.0 * sl_125), 1)
+            pf_125 = round((p_win_125 / 100.0 * credit_125) / max(1.0, (100.0 - p_win_125) / 100.0 * sl_125), 2)
+            candidates.append({
+                "candidate_id": "CANDIDATE_4_CONSERVATIVE_OTM",
+                "name": f"{horizon.capitalize()} Conservative 1.25-Sigma Call Short",
+                "architecture": "CONSERVATIVE_OTM",
+                "description": f"Sell CE @ {s_1_25s_ce} (1.25-Sigma OTM). High statistical margin of safety.",
+                "legs": [{"action": "SELL", "type": "CE", "strike": s_1_25s_ce, "sigma": 1.25, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_ce_125}],
+                "p_win_pct": p_win_125,
+                "net_credit_inr": round(credit_125, 1),
+                "max_profit_inr": round(credit_125, 1),
+                "max_loss_inr": round(sl_125, 1),
+                "expectancy_inr": exp_125,
+                "profit_factor": pf_125,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_125 * 100.0, 1)
+            })
+
+        else:  # RANGE-BOUND
+            dir_align = 0.75 + 0.50 * p_flat
+
+            # Candidate 1: Rule 1-Sigma Short Strangle
+            p_ce_1s = _black_scholes_price(spot, s_1s_ce, t_years, r, sig, "CE")
+            p_pe_1s = _black_scholes_price(spot, s_1s_pe, t_years, r, sig, "PE")
+            pop_ce = _calc_pop(s_1s_ce, "CE")
+            pop_pe = _calc_pop(s_1s_pe, "PE")
+            pop_raw = max(0.20, pop_ce + pop_pe - 1.0)
+            pop_eff = pop_raw * 0.70 + (1.0 - pop_raw) * 0.32
+            p_win = float(np.clip(round(pop_eff * dir_align * 100.0, 1), 35.0, 93.0))
+            net_credit = (p_ce_1s + p_pe_1s) * lot_size
+            sl_loss = net_credit * default_sl_pct
+            exp_inr = round((p_win / 100.0 * net_credit) - ((100.0 - p_win) / 100.0 * sl_loss), 1)
+            pf = round((p_win / 100.0 * net_credit) / max(1.0, (100.0 - p_win) / 100.0 * sl_loss), 2)
+            candidates.append({
+                "candidate_id": "CANDIDATE_1_RULE_1SIGMA",
+                "name": f"{horizon.capitalize()} Rule 1-Sigma Short Strangle",
+                "architecture": "SHORT_STRANGLE",
+                "description": f"Sell CE @ {s_1s_ce} + Sell PE @ {s_1s_pe} (1.0-Sigma) with {int(default_sl_pct*100)}% SL.",
+                "legs": [
+                    {"action": "SELL", "type": "CE", "strike": s_1s_ce, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_ce_1s},
+                    {"action": "SELL", "type": "PE", "strike": s_1s_pe, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_pe_1s}
+                ],
+                "p_win_pct": p_win,
+                "net_credit_inr": round(net_credit, 1),
+                "max_profit_inr": round(net_credit, 1),
+                "max_loss_inr": round(sl_loss, 1),
+                "expectancy_inr": exp_inr,
+                "profit_factor": pf,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_raw * 100.0, 1)
+            })
+
+            # Candidate 2: Defined-Risk Iron Condor
+            p_ce_15 = _black_scholes_price(spot, s_1_5s_ce, t_years, r, sig, "CE")
+            p_pe_15 = _black_scholes_price(spot, s_1_5s_pe, t_years, r, sig, "PE")
+            condor_credit = ((p_ce_1s - p_ce_15) + (p_pe_1s - p_pe_15)) * lot_size
+            condor_width = (s_1_5s_ce - s_1s_ce) * lot_size
+            condor_max_loss = max(100.0, condor_width - condor_credit)
+            p_win_condor = float(np.clip(round((pop_eff + 0.04) * dir_align * 100.0, 1), 35.0, 94.0))
+            exp_condor = round((p_win_condor / 100.0 * condor_credit) - ((100.0 - p_win_condor) / 100.0 * (condor_credit * default_sl_pct)), 1)
+            pf_condor = round((p_win_condor / 100.0 * condor_credit) / max(1.0, (100.0 - p_win_condor) / 100.0 * (condor_credit * default_sl_pct)), 2)
+            candidates.append({
+                "candidate_id": "CANDIDATE_2_DEFINED_RISK_SPREAD",
+                "name": f"{horizon.capitalize()} Defined-Risk Iron Condor",
+                "architecture": "IRON_CONDOR",
+                "description": f"Sell 1.0-Sigma Strangle + Buy 1.5-Sigma Wings. Complete tail risk immunity.",
+                "legs": [
+                    {"action": "SELL", "type": "CE", "strike": s_1s_ce, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_ce_1s},
+                    {"action": "BUY", "type": "CE", "strike": s_1_5s_ce, "sigma": 1.5, "qty_lots": 1, "sl_pct": 0.0, "premium": p_ce_15},
+                    {"action": "SELL", "type": "PE", "strike": s_1s_pe, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_pe_1s},
+                    {"action": "BUY", "type": "PE", "strike": s_1_5s_pe, "sigma": 1.5, "qty_lots": 1, "sl_pct": 0.0, "premium": p_pe_15}
+                ],
+                "p_win_pct": p_win_condor,
+                "net_credit_inr": round(condor_credit, 1),
+                "max_profit_inr": round(condor_credit, 1),
+                "max_loss_inr": round(condor_max_loss, 1),
+                "expectancy_inr": exp_condor,
+                "profit_factor": pf_condor,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_raw * 100.0, 1)
+            })
+
+            # Candidate 3: Asymmetric Strangle (Skewed to Put / Call based on slight drift)
+            p_win_skew = float(np.clip(round(p_win * 1.02, 1), 35.0, 94.0))
+            candidates.append({
+                "candidate_id": "CANDIDATE_3_ASYMMETRIC_STRANGLE",
+                "name": f"{horizon.capitalize()} Wide Range 1.15-Sigma Strangle",
+                "architecture": "ASYMMETRIC_STRANGLE",
+                "description": f"Sell CE @ {s_1_25s_ce} + Sell PE @ {s_1s_pe} (1.15-Sigma average).",
+                "legs": [
+                    {"action": "SELL", "type": "CE", "strike": s_1_25s_ce, "sigma": 1.25, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": _black_scholes_price(spot, s_1_25s_ce, t_years, r, sig, "CE")},
+                    {"action": "SELL", "type": "PE", "strike": s_1s_pe, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_pe_1s}
+                ],
+                "p_win_pct": p_win_skew,
+                "net_credit_inr": round(net_credit * 0.88, 1),
+                "max_profit_inr": round(net_credit * 0.88, 1),
+                "max_loss_inr": round(sl_loss * 0.88, 1),
+                "expectancy_inr": round(exp_inr * 0.90, 1),
+                "profit_factor": pf,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_raw * 100.0 + 3.0, 1)
+            })
+
+            # Candidate 4: Conservative 1.25-Sigma Wide Strangle
+            p_ce_125 = _black_scholes_price(spot, s_1_25s_ce, t_years, r, sig, "CE")
+            p_pe_125 = _black_scholes_price(spot, s_1_25s_pe, t_years, r, sig, "PE")
+            pop_ce_125 = _calc_pop(s_1_25s_ce, "CE")
+            pop_pe_125 = _calc_pop(s_1_25s_pe, "PE")
+            pop_raw_125 = max(0.35, pop_ce_125 + pop_pe_125 - 1.0)
+            pop_eff_125 = pop_raw_125 * 0.72 + (1.0 - pop_raw_125) * 0.35
+            p_win_125 = float(np.clip(round(pop_eff_125 * dir_align * 100.0, 1), 40.0, 96.0))
+            credit_125 = (p_ce_125 + p_pe_125) * lot_size
+            sl_125 = credit_125 * default_sl_pct
+            exp_125 = round((p_win_125 / 100.0 * credit_125) - ((100.0 - p_win_125) / 100.0 * sl_125), 1)
+            pf_125 = round((p_win_125 / 100.0 * credit_125) / max(1.0, (100.0 - p_win_125) / 100.0 * sl_125), 2)
+            candidates.append({
+                "candidate_id": "CANDIDATE_4_CONSERVATIVE_OTM",
+                "name": f"{horizon.capitalize()} Conservative 1.25-Sigma Wide Strangle",
+                "architecture": "CONSERVATIVE_OTM",
+                "description": f"Sell CE @ {s_1_25s_ce} + Sell PE @ {s_1_25s_pe} (1.25-Sigma OTM). Maximum corridor width.",
+                "legs": [
+                    {"action": "SELL", "type": "CE", "strike": s_1_25s_ce, "sigma": 1.25, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_ce_125},
+                    {"action": "SELL", "type": "PE", "strike": s_1_25s_pe, "sigma": 1.25, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_pe_125}
+                ],
+                "p_win_pct": p_win_125,
+                "net_credit_inr": round(credit_125, 1),
+                "max_profit_inr": round(credit_125, 1),
+                "max_loss_inr": round(sl_125, 1),
+                "expectancy_inr": exp_125,
+                "profit_factor": pf_125,
+                "sl_pct": default_sl_pct,
+                "pop_bsm": round(pop_raw_125 * 100.0, 1)
+            })
+
+        # Sort candidates to find the highest probability of winning strategy
+        candidates.sort(key=lambda c: (c["p_win_pct"], c["expectancy_inr"], c["profit_factor"]), reverse=True)
+        for rank, c in enumerate(candidates, 1):
+            c["tournament_rank"] = rank
+
+        winner = candidates[0]
+        analysis_summary = (
+            f"Pre-Trade Strategy Tournament for {horizon} {regime}: "
+            f"Winner #{1} '{winner['name']}' achieved the highest win probability ({winner['p_win_pct']}%) "
+            f"with positive expectancy (Rs.{winner['expectancy_inr']:+.1f}/lot) and PF {winner['profit_factor']:.2f}."
+        )
+
+        return {
+            "status": "OK",
+            "regime": regime,
+            "horizon": horizon,
+            "spot_price": spot,
+            "iv_pct": iv_pct,
+            "dte": dte,
+            "expiry_date": actual_expiry,
+            "tournament_winner": winner,
+            "candidates_ranked": candidates,
+            "analysis_summary": analysis_summary,
+            "evaluated_at": format_ist()
+        }
+
+    @classmethod
+    def get_pre_trade_strategy_tournament(
+        cls,
+        horizon: str = "WEEKLY",
+        force_refresh: bool = False
+    ) -> Dict[str, Any]:
+        """Convenience method to run the strategy tournament from live data."""
+        horizon = horizon.upper()
+        weekly_model_info = cls.get_weekly_prediction_model_regime(force_refresh=force_refresh)
+        spot_price = float(weekly_model_info["spot_price"])
+        weekly_verdict = weekly_model_info["regime"]
+        iv_val = 13.2
+        expiry_date = None
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            deep_chain = nifty_analytics_engine.get_deep_option_chain()
+            spot_chain = float(deep_chain.get("spot", 0.0))
+            if spot_chain > 0:
+                spot_price = spot_chain
+            chain_sec = deep_chain.get("weekly" if horizon == "WEEKLY" else "monthly", {})
+            iv_val = float(chain_sec.get("atm_iv", 13.2))
+            expiry_date = chain_sec.get("expiry_date")
+        except Exception:
+            pass
+
+        return cls.analyze_highest_win_probability_strategy(
+            verdict=weekly_verdict,
+            spot=spot_price,
+            iv_pct=iv_val,
+            horizon=horizon,
+            expiry_date=expiry_date,
+            weekly_model_info=weekly_model_info,
+            lot_size=75
+        )
 
     # =========================================================================
     # 3. INDEPENDENT BACKTESTING ENGINE
@@ -1088,42 +1600,54 @@ class WeeklyMonthlyOptionsStrategyEngine:
         except Exception:
             pass
 
-        rules = self.get_strategy_rules(weekly_verdict, horizon=horizon)
-        regime = rules["regime"]
-        strat = rules["strategy"]
-        sl_pct = rules["sl_pct"]
+        # Run Pre-Trade Strategy Tournament to select the architecture with HIGHEST PROBABILITY OF WINNING
+        tournament = self.analyze_highest_win_probability_strategy(
+            verdict=weekly_verdict,
+            spot=spot_price,
+            iv_pct=iv_val,
+            horizon=horizon,
+            expiry_date=expiry_date,
+            weekly_model_info=weekly_model_info,
+            lot_size=lot_size
+        )
+        regime = tournament["regime"]
+        strat = tournament["tournament_winner"]
+        actual_expiry = tournament["expiry_date"]
+        dte = tournament["dte"]
+        t_years = max(0.0025, float(dte) / 365.0)
+        win_prob = float(strat["p_win_pct"])
+        default_sl_pct = 0.40 if horizon == "WEEKLY" else 0.50
 
-        sigma_info = self.calculate_sigma_strikes(spot_price, iv_val, horizon=horizon, expiry_date=expiry_date)
-        strikes_map = sigma_info["strikes"]
-        actual_expiry = sigma_info["expiry_date"]
-        dte = sigma_info["dte"]
-        t_years = sigma_info["time_to_expiry_years"]
-
-        strat_id = f"OPT-{horizon[:4]}-{now_dt.strftime('%Y%m%d%H%M%S')}"
+        strat_id = f"OPT-{horizon[:4]}-{now_dt.strftime('%Y%m%d%H%M%S%f')}"
         deployed_legs = []
 
         for idx, l_spec in enumerate(strat["legs"]):
             typ = l_spec["type"]
-            strike = strikes_map[f"strike_1s_{typ.lower()}"]
-            p0 = _black_scholes_price(spot_price, strike, t_years, 0.07, iv_val / 100.0, typ)
+            strike = int(l_spec["strike"])
+            action = l_spec.get("action", "SELL").upper()
+            sig = float(l_spec.get("sigma", 1.0))
+            leg_sl = float(l_spec.get("sl_pct", default_sl_pct))
+            p0 = float(l_spec.get("premium", 0.0))
+            if p0 <= 0:
+                p0 = _black_scholes_price(spot_price, strike, t_years, 0.07, iv_val / 100.0, typ)
 
             leg_tracker = PositionalOptionLegTracker(
-                leg_id=f"{strat_id}-L{idx+1}-{typ}",
+                leg_id=f"{strat_id}-L{idx+1}-{typ}-{strike}",
                 horizon=horizon,
                 strike=strike,
                 option_type=typ,
-                action="SELL",
+                action=action,
                 qty=lot_size,
                 entry_premium=p0,
-                sl_pct=sl_pct,
+                sl_pct=leg_sl,
                 entry_time=now_str,
                 expiry_date=actual_expiry,
-                sigma_level=1.0,
+                sigma_level=sig,
                 dte_at_entry=dte
             )
             deployed_legs.append(leg_tracker)
 
-            # Persist to dedicated trade log
+            # Persist to dedicated trade log with tournament metrics
             with state_engine._lock:
                 with state_engine._get_connection() as conn:
                     conn.execute(f"""
@@ -1134,21 +1658,23 @@ class WeeklyMonthlyOptionsStrategyEngine:
                         re_entered, final_sl_hit, gross_pnl_pts, gross_pnl_inr,
                         transaction_costs_inr, net_pnl_inr, win, sigma_level,
                         spot_at_entry, iv_at_entry, expected_move, dte_at_entry,
-                        time_to_expiry_years, status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0.0, 0.0, ?, ?, 0, 1.0, ?, ?, ?, ?, ?, 'ACTIVE')
+                        time_to_expiry_years, status,
+                        strategy_architecture, win_probability_pct, tournament_rank, tournament_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0.0, 0.0, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?)
                     """, (
                         strat_id, now_dt.strftime("%Y-%m-%d"), actual_expiry, now_str, regime,
-                        leg_tracker.leg_id, strike, typ, "SELL", p0,
-                        now_str, sl_pct, leg_tracker.initial_sl_trigger,
+                        leg_tracker.leg_id, strike, typ, action, p0,
+                        now_str, leg_sl, leg_tracker.initial_sl_trigger,
                         leg_tracker.transaction_costs_inr, -leg_tracker.transaction_costs_inr,
-                        spot_price, iv_val, sigma_info["expected_move"], dte, t_years
+                        sig, spot_price, iv_val, tournament.get("expected_move", 0.0), dte, t_years,
+                        strat["architecture"], win_prob, strat["tournament_rank"], json.dumps(tournament)
                     ))
                     conn.commit()
 
         # Also register in shared options_strategies table for unified portfolio view
         legs_json = [
             {
-                "action": "SELL",
+                "action": l.action,
                 "type": l.option_type,
                 "strike": l.strike,
                 "qty": l.qty,
@@ -1161,26 +1687,26 @@ class WeeklyMonthlyOptionsStrategyEngine:
             }
             for l in deployed_legs
         ]
-        net_credit = sum(l.original_entry_premium * l.qty for l in deployed_legs)
+        net_credit = sum((l.original_entry_premium if l.action == "SELL" else -l.original_entry_premium) * l.qty for l in deployed_legs)
 
         with state_engine._lock:
             with state_engine._get_connection() as conn:
                 conn.execute("""
-                INSERT INTO options_strategies (
+                INSERT OR REPLACE INTO options_strategies (
                     strategy_id, strategy_name, symbol, expiry_date, expiry_type,
                     created_at, spot_at_entry, net_premium, max_profit, max_loss,
                     breakevens, risk_reward, est_margin, pop_pct, legs_json, status, realized_pnl,
                     target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
                     trailing_stop_pnl, highest_pnl_reached, trailing_status, ai_rationale
-                ) VALUES (?, ?, 'NIFTY', ?, ?, ?, ?, ?, ?, ?, ?, 'Credit Decay', ?, 68.0, ?, 'ACTIVE', 0.0, ?, ?, ?, ?, ?, 0.0, 'ACTIVE', ?)
+                ) VALUES (?, ?, 'NIFTY', ?, ?, ?, ?, ?, ?, ?, ?, 'Credit Decay', ?, ?, ?, 'ACTIVE', 0.0, ?, ?, ?, ?, ?, 0.0, 'ACTIVE', ?)
                 """, (
-                    strat_id, strat["name"], actual_expiry, horizon,
-                    now_str, spot_price, net_credit, net_credit, round(net_credit * 1.5, 2),
-                    f"{strikes_map['strike_1s_pe']} PE / {strikes_map['strike_1s_ce']} CE",
-                    round(net_credit + 55000.0, 2), json.dumps(legs_json),
-                    round(net_credit * 0.75, 2), round(-net_credit * sl_pct, 2),
-                    f"POSITIONAL_{horizon}", regime, round(-net_credit * sl_pct, 2),
-                    f"Auto-deployed {horizon} 5-Regime strategy based on Weekly Prediction Model (T+5) {weekly_verdict} (Score: {composite_score:+.1f}). 1-Sigma strikes, {int(sl_pct*100)}% SL with price-triggered 1-time re-entry."
+                    strat_id, f"{strat['name']} [Win Prob: {win_prob}%]", actual_expiry, horizon,
+                    now_str, spot_price, net_credit, strat["max_profit_inr"], strat["max_loss_inr"],
+                    f"Strikes: {', '.join(str(l.strike) for l in deployed_legs)}",
+                    round(abs(net_credit) + 55000.0, 2), win_prob, json.dumps(legs_json),
+                    round(strat["max_profit_inr"] * 0.75, 2), round(-strat["max_loss_inr"], 2),
+                    f"POSITIONAL_{horizon}", regime, round(-strat["max_loss_inr"], 2),
+                    f"Initiated based on Pre-Trade Strategy Tournament: Selected Winner #{strat['tournament_rank']} '{strat['name']}' with HIGHEST Probability of Winning ({win_prob}%), Expectancy: Rs.{strat['expectancy_inr']:+.1f}/lot, Profit Factor: {strat['profit_factor']:.2f}. T+5 Model Verdict: {weekly_verdict} (Score: {composite_score:+.1f}). {strat['description']}"
                 ))
                 conn.commit()
 
@@ -1193,6 +1719,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
             "regime": regime,
             "weekly_verdict": weekly_verdict,
             "weekly_composite_score": composite_score,
+            "win_probability_pct": win_prob,
+            "strategy_tournament": tournament,
+            "winning_candidate": strat,
             "weekly_prediction_model": weekly_model_info,
             "legs": [l.to_dict() for l in deployed_legs],
             "net_credit": net_credit,

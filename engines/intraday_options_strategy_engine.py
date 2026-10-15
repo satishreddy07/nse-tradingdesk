@@ -427,6 +427,18 @@ class IntradayOptionsStrategyEngine:
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_intraday_opt_status ON intraday_options_trade_log (status);")
                 except Exception:
                     pass
+                try:
+                    conn.execute("ALTER TABLE intraday_options_trade_log ADD COLUMN expiry_cycle TEXT;")
+                except Exception:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE intraday_options_trade_log ADD COLUMN dte INTEGER;")
+                except Exception:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE intraday_options_trade_log ADD COLUMN intraday_confidence_pct REAL;")
+                except Exception:
+                    pass
                 conn.commit()
 
     # =========================================================================
@@ -437,12 +449,15 @@ class IntradayOptionsStrategyEngine:
         cls,
         spot: float,
         iv_pct: float,
-        time_to_expiry_years: float,
-        strike_step: int = 50
+        time_to_expiry_years: Optional[float] = None,
+        strike_step: int = 50,
+        dte: Optional[int] = None,
+        expiry_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Calculates 1-sigma and 2-sigma strikes using the exact expected move formula:
         Expected move = Underlying price * Implied volatility * sqrt(Time to expiry in years)
+        Supports both 0DTE (expiry day intraday) and non-0DTE intraday (1DTE to 5DTE active weekly expiry).
         Rounds to eligible listed strikes (multiple of 50 for Nifty) and records all inputs.
         Do not hardcode sigma distances.
         """
@@ -450,8 +465,46 @@ class IntradayOptionsStrategyEngine:
             spot = 22600.0
         if iv_pct <= 0:
             iv_pct = 13.0
-        # Time to expiry sanity floor (at least 2 hours of intraday trading = 2 / (365 * 6.25))
-        t_years = max(0.0008, time_to_expiry_years)
+
+        now_dt = now_ist()
+        today = now_dt.date()
+
+        # Determine DTE and expiry cycle if not directly given
+        resolved_dte = dte
+        if resolved_dte is None and expiry_date:
+            for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+                try:
+                    exp_d = datetime.datetime.strptime(expiry_date.strip(), fmt).date()
+                    resolved_dte = max(0, (exp_d - today).days)
+                    break
+                except Exception:
+                    pass
+
+        if resolved_dte is not None:
+            is_zero_dte = (resolved_dte == 0)
+            expiry_cycle = "0DTE" if is_zero_dte else f"{resolved_dte}DTE_INTRADAY"
+            hours_rem = max(0.5, 15.5 - (now_dt.hour + now_dt.minute / 60.0))
+            if is_zero_dte:
+                t_years = max(0.0008, hours_rem / (365.0 * 24.0))
+            else:
+                t_years = max(0.0027, (resolved_dte * 24.0 + hours_rem) / (365.0 * 24.0))
+        elif time_to_expiry_years is not None and time_to_expiry_years > 0:
+            t_years = max(0.0008, time_to_expiry_years)
+            is_zero_dte = (t_years < 0.002)
+            resolved_dte = 0 if is_zero_dte else int(round(t_years * 365.0))
+            expiry_cycle = "0DTE" if is_zero_dte else f"{resolved_dte}DTE_INTRADAY"
+        else:
+            # Default to nearest weekly Thursday
+            days_to_thu = (3 - today.weekday()) % 7
+            resolved_dte = days_to_thu
+            is_zero_dte = (resolved_dte == 0)
+            expiry_cycle = "0DTE" if is_zero_dte else f"{resolved_dte}DTE_INTRADAY"
+            hours_rem = max(0.5, 15.5 - (now_dt.hour + now_dt.minute / 60.0))
+            if is_zero_dte:
+                t_years = max(0.0008, hours_rem / (365.0 * 24.0))
+            else:
+                t_years = max(0.0027, (resolved_dte * 24.0 + hours_rem) / (365.0 * 24.0))
+
         sigma_dec = iv_pct / 100.0
 
         # Exact Expected Move Formula
@@ -484,6 +537,9 @@ class IntradayOptionsStrategyEngine:
             "spot": round(spot, 2),
             "iv_pct": round(iv_pct, 2),
             "time_to_expiry_years": round(t_years, 5),
+            "dte": resolved_dte,
+            "is_zero_dte": is_zero_dte,
+            "expiry_cycle": expiry_cycle,
             "expected_move": round(expected_move, 2),
             "dist_1sigma": round(dist_1s, 2),
             "dist_2sigma": round(dist_2s, 2),
@@ -491,6 +547,9 @@ class IntradayOptionsStrategyEngine:
                 "spot_price": round(spot, 2),
                 "iv_pct": round(iv_pct, 2),
                 "time_to_expiry_years": round(t_years, 5),
+                "dte": resolved_dte,
+                "is_zero_dte": is_zero_dte,
+                "expiry_cycle": expiry_cycle,
                 "expected_move_1_sigma": round(dist_1s, 2),
                 "expected_move_2_sigma": round(dist_2s, 2),
             },
@@ -1037,6 +1096,118 @@ class IntradayOptionsStrategyEngine:
         }
 
     # =========================================================================
+    # 3B. DAYTIME CONFIDENCE ENGINE (0DTE & INTRADAY EVERYDAY)
+    # =========================================================================
+    @classmethod
+    def calculate_daytime_confidence(cls, intraday_regime_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Calculates real-time daytime confidence percentage (0% to 100%) during trading hours:
+        Synthesizes:
+        1. Composite Score magnitude and direction (up to 35 pts)
+        2. VWAP alignment: distance from VWAP in regime direction (up to 25 pts)
+        3. 30m ORB alignment: breakout or inside range confirmation (up to 20 pts)
+        4. Option Writer Dominance, PCR & Choppiness Index (up to 20 pts)
+        """
+        score = float(intraday_regime_info.get("intraday_composite_score") or 0.0)
+        regime = str(intraday_regime_info.get("regime") or "RANGE-BOUND").upper()
+        dist_vwap = float(intraday_regime_info.get("dist_vwap_pts") or 0.0)
+        orb_status = str(intraday_regime_info.get("orb_status") or "INSIDE_RANGE").upper()
+        chop = float(intraday_regime_info.get("choppiness_index") or 50.0)
+        writer_dom = float(intraday_regime_info.get("writer_dominance_score") or 0.0)
+        near_pcr = float(intraday_regime_info.get("near_atm_pcr") or 1.0)
+
+        # 1. Composite Score Contribution (0 to 35 pts)
+        if "STRONG" in regime:
+            c_score = min(35.0, 20.0 + (abs(score) / 40.0) * 15.0)
+        elif "MILD" in regime:
+            c_score = min(28.0, 15.0 + (abs(score) / 25.0) * 13.0)
+        else:  # RANGE-BOUND
+            c_score = min(35.0, max(15.0, 35.0 - abs(score) * 2.0))
+
+        # 2. VWAP Alignment Contribution (0 to 25 pts)
+        if "BULL" in regime:
+            if dist_vwap > 5.0:
+                c_vwap = min(25.0, 15.0 + (dist_vwap / 40.0) * 10.0)
+            elif dist_vwap >= -5.0:
+                c_vwap = 12.0
+            else:
+                c_vwap = max(2.0, 10.0 + (dist_vwap / 20.0) * 8.0)
+        elif "BEAR" in regime:
+            if dist_vwap < -5.0:
+                c_vwap = min(25.0, 15.0 + (abs(dist_vwap) / 40.0) * 10.0)
+            elif dist_vwap <= 5.0:
+                c_vwap = 12.0
+            else:
+                c_vwap = max(2.0, 10.0 - (dist_vwap / 20.0) * 8.0)
+        else:  # RANGE-BOUND
+            c_vwap = min(25.0, max(8.0, 25.0 - (abs(dist_vwap) / 30.0) * 17.0))
+
+        # 3. ORB Status Alignment Contribution (0 to 20 pts)
+        if "BULL" in regime:
+            if "BREAKOUT_UP" in orb_status or "EXPANSION_UP" in orb_status:
+                c_orb = 20.0
+            elif "INSIDE" in orb_status:
+                c_orb = 12.0
+            else:
+                c_orb = 5.0
+        elif "BEAR" in regime:
+            if "BREAKOUT_DOWN" in orb_status or "EXPANSION_DOWN" in orb_status:
+                c_orb = 20.0
+            elif "INSIDE" in orb_status:
+                c_orb = 12.0
+            else:
+                c_orb = 5.0
+        else:  # RANGE-BOUND
+            if "INSIDE" in orb_status or "CONSOLIDATION" in orb_status:
+                c_orb = 20.0
+            else:
+                c_orb = 8.0
+
+        # 4. Writer Dominance / PCR / Choppiness Contribution (0 to 20 pts)
+        if "BULL" in regime:
+            c_writer = 10.0
+            if writer_dom > 5.0:
+                c_writer += 6.0
+            if near_pcr >= 1.05:
+                c_writer += 4.0
+        elif "BEAR" in regime:
+            c_writer = 10.0
+            if writer_dom < -5.0:
+                c_writer += 6.0
+            if near_pcr <= 0.95:
+                c_writer += 4.0
+        else:  # RANGE-BOUND
+            c_writer = 10.0
+            if chop >= 55.0:
+                c_writer += 6.0
+            if 0.85 <= near_pcr <= 1.15:
+                c_writer += 4.0
+
+        total_confidence = round(float(np.clip(c_score + c_vwap + c_orb + c_writer, 15.0, 98.0)), 1)
+
+        grade = (
+            "VERY HIGH" if total_confidence >= 80.0
+            else "HIGH" if total_confidence >= 65.0
+            else "MODERATE" if total_confidence >= 50.0
+            else "LOW"
+        )
+
+        return {
+            "intraday_confidence_pct": total_confidence,
+            "confidence_grade": grade,
+            "required_threshold_0dte": 60.0,
+            "required_threshold_intraday": 50.0,
+            "is_confident_for_0dte": total_confidence >= 60.0,
+            "is_confident_for_intraday": total_confidence >= 50.0,
+            "breakdown": {
+                "composite_score_points": round(c_score, 1),
+                "vwap_alignment_points": round(c_vwap, 1),
+                "orb_alignment_points": round(c_orb, 1),
+                "writer_dominance_points": round(c_writer, 1),
+            }
+        }
+
+    # =========================================================================
     # 4. AUTO-TRADES EXECUTION & LIVE DEPLOYMENT
     # =========================================================================
     def evaluate_and_execute_auto_trades(
@@ -1047,11 +1218,11 @@ class IntradayOptionsStrategyEngine:
     ) -> Dict[str, Any]:
         """
         Executes auto-trades whenever the system feels confident:
-        - Strictly evaluates real-time INTRADAY analysis (VWAP, 30m ORB, GEX Zero-Gamma Flip, Sectoral Breadth & Intraday ML).
-        - Checks if market is alive and risk constraints permit.
-        - Formulates the exact primary & experimental asymmetric strategy.
+        - Operates everyday (not only 0DTE, but 1DTE-5DTE active weekly expiry traded intraday).
+        - Strictly evaluates real-time daytime confidence during market hours (VWAP, 30m ORB, GEX, Writer Dominance).
+        - Enforces differential daytime confidence bars (>=60% for 0DTE, >=50% for non-0DTE intraday).
         - Deploys orders into options_strategies and intraday_options_trade_log.
-        - Persists complete trade data to SQLite for ML model training.
+        - Persists complete trade data (timestamps, dte, cycle, confidence) for ML model training.
         """
         from engines.nifty_analytics_engine import nifty_analytics_engine
 
@@ -1061,17 +1232,9 @@ class IntradayOptionsStrategyEngine:
         intraday_verdict = intraday_regime_info["regime"]
         spot_price = float(intraday_regime_info["spot_price"])
 
-        # Check confidence: composite score magnitude >= threshold or strong regime or heavy range-bound chop
-        is_confident = (
-            (abs(composite_score) >= confidence_threshold)
-            or ("STRONG" in intraday_verdict)
-            or (intraday_verdict == "RANGE-BOUND" and intraday_regime_info["choppiness_index"] >= 55.0)
-        )
-
-        rules = self.get_strategy_rules(intraday_verdict)
-        regime = rules["regime"]
-        primary = rules["primary"]
-        asym = rules["experimental_asymmetric"]
+        # Compute dynamic daytime confidence (0 to 100%)
+        daytime_conf = self.calculate_daytime_confidence(intraday_regime_info)
+        confidence_pct = float(daytime_conf["intraday_confidence_pct"])
 
         # Option Chain live data
         oc_data = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=force_refresh)
@@ -1079,13 +1242,48 @@ class IntradayOptionsStrategyEngine:
         iv_val = float(w_oc.get("volatility_and_gex", {}).get("atm_iv") or 12.8)
         expiry_date = w_oc.get("expiry") or now_ist().strftime("%Y-%m-%d")
 
-        # Sigma Strikes
-        sigma_calc = self.calculate_sigma_strikes(spot=spot_price, iv_pct=iv_val, time_to_expiry_years=1.0 / 365.0)
+        # Sigma Strikes - dynamically calculates 0DTE vs non-0DTE intraday cycle
+        sigma_calc = self.calculate_sigma_strikes(spot=spot_price, iv_pct=iv_val, expiry_date=expiry_date)
         strikes_map = sigma_calc["strikes"]
+        is_zero_dte = bool(sigma_calc.get("is_zero_dte", False))
+        expiry_cycle = str(sigma_calc.get("expiry_cycle", "INTRADAY"))
+        dte = int(sigma_calc.get("dte", 0))
+        t_years = float(sigma_calc.get("time_to_expiry_years", 0.0027))
 
-        deployed_strategies = []
+        # Differential daytime confidence bar:
+        # Expiry Day (0DTE): higher gamma risk, requires >= 60.0% confidence
+        # Non-Expiry Everyday Intraday (1DTE-5DTE): steady theta decay, requires >= 50.0% confidence
+        base_threshold = 60.0 if is_zero_dte else 50.0
+        req_threshold = base_threshold
+        if confidence_threshold is not None and confidence_threshold >= 30.0:
+            req_threshold = max(base_threshold, float(confidence_threshold))
+
+        is_confident = (confidence_pct >= req_threshold)
+
+        rules = self.get_strategy_rules(intraday_verdict)
+        regime = rules["regime"]
+        primary = rules["primary"]
+        asym = rules["experimental_asymmetric"]
+
         now_str = format_ist()
         today_str = now_ist().strftime("%Y-%m-%d")
+
+        if not is_confident and not force_refresh:
+            return {
+                "status": "SKIPPED",
+                "reason": f"System daytime confidence {confidence_pct:.1f}% below required threshold of {req_threshold:.1f}% for {expiry_cycle}.",
+                "regime": regime,
+                "intraday_confidence_pct": confidence_pct,
+                "required_confidence_pct": req_threshold,
+                "is_zero_dte": is_zero_dte,
+                "expiry_cycle": expiry_cycle,
+                "confidence_details": daytime_conf,
+                "decision_source": "INTRADAY_ANALYSIS",
+                "intraday_analysis": intraday_regime_info,
+                "timestamp_ist": now_str
+            }
+
+        deployed_strategies = []
 
         # Check if already deployed today for this regime
         with state_engine._lock:
@@ -1095,25 +1293,26 @@ class IntradayOptionsStrategyEngine:
                     WHERE status = 'ACTIVE' AND auto_trade_mode = 'INTRADAY_5REGIME'
                 """).fetchone()[0]
 
-        if existing >= 2:
+        if existing >= 2 and not force_refresh:
             return {
                 "status": "SKIPPED",
                 "reason": f"Maximum active intraday options strategies limit reached ({existing}/2 active).",
                 "regime": regime,
-                "confidence_score": composite_score,
+                "expiry_cycle": expiry_cycle,
+                "intraday_confidence_pct": confidence_pct,
                 "is_confident": is_confident,
                 "decision_source": "INTRADAY_ANALYSIS",
                 "intraday_analysis": intraday_regime_info
             }
 
         # Deploy Primary Strategy
-        strat_id_prim = f"OPT-INTRADAY-PRIM-{now_ist().strftime('%Y%m%d%H%M%S')}"
+        strat_id_prim = f"OPT-INTRADAY-PRIM-{now_ist().strftime('%Y%m%d%H%M%S%f')}"
         prim_legs = []
         for idx, l in enumerate(primary["legs"]):
             sig = l["sigma"]
             typ = l["type"]
             stk = strikes_map[f"strike_{int(sig)}s_{typ.lower()}"]
-            p0 = _black_scholes_price(spot_price, stk, 1.0 / 365.0, 0.07, iv_val / 100.0, typ)
+            p0 = _black_scholes_price(spot_price, stk, t_years, 0.07, iv_val / 100.0, typ)
 
             leg_tracker = OptionLegTracker(
                 leg_id=f"{strat_id_prim}-{typ}-{stk}",
@@ -1138,13 +1337,15 @@ class IntradayOptionsStrategyEngine:
                         leg_id, strike, option_type, action, original_entry_premium,
                         entry_time, sl_threshold_pct, initial_sl_trigger, initial_sl_hit,
                         re_entered, final_sl_hit, sigma_level, spot_at_entry, iv_at_entry,
-                        expected_move, time_to_expiry_years, status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, 'ACTIVE')
+                        expected_move, time_to_expiry_years, status,
+                        expiry_cycle, dte, intraday_confidence_pct
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
                     """, (
                         strat_id_prim, today_str, now_str, regime, "PRIMARY",
                         leg_tracker.leg_id, stk, typ, "SELL", p0,
                         now_str, l["sl_pct"], leg_tracker.initial_sl_trigger,
-                        sig, spot_price, iv_val, sigma_calc["expected_move"], sigma_calc["time_to_expiry_years"]
+                        sig, spot_price, iv_val, sigma_calc["expected_move"], sigma_calc["time_to_expiry_years"],
+                        expiry_cycle, dte, confidence_pct
                     ))
                     conn.commit()
 
@@ -1170,21 +1371,22 @@ class IntradayOptionsStrategyEngine:
         with state_engine._lock:
             with state_engine._get_connection() as conn:
                 conn.execute("""
-                INSERT INTO options_strategies (
+                INSERT OR REPLACE INTO options_strategies (
                     strategy_id, strategy_name, symbol, expiry_date, expiry_type,
                     created_at, spot_at_entry, net_premium, max_profit, max_loss,
                     breakevens, risk_reward, est_margin, pop_pct, legs_json, status, realized_pnl,
                     target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
                     trailing_stop_pnl, highest_pnl_reached, trailing_status, ai_rationale
-                ) VALUES (?, ?, 'NIFTY', ?, 'WEEKLY_INTRADAY', ?, ?, ?, ?, ?, ?, 'Credit Decay', ?, 68.0, ?, 'ACTIVE', 0.0, ?, ?, 'INTRADAY_5REGIME', ?, ?, 0.0, 'ACTIVE', ?)
+                ) VALUES (?, ?, 'NIFTY', ?, ?, ?, ?, ?, ?, ?, ?, 'Credit Decay', ?, ?, ?, 'ACTIVE', 0.0, ?, ?, 'INTRADAY_5REGIME', ?, ?, 0.0, 'ACTIVE', ?)
                 """, (
-                    strat_id_prim, f"Intraday 5-Regime: {primary['name']}", expiry_date,
+                    strat_id_prim, f"Intraday 5-Regime: {primary['name']} [{expiry_cycle}]", expiry_date,
+                    f"{expiry_cycle}_INTRADAY",
                     now_str, spot_price, net_credit_prim, net_credit_prim, round(net_credit_prim * 1.5, 2),
                     f"{strikes_map['strike_1s_pe']} PE / {strikes_map['strike_1s_ce']} CE",
-                    round(net_credit_prim + 45000.0, 2), json.dumps(legs_json_prim),
+                    round(net_credit_prim + 45000.0, 2), confidence_pct, json.dumps(legs_json_prim),
                     round(net_credit_prim * 0.70, 2), round(-net_credit_prim * primary["sl_pct"], 2),
                     regime, round(-net_credit_prim * primary["sl_pct"], 2),
-                    f"Auto-deployed based on Intraday Analysis {intraday_verdict} (Score: {composite_score:+.1f}, VWAP dist: {intraday_regime_info['dist_vwap_pts']:+.1f}pts, Writer Dominance: {intraday_regime_info['writer_dominance_score']:+.1f}). Price-triggered 1-time re-entry active."
+                    f"Auto-deployed {expiry_cycle} based on daytime confidence {confidence_pct:.1f}% ({daytime_conf['confidence_grade']}). Score: {composite_score:+.1f}, VWAP dist: {intraday_regime_info['dist_vwap_pts']:+.1f}pts, Writer Dominance: {intraday_regime_info['writer_dominance_score']:+.1f}. Independent {int(primary['sl_pct']*100)}% SL and price-triggered 1-time re-entry active. Auto-MOC at 15:15 IST."
                 ))
                 conn.commit()
 
@@ -1192,19 +1394,21 @@ class IntradayOptionsStrategyEngine:
             "strategy_id": strat_id_prim,
             "name": primary["name"],
             "category": "PRIMARY",
+            "expiry_cycle": expiry_cycle,
+            "intraday_confidence_pct": confidence_pct,
             "legs": [l.to_dict() for l in prim_legs],
             "net_credit": net_credit_prim
         })
 
         # Also deploy Experimental Asymmetric Strategy if regime is Strong Bullish or Strong Bearish
         if asym and existing < 1:
-            strat_id_asym = f"OPT-INTRADAY-ASYM-{now_ist().strftime('%Y%m%d%H%M%S')}"
+            strat_id_asym = f"OPT-INTRADAY-ASYM-{now_ist().strftime('%Y%m%d%H%M%S%f')}"
             asym_legs = []
             for idx, l in enumerate(asym["legs"]):
                 sig = l["sigma"]
                 typ = l["type"]
                 stk = strikes_map[f"strike_{int(sig)}s_{typ.lower()}"]
-                p0 = _black_scholes_price(spot_price, stk, 1.0 / 365.0, 0.07, iv_val / 100.0, typ)
+                p0 = _black_scholes_price(spot_price, stk, t_years, 0.07, iv_val / 100.0, typ)
 
                 leg_tracker = OptionLegTracker(
                     leg_id=f"{strat_id_asym}-{typ}-{stk}",
@@ -1228,13 +1432,15 @@ class IntradayOptionsStrategyEngine:
                             leg_id, strike, option_type, action, original_entry_premium,
                             entry_time, sl_threshold_pct, initial_sl_trigger, initial_sl_hit,
                             re_entered, final_sl_hit, sigma_level, spot_at_entry, iv_at_entry,
-                            expected_move, time_to_expiry_years, status
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, 'ACTIVE')
+                            expected_move, time_to_expiry_years, status,
+                            expiry_cycle, dte, intraday_confidence_pct
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
                         """, (
                             strat_id_asym, today_str, now_str, regime, "ASYMMETRIC",
                             leg_tracker.leg_id, stk, typ, "SELL", p0,
                             now_str, l["sl_pct"], leg_tracker.initial_sl_trigger,
-                            sig, spot_price, iv_val, sigma_calc["expected_move"], sigma_calc["time_to_expiry_years"]
+                            sig, spot_price, iv_val, sigma_calc["expected_move"], sigma_calc["time_to_expiry_years"],
+                            expiry_cycle, dte, confidence_pct
                         ))
                         conn.commit()
 
@@ -1259,21 +1465,22 @@ class IntradayOptionsStrategyEngine:
             with state_engine._lock:
                 with state_engine._get_connection() as conn:
                     conn.execute("""
-                    INSERT INTO options_strategies (
+                    INSERT OR REPLACE INTO options_strategies (
                         strategy_id, strategy_name, symbol, expiry_date, expiry_type,
                         created_at, spot_at_entry, net_premium, max_profit, max_loss,
                         breakevens, risk_reward, est_margin, pop_pct, legs_json, status, realized_pnl,
                         target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
                         trailing_stop_pnl, highest_pnl_reached, trailing_status, ai_rationale
-                    ) VALUES (?, ?, 'NIFTY', ?, 'WEEKLY_INTRADAY', ?, ?, ?, ?, ?, ?, 'Asymmetric Decay', ?, 62.0, ?, 'ACTIVE', 0.0, ?, ?, 'INTRADAY_5REGIME', ?, ?, 0.0, 'ACTIVE', ?)
+                    ) VALUES (?, ?, 'NIFTY', ?, ?, ?, ?, ?, ?, ?, ?, 'Asymmetric Decay', ?, ?, ?, 'ACTIVE', 0.0, ?, ?, 'INTRADAY_5REGIME', ?, ?, 0.0, 'ACTIVE', ?)
                     """, (
-                        strat_id_asym, f"Experimental: {asym['name']}", expiry_date,
+                        strat_id_asym, f"Experimental: {asym['name']} [{expiry_cycle}]", expiry_date,
+                        f"{expiry_cycle}_INTRADAY",
                         now_str, spot_price, net_credit_asym, net_credit_asym, round(net_credit_asym * 1.5, 2),
                         f"{asym_legs[0].strike} / {asym_legs[1].strike}",
-                        round(net_credit_asym + 55000.0, 2), json.dumps(legs_json_asym),
+                        round(net_credit_asym + 55000.0, 2), confidence_pct, json.dumps(legs_json_asym),
                         round(net_credit_asym * 0.70, 2), round(-net_credit_asym * asym["sl_pct"], 2),
                         regime, round(-net_credit_asym * asym["sl_pct"], 2),
-                        f"Experimental Asymmetric trade deployed for {regime} from Intraday Analysis. Independent 30% SL and price-triggered re-entry active per leg."
+                        f"Experimental Asymmetric trade deployed for {regime} [{expiry_cycle}] with daytime confidence {confidence_pct:.1f}%. Independent 30% SL and price-triggered re-entry active per leg. Auto-MOC at 15:15 IST."
                     ))
                     conn.commit()
 
@@ -1281,11 +1488,13 @@ class IntradayOptionsStrategyEngine:
                 "strategy_id": strat_id_asym,
                 "name": asym["name"],
                 "category": "ASYMMETRIC",
+                "expiry_cycle": expiry_cycle,
+                "intraday_confidence_pct": confidence_pct,
                 "legs": [l.to_dict() for l in asym_legs],
                 "net_credit": net_credit_asym
             })
 
-        logger.info(f"⚡ [Auto Options Engine] Deployed {len(deployed_strategies)} strategies for {regime} via Intraday Analysis (Score: {composite_score:+.1f}).")
+        logger.info(f"⚡ [Auto Options Engine] Deployed {len(deployed_strategies)} strategies for {regime} via Intraday Analysis (Daytime Confidence: {confidence_pct:.1f}%, Cycle: {expiry_cycle}).")
 
         return {
             "status": "DEPLOYED",
@@ -1293,6 +1502,11 @@ class IntradayOptionsStrategyEngine:
             "regime": regime,
             "intraday_verdict": intraday_verdict,
             "intraday_composite_score": composite_score,
+            "intraday_confidence_pct": confidence_pct,
+            "confidence_details": daytime_conf,
+            "is_zero_dte": is_zero_dte,
+            "expiry_cycle": expiry_cycle,
+            "dte": dte,
             "spot_price": spot_price,
             "sigma_calculation": sigma_calc,
             "intraday_analysis": intraday_regime_info,
@@ -1331,7 +1545,7 @@ class IntradayOptionsStrategyEngine:
                 strikes_lookup[stk_obj["strike"]] = stk_obj
 
         now_dt = now_ist()
-        is_moc_settlement = (now_dt.hour > 15 or (now_dt.hour == 15 and now_dt.minute >= 25))
+        is_moc_settlement = (now_dt.hour > 15 or (now_dt.hour == 15 and now_dt.minute >= 15))
         now_str = format_ist()
         events_fired = []
 
