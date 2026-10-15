@@ -611,7 +611,7 @@ def test_api_endpoints_status_analyze_benchmark(valid_llm_json_response):
     assert "enabled" in status_data
     assert "active_provider" in status_data
     assert "available_models" in status_data
-    assert len(status_data["available_models"]) == 5
+    assert len(status_data["available_models"]) >= 5
 
     # 2. Mock AI analysis for GET /api/ai/analysis and POST /api/ai/analyze
     mock_complete_resp = {

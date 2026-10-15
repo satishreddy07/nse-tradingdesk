@@ -55,11 +55,14 @@ def test_daily_moc_backup_execution_and_integrity(temp_db_and_backup_dir, monkey
     assert Path(res["backup_path"]).exists()
 
     # Verify backed-up data matches source
-    with sqlite3.connect(res["backup_path"]) as chk:
+    chk = sqlite3.connect(res["backup_path"])
+    try:
         rows = chk.execute("SELECT symbol, pnl FROM test_trades ORDER BY id").fetchall()
         assert len(rows) == 2
         assert rows[0][0] == "RELIANCE"
         assert rows[1][0] == "TCS"
+    finally:
+        chk.close()
 
 
 def test_daily_backup_retention_pruning(temp_db_and_backup_dir, monkeypatch):

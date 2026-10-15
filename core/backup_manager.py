@@ -86,16 +86,23 @@ class DailyBackupManager:
 
         try:
             # 1. Hot online SQLite backup (zero table locks, ACID safe)
-            with sqlite3.connect(str(source_db), timeout=60.0) as src_conn:
-                with sqlite3.connect(str(dest_path)) as dst_conn:
-                    src_conn.backup(dst_conn)
+            src_conn = sqlite3.connect(str(source_db), timeout=60.0)
+            dst_conn = sqlite3.connect(str(dest_path))
+            try:
+                src_conn.backup(dst_conn)
+            finally:
+                dst_conn.close()
+                src_conn.close()
 
             # 2. Verify integrity of the new backup
-            with sqlite3.connect(str(dest_path)) as chk_conn:
+            chk_conn = sqlite3.connect(str(dest_path))
+            try:
                 cur = chk_conn.cursor()
                 cur.execute("PRAGMA integrity_check;")
                 row = cur.fetchone()
                 integrity_result = row[0] if row else "unknown"
+            finally:
+                chk_conn.close()
 
             if integrity_result.lower() != "ok":
                 logger.error(f"Integrity check failed for {dest_path}: {integrity_result}")
