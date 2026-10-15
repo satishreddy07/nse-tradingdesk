@@ -153,6 +153,46 @@ CENTRAL_BANK_EVENTS_2026 = [
 ]
 
 
+def generate_projected_central_bank_events(year: int) -> List[Dict[str, Any]]:
+    """
+    Algorithmic projection of recurring Federal Reserve FOMC & RBI MPC monetary policy dates
+    for future calendar years (2027 and beyond) to guarantee perpetual macroeconomic event risk tracking.
+    """
+    events = []
+    # Fed FOMC (Standard 8-cycle schedule: late Jan, mid Mar, early May, mid Jun, late Jul, late Sep, early Nov, mid Dec)
+    fomc_schedules = [(1, 27), (3, 17), (5, 5), (6, 16), (7, 28), (9, 22), (11, 4), (12, 15)]
+    for m, d in fomc_schedules:
+        try:
+            dt = datetime.date(year, m, d)
+            events.append({
+                "date": dt.isoformat(),
+                "bank": "US FED FOMC",
+                "title": f"Federal Reserve FOMC Rate Decision ({year})",
+                "status": "UPCOMING",
+                "consensus": "Monetary Policy & Fed Funds Target Rate",
+                "market_impact": "HIGH_EVENT_VOLATILITY"
+            })
+        except Exception:
+            pass
+
+    # RBI MPC (Bi-monthly meetings: early Feb, early Apr, early Jun, early Aug, early Oct, early Dec)
+    rbi_schedules = [(2, 6), (4, 9), (6, 5), (8, 7), (10, 8), (12, 4)]
+    for m, d in rbi_schedules:
+        try:
+            dt = datetime.date(year, m, d)
+            events.append({
+                "date": dt.isoformat(),
+                "bank": "RBI MPC",
+                "title": f"RBI Monetary Policy Committee Rate & Stance Decision ({year})",
+                "status": "UPCOMING",
+                "consensus": "Repo Rate & Liquidity Stance",
+                "market_impact": "HIGH_EVENT_VOLATILITY"
+            })
+        except Exception:
+            pass
+    return events
+
+
 class NiftyAnalyticsEngine:
     """
     Production-grade Quantitative Engine for:
@@ -327,6 +367,16 @@ class NiftyAnalyticsEngine:
                         conn.execute("ALTER TABLE nifty_predictions_log ADD COLUMN data_date TEXT;")
                     except Exception:
                         pass
+                if "composite_score_t5" not in cols:
+                    try:
+                        conn.execute("ALTER TABLE nifty_predictions_log ADD COLUMN composite_score_t5 REAL DEFAULT 0.0;")
+                    except Exception:
+                        pass
+                try:
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_nifty_pred_date ON nifty_predictions_log (prediction_date);")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_opt_strat_status ON options_strategies (status);")
+                except Exception:
+                    pass
                 conn.execute("""
                 CREATE TABLE IF NOT EXISTS fii_dii_cash_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2373,7 +2423,12 @@ class NiftyAnalyticsEngine:
         upcoming_events = []
         event_risk_flag = "NORMAL"
         event_score_adj = 0.0
-        for ev in CENTRAL_BANK_EVENTS_2026:
+        all_candidate_events = list(CENTRAL_BANK_EVENTS_2026)
+        if today.year > 2026 or (today.year == 2026 and today.month >= 11):
+            all_candidate_events.extend(generate_projected_central_bank_events(today.year))
+            all_candidate_events.extend(generate_projected_central_bank_events(today.year + 1))
+
+        for ev in all_candidate_events:
             try:
                 ev_dt = datetime.date.fromisoformat(ev["date"])
             except Exception:

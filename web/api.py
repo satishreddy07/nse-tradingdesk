@@ -20,6 +20,8 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
+from contextlib import asynccontextmanager
+
 from core.data_quality import now_ist, format_ist
 from core.market_calendar import NSEMarketCalendar
 from core.telegram_vault import telegram_vault
@@ -43,10 +45,31 @@ from scheduler.cron_scheduler import (
 
 logger = logging.getLogger("WebAPI")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Modern lifespan event handler for Quant Trading Desk.
+    Executes disaster recovery and starts cron scheduler on boot,
+    and cleanly shuts down background schedulers on exit.
+    """
+    logger.info("Initializing Quant Trading Desk services...")
+    # Cold-boot disaster recovery from Telegram Cloud Vault (Trade DB + OHLCV Historical Cache)
+    try:
+        telegram_vault.auto_restore_on_cold_boot()
+    except Exception as e:
+        logger.warning(f"Startup Telegram restore notice: {e}")
+    start_scheduler()
+    yield
+    logger.info("Shutting down Quant Trading Desk services...")
+    shutdown_scheduler()
+
+
 app = FastAPI(
     title="Quant Trading Desk",
     description="Institutional NSE Equities & Nifty 500 Momentum Swing Desk",
-    version="2.1.0"
+    version="2.1.0",
+    lifespan=lifespan
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
@@ -77,21 +100,6 @@ async def capture_public_host_middleware(request: Request, call_next):
     return response
 
 
-@app.on_event("startup")
-async def on_startup():
-    logger.info("Initializing Quant Trading Desk services...")
-    # Cold-boot disaster recovery from Telegram Cloud Vault (Trade DB + OHLCV Historical Cache)
-    try:
-        telegram_vault.auto_restore_on_cold_boot()
-    except Exception as e:
-        logger.warning(f"Startup Telegram restore notice: {e}")
-    start_scheduler()
-
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    logger.info("Shutting down Quant Trading Desk services...")
-    shutdown_scheduler()
 
 
 # --------------------------------------------------------------------------

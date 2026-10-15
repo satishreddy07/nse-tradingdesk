@@ -36,6 +36,33 @@ def _fast_ewm_last(arr: np.ndarray, alpha: float) -> float:
     return float(pd.Series(arr, copy=False).ewm(alpha=alpha, adjust=False).mean().iloc[-1])
 
 
+class ClosingConnection:
+    """
+    Wrapper around sqlite3.Connection that ensures:
+    1. Context manager `with conn:` commits on success, rollbacks on error, AND closes the connection on exit.
+    2. Transparently forwards all attributes & methods (cursor, execute, commit, close, etc.) to the underlying sqlite3.Connection.
+    3. Eliminates Python 3.12+ ResourceWarning: unclosed database and prevents SQLite file descriptor leaks.
+    """
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+
+    def __enter__(self) -> sqlite3.Connection:
+        self._conn.__enter__()
+        return self._conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return self._conn.__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 class StateEngine:
     """
     Thread-safe Single Master File SQLite Engine (`data/swing_trades.db`).
@@ -49,12 +76,12 @@ class StateEngine:
         self._ohlcv_mem_cache: Dict[str, Tuple[pd.DataFrame, datetime.datetime]] = {}
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
+    def _get_connection(self) -> ClosingConnection:
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=45.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout=15000;")
         conn.execute("PRAGMA synchronous=NORMAL;")
-        return conn
+        return ClosingConnection(conn)
 
     def _normalize_portfolio_type(self, p_type: Optional[str]) -> str:
         if not p_type:

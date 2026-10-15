@@ -62,6 +62,7 @@ from sklearn.linear_model import Ridge, LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 from core.market_calendar import IST, now_ist, format_ist, NSEMarketCalendar
+from core.config import NIFTY_LOT_SIZE
 from execution.state_engine import state_engine
 
 logger = logging.getLogger("IntradayOptionsEngine")
@@ -421,6 +422,11 @@ class IntradayOptionsStrategyEngine:
                     created_at TEXT
                 );
                 """)
+                try:
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_intraday_opt_strat_leg ON intraday_options_trade_log (strategy_id, leg_id);")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_intraday_opt_status ON intraday_options_trade_log (status);")
+                except Exception:
+                    pass
                 conn.commit()
 
     # =========================================================================

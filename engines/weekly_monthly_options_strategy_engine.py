@@ -70,6 +70,7 @@ from sklearn.linear_model import Ridge, LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 from core.market_calendar import IST, now_ist, format_ist, NSEMarketCalendar
+from core.config import NIFTY_LOT_SIZE
 from execution.state_engine import state_engine
 
 logger = logging.getLogger("PositionalOptionsEngine")
@@ -461,6 +462,13 @@ class WeeklyMonthlyOptionsStrategyEngine:
                     created_at TEXT
                 );
                 """)
+                try:
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_weekly_opt_strat_leg ON weekly_options_trade_log (strategy_id, leg_id);")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_weekly_opt_status ON weekly_options_trade_log (status);")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_monthly_opt_strat_leg ON monthly_options_trade_log (strategy_id, leg_id);")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_monthly_opt_status ON monthly_options_trade_log (status);")
+                except Exception:
+                    pass
                 conn.commit()
 
     # =========================================================================
@@ -958,13 +966,15 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 with state_engine._lock:
                     with state_engine._get_connection() as conn:
                         p_row = conn.execute("""
-                            SELECT t5_verdict, composite_score_t5, t5_prob_up, t5_prob_flat, t5_prob_down, spot_at_prediction
+                            SELECT *
                             FROM nifty_predictions_log
                             ORDER BY id DESC LIMIT 1
                         """).fetchone()
                         if p_row and p_row["t5_verdict"]:
                             t5_verdict = str(p_row["t5_verdict"]).upper()
-                            composite_score_t5 = float(p_row["composite_score_t5"] or 0.0)
+                            keys = p_row.keys()
+                            c_t5 = p_row["composite_score_t5"] if "composite_score_t5" in keys else None
+                            composite_score_t5 = float(c_t5 if c_t5 is not None else (p_row["composite_score"] or 0.0))
                             t5_probs = {
                                 "p_up": float(p_row["t5_prob_up"] or 0.33),
                                 "p_flat": float(p_row["t5_prob_flat"] or 0.34),

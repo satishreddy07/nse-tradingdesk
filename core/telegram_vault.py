@@ -258,15 +258,28 @@ class TelegramVaultManager:
                 # Online ACID backup of the Single Master File
                 src_conn = sqlite3.connect(str(DB_PATH), timeout=30.0)
                 dst_conn = sqlite3.connect(str(tmp_db))
-                with dst_conn:
-                    src_conn.backup(dst_conn)
-                dst_conn.close()
-                src_conn.close()
+                try:
+                    with dst_conn:
+                        src_conn.backup(dst_conn)
+                finally:
+                    try:
+                        dst_conn.close()
+                    except Exception:
+                        pass
+                    try:
+                        src_conn.close()
+                    except Exception:
+                        pass
 
                 # Integrity verification before compressing and uploading
                 verif_conn = sqlite3.connect(str(tmp_db))
-                integrity_res = verif_conn.execute("PRAGMA integrity_check;").fetchone()
-                verif_conn.close()
+                try:
+                    integrity_res = verif_conn.execute("PRAGMA integrity_check;").fetchone()
+                finally:
+                    try:
+                        verif_conn.close()
+                    except Exception:
+                        pass
                 if not integrity_res or integrity_res[0] != "ok":
                     logger.error("Master DB integrity check failed before compression.")
                     return {"status": "ERROR", "message": "Database failed integrity check."}
@@ -456,8 +469,13 @@ class TelegramVaultManager:
                 tmp.write(raw_bytes)
 
             conn = sqlite3.connect(str(tmp_path))
-            chk = conn.execute("PRAGMA integrity_check;").fetchone()
-            conn.close()
+            try:
+                chk = conn.execute("PRAGMA integrity_check;").fetchone()
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
             if not chk or chk[0] != "ok":
                 tmp_path.unlink(missing_ok=True)
                 return {"status": "ERROR", "message": "Restored file failed SQLite integrity check."}

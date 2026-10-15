@@ -48,6 +48,9 @@ P2_RISK_PER_TRADE = float(os.environ.get("P2_RISK_PER_TRADE", 0.015)) # 1.5% dyn
 P2_MAX_SLOTS = int(os.environ.get("P2_MAX_SLOTS", 10))                # 10 maximum concurrent slots
 P2_STOP_ATR_MULT = float(os.environ.get("P2_STOP_ATR_MULT", 2.0))     # 2.0x ATR Wilder stop
 
+# Options Quant Desk Defaults
+NIFTY_LOT_SIZE = int(os.environ.get("NIFTY_LOT_SIZE", 75))
+
 # Scheduler Config (10:20 AM Morning & 3:00 PM MOC Close)
 SCHEDULE_MORNING_HOUR = int(os.environ.get("SCHEDULE_MORNING_HOUR", 10))
 SCHEDULE_MORNING_MINUTE = int(os.environ.get("SCHEDULE_MORNING_MINUTE", 20))

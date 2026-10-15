@@ -28,7 +28,7 @@ def api_client():
 
 def test_quant_dataset_schema_and_columns():
     """Verify that quant_trade_dataset exists with required schema in SQLite master DB."""
-    with sqlite3.connect(swing_quant_ml_engine.db_path) as conn:
+    with swing_quant_ml_engine._get_connection() as conn:
         conn.row_factory = sqlite3.Row
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(quant_trade_dataset)").fetchall()]
         
@@ -139,7 +139,7 @@ def test_shadow_candidate_lifecycle_and_attribution():
     test_sym = "UNIT_TEST_SHADOW_SYM"
     
     # 1. Clean previous run if exists
-    with sqlite3.connect(swing_quant_ml_engine.db_path) as conn:
+    with swing_quant_ml_engine._get_connection() as conn:
         conn.execute("DELETE FROM quant_trade_dataset WHERE symbol = ?", (test_sym,))
         conn.commit()
 
@@ -184,7 +184,7 @@ def test_shadow_candidate_lifecycle_and_attribution():
     assert "OVEREXTENDED_AT_ENTRY" in attribution
 
     # 5. Clean up
-    with sqlite3.connect(swing_quant_ml_engine.db_path) as conn:
+    with swing_quant_ml_engine._get_connection() as conn:
         conn.execute("DELETE FROM quant_trade_dataset WHERE symbol = ?", (test_sym,))
         conn.commit()
 

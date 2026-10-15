@@ -279,6 +279,18 @@ def scheduled_options_premarket_job():
     except Exception as e:
         logger.warning(f"09:00 AM Options Pre-Market Job error: {e}")
 
+    # Autonomous Execution: Weekly & Monthly 5-Regime Positional Auto-Trades
+    try:
+        from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+        w_res = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades("WEEKLY", force_refresh=True)
+        m_res = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades("MONTHLY", force_refresh=True)
+        logger.info(
+            f"🎯 [09:00 AM 5-Regime Positional Engine] Weekly: {w_res.get('status')} ({w_res.get('regime', 'N/A')}) | "
+            f"Monthly: {m_res.get('status')} ({m_res.get('regime', 'N/A')})"
+        )
+    except Exception as e_pos:
+        logger.warning(f"09:00 AM 5-Regime Positional Auto-Deploy notice: {e_pos}")
+
 
 def scheduled_morning_scan_job():
     """
@@ -534,6 +546,14 @@ def _intraday_collector_watchdog():
                         weekly_monthly_options_strategy_engine.tick_active_positional_reentry_monitor("MONTHLY")
                     except Exception:
                         pass
+
+                    # Autonomous Auto-Trades Evaluation: Deploy intraday trades when system feels confident (09:45 to 14:45 IST)
+                    if 585 <= mins <= 885:
+                        try:
+                            from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+                            intraday_options_strategy_engine.evaluate_and_execute_auto_trades(force_refresh=False)
+                        except Exception as e_auto:
+                            logger.debug(f"Intraday auto-trades watchdog notice: {e_auto}")
 
                     # Central Data Gatekeeper SLA monitoring
                     try:
