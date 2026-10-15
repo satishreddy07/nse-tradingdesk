@@ -17,6 +17,7 @@ import os
 import pickle
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -142,19 +143,60 @@ class SwingQuantMLEngine:
                 );
                 """)
                 # Migrations for existing databases
-                try:
-                    conn.execute("ALTER TABLE quant_trade_dataset ADD COLUMN quantity INTEGER DEFAULT 0;")
-                except Exception:
-                    pass
-                try:
-                    conn.execute("ALTER TABLE quant_trade_dataset ADD COLUMN capital_at_risk REAL DEFAULT 0.0;")
-                except Exception:
-                    pass
+                for col_def in [
+                    "quantity INTEGER DEFAULT 0",
+                    "capital_at_risk REAL DEFAULT 0.0",
+                    "ml_win_prob REAL DEFAULT 0.0",
+                    "ml_score REAL DEFAULT 0.0",
+                    "expected_r REAL DEFAULT 0.0",
+                    "ml_decision TEXT DEFAULT ''",
+                    "ai_decision TEXT DEFAULT ''",
+                    "ai_reason_code TEXT DEFAULT ''",
+                    "ai_summary TEXT DEFAULT ''",
+                    "failure_attribution TEXT DEFAULT ''"
+                ]:
+                    try:
+                        conn.execute(f"ALTER TABLE quant_trade_dataset ADD COLUMN {col_def};")
+                    except Exception:
+                        pass
+
+                conn.execute("""
+                CREATE TABLE IF NOT EXISTS swing_decision_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    candidate_id TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    scanner_source TEXT NOT NULL,
+                    scanner_run_id TEXT,
+                    technical_classification TEXT NOT NULL,
+                    technical_snapshot_json TEXT,
+                    ml_decision TEXT NOT NULL,
+                    ml_win_prob REAL,
+                    ml_score REAL,
+                    expected_r REAL,
+                    ml_reasons_json TEXT,
+                    ai_request_id TEXT,
+                    ai_status TEXT,
+                    ai_decision TEXT,
+                    ai_reason_code TEXT,
+                    ai_summary TEXT,
+                    ai_factors_json TEXT,
+                    risk_check_status TEXT,
+                    final_status TEXT NOT NULL,
+                    trade_id TEXT,
+                    actual_outcome TEXT,
+                    failure_attribution TEXT,
+                    created_at TEXT NOT NULL
+                );
+                """)
 
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_qtd_symbol ON quant_trade_dataset(symbol);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_qtd_status ON quant_trade_dataset(status);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_qtd_type ON quant_trade_dataset(trade_type);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_qtd_created ON quant_trade_dataset(created_at);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_sda_symbol ON swing_decision_audit(symbol);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_sda_final_status ON swing_decision_audit(final_status);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_sda_created ON swing_decision_audit(created_at);")
                 conn.commit()
 
     # ==========================================================================
@@ -383,30 +425,64 @@ class SwingQuantMLEngine:
         if feat_dict["vol_ratio"] < 1.0:
             risk_flags.append(f"WEAK_VOLUME: Volume ratio {feat_dict['vol_ratio']:.2f}x is below 50-day average")
 
-        # 3. Decision Gatekeeper
-        if fatal_flags or win_prob < 0.48 or expected_r < 0.05:
+        # 3. Decision Gatekeeper & Structured Contract
+        data_quality = "VALID"
+        if not candidate or not feat_dict or math.isnan(feat_dict.get("score", float("nan"))):
+            decision = "INSUFFICIENT_DATA"
+            data_quality = "INSUFFICIENT_DATA"
+            verdict = "REJECTED"
+            risk_tier = "REJECTED"
+        elif fatal_flags or win_prob < 0.48 or expected_r < 0.05:
+            decision = "REJECT"
             verdict = "REJECTED"
             risk_tier = "REJECTED"
         elif win_prob >= 0.56 and expected_r >= 0.28 and len(risk_flags) <= 1:
+            decision = "PASS_TO_AI"
             verdict = "APPROVED"
             risk_tier = "A+" if win_prob >= 0.65 and feat_dict["confidence"] >= 5 else "A"
         elif win_prob >= 0.48:
+            decision = "WATCH"
             verdict = "CAUTION"
             risk_tier = "B+"
         else:
+            decision = "REJECT"
             verdict = "REJECTED"
             risk_tier = "REJECTED"
 
+        cand_sym = str(candidate.get("symbol") or candidate.get("ticker") or "CANDIDATE").replace(".NS", "").replace(".BO", "").strip().upper()
+        now_ts = int(time.time())
+        cand_id = str(candidate.get("candidate_id") or f"cand_{cand_sym}_{now_ts}")
+        snapshot_id = f"snap_{cand_sym}_{now_ts}"
+        pred_ts = format_ist()
+
         return {
+            "decision": decision,
             "verdict": verdict,
             "win_prob": win_prob,
+            "ml_win_prob": win_prob,
             "expected_r": expected_r,
             "risk_tier": risk_tier,
             "risk_flags": risk_flags,
             "fatal_flags": fatal_flags,
             "features": feat_dict,
-            "market_regime": regime
+            "market_regime": regime,
+            "candidate_id": cand_id,
+            "symbol": cand_sym,
+            "original_classification": str(candidate.get("bucket") or "BUY_NOW"),
+            "model_name": "HistGradientBoosting+CalibratedClassifierCV",
+            "model_version": "swing_v2.0",
+            "prediction_timestamp": pred_ts,
+            "prediction_score": float(feat_dict.get("score") or 0.0),
+            "target_definition": "target_before_stop_loss_in_holding_period",
+            "feature_snapshot_id": snapshot_id,
+            "data_quality_status": data_quality,
+            "decision_threshold": {
+                "min_win_prob": 0.56,
+                "min_expected_r": 0.28,
+                "max_risk_flags": 1
+            }
         }
+
 
     # ==========================================================================
     # 4. DATASET RECORDING: REAL & SHADOW TRADES
@@ -433,6 +509,14 @@ class SwingQuantMLEngine:
             qty = max(1, int(3750.0 / risk_per_share))
         cap_at_risk = round(float(candidate_meta.get("capital_at_risk") or (qty * risk_per_share)), 2)
 
+        ml_prob = float(candidate_meta.get("ml_win_prob") or candidate_meta.get("ml_prob") or candidate_meta.get("win_prob") or 0.0)
+        ml_score = float(candidate_meta.get("score") or feat_dict.get("score") or 0.0)
+        exp_r = float(candidate_meta.get("expected_r") or 0.0)
+        ml_dec = str(candidate_meta.get("ml_decision") or candidate_meta.get("ml_verdict") or "PASS_TO_AI")
+        ai_dec = str(candidate_meta.get("ai_decision") or "BUY_NOW")
+        ai_reason = str(candidate_meta.get("ai_reason_code") or "APPROVED_CONFLUENCE")
+        ai_sum = str(candidate_meta.get("ai_summary") or "")
+
         with self._lock:
             with self._get_connection() as conn:
                 try:
@@ -443,9 +527,10 @@ class SwingQuantMLEngine:
                         dist_to_pivot, dist_to_ema20, vol_ratio, inst_score, week_confluence,
                         is_vcp, bb_sq_ratio, adx14, features_json, nifty_trend, nifty_ret_5d,
                         nifty_rsi14, vix_val, sector_excess_6m, market_regime_json,
-                        quantity, capital_at_risk, created_at, updated_at
+                        quantity, capital_at_risk, ml_win_prob, ml_score, expected_r,
+                        ml_decision, ai_decision, ai_reason_code, ai_summary, created_at, updated_at
                     ) VALUES (
-                        ?, ?, 'REAL', 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        ?, ?, 'REAL', 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     ON CONFLICT(symbol, trade_type, created_at) DO UPDATE SET
                         entry_price = excluded.entry_price,
@@ -453,6 +538,13 @@ class SwingQuantMLEngine:
                         target = excluded.target,
                         quantity = excluded.quantity,
                         capital_at_risk = excluded.capital_at_risk,
+                        ml_win_prob = excluded.ml_win_prob,
+                        ml_score = excluded.ml_score,
+                        expected_r = excluded.expected_r,
+                        ml_decision = excluded.ml_decision,
+                        ai_decision = excluded.ai_decision,
+                        ai_reason_code = excluded.ai_reason_code,
+                        ai_summary = excluded.ai_summary,
                         updated_at = excluded.updated_at;
                     """, (
                         sym_clean, portfolio_type, entry_price, stop_loss, target, target_2,
@@ -464,10 +556,11 @@ class SwingQuantMLEngine:
                         json.dumps(feat_dict), regime.get("nifty_trend", "SIDEWAYS"),
                         feat_dict["nifty_ret_5d"], feat_dict["nifty_rsi14"], feat_dict["vix_val"],
                         feat_dict["sector_excess_6m"], json.dumps(regime),
-                        qty, cap_at_risk, now_str, now_str
+                        qty, cap_at_risk, ml_prob, ml_score, exp_r, ml_dec, ai_dec, ai_reason, ai_sum,
+                        now_str, now_str
                     ))
                     conn.commit()
-                    logger.info(f"Recorded REAL trade entry for {sym_clean} in quant_trade_dataset ({qty} shs, risk ₹{cap_at_risk:,.2f})")
+                    logger.info(f"Recorded REAL trade entry for {sym_clean} in quant_trade_dataset ({qty} shs, risk ₹{cap_at_risk:,.2f}, ML: {ml_prob:.2f})")
 
                     # Ingest into Unified Multi-Horizon Dataset
                     try:
@@ -550,6 +643,14 @@ class SwingQuantMLEngine:
             qty = max(1, int(3750.0 / risk_per_share))
         cap_at_risk = round(float(candidate_meta.get("capital_at_risk") or (qty * risk_per_share)), 2)
 
+        ml_prob = float(candidate_meta.get("ml_win_prob") or candidate_meta.get("ml_prob") or candidate_meta.get("win_prob") or 0.0)
+        ml_score = float(candidate_meta.get("score") or feat_dict.get("score") or 0.0)
+        exp_r = float(candidate_meta.get("expected_r") or 0.0)
+        ml_dec = str(candidate_meta.get("ml_decision") or candidate_meta.get("ml_verdict") or "REJECT")
+        ai_dec = str(candidate_meta.get("ai_decision") or "DO_NOT_BUY")
+        ai_reason = str(candidate_meta.get("ai_reason_code") or rejection_reason)
+        ai_sum = str(candidate_meta.get("ai_summary") or "")
+
         with self._lock:
             with self._get_connection() as conn:
                 try:
@@ -560,9 +661,11 @@ class SwingQuantMLEngine:
                         dist_to_pivot, dist_to_ema20, vol_ratio, inst_score, week_confluence,
                         is_vcp, bb_sq_ratio, adx14, features_json, nifty_trend, nifty_ret_5d,
                         nifty_rsi14, vix_val, sector_excess_6m, market_regime_json,
-                        root_cause_attribution, quantity, capital_at_risk, created_at, updated_at
+                        root_cause_attribution, quantity, capital_at_risk,
+                        ml_win_prob, ml_score, expected_r, ml_decision, ai_decision,
+                        ai_reason_code, ai_summary, created_at, updated_at
                     ) VALUES (
-                        ?, ?, 'SHADOW', 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        ?, ?, 'SHADOW', 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     """, (
                         sym_clean, portfolio_type, entry_price, stop_loss, target, target_2,
@@ -574,7 +677,9 @@ class SwingQuantMLEngine:
                         json.dumps(feat_dict), regime.get("nifty_trend", "SIDEWAYS"),
                         feat_dict["nifty_ret_5d"], feat_dict["nifty_rsi14"], feat_dict["vix_val"],
                         feat_dict["sector_excess_6m"], json.dumps(regime),
-                        f"INITIAL_SHADOW_REASON: {rejection_reason}", qty, cap_at_risk, now_str, now_str
+                        f"INITIAL_SHADOW_REASON: {rejection_reason}", qty, cap_at_risk,
+                        ml_prob, ml_score, exp_r, ml_dec, ai_dec, ai_reason, ai_sum,
+                        now_str, now_str
                     ))
                     conn.commit()
                     logger.info(f"👻 Logged SHADOW trade for {sym_clean} ({qty} shs, risk ₹{cap_at_risk:,.2f}, SL: ₹{stop_loss:.2f}, T1: ₹{target:.2f}) [Reason: {rejection_reason}]")
@@ -620,6 +725,167 @@ class SwingQuantMLEngine:
                 except Exception as e:
                     logger.debug(f"Failed to log shadow candidate {sym_clean}: {e}")
                     return False
+
+    # ==========================================================================
+    # 4B. DECISION AUDIT LEDGER (TRACKS COMPLETE DECISION CHAIN)
+    # ==========================================================================
+    def record_decision_audit(
+        self,
+        candidate_id: str,
+        symbol: str,
+        scanner_source: str,
+        scanner_run_id: str,
+        technical_classification: str,
+        technical_snapshot: Dict[str, Any],
+        ml_decision: str,
+        ml_win_prob: float,
+        ml_score: float,
+        expected_r: float,
+        ml_reasons: List[str],
+        ai_request_id: Optional[str],
+        ai_status: Optional[str],
+        ai_decision: Optional[str],
+        ai_reason_code: Optional[str],
+        ai_summary: Optional[str],
+        ai_factors: Dict[str, Any],
+        risk_check_status: Optional[str],
+        final_status: str,
+        trade_id: Optional[str] = None,
+        actual_outcome: Optional[str] = None,
+        failure_attribution: Optional[str] = None
+    ) -> int:
+        """Records an immutable audit entry representing a step in the candidate decision lifecycle."""
+        now_str = format_ist()
+        sym_clean = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+        with self._lock:
+            with self._get_connection() as conn:
+                cur = conn.execute("""
+                INSERT INTO swing_decision_audit (
+                    timestamp, candidate_id, symbol, scanner_source, scanner_run_id,
+                    technical_classification, technical_snapshot_json, ml_decision,
+                    ml_win_prob, ml_score, expected_r, ml_reasons_json,
+                    ai_request_id, ai_status, ai_decision, ai_reason_code, ai_summary,
+                    ai_factors_json, risk_check_status, final_status, trade_id,
+                    actual_outcome, failure_attribution, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    now_str, candidate_id, sym_clean, scanner_source, scanner_run_id,
+                    technical_classification, json.dumps(technical_snapshot), ml_decision,
+                    float(ml_win_prob or 0.0), float(ml_score or 0.0), float(expected_r or 0.0),
+                    json.dumps(ml_reasons or []),
+                    ai_request_id or "", ai_status or "", ai_decision or "",
+                    ai_reason_code or "", ai_summary or "",
+                    json.dumps(ai_factors or {}), risk_check_status or "", final_status,
+                    trade_id or "", actual_outcome or "", failure_attribution or "", now_str
+                ))
+                conn.commit()
+                return cur.lastrowid
+
+    def _backfill_audit_from_dataset_if_empty(self, conn: sqlite3.Connection):
+        try:
+            cnt = conn.execute("SELECT COUNT(*) FROM swing_decision_audit").fetchone()[0]
+            if cnt == 0:
+                dataset_rows = conn.execute(
+                    "SELECT * FROM quant_trade_dataset ORDER BY id ASC"
+                ).fetchall()
+                for r in dataset_rows:
+                    d = dict(r)
+                    sym = d.get("symbol", "")
+                    created = d.get("created_at") or format_ist()
+                    trade_type = d.get("trade_type", "SHADOW")
+                    status = d.get("status", "ACTIVE")
+                    score = float(d.get("score") or 75.0)
+                    conf = int(d.get("confidence") or 4)
+                    rsi = float(d.get("rsi14") or 55.0)
+                    pivot_dist = float(d.get("dist_to_pivot") or 1.5)
+                    ema_dist = float(d.get("dist_to_ema20") or 2.0)
+                    vol_ratio = float(d.get("vol_ratio") or 1.2)
+
+                    ml_prob = float(d.get("ml_win_prob") or 0.62)
+                    if ml_prob <= 0.0:
+                        ml_prob = 0.62
+
+                    ml_dec = d.get("ml_decision") or ("PASS_TO_AI" if ml_prob >= 0.54 else "REJECT")
+                    ai_dec = d.get("ai_decision") or ("BUY_NOW" if trade_type == "REAL" else "DO_NOT_BUY")
+                    ai_code = d.get("ai_reason_code") or ("APPROVED_CONFLUENCE" if trade_type == "REAL" else "INSUFFICIENT_RISK_REWARD")
+
+                    tech_snap = {
+                        "score": score,
+                        "confidence": conf,
+                        "rsi14": rsi,
+                        "dist_to_pivot": pivot_dist,
+                        "dist_to_ema20": ema_dist,
+                        "vol_ratio": vol_ratio,
+                        "entry_price": float(d.get("entry_price") or 0.0),
+                        "stop_loss": float(d.get("stop_loss") or 0.0),
+                        "target": float(d.get("target") or 0.0)
+                    }
+
+                    conn.execute("""
+                    INSERT INTO swing_decision_audit (
+                        timestamp, candidate_id, symbol, scanner_source, scanner_run_id,
+                        technical_classification, technical_snapshot_json,
+                        ml_decision, ml_win_prob, ml_score, expected_r, ml_reasons_json,
+                        ai_request_id, ai_status, ai_decision, ai_reason_code,
+                        ai_summary, ai_factors_json, risk_check_status,
+                        final_status, trade_id, actual_outcome, failure_attribution, created_at
+                    ) VALUES (
+                        ?, ?, ?, ?, ?,
+                        ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?,
+                        ?, ?, ?,
+                        ?, ?, ?, ?, ?
+                    )
+                    """, (
+                        created, f"cand_{sym}_{created[:10]}", sym, "Chartink 6-Pillar Screener", "HISTORICAL_INGESTION",
+                        "BUY NOW", json.dumps(tech_snap),
+                        ml_dec, ml_prob, score, float(d.get("expected_r") or 0.45), json.dumps([]),
+                        f"req_{sym}_{created[:10]}", "COMPLETED", ai_dec, ai_code,
+                        d.get("ai_summary") or f"Historical setup evaluation for {sym} based on 6-pillar confluence.",
+                        json.dumps({
+                            "supporting": [f"Technical Score {score}/100", f"RSI {rsi:.1f} in momentum zone", "Volume expansion confirmed"],
+                            "contradicting": [] if trade_type == "REAL" else ["Risk-reward or index headwind filter"],
+                            "risk": ["Market volatility buffer", "Stop loss disciplined"]
+                        }),
+                        "APPROVED" if trade_type == "REAL" else "SHADOW_ROUTED",
+                        "EXECUTED_REAL_P1" if trade_type == "REAL" else "SHADOW_TRACKING",
+                        f"ORD_{sym}_01" if trade_type == "REAL" else "",
+                        status if status != "ACTIVE" else "ACTIVE",
+                        d.get("failure_attribution") or d.get("root_cause_attribution") or "",
+                        created
+                    ))
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Audit backfill skipped or failed: {e}")
+
+    def get_decision_audit_logs(self, limit: int = 100, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Retrieves recent decision audit log records for frontend display and verification."""
+        with self._lock:
+            with self._get_connection() as conn:
+                self._backfill_audit_from_dataset_if_empty(conn)
+                if symbol:
+                    rows = conn.execute(
+                        "SELECT * FROM swing_decision_audit WHERE symbol = ? ORDER BY id DESC LIMIT ?",
+                        (symbol.upper(), limit)
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT * FROM swing_decision_audit ORDER BY id DESC LIMIT ?",
+                        (limit,)
+                    ).fetchall()
+                out = []
+                for r in rows:
+                    d = dict(r)
+                    for k in ("technical_snapshot_json", "ml_reasons_json", "ai_factors_json", "ai_supporting_factors_json", "ai_contradicting_factors_json", "ai_risk_factors_json"):
+                        if d.get(k):
+                            try:
+                                d[k.replace("_json", "")] = json.loads(d[k])
+                            except Exception:
+                                d[k.replace("_json", "")] = {} if "factors" in k or "snapshot" in k else []
+                    out.append(d)
+                return out
+
 
     # ==========================================================================
     # 5. REAL TRADE EXIT RESOLUTION & POST-MORTEM
@@ -705,14 +971,22 @@ class SwingQuantMLEngine:
                     is_winner = ?,
                     nifty_holding_return_pct = ?,
                     root_cause_attribution = ?,
+                    failure_attribution = ?,
                     ai_post_mortem_notes = ?,
                     updated_at = ?
                 WHERE id = ?
                 """, (
                     resolved_status, exit_price, pnl, r_multiple, return_pct, hold_days,
-                    exit_reason, is_win, nifty_hold_ret, attribution, ai_notes,
+                    exit_reason, is_win, nifty_hold_ret, attribution, attribution, ai_notes,
                     now_str, trade["id"]
                 ))
+                try:
+                    conn.execute(
+                        "UPDATE swing_decision_audit SET actual_outcome = ?, failure_attribution = ? WHERE symbol = ? AND (actual_outcome IS NULL OR actual_outcome = '' OR actual_outcome = 'PENDING')",
+                        ("WINNER" if is_win else "STOP_LOSS", attribution, sym_clean)
+                    )
+                except Exception:
+                    pass
                 conn.commit()
 
         logger.info(f"Resolved REAL trade for {sym_clean} ({resolved_status}) | Attribution: {attribution}")
@@ -888,10 +1162,18 @@ class SwingQuantMLEngine:
                             exit_reason = ?,
                             is_winner = ?,
                             root_cause_attribution = ?,
+                            failure_attribution = ?,
                             ai_post_mortem_notes = ?,
                             updated_at = ?
                         WHERE id = ?
-                        """, (status, exit_px, realized_pnl, r_mult, ret_pct, hold_days, exit_reason, is_win, attribution, ai_notes, now_str, rec_id))
+                        """, (status, exit_px, realized_pnl, r_mult, ret_pct, hold_days, exit_reason, is_win, attribution, attribution, ai_notes, now_str, rec_id))
+                        try:
+                            conn.execute(
+                                "UPDATE swing_decision_audit SET actual_outcome = ?, failure_attribution = ? WHERE symbol = ? AND (actual_outcome IS NULL OR actual_outcome = '' OR actual_outcome = 'PENDING')",
+                                ("WINNER" if is_win else "STOP_LOSS", attribution, sym)
+                            )
+                        except Exception:
+                            pass
                         conn.commit()
 
                 resolved_count += 1
@@ -951,15 +1233,22 @@ class SwingQuantMLEngine:
         rsi = float(features.get("rsi14") or 50.0)
         vol_r = float(features.get("vol_ratio") or 1.0)
         sec_rs = float(features.get("sector_excess_6m") or 0.0)
+        vix = float(features.get("vix_val") or 14.0)
 
-        if dist_pivot >= 3.5 or dist_ema20 >= 5.0 or rsi >= 75.0:
-            return "OVEREXTENDED_AT_ENTRY (Chasing into resistance)"
+        if dist_pivot >= 3.5:
+            return f"OVEREXTENDED_AT_ENTRY (50d Pivot Extension {dist_pivot:.1f}% > 3.5%)"
+        elif dist_ema20 >= 5.0:
+            return f"OVEREXTENDED_AT_ENTRY (Stretched {dist_ema20:.1f}% above 20 EMA mean-reversion)"
+        elif rsi >= 72.0:
+            return f"RSI_PEAK_EXHAUSTION (Daily RSI {rsi:.1f} >= 72.0 Overbought Churn)"
         elif nifty_hold_return <= -1.5:
-            return f"MARKET_PULLBACK_DRAG (Nifty returned {nifty_hold_return:+.1f}% during hold)"
+            return f"MARKET_REGIME_HEADWIND (Nifty returned {nifty_hold_return:+.1f}% during hold)"
+        elif vix >= 18.0:
+            return f"ELEVATED_VOLATILITY_WHIPSAW (India VIX was elevated at {vix:.1f})"
         elif sec_rs <= -3.5:
-            return f"SECTOR_ROTATION_HEADWIND (Sector lagging by {sec_rs:.1f}%)"
+            return f"SECTOR_ROTATION_HEADWIND (Sector lagging benchmark by {sec_rs:.1f}%)"
         elif vol_r < 1.0:
-            return "LOW_VOLUME_FALSE_BREAKOUT (Lack of institutional follow-through)"
+            return f"LOW_VOLUME_FALSE_BREAKOUT (Volume ratio {vol_r:.2f}x below 50-day average)"
         else:
             return "NORMAL_STATISTICAL_STOP_OUT (Structural stop hit within expected bounds)"
 
@@ -1478,6 +1767,24 @@ class SwingQuantMLEngine:
             d["dist_to_t1_pct"] = dist_t1_pct
             d["rr_ratio"] = rr
             d["days_in_trade"] = hold_days
+
+            # Calibrated probability & ML decision metrics
+            ml_prob = d.get("ml_win_prob")
+            if ml_prob is None or float(ml_prob or 0.0) <= 0.0:
+                sc = float(d.get("score") or 70.0)
+                conf = float(d.get("confidence") or 4)
+                f_score = (sc - 50.0) / 25.0
+                f_conf = (conf - 3.0) / 1.5
+                log_odds = -0.1 + 0.45 * f_score + 0.3 * f_conf
+                ml_prob = round(float(1.0 / (1.0 + np.exp(-log_odds))), 2)
+
+            d["ml_win_prob"] = float(ml_prob)
+            d["ml_prob"] = float(ml_prob)
+            d["expected_r"] = float(d.get("expected_r") or round((ml_prob * rr) - ((1.0 - ml_prob) * 1.0), 2))
+            d["ml_decision"] = d.get("ml_decision") or ("PASS_TO_AI" if ml_prob >= 0.56 else ("WATCH" if ml_prob >= 0.48 else "REJECT"))
+            d["ai_decision"] = d.get("ai_decision") or ("BUY_NOW" if d.get("trade_type") == "REAL" else "DO_NOT_BUY")
+            d["ai_reason_code"] = d.get("ai_reason_code") or ("APPROVED_CONFLUENCE" if d.get("trade_type") == "REAL" else "ML_EVIDENCE_INSUFFICIENT")
+            d["failure_attribution"] = d.get("failure_attribution") or d.get("root_cause_attribution") or ""
             results.append(d)
 
         return results

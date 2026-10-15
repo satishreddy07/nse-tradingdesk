@@ -3,6 +3,7 @@ AI Intelligence Orchestrator Service: Manages prediction context ingestion,
 provider fallback, validation, caching, and model benchmarking.
 """
 from datetime import datetime, timezone
+import json
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -23,6 +24,9 @@ from ai_engine.schemas import (
     AIStatusResponse,
     ModelBenchmarkReport,
     PredictionInputContract,
+    SwingCandidateAIRequest,
+    SwingCandidateAIResponse,
+    SwingReasonCode,
 )
 
 logger = logging.getLogger("ai_engine.service")
@@ -316,6 +320,177 @@ class AIService:
 
         return reports
 
+    def evaluate_swing_candidate(
+        self,
+        candidate_req: SwingCandidateAIRequest,
+        model_override: Optional[str] = None
+    ) -> SwingCandidateAIResponse:
+        """
+        Evaluates a swing trade candidate that passed the ML gatekeeper (PASS_TO_AI).
+        Acts as the final analytical approval gatekeeper before deterministic risk checks.
+        Returns a validated SwingCandidateAIResponse with BUY_NOW or DO_NOT_BUY.
+        Preserves deterministic safety: if AI is disabled or fails, defaults to DO_NOT_BUY.
+        """
+        req_id = candidate_req.request_id
+        cand_id = candidate_req.candidate.candidate_id
+        sym = candidate_req.candidate.symbol
+        snapshot_id = candidate_req.ml_analysis.feature_snapshot_id or "unknown"
+        ml_ver = candidate_req.ml_analysis.model_version
+
+        # 1. Check if AI layer is disabled
+        if not config.AI_ENABLED:
+            logger.info(f"AI disabled: returning safe DO_NOT_BUY for {sym}")
+            return SwingCandidateAIResponse(
+                schema_version="1.0",
+                request_id=req_id,
+                status="AI_DISABLED",
+                candidate_id=cand_id,
+                symbol=sym,
+                final_decision="DO_NOT_BUY",
+                reason_code=SwingReasonCode.AI_UNAVAILABLE,
+                summary="AI intelligence layer is disabled in configuration. Automated buy gated for risk safety.",
+                supporting_factors=[],
+                contradicting_factors=["AI gatekeeper disabled in system environment"],
+                risk_factors=["Cannot verify analytical confluence without active AI gatekeeper"],
+                missing_information=[],
+                conditions_for_reconsideration=["Enable AI_ENABLED in system configuration"],
+                model_context={"ml_model_version": ml_ver, "input_snapshot_id": snapshot_id}
+            )
+
+        # 2. Check if credentials exist for active provider
+        active_provider = config.AI_PROVIDER
+        if not self.provider_adapter.is_provider_configured(active_provider):
+            # Check fallback provider
+            alt_prov = "openrouter" if active_provider == "groq" else "groq"
+            if not self.provider_adapter.is_provider_configured(alt_prov):
+                logger.warning(f"No configured AI providers available for swing gate on {sym}")
+                return SwingCandidateAIResponse(
+                    schema_version="1.0",
+                    request_id=req_id,
+                    status="AI_UNAVAILABLE",
+                    candidate_id=cand_id,
+                    symbol=sym,
+                    final_decision="DO_NOT_BUY",
+                    reason_code=SwingReasonCode.AI_UNAVAILABLE,
+                    summary="No AI provider API keys configured. Safe gatekeeper blocks automatic entry.",
+                    supporting_factors=[],
+                    contradicting_factors=["Provider API keys missing"],
+                    risk_factors=["Missing analytical gatekeeper approval"],
+                    missing_information=["GROQ_API_KEY / OPENROUTER_API_KEY"],
+                    conditions_for_reconsideration=["Configure valid AI provider credentials"],
+                    model_context={"ml_model_version": ml_ver, "input_snapshot_id": snapshot_id}
+                )
+
+        # 3. Construct structured Prompt
+        system_prompt = (
+            "You are the Chief Quantitative Risk Manager and Final Analytical Approval Gatekeeper for an Institutional Indian Equity Swing Trading Desk.\n"
+            "Your objective is to make a final analytical BUY_NOW or DO_NOT_BUY decision using ONLY the supplied candidate evidence.\n"
+            "Rules:\n"
+            "1. DO NOT BUY is a valid, normal, and preferred outcome when technical evidence conflicts, setup is overextended, volume is low, or risk/reward is unfavorable.\n"
+            "2. Never assume ML is always correct. You are permitted and expected to reject candidates that ML passed if technical structure, regime, or overextension present asymmetric risk.\n"
+            "3. Ground all supporting, contradicting, and risk factors strictly in the provided JSON metrics. Never fabricate data or prices.\n"
+            "4. Respond with ONLY valid JSON adhering strictly to the requested schema. No conversational prose or markdown wrap outside JSON."
+        )
+
+        user_prompt = (
+            f"Please conduct the final analytical swing trade review for the following candidate:\n\n"
+            f"```json\n{candidate_req.model_dump_json(indent=2)}\n```\n\n"
+            "Return a strictly valid JSON object matching this schema:\n"
+            "{\n"
+            '  "schema_version": "1.0",\n'
+            f'  "request_id": "{req_id}",\n'
+            '  "status": "success",\n'
+            f'  "candidate_id": "{cand_id}",\n'
+            f'  "symbol": "{sym}",\n'
+            '  "final_decision": "BUY_NOW" or "DO_NOT_BUY",\n'
+            '  "reason_code": "APPROVED_CONFLUENCE" | "INSUFFICIENT_RISK_REWARD" | "CONFLICTING_TECHNICALS" | "ML_EVIDENCE_INSUFFICIENT" | "EXCESSIVE_VOLATILITY" | "PORTFOLIO_EXPOSURE_LIMIT" | "INVALID_OR_STALE_DATA" | "STRATEGY_CONDITIONS_NOT_SATISFIED" | "MISSING_REQUIRED_INFO" | "OTHER",\n'
+            '  "summary": "Clear, grounded 2-3 sentence analytical synthesis of why this setup was approved or rejected",\n'
+            '  "supporting_factors": ["Factor 1", ...],\n'
+            '  "contradicting_factors": ["Factor 1", ...],\n'
+            '  "risk_factors": ["Risk 1", ...],\n'
+            '  "missing_information": [],\n'
+            '  "conditions_for_reconsideration": ["Condition 1", ...],\n'
+            f'  "model_context": {{"ml_model_version": "{ml_ver}", "input_snapshot_id": "{snapshot_id}"}}\n'
+            "}"
+        )
+
+        # 4. Invoke LLM with fallback
+        primary_model = model_override or config.AI_PRIMARY_MODEL
+        fallback_model = config.AI_FALLBACK_MODEL if not model_override else None
+
+        raw_res = None
+        for target_model in [primary_model, fallback_model]:
+            if not target_model:
+                continue
+            try:
+                res = self.provider_adapter.complete(
+                    prompt=user_prompt,
+                    system_prompt=system_prompt,
+                    model_id=target_model,
+                    temperature=0.1,
+                    max_tokens=1000
+                )
+                if res and res.get("content"):
+                    raw_res = res["content"]
+                    break
+            except Exception as e:
+                logger.warning(f"AI candidate review failed on {target_model}: {e}")
+
+        if not raw_res:
+            return SwingCandidateAIResponse(
+                schema_version="1.0",
+                request_id=req_id,
+                status="AI_UNAVAILABLE",
+                candidate_id=cand_id,
+                symbol=sym,
+                final_decision="DO_NOT_BUY",
+                reason_code=SwingReasonCode.AI_UNAVAILABLE,
+                summary="AI providers timed out or failed to return response. Failsafe defaults to DO_NOT_BUY.",
+                supporting_factors=[],
+                contradicting_factors=["Inference timeout across configured providers"],
+                risk_factors=["Execution blocked due to missing gatekeeper verification"],
+                missing_information=[],
+                conditions_for_reconsideration=["Retry when network/provider connectivity is restored"],
+                model_context={"ml_model_version": ml_ver, "input_snapshot_id": snapshot_id}
+            )
+
+        # 5. Extract and validate JSON
+        try:
+            cleaned = raw_res.strip()
+            if "```json" in cleaned:
+                cleaned = cleaned.split("```json", 1)[1].split("```", 1)[0].strip()
+            elif "```" in cleaned:
+                cleaned = cleaned.split("```", 1)[1].split("```", 1)[0].strip()
+
+            data = json.loads(cleaned)
+            # Ensure required identifiers match
+            data["request_id"] = req_id
+            data["candidate_id"] = cand_id
+            data["symbol"] = sym
+            if not data.get("model_context"):
+                data["model_context"] = {"ml_model_version": ml_ver, "input_snapshot_id": snapshot_id}
+
+            return SwingCandidateAIResponse.model_validate(data)
+        except Exception as ve:
+            logger.error(f"Malformed AI response for {sym}: {ve} | Raw: {raw_res[:200]}")
+            return SwingCandidateAIResponse(
+                schema_version="1.0",
+                request_id=req_id,
+                status="error",
+                candidate_id=cand_id,
+                symbol=sym,
+                final_decision="DO_NOT_BUY",
+                reason_code=SwingReasonCode.STRATEGY_CONDITIONS_NOT_SATISFIED,
+                summary=f"AI output failed schema validation ({str(ve)[:100]}). Strict safety gate rejects entry.",
+                supporting_factors=[],
+                contradicting_factors=["Malformed AI output JSON"],
+                risk_factors=["Unverified analytical output"],
+                missing_information=[],
+                conditions_for_reconsideration=[],
+                model_context={"ml_model_version": ml_ver, "input_snapshot_id": snapshot_id}
+            )
+
 
 # Global service instance
 ai_service = AIService()
+

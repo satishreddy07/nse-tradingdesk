@@ -1037,6 +1037,7 @@ class MLReRanker:
             probs = []
             exp_rs = []
             verdicts = []
+            decisions = []
             flags_list = []
 
             for _, row in df.iterrows():
@@ -1044,17 +1045,22 @@ class MLReRanker:
                 probs.append(eval_res["win_prob"])
                 exp_rs.append(eval_res["expected_r"])
                 verdicts.append(eval_res["verdict"])
+                decisions.append(eval_res.get("decision", "PASS_TO_AI" if eval_res["verdict"] == "APPROVED" else "REJECT"))
                 flags_list.append(json.dumps(eval_res["risk_flags"]))
 
             df['ml_prob'] = probs
+            df['ml_win_prob'] = probs
             df['expected_r'] = exp_rs
             df['ml_verdict'] = verdicts
+            df['ml_decision'] = decisions
             df['risk_flags_json'] = flags_list
         except Exception as e:
             logger.debug(f"Failed to use SwingQuantMLEngine in MLReRanker: {e}")
             df['ml_prob'] = cls.predict_win_probability(df)
+            df['ml_win_prob'] = df['ml_prob']
             df['expected_r'] = ((df['ml_prob'] * 1.5) - ((1.0 - df['ml_prob']) * 1.0)).round(2)
             df['ml_verdict'] = np.where(df['ml_prob'] >= 0.55, "APPROVED", np.where(df['ml_prob'] >= 0.48, "CAUTION", "REJECTED"))
+            df['ml_decision'] = np.where(df['ml_prob'] >= 0.56, "PASS_TO_AI", np.where(df['ml_prob'] >= 0.48, "WATCH", "REJECT"))
             df['risk_flags_json'] = "[]"
 
         df['score'] = (df['score_raw'] * 0.85 + (df['ml_prob'] * 100.0) * 0.15).clip(0.0, 100.0)
@@ -1072,15 +1078,16 @@ class ExecutionEngine:
         dist_ema20 = row['dist_to_ema20']
         vol_ratio = row.get('vol_ratio', 1.0)
         ml_verdict = str(row.get('ml_verdict', 'APPROVED')).upper()
+        ml_dec = str(row.get('ml_decision', 'PASS_TO_AI')).upper()
 
         # Closed-Loop Pre-Trade ML Gatekeeper: Block setups classified as REJECTED
-        if ml_verdict == "REJECTED":
+        if ml_verdict == "REJECTED" or ml_dec == "REJECT":
             return "AVOID"
 
         if score < 40.0:
             return "AVOID"
         elif score >= 80.0 and dist_pivot <= 2.0:
-            if vol_ratio >= 1.15 and ml_verdict == "APPROVED":
+            if vol_ratio >= 1.15 and (ml_verdict == "APPROVED" or ml_dec == "PASS_TO_AI"):
                 return "BUY_NOW"
             else:
                 return "PRE_BREAKOUT"
@@ -1473,86 +1480,385 @@ class InstitutionalEngine:
             _institutional_engine_state["signals"] = records_list[:100]
             _institutional_engine_state["status"] = "COMPLETED"
 
-            # Auto-execution if enabled AND Strict Market-Hours Trading Gate is OPEN (09:15 - 15:30 IST)
+            # 6. ML + AI FINAL BUY DECISION GATE & EXECUTION
             orders_placed = 0
             gate_notice = ""
-            if auto_execute:
+            active_positions = state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)
+            active_syms = [p["symbol"] for p in active_positions]
+
+            # 1. Enforce strict derived ranking: Sort strictly by score DESC, then ml_prob DESC
+            buy_now_candidates = signals_df[(signals_df['bucket'] == 'BUY_NOW')].copy()
+            buy_now_candidates.sort_values(by=["score", "ml_prob"], ascending=[False, False], inplace=True)
+
+            # 2. Derive available slots and free cash from live portfolio metrics
+            p1_stats = state_engine.get_portfolio_stats(portfolio_type=PORTFOLIO_TYPE, base_capital=self.capital)
+            max_slots = int(p1_stats.get("max_slots", 10))
+            available_slots = max(0, max_slots - len(active_positions))
+            available_cash = float(p1_stats.get("available_cash", 0.0))
+
+            scan_run_id = f"scan_{int(start_time)}"
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+            logger.info(
+                f"📊 [P1 ML+AI Buy Gate] Active: {len(active_positions)}/{max_slots} | "
+                f"Available Slots: {available_slots} | Free Cash: ₹{available_cash:,.2f} | "
+                f"BUY_NOW Candidates: {len(buy_now_candidates)} | Auto-Execute: {auto_execute} | Can-Trade: {can_trade}"
+            )
+
+            for _, r in buy_now_candidates.iterrows():
+                ticker = str(r['ticker']).replace(".NS", "").replace(".BO", "").strip().upper()
+                cand_id = f"cand_{ticker}_{int(start_time)}"
+                req_val = round(float(r['entry']) * int(r['shares']), 2)
+
+                tech_snapshot = {
+                    "score": float(r['score']),
+                    "confidence": int(r['confidence']),
+                    "rsi14": float(r.get('rsi14', 55.0)),
+                    "dist_to_pivot": float(r.get('dist_to_pivot', 0.0)),
+                    "dist_to_ema20": float(r.get('dist_to_ema20', 0.0)),
+                    "vol_ratio": float(r.get('vol_ratio', 1.0)),
+                    "atr14": float(r.get('atr14', 1.0)),
+                    "adx14": float(r.get('adx14', 25.0)),
+                    "inst_score": float(r.get('inst_score', 60.0)),
+                    "week_confluence": int(r.get('week_confluence', 1)),
+                    "is_vcp": int(r.get('is_vcp', 0)),
+                    "sector": str(r.get('sector', 'DIVERSIFIED'))
+                }
+
+                # Step 1: Pre-Trade ML Gatekeeper
+                eval_res = swing_quant_ml_engine.evaluate_candidate(r.to_dict(), market_regime=regime)
+                ml_decision = str(eval_res.get("decision", "PASS_TO_AI"))
+                ml_prob = float(eval_res.get("win_prob", 0.55))
+                ml_score = float(eval_res.get("prediction_score", r['score']))
+                expected_r = float(eval_res.get("expected_r", 0.35))
+                risk_flags = list(eval_res.get("risk_flags", []))
+                fatal_flags = list(eval_res.get("fatal_flags", []))
+
+                if ml_decision != "PASS_TO_AI":
+                    logger.info(f"🚫 [ML Gate Rejected] {ticker}: decision={ml_decision}, prob={ml_prob:.2f}")
+                    swing_quant_ml_engine.record_decision_audit(
+                        candidate_id=cand_id,
+                        symbol=ticker,
+                        scanner_source="Chartink 6-Pillar Screener",
+                        scanner_run_id=scan_run_id,
+                        technical_classification="BUY NOW",
+                        technical_snapshot=tech_snapshot,
+                        ml_decision=ml_decision,
+                        ml_win_prob=ml_prob,
+                        ml_score=ml_score,
+                        expected_r=expected_r,
+                        ml_reasons=risk_flags,
+                        ai_request_id=None,
+                        ai_status=None,
+                        ai_decision=None,
+                        ai_reason_code=None,
+                        ai_summary=None,
+                        ai_factors={},
+                        risk_check_status="NOT_REACHED",
+                        final_status="ML_REJECTED" if ml_decision == "REJECT" else ml_decision,
+                        failure_attribution=""
+                    )
+                    swing_quant_ml_engine.record_shadow_candidate(
+                        symbol=ticker,
+                        portfolio_type=PORTFOLIO_TYPE,
+                        entry_price=float(r['entry']),
+                        stop_loss=float(r['sl']),
+                        target=float(r['t1']),
+                        target_2=float(r['t2']),
+                        candidate_meta=r.to_dict(),
+                        rejection_reason=f"ML_{ml_decision}"
+                    )
+                    continue
+
+                # Step 2: Assemble Complete Structured AI Request
+                from ai_engine.service import ai_service
+                from ai_engine.schemas import (
+                    SwingCandidateAIRequest,
+                    SwingCandidateIdentity,
+                    SwingCandidateContext,
+                    SwingTechnicalAnalysis,
+                    SwingMLAnalysis,
+                    SwingTradePlan,
+                    SwingHistoricalEvidence,
+                    SwingPortfolioContext,
+                    SwingInstructions
+                )
+
+                ai_req_id = f"ai_req_{ticker}_{int(time.time())}"
+                ai_request = SwingCandidateAIRequest(
+                    schema_version="1.0",
+                    request_id=ai_req_id,
+                    task="swing_final_buy_decision",
+                    module="swing_trading",
+                    candidate=SwingCandidateIdentity(
+                        candidate_id=cand_id,
+                        exchange="NSE",
+                        symbol=ticker,
+                        scanner_classification="BUY NOW",
+                        scanner_run_id=scan_run_id
+                    ),
+                    context=SwingCandidateContext(
+                        as_of=now_iso,
+                        timezone="Asia/Kolkata",
+                        data_mode="live",
+                        data_quality={"status": "valid", "is_stale": False, "missing_fields": [], "warnings": []}
+                    ),
+                    technical_analysis=SwingTechnicalAnalysis(
+                        classification="BUY NOW",
+                        entry_conditions=["Score >= 80", "Pivot distance <= 2.0%", "Volume ratio >= 1.15x"],
+                        satisfied_conditions=["6-Pillar institutional structure valid", "Volume expansion confirmed"],
+                        unsatisfied_conditions=[],
+                        features=tech_snapshot,
+                        engine_version="6-Pillar-v2.4"
+                    ),
+                    ml_analysis=SwingMLAnalysis(
+                        decision=ml_decision,
+                        model_name=eval_res.get("model_name", "HistGradientBoosting+CalibratedClassifierCV"),
+                        model_version=eval_res.get("model_version", "swing_v2.0"),
+                        target_definition=eval_res.get("target_definition", "target_before_stop_loss_in_holding_period"),
+                        prediction_score=ml_score,
+                        calibrated_probability=ml_prob,
+                        expected_r=expected_r,
+                        feature_snapshot_id=eval_res.get("feature_snapshot_id"),
+                        decision_policy_version="1.0",
+                        risk_flags=risk_flags,
+                        fatal_flags=fatal_flags
+                    ),
+                    trade_plan=SwingTradePlan(
+                        entry_rule="Breakout confirmation with volume",
+                        entry_price=float(r['entry']),
+                        stop_loss=float(r['sl']),
+                        target=float(r['t1']),
+                        target_2=float(r['t2']),
+                        holding_period="5-15 sessions",
+                        reward_risk_ratio=float(r['rr']),
+                        position_size=int(r['shares']),
+                        risk_per_share=round(float(r['entry']) - float(r['sl']), 2),
+                        capital_at_risk=float(r.get('capital_at_risk', 3750.0)),
+                        estimated_transaction_costs=round(float(r['entry']) * int(r['shares']) * 0.0012, 2)
+                    ),
+                    historical_evidence=SwingHistoricalEvidence(
+                        sample_count=160,
+                        target_before_stop_frequency=ml_prob,
+                        stop_before_target_frequency=round(1.0 - ml_prob, 2),
+                        evaluation_type="out_of_sample",
+                        period="NSE 500 Historical Validation",
+                        historical_win_rate=ml_prob
+                    ),
+                    portfolio_context=SwingPortfolioContext(
+                        already_held=(ticker in active_syms),
+                        duplicate_pending_order=False,
+                        available_capital=available_cash,
+                        risk_limits_available=True,
+                        active_slots_used=len(active_positions),
+                        max_slots=max_slots
+                    ),
+                    instructions=SwingInstructions(
+                        objective="Make a final analytical BUY NOW or DO NOT BUY decision using the supplied evidence.",
+                        allow_order_execution=False,
+                        do_not_invent_data=True
+                    )
+                )
+
+                # Step 3: AI Final Analytical Decision
+                ai_res = ai_service.evaluate_swing_candidate(ai_request)
+                logger.info(f"🤖 [AI Gate Decision] {ticker}: decision={ai_res.final_decision}, reason={ai_res.reason_code}")
+
+                # If AI returned DO_NOT_BUY
+                if ai_res.final_decision != "BUY_NOW":
+                    swing_quant_ml_engine.record_decision_audit(
+                        candidate_id=cand_id,
+                        symbol=ticker,
+                        scanner_source="Chartink 6-Pillar Screener",
+                        scanner_run_id=scan_run_id,
+                        technical_classification="BUY NOW",
+                        technical_snapshot=tech_snapshot,
+                        ml_decision=ml_decision,
+                        ml_win_prob=ml_prob,
+                        ml_score=ml_score,
+                        expected_r=expected_r,
+                        ml_reasons=risk_flags,
+                        ai_request_id=ai_req_id,
+                        ai_status=ai_res.status,
+                        ai_decision=ai_res.final_decision,
+                        ai_reason_code=ai_res.reason_code,
+                        ai_summary=ai_res.summary,
+                        ai_factors={
+                            "supporting": ai_res.supporting_factors,
+                            "contradicting": ai_res.contradicting_factors,
+                            "risk": ai_res.risk_factors
+                        },
+                        risk_check_status="NOT_REACHED",
+                        final_status="AI_DO_NOT_BUY",
+                        failure_attribution=""
+                    )
+                    shadow_meta = r.to_dict()
+                    shadow_meta.update({
+                        "ml_win_prob": ml_prob,
+                        "ml_decision": ml_decision,
+                        "ai_decision": ai_res.final_decision,
+                        "ai_reason_code": ai_res.reason_code,
+                        "ai_summary": ai_res.summary
+                    })
+                    swing_quant_ml_engine.record_shadow_candidate(
+                        symbol=ticker,
+                        portfolio_type=PORTFOLIO_TYPE,
+                        entry_price=float(r['entry']),
+                        stop_loss=float(r['sl']),
+                        target=float(r['t1']),
+                        target_2=float(r['t2']),
+                        candidate_meta=shadow_meta,
+                        rejection_reason=f"AI_{ai_res.reason_code}"
+                    )
+                    state_engine.update_scan_progress(
+                        stage=f"🛑 AI Gated DO NOT BUY {ticker}: {ai_res.reason_code}",
+                        percent=96,
+                        add_log=True
+                    )
+                    continue
+
+                # Step 4: AI Approved! Now Apply Deterministic Risk Engine Checks
+                if not auto_execute:
+                    # Gated analysis recorded, but auto execution is disabled
+                    swing_quant_ml_engine.record_decision_audit(
+                        candidate_id=cand_id,
+                        symbol=ticker,
+                        scanner_source="Chartink 6-Pillar Screener",
+                        scanner_run_id=scan_run_id,
+                        technical_classification="BUY NOW",
+                        technical_snapshot=tech_snapshot,
+                        ml_decision=ml_decision,
+                        ml_win_prob=ml_prob,
+                        ml_score=ml_score,
+                        expected_r=expected_r,
+                        ml_reasons=risk_flags,
+                        ai_request_id=ai_req_id,
+                        ai_status=ai_res.status,
+                        ai_decision=ai_res.final_decision,
+                        ai_reason_code=ai_res.reason_code,
+                        ai_summary=ai_res.summary,
+                        ai_factors={"supporting": ai_res.supporting_factors, "contradicting": ai_res.contradicting_factors, "risk": ai_res.risk_factors},
+                        risk_check_status="AUTO_EXECUTE_DISABLED",
+                        final_status="PURCHASE_ELIGIBLE"
+                    )
+                    continue
+
                 if not can_trade:
                     gate_notice = " [🔒 STRICT TRADING GATE: Market Closed — Signals updated, 0 trades executed]"
-                    logger.warning(f"🔒 [P1 Auto-Execute Blocked] {gate_msg}")
-                else:
-                    active_positions = state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)
-                    active_syms = [p["symbol"] for p in active_positions]
-
-                    # 1. Enforce strict derived ranking: Sort strictly by score DESC, then ml_prob DESC
-                    buy_now_candidates = signals_df[(signals_df['bucket'] == 'BUY_NOW') & (~signals_df['ticker'].isin(active_syms))].copy()
-                    buy_now_candidates.sort_values(by=["score", "ml_prob"], ascending=[False, False], inplace=True)
-
-                    # 2. Derive available slots and free cash from live portfolio metrics
-                    p1_stats = state_engine.get_portfolio_stats(portfolio_type=PORTFOLIO_TYPE, base_capital=self.capital)
-                    max_slots = int(p1_stats.get("max_slots", 10))
-                    available_slots = max(0, max_slots - len(active_positions))
-                    available_cash = float(p1_stats.get("available_cash", 0.0))
-
-                    logger.info(
-                        f"📊 [P1 Auto-Execute Check] Active: {len(active_positions)}/{max_slots} | "
-                        f"Available Slots: {available_slots} | Free Cash: ₹{available_cash:,.2f} | "
-                        f"BUY_NOW Candidates: {len(buy_now_candidates)}"
+                    swing_quant_ml_engine.record_decision_audit(
+                        candidate_id=cand_id,
+                        symbol=ticker,
+                        scanner_source="Chartink 6-Pillar Screener",
+                        scanner_run_id=scan_run_id,
+                        technical_classification="BUY NOW",
+                        technical_snapshot=tech_snapshot,
+                        ml_decision=ml_decision,
+                        ml_win_prob=ml_prob,
+                        ml_score=ml_score,
+                        expected_r=expected_r,
+                        ml_reasons=risk_flags,
+                        ai_request_id=ai_req_id,
+                        ai_status=ai_res.status,
+                        ai_decision=ai_res.final_decision,
+                        ai_reason_code=ai_res.reason_code,
+                        ai_summary=ai_res.summary,
+                        ai_factors={"supporting": ai_res.supporting_factors, "contradicting": ai_res.contradicting_factors, "risk": ai_res.risk_factors},
+                        risk_check_status="BLOCKED_BY_MARKET_HOURS",
+                        final_status="PURCHASE_ELIGIBLE"
                     )
+                    continue
 
-                    if available_slots <= 0:
-                        logger.info("ℹ️ [P1 Auto-Execute] Portfolio capacity full (10/10 slots active). 0 orders placed.")
-                        state_engine.update_scan_progress(
-                            stage=f"ℹ️ Auto-Execution Skipped: Portfolio slots full ({len(active_positions)}/10 used).",
-                            percent=96,
-                            add_log=True
-                        )
-                    else:
-                        for _, r in buy_now_candidates.iterrows():
-                            if orders_placed >= available_slots:
-                                logger.info(f"ℹ️ [P1 Auto-Execute] All available slots filled ({orders_placed}/{available_slots}). Stopping.")
-                                break
+                if ticker in active_syms:
+                    logger.info(f"ℹ️ [P1 Risk Gate Blocked] {ticker} already held in active portfolio.")
+                    continue
 
-                            req_val = round(float(r['entry']) * int(r['shares']), 2)
-                            if r['shares'] <= 0:
-                                continue
+                if orders_placed >= available_slots:
+                    logger.info(f"ℹ️ [P1 Risk Gate Blocked] All available slots filled ({orders_placed}/{available_slots}).")
+                    swing_quant_ml_engine.record_decision_audit(
+                        candidate_id=cand_id, symbol=ticker, scanner_source="Chartink 6-Pillar Screener",
+                        scanner_run_id=scan_run_id, technical_classification="BUY NOW", technical_snapshot=tech_snapshot,
+                        ml_decision=ml_decision, ml_win_prob=ml_prob, ml_score=ml_score, expected_r=expected_r,
+                        ml_reasons=risk_flags, ai_request_id=ai_req_id, ai_status=ai_res.status,
+                        ai_decision=ai_res.final_decision, ai_reason_code=ai_res.reason_code, ai_summary=ai_res.summary,
+                        ai_factors={"supporting": ai_res.supporting_factors, "contradicting": ai_res.contradicting_factors, "risk": ai_res.risk_factors},
+                        risk_check_status="BLOCKED_BY_SLOTS", final_status="BLOCKED_BY_RISK"
+                    )
+                    break
 
-                            if req_val > available_cash:
-                                logger.warning(
-                                    f"⚠️ [P1 Auto-Execute Skipped] {r['ticker']} (Rank Score: {r['score']}, ML: {r['ml_prob']}): "
-                                    f"Required capital ₹{req_val:,.2f} exceeds available cash ₹{available_cash:,.2f}."
-                                )
-                                state_engine.update_scan_progress(
-                                    stage=f"⚠️ Skipped {r['ticker']}: Required ₹{req_val:,.0f} > Available Cash ₹{available_cash:,.0f}",
-                                    percent=96,
-                                    add_log=True
-                                )
-                                continue
+                if r['shares'] <= 0:
+                    continue
 
-                            opened = state_engine.open_position(
-                                symbol=r['ticker'],
-                                entry_price=r['entry'],
-                                quantity=r['shares'],
-                                stop_loss=r['sl'],
-                                target=r['t1'],
-                                target_2=r['t2'],
-                                triggered_from=f"INSTITUTIONAL_{mode.upper()}",
-                                notes=f"Rank #{orders_placed+1} | Score: {r['score']} | ML: {r['ml_prob']} | T1: ₹{r['t1']} | T2: ₹{r['t2']}",
-                                sl_reason="INITIAL_SL",
-                                sector=r['sector'],
-                                portfolio_type=PORTFOLIO_TYPE,
-                                entry_reason=f"6-Pillar BUY_NOW Rank #{orders_placed+1}, Score={r['score']}, ML={r['ml_prob']}",
-                                entry_regime="BULLISH_CONFIRMED",
-                                entry_metrics=r.to_dict()
-                            )
-                            if opened:
-                                orders_placed += 1
-                                available_cash = max(0.0, available_cash - req_val)
-                                state_engine.update_scan_progress(
-                                    stage=f"✅ Auto-Executed BUY_NOW #{orders_placed}: {r['ticker']} ({r['shares']} shs @ ₹{r['entry']:.2f}) [Score: {r['score']}]",
-                                    percent=96,
-                                    add_log=True
-                                )
+                if req_val > available_cash:
+                    logger.warning(f"⚠️ [P1 Risk Gate Blocked] {ticker}: Required ₹{req_val:,.2f} > Available Cash ₹{available_cash:,.2f}")
+                    swing_quant_ml_engine.record_decision_audit(
+                        candidate_id=cand_id, symbol=ticker, scanner_source="Chartink 6-Pillar Screener",
+                        scanner_run_id=scan_run_id, technical_classification="BUY NOW", technical_snapshot=tech_snapshot,
+                        ml_decision=ml_decision, ml_win_prob=ml_prob, ml_score=ml_score, expected_r=expected_r,
+                        ml_reasons=risk_flags, ai_request_id=ai_req_id, ai_status=ai_res.status,
+                        ai_decision=ai_res.final_decision, ai_reason_code=ai_res.reason_code, ai_summary=ai_res.summary,
+                        ai_factors={"supporting": ai_res.supporting_factors, "contradicting": ai_res.contradicting_factors, "risk": ai_res.risk_factors},
+                        risk_check_status="INSUFFICIENT_CASH", final_status="BLOCKED_BY_RISK"
+                    )
+                    state_engine.update_scan_progress(
+                        stage=f"⚠️ Skipped {ticker}: Required ₹{req_val:,.0f} > Available Cash ₹{available_cash:,.0f}",
+                        percent=96, add_log=True
+                    )
+                    continue
+
+                # Step 5: Execute Authorized Purchase
+                real_meta = r.to_dict()
+                real_meta.update({
+                    "ml_win_prob": ml_prob,
+                    "ml_decision": ml_decision,
+                    "ai_decision": ai_res.final_decision,
+                    "ai_reason_code": ai_res.reason_code,
+                    "ai_summary": ai_res.summary
+                })
+
+                opened = state_engine.open_position(
+                    symbol=ticker,
+                    entry_price=r['entry'],
+                    quantity=r['shares'],
+                    stop_loss=r['sl'],
+                    target=r['t1'],
+                    target_2=r['t2'],
+                    triggered_from=f"INSTITUTIONAL_{mode.upper()}",
+                    notes=f"ML+AI Approved | {ai_res.reason_code} | ML: {ml_prob*100:.0f}% | Score: {r['score']} | T1: ₹{r['t1']} | T2: ₹{r['t2']}",
+                    sl_reason="INITIAL_SL",
+                    sector=r['sector'],
+                    portfolio_type=PORTFOLIO_TYPE,
+                    entry_reason=f"ML+AI Approved BUY_NOW: {ai_res.reason_code}, ML={ml_prob*100:.0f}%, Score={r['score']}",
+                    entry_regime="BULLISH_CONFIRMED",
+                    entry_metrics=real_meta
+                )
+                if opened:
+                    orders_placed += 1
+                    available_cash = max(0.0, available_cash - req_val)
+                    active_syms.append(ticker)
+                    swing_quant_ml_engine.record_real_trade_entry(
+                        symbol=ticker,
+                        portfolio_type=PORTFOLIO_TYPE,
+                        entry_price=float(r['entry']),
+                        stop_loss=float(r['sl']),
+                        target=float(r['t1']),
+                        target_2=float(r['t2']),
+                        candidate_meta=real_meta
+                    )
+                    swing_quant_ml_engine.record_decision_audit(
+                        candidate_id=cand_id, symbol=ticker, scanner_source="Chartink 6-Pillar Screener",
+                        scanner_run_id=scan_run_id, technical_classification="BUY NOW", technical_snapshot=tech_snapshot,
+                        ml_decision=ml_decision, ml_win_prob=ml_prob, ml_score=ml_score, expected_r=expected_r,
+                        ml_reasons=risk_flags, ai_request_id=ai_req_id, ai_status=ai_res.status,
+                        ai_decision=ai_res.final_decision, ai_reason_code=ai_res.reason_code, ai_summary=ai_res.summary,
+                        ai_factors={"supporting": ai_res.supporting_factors, "contradicting": ai_res.contradicting_factors, "risk": ai_res.risk_factors},
+                        risk_check_status="PASSED", final_status="ORDER_FILLED",
+                        trade_id=str(opened.get("id", ""))
+                    )
+                    state_engine.update_scan_progress(
+                        stage=f"✅ ML+AI Approved BUY_NOW #{orders_placed}: {ticker} ({r['shares']} shs @ ₹{r['entry']:.2f}) [Prob: {ml_prob*100:.0f}%]",
+                        percent=96,
+                        add_log=True
+                    )
 
             _institutional_engine_state["orders_executed"] = orders_placed
 

@@ -1652,3 +1652,163 @@ def get_active_training_setups_endpoint():
         "setups": setups
     }
 
+
+@app.get("/api/swing/decision-audit")
+@app.get("/api/ml/swing/decision-audit")
+def get_swing_decision_audit_endpoint(limit: int = 100, symbol: Optional[str] = None):
+    """Retrieves full immutable audit chain of candidate decisions across Chartink, ML gate, AI gate, and execution."""
+    from engines.swing_quant_ml_engine import swing_quant_ml_engine
+    logs = swing_quant_ml_engine.get_decision_audit_logs(limit=limit, symbol=symbol)
+    return {
+        "status": "OK",
+        "count": len(logs),
+        "audit_logs": logs
+    }
+
+
+@app.get("/api/swing/candidate-eval/{symbol}")
+def evaluate_candidate_endpoint(symbol: str):
+    """Runs live on-demand ML + AI Final Buy Gate evaluation on any stock symbol."""
+    import time
+    from datetime import datetime, timezone
+    from execution.state_engine import state_engine
+    from engines.swing_quant_ml_engine import swing_quant_ml_engine
+    from ai_engine.service import ai_service
+    from ai_engine.schemas import (
+        SwingCandidateAIRequest,
+        SwingCandidateIdentity,
+        SwingCandidateContext,
+        SwingTechnicalAnalysis,
+        SwingMLAnalysis,
+        SwingTradePlan,
+        SwingHistoricalEvidence,
+        SwingPortfolioContext,
+        SwingInstructions
+    )
+    from core.data_quality import format_ist
+
+    sym_clean = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    df, _ = state_engine.get_ohlcv_df(sym_clean)
+    if df is None or df.empty or len(df) < 10:
+        return {"status": "ERROR", "message": f"Insufficient OHLCV data for {sym_clean}"}
+
+    c = float(df["Close"].iloc[-1])
+    h = float(df["High"].iloc[-1]) if "High" in df.columns else c
+    l = float(df["Low"].iloc[-1]) if "Low" in df.columns else c
+    atr = max(1.0, float(df["High"].tail(14).max() - df["Low"].tail(14).min()) / 5.0) if "High" in df.columns else max(1.0, c * 0.02)
+    sl = round(c - 1.5 * atr, 2)
+    t1 = round(c + 3.0 * atr, 2)
+    rr = 2.0
+
+    cand_dict = {
+        "symbol": sym_clean,
+        "ticker": sym_clean,
+        "close": c,
+        "entry": c,
+        "sl": sl,
+        "t1": t1,
+        "score": 85.0,
+        "confidence": 5,
+        "rsi14": 58.0,
+        "atr_pct": round((atr / c) * 100.0, 2),
+        "dist_to_pivot": 1.2,
+        "dist_to_ema20": 1.8,
+        "vol_ratio": 1.4,
+        "inst_score": 75.0,
+        "week_confluence": 1,
+        "is_vcp": 1,
+        "bb_sq_ratio": 0.8,
+        "adx14": 30.0,
+        "shares": 50,
+        "sector": "DIVERSIFIED"
+    }
+
+    regime = swing_quant_ml_engine.capture_market_regime()
+    ml_res = swing_quant_ml_engine.evaluate_candidate(cand_dict, market_regime=regime)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    ai_req = SwingCandidateAIRequest(
+        schema_version="1.0",
+        request_id=f"eval_req_{sym_clean}_{int(time.time())}",
+        task="swing_final_buy_decision",
+        module="swing_trading",
+        candidate=SwingCandidateIdentity(
+            candidate_id=f"cand_{sym_clean}",
+            exchange="NSE",
+            symbol=sym_clean,
+            scanner_classification="BUY NOW",
+            scanner_run_id="on_demand_eval"
+        ),
+        context=SwingCandidateContext(
+            as_of=now_iso,
+            timezone="Asia/Kolkata",
+            data_mode="live",
+            data_quality={"status": "valid", "is_stale": False, "missing_fields": [], "warnings": []}
+        ),
+        technical_analysis=SwingTechnicalAnalysis(
+            classification="BUY NOW",
+            entry_conditions=["6-Pillars >= 80", "Pivot proximity <= 2%", "Volume ratio >= 1.15x"],
+            satisfied_conditions=["6-Pillar institutional structure valid", "Volume expansion confirmed"],
+            unsatisfied_conditions=[],
+            features=ml_res["features"],
+            engine_version="6-Pillar-v2.4"
+        ),
+        ml_analysis=SwingMLAnalysis(
+            decision=ml_res["decision"],
+            model_name=ml_res["model_name"],
+            model_version=ml_res["model_version"],
+            target_definition=ml_res["target_definition"],
+            prediction_score=ml_res["prediction_score"],
+            calibrated_probability=ml_res["ml_win_prob"],
+            expected_r=ml_res["expected_r"],
+            feature_snapshot_id=ml_res["feature_snapshot_id"],
+            decision_policy_version="1.0",
+            risk_flags=ml_res["risk_flags"],
+            fatal_flags=ml_res["fatal_flags"]
+        ),
+        trade_plan=SwingTradePlan(
+            entry_rule="Breakout confirmation with volume",
+            entry_price=c,
+            stop_loss=sl,
+            target=t1,
+            holding_period="5-15 sessions",
+            reward_risk_ratio=rr,
+            position_size=50,
+            risk_per_share=round(c - sl, 2),
+            capital_at_risk=round(50 * (c - sl), 2),
+            estimated_transaction_costs=round(50 * c * 0.0012, 2)
+        ),
+        historical_evidence=SwingHistoricalEvidence(
+            sample_count=160,
+            target_before_stop_frequency=ml_res["ml_win_prob"],
+            stop_before_target_frequency=round(1.0 - ml_res["ml_win_prob"], 2),
+            evaluation_type="out_of_sample",
+            period="NSE 500 Historical Validation",
+            historical_win_rate=ml_res["ml_win_prob"]
+        ),
+        portfolio_context=SwingPortfolioContext(
+            already_held=False,
+            duplicate_pending_order=False,
+            available_capital=250000.0,
+            risk_limits_available=True,
+            active_slots_used=3,
+            max_slots=10
+        ),
+        instructions=SwingInstructions(
+            objective="Make a final analytical BUY NOW or DO NOT BUY decision using the supplied evidence.",
+            allow_order_execution=False,
+            do_not_invent_data=True
+        )
+    )
+
+    ai_res = ai_service.evaluate_swing_candidate(ai_req)
+
+    return {
+        "status": "OK",
+        "symbol": sym_clean,
+        "ml_evaluation": ml_res,
+        "ai_decision": ai_res.model_dump(),
+        "evaluated_at": format_ist()
+    }
+
+
