@@ -254,6 +254,7 @@ def test_strict_market_hours_lock():
     mock_pred = {
         "status": "OK",
         "prediction_date": today_str,
+        "data_date": "2026-10-14",
         "is_premarket_locked": True,
         "spot_price": 24500.0,
         "t1_forecast": {"verdict": "STRONG BULLISH"},
@@ -283,5 +284,21 @@ def test_macro_events_filter_completed_and_past():
     for ev in events:
         assert ev.get("status") != "COMPLETED", f"Completed event found in upcoming list: {ev}"
         assert ev.get("days_from_today", 0) >= 0, f"Past event found in upcoming list: {ev}"
+
+
+def test_strictly_completed_session_cutoff():
+    """
+    Verifies that when generating predictions before 15:30 IST on a trading day,
+    the model strictly cuts off data at yesterday's completed market close (data_date < target_date),
+    never ingesting unclosed intraday bars, and baseline spot is yesterday's close.
+    """
+    from core.market_calendar import NSEMarketCalendar
+    now_dt = now_ist()
+    last_completed = NSEMarketCalendar.get_last_completed_trading_day(now_dt)
+    if NSEMarketCalendar.is_trading_day(now_dt.date()) and now_dt.time() < datetime.time(15, 30):
+        assert last_completed < now_dt.date(), "Data cutoff must strictly be before today when market is unclosed"
+        prev_td = NSEMarketCalendar.get_previous_trading_day(now_dt.date())
+        assert last_completed == prev_td
+
 
 

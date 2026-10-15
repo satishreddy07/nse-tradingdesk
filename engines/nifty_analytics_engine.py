@@ -519,6 +519,31 @@ class NiftyAnalyticsEngine:
         }
 
     @staticmethod
+    def _filter_df_to_completed_session(df: Optional[pd.DataFrame], cutoff_date: datetime.date) -> Optional[pd.DataFrame]:
+        """
+        Strictly filters a daily OHLCV DataFrame so that only fully COMPLETED sessions
+        up to cutoff_date (inclusive) are preserved. Drops any unclosed/intraday candles
+        with date > cutoff_date and strips live quote metadata to prevent lookahead leakage.
+        """
+        if df is None or df.empty:
+            return df
+        try:
+            if isinstance(df.index, pd.DatetimeIndex):
+                idx_dates = [t.date() for t in df.index]
+                mask = [d <= cutoff_date for d in idx_dates]
+                filtered = df.iloc[mask].copy()
+                filtered.attrs = {}
+                return filtered
+            elif "Date" in df.columns:
+                dates = pd.to_datetime(df["Date"]).dt.date
+                filtered = df[dates <= cutoff_date].copy()
+                filtered.attrs = {}
+                return filtered
+        except Exception as e:
+            logger.debug(f"Filter df error: {e}")
+        return df
+
+    @staticmethod
     def _classify_oi_buildup(price_chg: float, oi_chg: int) -> str:
         if oi_chg > 0 and price_chg > 0:
             return "LONG_BUILDUP"
@@ -1763,11 +1788,12 @@ class NiftyAnalyticsEngine:
             "bars": n,
         }
 
-    def _compute_breadth_and_sector_internals(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    def _compute_breadth_and_sector_internals(self, cutoff_date: Optional[datetime.date] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
         Computes REAL Nifty 50 Market Breadth directly from the 50 official Nifty 50 constituents,
         with secondary low weight (15%) on Nifty 500 broader market participation.
         Strictly prevents mid/small cap swing scan caching from distorting the Nifty index breadth!
+        Optionally filters to cutoff_date so unclosed market sessions never contaminate breadth.
         """
         yf = None
         try:
@@ -1791,12 +1817,24 @@ class NiftyAnalyticsEngine:
             for sym in NIFTY_50_CONSTITUENTS:
                 try:
                     cdf, _ = state_engine.get_ohlcv_df(sym)
+                    if cutoff_date is not None:
+                        cdf = self._filter_df_to_completed_session(cdf, cutoff_date)
                     if cdf is not None and not cdf.empty and "close" in cdf.columns:
                         series_dict[sym] = cdf["close"]
                 except Exception:
                     pass
             if series_dict:
                 n50_df = pd.DataFrame(series_dict)
+
+        # Strictly filter n50_df to cutoff_date (completed session) if provided
+        if cutoff_date is not None and n50_df is not None and not n50_df.empty:
+            try:
+                if isinstance(n50_df.index, pd.DatetimeIndex):
+                    idx_dates = [t.date() for t in n50_df.index]
+                    mask = [d <= cutoff_date for d in idx_dates]
+                    n50_df = n50_df.iloc[mask].copy()
+            except Exception as e:
+                logger.debug(f"Filter n50_df error: {e}")
 
         # Compute Nifty 50 constituent metrics
         n50_adv = 0
@@ -2738,10 +2776,22 @@ class NiftyAnalyticsEngine:
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK" and persisted.get("prediction_date") == today_str:
                 candidate = persisted
 
+        # Check if candidate has an unclosed data_date (e.g. data_date == today_str while market is open or before 15:30)
+        # If candidate has data_date == today_str before market close, it suffered from intraday lookahead contamination and MUST be repaired!
+        is_candidate_contaminated = False
+        if candidate:
+            cand_data_date = str(candidate.get("data_date") or candidate.get("data_as_of_date") or "")
+            if cand_data_date == today_str and market_time < datetime.time(15, 30):
+                is_candidate_contaminated = True
+                logger.warning(
+                    f"⚠️ [PREDICTION SANITIZER] Candidate for {today_str} has unclosed data_date '{cand_data_date}'. "
+                    f"Intraday leakage detected! Forcing recalculation strictly on completed session data."
+                )
+
         # 1. STRICT MARKET-HOURS PREDICTION LOCK (09:00 AM – 03:30 PM IST):
         # Forecast NEVER repaints, mutates, or recalculates while market is alive,
-        # EVEN IF force_refresh=True or force_recalculate=True (e.g. manual UI clicks).
-        if is_market_alive and candidate:
+        # UNLESS candidate is contaminated or missing.
+        if is_market_alive and candidate and not is_candidate_contaminated:
             candidate["is_premarket_locked"] = True
             candidate["market_hours_locked"] = True
             candidate["recompute_blocked"] = True
@@ -2770,7 +2820,7 @@ class NiftyAnalyticsEngine:
             return candidate
 
         # 2. General locked or cached forecast outside market hours:
-        if not force_recalculate and candidate:
+        if not force_recalculate and candidate and not is_candidate_contaminated:
             if candidate.get("is_premarket_locked") or candidate.get("prediction_date") == today_str:
                 if "ai_analysis" not in candidate and getattr(config, "AI_ENABLED", True):
                     try:
@@ -2787,7 +2837,7 @@ class NiftyAnalyticsEngine:
 
         market_open = NSEMarketCalendar.can_execute_trades()
         cache_ttl = 300 if market_open else 3600
-        if not force_refresh and not force_recalculate and self._predictions_mem_cache and (now_ts - self._predictions_cache_ts) < cache_ttl:
+        if not force_refresh and not force_recalculate and self._predictions_mem_cache and (now_ts - self._predictions_cache_ts) < cache_ttl and not is_candidate_contaminated:
             if "ai_analysis" not in self._predictions_mem_cache and getattr(config, "AI_ENABLED", True):
                 try:
                     from ai_engine.service import ai_service
@@ -2799,7 +2849,7 @@ class NiftyAnalyticsEngine:
             return self._predictions_mem_cache
 
         # If not forcing recalculate or refresh, check general persisted predictions
-        if not force_refresh and not force_recalculate:
+        if not force_refresh and not force_recalculate and not is_candidate_contaminated:
             persisted = state_engine.get_kv("latest_nifty_predictions")
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
                 if "ai_analysis" not in persisted and getattr(config, "AI_ENABLED", True):
@@ -2848,6 +2898,24 @@ class NiftyAnalyticsEngine:
                 except Exception:
                     pass
 
+        # STRICT SESSION CUTOFF DETERMINATION:
+        # Market sessions are only closed after 15:30 IST.
+        # Prior to 15:30 IST (pre-market & live session), today is UNCLOSED.
+        # Forecasts for today's session MUST strictly use data up to yesterday's completed market close.
+        data_cutoff_date = NSEMarketCalendar.get_last_completed_trading_day(now_dt)
+        data_date = data_cutoff_date.strftime("%Y-%m-%d")
+
+        if NSEMarketCalendar.is_trading_day(today_date) and now_dt.time() < datetime.time(15, 30):
+            target_date = today_str
+        else:
+            target_date = NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
+
+        pred_date = target_date
+
+        # Strictly sanitize and filter all series DataFrames to data_cutoff_date (zero intraday leakage)
+        for tk in list(series_map.keys()):
+            series_map[tk] = self._filter_df_to_completed_session(series_map[tk], data_cutoff_date)
+
         metrics_map: Dict[str, Dict[str, float]] = {
             tk: self._calc_series_metrics(df) for tk, df in series_map.items()
         }
@@ -2855,33 +2923,6 @@ class NiftyAnalyticsEngine:
         # Pillar 1: Nifty 50 Technical Structure (^NSEI)
         n50 = metrics_map.get("^NSEI") or {}
         spot = float(n50.get("close") or 22500.0)
-
-        # Determine data_date (cutoff date of Nifty OHLCV) and target_date (trading session being forecasted)
-        last_bar_dt_str = str(n50.get("last_date") or "")
-        now_dt = now_ist()
-        today_date = now_dt.date()
-        today_str = today_date.strftime("%Y-%m-%d")
-
-        if last_bar_dt_str:
-            try:
-                l_dt = datetime.datetime.strptime(last_bar_dt_str[:10], "%Y-%m-%d").date()
-            except Exception:
-                l_dt = today_date - datetime.timedelta(days=1)
-        else:
-            l_dt = today_date - datetime.timedelta(days=1)
-
-        data_date = l_dt.strftime("%Y-%m-%d")
-
-        # If today is an active trading day and latest completed bar is from a prior day (e.g. 14-Oct completed, today is 15-Oct):
-        # The forecast is for TODAY's session.
-        if NSEMarketCalendar.is_trading_day(today_date) and l_dt < today_date:
-            target_date = today_str
-        elif l_dt >= today_date and now_dt.time() >= datetime.time(15, 30):
-            target_date = NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
-        else:
-            target_date = today_str if NSEMarketCalendar.is_trading_day(today_date) else NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
-
-        pred_date = target_date
 
         atr14 = float(n50.get("atr14") or (spot * 0.01))
         ema9 = float(n50.get("ema9") or spot)
@@ -2912,7 +2953,7 @@ class NiftyAnalyticsEngine:
         tech_score = float(np.clip(round(tech_score, 1), -100.0, 100.0))
 
         # Pillar 2 & 3: Internal Market Breadth & Sectoral Leadership
-        breadth_data, sector_internals = self._compute_breadth_and_sector_internals()
+        breadth_data, sector_internals = self._compute_breadth_and_sector_internals(cutoff_date=data_cutoff_date)
         breadth_score = float(breadth_data.get("score") or 0.0)
 
         sector_defs = [
@@ -3176,7 +3217,8 @@ class NiftyAnalyticsEngine:
             series_map=series_map,
             current_breadth_score=breadth_score,
             current_news_score=combined_news_deriv_score,
-            latest_target_date=target_date
+            latest_target_date=target_date,
+            latest_data_date=data_date,
         )
 
         learned_weights_t1 = self_training_summary.get("learned_weights_t1", {
@@ -3836,7 +3878,8 @@ class NiftyAnalyticsEngine:
         series_map: Dict[str, pd.DataFrame],
         current_breadth_score: float,
         current_news_score: float,
-        latest_target_date: Optional[str] = None
+        latest_target_date: Optional[str] = None,
+        latest_data_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Seeds & grades a walk-forward forward-testing ledger across the last ~18 real trading sessions
@@ -3898,13 +3941,13 @@ class NiftyAnalyticsEngine:
         except Exception:
             l_dt = today_date - datetime.timedelta(days=1)
 
+        if not latest_data_date:
+            latest_data_date = last_bar_dt_str
         if not latest_target_date:
-            if NSEMarketCalendar.is_trading_day(today_date) and l_dt < today_date:
+            if NSEMarketCalendar.is_trading_day(today_date) and now_dt.time() < datetime.time(15, 30):
                 latest_target_date = today_str
-            elif l_dt >= today_date and now_dt.time() >= datetime.time(15, 30):
-                latest_target_date = NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
             else:
-                latest_target_date = today_str if NSEMarketCalendar.is_trading_day(today_date) else NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
+                latest_target_date = NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
 
         with state_engine._lock:
             with state_engine._get_connection() as conn:
@@ -3917,6 +3960,14 @@ class NiftyAnalyticsEngine:
                         target_dt = dates[i + 1]
                     else:
                         target_dt = latest_target_date
+                        data_dt = latest_data_date
+
+                    if target_dt == data_dt:
+                        try:
+                            d_parsed = datetime.datetime.strptime(data_dt, "%Y-%m-%d").date()
+                            target_dt = NSEMarketCalendar.get_next_trading_day(d_parsed).strftime("%Y-%m-%d")
+                        except Exception:
+                            pass
 
                     # 1. Historical technical score at bar i
                     c_window = closes[:i + 1]
@@ -4238,8 +4289,8 @@ class NiftyAnalyticsEngine:
                     t5_low_1s = excluded.t5_low_1s,
                     t5_high_1s = excluded.t5_high_1s,
                     pillar_snapshots_json = COALESCE(excluded.pillar_snapshots_json, nifty_predictions_log.pillar_snapshots_json),
-                    target_date = COALESCE(excluded.target_date, nifty_predictions_log.target_date),
-                    data_date = COALESCE(excluded.data_date, nifty_predictions_log.data_date);
+                    target_date = excluded.target_date,
+                    data_date = excluded.data_date;
                 """, (
                     pred_date, ts_ist, spot, composite_score,
                     t1_verdict, t1_probs["up"], t1_probs["flat"], t1_probs["down"], t1_expected_close, t1_low_1s, t1_high_1s,

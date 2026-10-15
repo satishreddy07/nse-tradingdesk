@@ -290,6 +290,43 @@ class NSEMarketCalendar:
         return next_d
 
     @classmethod
+    def get_previous_trading_day(cls, dt: Optional[datetime.date] = None) -> datetime.date:
+        """Returns the most recent official NSE trading day strictly BEFORE the given date."""
+        cls._load_cached_holidays_from_db()
+        if dt is None:
+            dt = now_ist().date()
+        elif isinstance(dt, datetime.datetime):
+            dt = dt.date()
+        prev_d = dt - datetime.timedelta(days=1)
+        while not cls.is_trading_day(prev_d):
+            prev_d -= datetime.timedelta(days=1)
+        return prev_d
+
+    @classmethod
+    def get_last_completed_trading_day(cls, dt: Optional[datetime.datetime] = None) -> datetime.date:
+        """
+        Returns the last FULLY COMPLETED NSE trading day.
+        If dt is during trading hours or before market close on a trading day (curr_t < 15:30 IST),
+        today has NOT completed, so returns yesterday's (or prior) trading day.
+        If dt is on a trading day and curr_t >= 15:30 IST, today is completed, so returns today.
+        If dt is on a weekend or holiday, returns the prior trading day.
+        """
+        cls._load_cached_holidays_from_db()
+        if dt is None:
+            dt = now_ist()
+        elif isinstance(dt, datetime.date) and not isinstance(dt, datetime.datetime):
+            dt = datetime.datetime.combine(dt, datetime.time(0, 0, 0))
+            dt = IST.localize(dt)
+        elif dt.tzinfo is None:
+            dt = IST.localize(dt)
+
+        curr_d = dt.date()
+        curr_t = dt.time()
+        if cls.is_trading_day(curr_d) and curr_t >= datetime.time(15, 30, 0):
+            return curr_d
+        return cls.get_previous_trading_day(curr_d)
+
+    @classmethod
     def get_holiday_reason(cls, dt: datetime.date = None) -> str:
         """Returns holiday or weekend reason if applicable."""
         cls._load_cached_holidays_from_db()

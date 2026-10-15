@@ -800,7 +800,13 @@ def lock_premarket_forecast():
     locked_key = f"nifty_prediction_locked_{today_str}"
     existing_lock = state_engine.get_kv(locked_key)
 
-    if is_market_alive and existing_lock and isinstance(existing_lock, dict) and existing_lock.get("status") == "OK":
+    is_contaminated = False
+    if existing_lock and isinstance(existing_lock, dict):
+        cand_d_date = str(existing_lock.get("data_date") or existing_lock.get("data_as_of_date") or "")
+        if cand_d_date == today_str and now_dt.time() < datetime.time(15, 30):
+            is_contaminated = True
+
+    if is_market_alive and existing_lock and isinstance(existing_lock, dict) and existing_lock.get("status") == "OK" and not is_contaminated:
         return {
             "status": "LOCKED",
             "message": "Market is currently alive (09:00 - 15:30 IST). Predictions are strictly locked against manual recomputation to preserve institutional audit integrity. Next auto-evaluation is at 03:40 PM IST.",
