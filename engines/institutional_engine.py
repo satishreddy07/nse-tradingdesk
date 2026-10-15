@@ -1567,8 +1567,9 @@ class InstitutionalEngine:
                         continue
                     bkt = s_row['bucket']
                     verd = str(s_row.get('ml_verdict', 'APPROVED')).upper()
-                    if bkt in ('BUY_NOW', 'PRE_BREAKOUT') or verd == 'REJECTED' or float(s_row['score']) >= 65.0:
-                        rej_tag = f"{bkt}_{verd}"
+                    # Strictly ingest all BUY_NOW candidates into Uncapped Training Portfolio (no cash/slot limits)
+                    if bkt == 'BUY_NOW':
+                        rej_tag = f"BUY_NOW_{verd}"
                         logged = swing_quant_ml_engine.record_shadow_candidate(
                             symbol=s_sym,
                             portfolio_type=PORTFOLIO_TYPE,
@@ -1582,7 +1583,7 @@ class InstitutionalEngine:
                         if logged:
                             shadow_logged += 1
                 if shadow_logged > 0:
-                    logger.info(f"👻 Logged {shadow_logged} candidates into Shadow Ledger for counterfactual tracking.")
+                    logger.info(f"👻 Logged {shadow_logged} BUY_NOW candidates into Uncapped Training Portfolio.")
             except Exception as e:
                 logger.debug(f"Failed to record shadow candidates: {e}")
 
