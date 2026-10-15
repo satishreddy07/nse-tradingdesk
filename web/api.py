@@ -1315,6 +1315,81 @@ def post_ml_rollback_endpoint(horizon: str = "INTRADAY"):
 
 
 # ==============================================================================
+# UNIFIED NIFTY T+1 & T+5 FORECAST LEARNING, EVALUATION & RETRAINING FRAMEWORK
+# ==============================================================================
+@app.get("/api/nifty-forecast/overview")
+def get_nifty_forecast_overview_endpoint():
+    """Returns ledger statistics, active models, Brier scores, and calibration metrics for T+1 & T+5."""
+    from core.nifty_prediction_ledger import nifty_prediction_ledger
+    from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
+    return {
+        "status": "OPERATIONAL",
+        "timestamp": format_ist(),
+        "ledger_statistics": nifty_prediction_ledger.get_ledger_statistics(),
+        "model_registry": nifty_forecast_learning_engine._active_metadata
+    }
+
+
+@app.get("/api/nifty-forecast/ledger")
+def get_nifty_forecast_ledger_endpoint(
+    horizon: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50
+):
+    """Retrieves immutable prediction records with forward targets and realized outcome resolutions."""
+    from core.nifty_prediction_ledger import nifty_prediction_ledger
+    with nifty_prediction_ledger._get_connection() as conn:
+        query = "SELECT * FROM nifty_forecast_lifecycle_ledger"
+        clauses = []
+        params = []
+        if horizon:
+            horizon = horizon.replace(" ", "+").upper()
+            clauses.append("horizon = ?")
+            params.append(horizon)
+        if status:
+            clauses.append("status = ?")
+            params.append(status.upper())
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY prediction_date DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, tuple(params)).fetchall()
+        return [dict(r) for r in rows]
+
+
+@app.get("/api/nifty-forecast/evaluation")
+def get_nifty_forecast_evaluation_endpoint(horizon: str = "T+1"):
+    """Returns comprehensive directional accuracy, confusion matrix, Brier score, and MAE report."""
+    from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
+    horizon = horizon.replace(" ", "+").upper()
+    return nifty_forecast_learning_engine.generate_evaluation_report(horizon=horizon)
+
+
+@app.post("/api/nifty-forecast/retrain")
+def post_nifty_forecast_retrain_endpoint(horizon: str = "ALL"):
+    """Executes controlled retraining and promotion verification for T+1 and/or T+5 models."""
+    from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
+    horizon = horizon.replace(" ", "+").upper()
+    h_list = ["T+1", "T+5"] if horizon == "ALL" else [horizon]
+    results = {}
+    for h in h_list:
+        results[h] = nifty_forecast_learning_engine.train_forecast_models(horizon=h)
+    return {
+        "status": "COMPLETED",
+        "results": results,
+        "timestamp": format_ist()
+    }
+
+
+@app.post("/api/nifty-forecast/rollback")
+def post_nifty_forecast_rollback_endpoint(horizon: str = "T+1"):
+    """Restores the previous production model artifact for T+1 or T+5."""
+    from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
+    horizon = horizon.replace(" ", "+").upper()
+    return nifty_forecast_learning_engine.rollback_model(horizon=horizon)
+
+
+# ==============================================================================
 # AI INTELLIGENCE LAYER ENDPOINTS (GROQ + OPENROUTER FREE TIER)
 # ==============================================================================
 class AIAnalyzeRequest(BaseModel):

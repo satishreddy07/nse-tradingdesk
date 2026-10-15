@@ -647,6 +647,18 @@ def scheduled_daily_prediction_training_job():
         logger.warning(f"03:40 PM Horizon ML Training Job warning: {e_orch}")
 
     try:
+        from core.nifty_prediction_ledger import nifty_prediction_ledger
+        from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
+        res_out = nifty_prediction_ledger.resolve_matured_outcomes()
+        logger.info(f"🎯 [03:40 PM Nifty Forecast Ledger Resolution] Resolved T+1: {res_out.get('resolved_t1')}, T+5: {res_out.get('resolved_t5')}")
+        t1_ret = nifty_forecast_learning_engine.train_forecast_models(horizon="T+1")
+        t5_ret = nifty_forecast_learning_engine.train_forecast_models(horizon="T+5")
+        logger.info(f"🧠 [03:40 PM Nifty Forecast Models] T+1: {t1_ret.get('status')} | T+5: {t5_ret.get('status')}")
+    except Exception as e_fc:
+        logger.warning(f"03:40 PM Nifty Forecast Learning Job warning: {e_fc}")
+
+
+    try:
         from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
         opt_ml = intraday_options_strategy_engine.train_options_ml_model()
         logger.info(

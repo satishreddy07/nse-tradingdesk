@@ -3828,6 +3828,87 @@
             </div>
           </div>
         </div>
+
+        <!-- ===================================================================== -->
+        <!-- NIFTY T+1 & T+5 PREDICTION LEARNING & LIFECYCLE LEDGER                -->
+        <!-- ===================================================================== -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+            <div class="flex items-center gap-2.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+              <div>
+                <h4 class="text-sm sm:text-base font-extrabold text-white">NIFTY T+1 &amp; T+5 PREDICTION LEARNING SYSTEM</h4>
+                <p class="text-[10px] text-slate-400">Immutable daily forecast logging, verified session outcome alignment &amp; controlled walk-forward retraining.</p>
+              </div>
+            </div>
+            <!-- Horizon Toggle & Action Controls -->
+            <div class="flex items-center gap-2">
+              <div class="inline-flex rounded-lg bg-slate-950 p-1 border border-slate-800 text-[10px] font-mono">
+                <button onclick="switchNiftyForecastTab('T+1')" id="btn-fc-tab-t1" class="px-2.5 py-1 rounded-md font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">T+1 Tactical</button>
+                <button onclick="switchNiftyForecastTab('T+5')" id="btn-fc-tab-t5" class="px-2.5 py-1 rounded-md font-bold text-slate-400 hover:text-white">T+5 Structural</button>
+              </div>
+              <button onclick="triggerNiftyForecastRetrain()" id="btn-nifty-fc-retrain" class="px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-[10px] font-bold transition shadow-sm">⚡ Retrain</button>
+              <button onclick="triggerNiftyForecastRollback()" id="btn-nifty-fc-rollback" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-[10px] transition">⏪ Rollback</button>
+            </div>
+          </div>
+
+          <!-- KPI Summary Strip -->
+          <div class="grid grid-cols-2 sm:grid-cols-6 gap-2 font-mono text-center">
+            <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5">
+              <div class="text-[9px] text-slate-500 uppercase">Total Forecasts</div>
+              <div id="fc-stat-total" class="text-base font-bold text-white">--</div>
+            </div>
+            <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5">
+              <div class="text-[9px] text-emerald-400 uppercase">Matured (Resolved)</div>
+              <div id="fc-stat-resolved" class="text-base font-bold text-emerald-300">--</div>
+            </div>
+            <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5">
+              <div class="text-[9px] text-amber-400 uppercase">Pending Outcome</div>
+              <div id="fc-stat-pending" class="text-base font-bold text-amber-300">--</div>
+            </div>
+            <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5">
+              <div class="text-[9px] text-cyan-400 uppercase">Directional Accuracy</div>
+              <div id="fc-stat-hitrate" class="text-base font-bold text-cyan-300">--%</div>
+            </div>
+            <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5">
+              <div class="text-[9px] text-purple-400 uppercase">1σ Cone Containment</div>
+              <div id="fc-stat-conerate" class="text-base font-bold text-purple-300">--%</div>
+            </div>
+            <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5">
+              <div class="text-[9px] text-slate-400 uppercase">Return MAE</div>
+              <div id="fc-stat-mae" class="text-base font-bold text-slate-200">-- pts</div>
+            </div>
+          </div>
+
+          <!-- Lifecycle Ledger Table & Diagnostics -->
+          <div class="bg-slate-950/90 border border-slate-800 rounded-xl overflow-hidden font-mono text-[10px]">
+            <div class="p-2.5 bg-slate-900/70 border-b border-slate-800 flex items-center justify-between text-xs">
+              <span class="text-slate-300 font-bold">Immutable Forecast Lifecycle Ledger</span>
+              <span id="fc-ledger-badge" class="text-[9px] text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/30">Showing T+1 Sessions</span>
+            </div>
+            <div class="overflow-x-auto max-h-56 overflow-y-auto custom-scroll">
+              <table class="w-full text-left">
+                <thead class="bg-slate-950 text-slate-400 border-b border-slate-800 sticky top-0">
+                  <tr>
+                    <th class="p-2">Forecast ID</th>
+                    <th class="p-2">Pred Date</th>
+                    <th class="p-2">Target Date</th>
+                    <th class="p-2">Verdict</th>
+                    <th class="p-2">Spot</th>
+                    <th class="p-2">Actual Close</th>
+                    <th class="p-2">Return %</th>
+                    <th class="p-2">Outcome</th>
+                    <th class="p-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="fc-ledger-rows" class="divide-y divide-slate-800/50 text-slate-300">
+                  <tr><td colspan="9" class="p-4 text-center text-slate-500 italic">Loading Nifty forecast lifecycle records...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
       </div>
 
     </div> <!-- Close Sub-Tab 4: opt-sub-intraday-rules -->
@@ -10098,6 +10179,128 @@
           btn.disabled = false;
           btn.innerText = '⏪ Rollback';
         }
+      }
+    }
+
+    // =========================================================================
+    // NIFTY T+1 & T+5 FORECAST LEARNING & LEDGER CONTROLLER
+    // =========================================================================
+    let currentNiftyForecastHorizon = 'T+1';
+
+    function switchNiftyForecastTab(h) {
+      currentNiftyForecastHorizon = h;
+      const b1 = document.getElementById('btn-fc-tab-t1');
+      const b5 = document.getElementById('btn-fc-tab-t5');
+      const badge = document.getElementById('fc-ledger-badge');
+      if (h === 'T+1') {
+        if (b1) { b1.className = 'px-2.5 py-1 rounded-md font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'; }
+        if (b5) { b5.className = 'px-2.5 py-1 rounded-md font-bold text-slate-400 hover:text-white'; }
+        if (badge) badge.innerText = 'Showing T+1 Sessions';
+      } else {
+        if (b5) { b5.className = 'px-2.5 py-1 rounded-md font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30'; }
+        if (b1) { b1.className = 'px-2.5 py-1 rounded-md font-bold text-slate-400 hover:text-white'; }
+        if (badge) badge.innerText = 'Showing T+5 Weekly Sessions';
+      }
+      loadNiftyForecastLearningData(h);
+    }
+
+    async function loadNiftyForecastLearningData(horizon) {
+      const h = horizon || currentNiftyForecastHorizon;
+      try {
+        // 1. Fetch evaluation metrics
+        const evalRes = await fetch(`/api/nifty-forecast/evaluation?horizon=${h}`);
+        const evalData = await evalRes.json();
+        if (evalData) {
+          const tot = evalData.total_matured_forecasts || evalData.total_forecasts || 0;
+          const pend = evalData.pending_forecasts || evalData.pending_count || 0;
+          const resCount = evalData.total_matured_forecasts || evalData.resolved_count || 0;
+          const hr = evalData.directional_accuracy_pct || evalData.baseline_performance?.directional_accuracy_pct || 0;
+          const cr = evalData.cone_containment_1sigma_pct || evalData.baseline_performance?.cone_containment_1s_pct || 0;
+          const mae = evalData.mae_pts || (evalData.baseline_performance?.return_mae_pct ? (evalData.baseline_performance.return_mae_pct * 250).toFixed(1) : 0);
+
+          const elTot = document.getElementById('fc-stat-total'); if (elTot) elTot.innerText = tot + pend;
+          const elRes = document.getElementById('fc-stat-resolved'); if (elRes) elRes.innerText = resCount;
+          const elPend = document.getElementById('fc-stat-pending'); if (elPend) elPend.innerText = pend;
+          const elHr = document.getElementById('fc-stat-hitrate'); if (elHr) elHr.innerText = `${hr}%`;
+          const elCr = document.getElementById('fc-stat-conerate'); if (elCr) elCr.innerText = `${cr}%`;
+          const elMae = document.getElementById('fc-stat-mae'); if (elMae) elMae.innerText = `${mae} pts`;
+        }
+
+        // 2. Fetch ledger rows
+        const legRes = await fetch(`/api/nifty-forecast/ledger?horizon=${h}&limit=20`);
+        const legRows = await legRes.json();
+        const tbody = document.getElementById('fc-ledger-rows');
+        if (tbody) {
+          if (!legRows || legRows.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-500 italic">No ${h} forecast records logged yet.</td></tr>`;
+          } else {
+            tbody.innerHTML = legRows.map(r => {
+              const isResolved = r.status === 'RESOLVED';
+              const isHit = r.direction_correct === 1;
+              const statusBadge = isResolved
+                ? (isHit ? `<span class="px-1.5 py-0.5 rounded text-[8px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">HIT</span>`
+                         : `<span class="px-1.5 py-0.5 rounded text-[8px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">MISS</span>`)
+                : `<span class="px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">PENDING</span>`;
+
+              const retPct = r.actual_return_pct !== null ? `${r.actual_return_pct > 0 ? '+' : ''}${r.actual_return_pct}%` : '--';
+              const retColor = r.actual_return_pct > 0 ? 'text-emerald-400' : (r.actual_return_pct < 0 ? 'text-rose-400' : 'text-slate-400');
+              const actClose = r.actual_close ? `₹${parseFloat(r.actual_close).toLocaleString('en-IN')}` : '--';
+              const spot = r.spot_at_prediction ? `₹${parseFloat(r.spot_at_prediction).toLocaleString('en-IN')}` : '--';
+
+              return `<tr class="hover:bg-slate-900/50 transition">
+                <td class="p-2 text-cyan-300 font-bold">${r.forecast_id}</td>
+                <td class="p-2 text-slate-400">${r.prediction_date}</td>
+                <td class="p-2 text-slate-300">${r.target_date}</td>
+                <td class="p-2 font-bold ${r.verdict.includes('BULL') ? 'text-emerald-400' : (r.verdict.includes('BEAR') ? 'text-rose-400' : 'text-amber-300')}">${r.verdict}</td>
+                <td class="p-2 text-slate-400">${spot}</td>
+                <td class="p-2 text-white font-bold">${actClose}</td>
+                <td class="p-2 font-bold ${retColor}">${retPct}</td>
+                <td class="p-2">${statusBadge}</td>
+                <td class="p-2 text-slate-400 text-[9px]">${r.status}</td>
+              </tr>`;
+            }).join('');
+          }
+        }
+      } catch (e) {
+        console.error('Error loading Nifty forecast learning data', e);
+      }
+    }
+
+    async function triggerNiftyForecastRetrain() {
+      const btn = document.getElementById('btn-nifty-fc-retrain');
+      if (btn) { btn.disabled = true; btn.innerText = '⏳ Retraining...'; }
+      try {
+        const res = await fetch(`/api/nifty-forecast/retrain?horizon=${currentNiftyForecastHorizon}`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(`Nifty ${currentNiftyForecastHorizon} Model Retrained & Verified!`, 'success');
+          await loadNiftyForecastLearningData(currentNiftyForecastHorizon);
+        } else {
+          showToast('Retraining notice: Unable to complete', 'info');
+        }
+      } catch (e) {
+        showToast(`Retrain error: ${e}`, 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerText = '⚡ Retrain'; }
+      }
+    }
+
+    async function triggerNiftyForecastRollback() {
+      const btn = document.getElementById('btn-nifty-fc-rollback');
+      if (btn) { btn.disabled = true; btn.innerText = '⏳ Rolling back...'; }
+      try {
+        const res = await fetch(`/api/nifty-forecast/rollback?horizon=${currentNiftyForecastHorizon}`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.status === 'ROLLED_BACK') {
+          showToast(`Rolled back ${currentNiftyForecastHorizon} model to ${data.active_version}`, 'success');
+          await loadNiftyForecastLearningData(currentNiftyForecastHorizon);
+        } else {
+          showToast(`Rollback notice: ${data.detail || data.status || 'No previous version'}`, 'info');
+        }
+      } catch (e) {
+        showToast(`Rollback error: ${e}`, 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerText = '⏪ Rollback'; }
       }
     }
 

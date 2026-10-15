@@ -4060,6 +4060,77 @@ class NiftyAnalyticsEngine:
         state_engine.set_kv("latest_nifty_predictions", payload)
         if is_trading:
             state_engine.set_kv(locked_key, payload)
+
+        # Log immutable T+1 and T+5 forecasts in Nifty Prediction Ledger
+        try:
+            from core.nifty_prediction_ledger import nifty_prediction_ledger
+            features_snapshot = {
+                "spot_price": float(spot),
+                "composite_score": float(composite_score),
+                "composite_score_t5": float(composite_score_t5),
+                "technical_score": float(tech_score),
+                "breadth_score": float(breadth_score),
+                "sectoral_score": float(sectoral_score),
+                "global_score": float(global_score),
+                "macro_score": float(macro_score),
+                "news_and_deriv_score": float(combined_news_deriv_score),
+                "institutional_score": float(inst_score),
+                "vix_spot": float(vix_c),
+                "near_atm_pcr": float(oc_summary.get("near_atm_pcr", 1.0)),
+                "chg_oi_pcr": float(oc_summary.get("chg_oi_pcr", 1.0)),
+                "dist_to_ema20_pct": float(((spot - ema20) / max(1.0, ema20)) * 100.0) if ema20 else 0.0,
+                "dist_to_ema50_pct": float(((spot - ema50) / max(1.0, ema50)) * 100.0) if ema50 else 0.0,
+                "crude_oil_ret_1d": float(crude_oil_status.get("ret_1d", 0.0)),
+                "crude_oil_ret_5d": float(crude_oil_status.get("ret_5d", 0.0)),
+                "fii_fut_long_pct": float(inst_flow_data.get("latest_oi", {}).get("fii_fut_long_pct", 50.0)),
+                "sp500_ret_1d": float(sp500_ret),
+                "nifty_ret_5d": float(ret_5d)
+            }
+            # Log T+1
+            nifty_prediction_ledger.log_forecast(
+                horizon="T+1",
+                spot=spot,
+                composite_score=composite_score,
+                verdict=t1_verdict,
+                prob_up=float(t1_probs.get("up", 0.33)),
+                prob_flat=float(t1_probs.get("flat", 0.34)),
+                prob_down=float(t1_probs.get("down", 0.33)),
+                expected_close=float(t1_expected_close),
+                expected_pts=float(t1_expected_pts),
+                expected_pct=float(t1_expected_pct),
+                range_1sigma=(float(t1_low_1s), float(t1_high_1s)),
+                range_2sigma=(float(t1_low_2s), float(t1_high_2s)),
+                features=features_snapshot,
+                prediction_date=pred_date,
+                model_name="NiftyTacticalEngine",
+                model_version="prod_t1_v1.0",
+                data_as_of_date=data_date,
+                basis_breakdown=t1_basis_breakdown
+            )
+            # Log T+5
+            nifty_prediction_ledger.log_forecast(
+                horizon="T+5",
+                spot=spot,
+                composite_score=composite_score_t5,
+                verdict=t5_verdict,
+                prob_up=float(t5_probs.get("up", 0.33)),
+                prob_flat=float(t5_probs.get("flat", 0.34)),
+                prob_down=float(t5_probs.get("down", 0.33)),
+                expected_close=float(t5_expected_close),
+                expected_pts=float(t5_expected_pts),
+                expected_pct=float(t5_expected_pct),
+                range_1sigma=(float(t5_low_1s), float(t5_high_1s)),
+                range_2sigma=(float(t5_low_2s), float(t5_high_2s)),
+                features=features_snapshot,
+                prediction_date=pred_date,
+                model_name="NiftyStructuralEngine",
+                model_version="prod_t5_v1.0",
+                data_as_of_date=data_date,
+                basis_breakdown=t5_basis_breakdown
+            )
+        except Exception as e_led:
+            logger.debug(f"Nifty prediction ledger logging notice: {e_led}")
+
         try:
             telegram_vault.sync_master_vault_async(note=f"Nifty Predictions Forecast & Attribution Sync ({pred_date})", send_notification=False)
         except Exception:
@@ -4229,6 +4300,13 @@ class NiftyAnalyticsEngine:
             )
         except Exception as te:
             logger.warning(f"Error dispatching EOD Telegram review: {te}")
+
+        # Resolve matured outcomes in Nifty Prediction Ledger
+        try:
+            from core.nifty_prediction_ledger import nifty_prediction_ledger
+            nifty_prediction_ledger.resolve_matured_outcomes()
+        except Exception as e_res:
+            logger.debug(f"Nifty prediction ledger outcome resolution notice: {e_res}")
 
         return {
             "status": "OK",
