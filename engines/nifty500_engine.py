@@ -260,13 +260,12 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
         entry_px = float(pos["entry_price"])
         orig_sl = float(pos.get("original_stop_loss") or pos["stop_loss"])
         current_sl = float(pos["stop_loss"])
+
         r_unit = max(0.01, entry_px - orig_sl)
-        t1 = float(pos.get("target") or (entry_px + 2.0 * r_unit))
-        t2 = float(pos.get("target_2") or (entry_px + 3.0 * r_unit))
-        qty = int(pos["quantity"])
-        t1_hit = bool(pos.get("t1_hit", 0))
+        target_2r = entry_px + (2.0 * r_unit)
 
         entry_date_str = str(pos.get("entry_date") or "")[:10]
+
         highest_seen = max(float(pos.get("highest_price") or entry_px), h, c)
 
         # PRE-ENTRY DATA GUARD: If latest bar is older than entry date, do not trigger false exits
@@ -282,6 +281,14 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
         if not can_trade:
             state_engine.update_position_price(sym, current_price=c, stop_loss=current_sl, highest_price=highest_seen)
             continue
+
+        previously_trailing = bool(
+            pos.get("t1_hit", 0) or
+            pos.get("sl_reason") == "TRAILING_SL" or
+            (float(pos.get("highest_price") or 0) >= target_2r)
+        )
+        hit_2r_today = (check_high >= target_2r) or (c >= target_2r)
+        in_trailing_mode = previously_trailing or hit_2r_today
 
         if len(sym_df) >= 6:
             rolling_5d_low = float(sym_df["low"].iloc[:-1].tail(5).min())
@@ -303,90 +310,60 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
         else:
             days_held = int(pos.get("hold_days", 0) or 0)
 
-        # Priority 1: Stop-Loss Evaluation (Strict LTP check)
-        if check_low <= current_sl:
-            res = state_engine.close_position(
-                sym, exit_price=c,
-                exit_reason="STOP_LOSS" if not t1_hit else "TRAILING_BE_STOP"
-            )
-            if res:
-                closed_events.append(res)
-                logger.info(f"🛑 [P2 Stop Loss] {sym} closed @ ₹{c:.2f} ({'TRAILING_BE_STOP' if t1_hit else 'INITIAL_SL'})")
-            continue
-
-        # Priority 2: Target 1 (T1) -> Book 50% partial profit & Move Stop Loss to Breakeven
-        if not t1_hit and check_high >= t1:
-            booked_qty = qty // 2
-            pnl_t1 = round((t1 - entry_px) * booked_qty, 2)
-            rem_qty = qty - booked_qty
-            with state_engine._lock:
-                with state_engine._get_connection() as conn:
-                    conn.execute("""
-                    UPDATE active_positions
-                    SET quantity = ?, stop_loss = ?, t1_hit = 1, t1_pnl = ?, sl_reason = 'BREAKEVEN_TRAILING', updated_at = ?
-                    WHERE symbol = ?
-                    """, (rem_qty, entry_px, pnl_t1, format_ist(), sym))
-            t1_hit = True
-            current_sl = entry_px
-            qty = rem_qty
-            logger.info(f"🎯 [P2 Target 1 Hit] {sym} booked 50% ({booked_qty} shs) @ ₹{t1:.2f}. SL moved to BE ₹{entry_px:.2f}.")
-            telegram_vault.send_alert_and_sync(
-                title=f"🎯 P2 TARGET 1 HIT (+2R): {sym}",
-                message=f"Booked 50% ({booked_qty} shs) @ ₹{t1:.2f} (PnL: +₹{pnl_t1:.2f}). Stop Loss moved to Breakeven ₹{entry_px:.2f}.",
-                sync_db=True
-            )
-
-        # Priority 3: Target 2 (T2) -> Full Exit of Remaining 50% Shares (+3R)
-        if t1_hit and check_high >= t2:
-            res = state_engine.close_position(sym, exit_price=t2, exit_reason="T2_FULL_TARGET")
-            if res:
-                closed_events.append(res)
-                logger.info(f"🏆 [P2 Target 2 Hit] {sym} closed remaining {qty} shs @ ₹{t2:.2f} (3R Full Target)")
-            continue
-
-        # Priority 4: Trailing Stop Ratcheting after T1 Hit
-        if t1_hit:
-            if len(sym_df) >= 15:
-                h14 = sym_df["high"].to_numpy(dtype=np.float64, copy=False)[-14:]
-                l14 = sym_df["low"].to_numpy(dtype=np.float64, copy=False)[-14:]
-                cp14 = sym_df["close"].to_numpy(dtype=np.float64, copy=False)[-15:-1]
-                atr14 = float(np.mean(np.maximum(h14 - l14, np.maximum(np.abs(h14 - cp14), np.abs(l14 - cp14)))))
-            else:
-                atr14 = entry_px * 0.02
-            trail_sl = round(max(entry_px, highest_seen - 1.5 * atr14, rolling_5d_low), 2)
-            if trail_sl > current_sl:
-                state_engine.update_position_price(sym, current_price=c, stop_loss=trail_sl, highest_price=highest_seen)
-                with state_engine._lock:
-                    with state_engine._get_connection() as conn:
-                        conn.execute(
-                            "UPDATE active_positions SET stop_loss = ?, sl_reason = 'TRAILING_SL' WHERE symbol = ?",
-                            (trail_sl, sym)
-                        )
-                logger.info(f"📈 [P2 Priority 4: TRAILING_SL] Ratcheted stop for {sym} to ₹{trail_sl:.2f}")
-                telegram_vault.send_alert_and_sync(
-                    title=f"📈 P2 TRAILING STOP RATCHETED: {sym}",
-                    message=f"Stop-Loss raised from ₹{current_sl:,.2f} to <b>₹{trail_sl:,.2f}</b> (LTP: ₹{c:,.2f}).",
-                    sync_db=True
-                )
-            else:
-                state_engine.update_position_price(sym, current_price=c, highest_price=highest_seen)
-        else:
-            # Pre-T1 Defensive Guards: Fast Cut (EMA20) & Time Stop (8 Days)
-            if ema_20 > 0 and c < ema_20:
-                res = state_engine.close_position(sym, exit_price=c, exit_reason="FAST_EMA20_CUT")
+        # Priority 1: Initial Stop-Loss
+        if not in_trailing_mode:
+            if check_low <= orig_sl:
+                res = state_engine.close_position(sym, exit_price=c, exit_reason="INITIAL_SL")
                 if res:
                     closed_events.append(res)
-                    logger.info(f"✂️ [P2 Fast Cut] Fast Cut for {sym} @ ₹{c:.2f} (Close < 20 EMA)")
+                    logger.info(f"🛑 [P2 Priority 1: INITIAL_SL] Stop-Loss hit for {sym} @ ₹{orig_sl:.2f}")
                 continue
 
-            gain = c - entry_px
-            if days_held >= 8 and gain < r_unit:
-                res = state_engine.close_position(sym, exit_price=c, exit_reason="TIME_EXIT")
+        # Priority 2: Trailing Stop-Loss
+        if in_trailing_mode:
+            trailing_sl = max(current_sl, rolling_5d_low)
+            if check_low <= trailing_sl:
+                res = state_engine.close_position(sym, exit_price=c if is_same_entry_day else trailing_sl, exit_reason="TRAILING_SL")
                 if res:
                     closed_events.append(res)
-                    logger.info(f"⏰ [P2 Time Stop] Time Stop for {sym} @ ₹{c:.2f} after {days_held} days")
+                    logger.info(f"🎯 [P2 Priority 2: TRAILING_SL] Trailing Stop hit for {sym} @ ₹{trailing_sl:.2f}")
                 continue
+            else:
+                if trailing_sl > current_sl or not previously_trailing:
+                    state_engine.update_position_price(sym, current_price=c, stop_loss=trailing_sl, highest_price=highest_seen)
+                    with state_engine._lock:
+                        with state_engine._get_connection() as conn:
+                            conn.execute(
+                                "UPDATE active_positions SET t1_hit = 1, sl_reason = 'TRAILING_SL', stop_loss = ? WHERE symbol = ?",
+                                (trailing_sl, sym)
+                            )
+                    logger.info(f"📈 [P2 Priority 2: TRAILING_SL] Ratcheted stop for {sym} to ₹{trailing_sl:.2f}")
+                    telegram_vault.send_alert_and_sync(
+                        title=f"📈 P2 TRAILING STOP RATCHETED: {sym}",
+                        message=f"Stop-Loss raised from ₹{current_sl:,.2f} to 5D Low <b>₹{trailing_sl:,.2f}</b> (LTP: ₹{c:,.2f}).",
+                        sync_db=True
+                    )
+                else:
+                    state_engine.update_position_price(sym, current_price=c, stop_loss=current_sl, highest_price=highest_seen)
 
+        # Priority 3: Fast Cut
+        if not in_trailing_mode and ema_20 > 0 and c < ema_20:
+            res = state_engine.close_position(sym, exit_price=c, exit_reason="FAST_EMA20_CUT")
+            if res:
+                closed_events.append(res)
+                logger.info(f"✂️ [P2 Priority 3: FAST_EMA20_CUT] Fast Cut for {sym} @ ₹{c:.2f} (Close < 20 EMA)")
+            continue
+
+        # Priority 4: Time Stop
+        gain = c - entry_px
+        if days_held >= 8 and gain < r_unit:
+            res = state_engine.close_position(sym, exit_price=c, exit_reason="TIME_EXIT")
+            if res:
+                closed_events.append(res)
+                logger.info(f"⏰ [P2 Priority 4: TIME_EXIT] Time Stop for {sym} @ ₹{c:.2f} after {days_held} days")
+            continue
+
+        if not in_trailing_mode:
             state_engine.update_position_price(sym, current_price=c, stop_loss=orig_sl, highest_price=highest_seen)
 
     return closed_events
@@ -524,10 +501,9 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
 
     bullish_bar = (stocks["close"] > stocks["open"]) & (stocks["close"] > prior_c)
     vol_confirm = effective_vol >= 0.80 * stocks["vol_ma20"]
-    liquidity_gate = (stocks["volume"] >= 25000) | (stocks["vol_ma20"] >= 25000)
 
     stocks["tech_setup"] = (
-        uptrend & rs_leader & pullback_zone & rsi_zone & bullish_bar & vol_confirm & liquidity_gate
+        uptrend & rs_leader & pullback_zone & rsi_zone & bullish_bar & vol_confirm
     )
     stocks["signal"] = stocks["tech_setup"] & stocks["bull_regime"]
 
@@ -550,7 +526,6 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
             active_bars[
                 uptrend.reindex(active_bars.index, fill_value=False) &
                 rs_leader.reindex(active_bars.index, fill_value=False) &
-                liquidity_gate.reindex(active_bars.index, fill_value=False) &
                 (active_bars["atr"] > 0) &
                 (~active_bars["symbol"].isin(current_open_syms))
             ]
@@ -675,34 +650,6 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
                 logger.info(f"✓ [P2 Order Executed] {sym}: {shares} shs @ ₹{entry_px:.2f} | Initial SL: ₹{initial_sl:.2f}")
 
     state_engine.save_latest_signals(signals_to_save, portfolio_type=PORTFOLIO_TYPE)
-
-    # Closed-Loop Training Portfolio Logging for All Qualifying Nifty 500 Candidates
-    try:
-        from engines.swing_quant_ml_engine import swing_quant_ml_engine
-        current_active_syms = [p["symbol"] for p in state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)]
-        shadow_p2_logged = 0
-        for sig in signals_to_save:
-            s_sym = sig["symbol"]
-            if s_sym in current_active_syms:
-                continue
-            bkt = sig.get("bucket", "BUY_NOW")
-            if bkt in ("BUY_NOW", "PRE_BREAKOUT") or float(sig.get("score", 0)) >= 60.0:
-                logged = swing_quant_ml_engine.record_shadow_candidate(
-                    symbol=s_sym,
-                    portfolio_type=PORTFOLIO_TYPE,
-                    entry_price=float(sig["entry"]),
-                    stop_loss=float(sig["sl"]),
-                    target=float(sig["t1"]),
-                    target_2=float(sig["t2"]),
-                    candidate_meta=sig,
-                    rejection_reason=f"NIFTY500_TRAINING_{bkt}"
-                )
-                if logged:
-                    shadow_p2_logged += 1
-        if shadow_p2_logged > 0:
-            logger.info(f"👻 Logged {shadow_p2_logged} Nifty 500 candidates into Training Portfolio.")
-    except Exception as e:
-        logger.debug(f"Failed to record Nifty 500 training candidates: {e}")
 
     can_trade_final, gate_msg_final = NSEMarketCalendar.can_execute_trades()
     _nifty500_engine_state["trading_gate_open"] = can_trade_final
