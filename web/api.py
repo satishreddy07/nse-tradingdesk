@@ -584,10 +584,12 @@ def get_stock_chart_and_data(symbol: str, bars: int = 260):
 
     sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
     payload = state_engine.get_stock_chart_payload(sym, limit_bars=bars)
-    if payload.get("status") == "NOT_FOUND":
+    candles = payload.get("candles", [])
+    if payload.get("status") == "NOT_FOUND" or len(candles) < 80:
         fetcher = DirectYahooFinanceFetcher(max_workers=4)
-        _, df, _ = fetcher.fetch_or_gapfill_ticker(sym, persist_immediately=True)
-        if df is not None and not df.empty:
+        _, df = fetcher.fetch_ticker_chart(sym, range_period="2y", max_retries=3)
+        if df is not None and not df.empty and len(df) >= 80:
+            state_engine.save_ohlcv_df(sym, df)
             payload = state_engine.get_stock_chart_payload(sym, limit_bars=bars)
     return payload
 

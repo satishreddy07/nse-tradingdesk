@@ -1714,16 +1714,31 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
         return {"status": "NO_SYMBOLS", "updated_count": 0, "timestamp": format_ist()}
 
     def _fetch_live_tick(sym: str) -> Tuple[str, Optional[pd.DataFrame], Optional[float], Optional[float]]:
-        delta_df = fetcher._request_yahoo_df(
-            f"{sym}.NS",
-            {"range": "5d", "interval": "1d", "includePrePost": "false"},
-            max_retries=2
-        )
-        if delta_df is None or delta_df.empty:
-            return sym, None, None, None
-
         cached_df, _ = state_engine.get_ohlcv_df(sym)
-        if cached_df is not None and not cached_df.empty:
+
+        # If cache is absent or truncated (< 80 bars), do a full 2-year fetch so we never truncate historical depth!
+        if cached_df is None or len(cached_df) < 80:
+            _, full_df = fetcher.fetch_ticker_chart(sym, range_period="2y", max_retries=2)
+            if full_df is not None and len(full_df) >= 80:
+                merged = full_df
+            else:
+                delta_df = fetcher._request_yahoo_df(
+                    f"{sym}.NS",
+                    {"range": "5d", "interval": "1d", "includePrePost": "false"},
+                    max_retries=2
+                )
+                if delta_df is None or delta_df.empty:
+                    return sym, None, None, None
+                merged = delta_df
+        else:
+            delta_df = fetcher._request_yahoo_df(
+                f"{sym}.NS",
+                {"range": "5d", "interval": "1d", "includePrePost": "false"},
+                max_retries=2
+            )
+            if delta_df is None or delta_df.empty:
+                return sym, None, None, None
+
             if cached_df.index.tz is not None and delta_df.index.tz is None:
                 delta_df.index = delta_df.index.tz_localize(IST)
             elif cached_df.index.tz is None and delta_df.index.tz is not None:
@@ -1732,8 +1747,6 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
             merged = merged[~pd.Series(merged.index.date).duplicated(keep="last").values]
             if len(merged) > 500:
                 merged = merged.iloc[-500:]
-        else:
-            merged = delta_df
 
         ltp = round(float(merged["Close"].iloc[-1]), 2)
         day_high = round(float(merged["High"].iloc[-1]), 2)

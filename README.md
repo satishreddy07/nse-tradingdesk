@@ -217,6 +217,11 @@ To guarantee that active capital and historical records can never be compromised
   $$\text{Effective SL} = \max(\text{Current SL},\; \text{New SL})$$
 - Stop losses can only tighten (move upward); they can **never** be loosened or lowered.
 
+### Gate 5: Historical Chart Depth Preservation & Auto-Gapfill
+- **Invariant**: Real-time tick streams and short deltas ($<80$ bars) are strictly forbidden from truncating historical depth in `ohlcv_master_store`.
+- If an incoming DataFrame has fewer bars than the existing cached history, `save_ohlcv_batch()` and `save_ohlcv_df()` automatically stitch and merge the incoming bars onto the deep historical series rather than overwriting it.
+- If any stock in `ohlcv_master_store` or requested via `/api/stocks/{symbol}/chart` has $<80$ bars, the engine automatically fetches the full 2-year OHLCV history ($260$ daily trading bars) from Yahoo Finance and updates the master database immediately.
+
 ---
 
 ## 6. Single Master Vault & Telegram Cloud Synchronization

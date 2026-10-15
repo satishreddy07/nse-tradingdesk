@@ -347,6 +347,24 @@ class StateEngine:
         sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
         now_dt = now_ist()
         now_str = format_ist(now_dt)
+
+        # History preservation guard:
+        # If incoming df is a small delta (< 80 bars) and existing history has more bars,
+        # merge the delta onto existing history rather than overwriting deep charts!
+        if len(df) < 80:
+            existing_df = None
+            if sym in self._ohlcv_mem_cache:
+                existing_df, _ = self._ohlcv_mem_cache[sym]
+            if existing_df is None:
+                existing_df, _ = self.get_ohlcv_df(sym)
+            if existing_df is not None and not existing_df.empty and len(existing_df) > len(df):
+                if existing_df.index.tz is not None and df.index.tz is None:
+                    df.index = df.index.tz_localize(IST)
+                elif existing_df.index.tz is None and df.index.tz is not None:
+                    df.index = df.index.tz_localize(None)
+                df = pd.concat([existing_df, df]).sort_index()
+                df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+
         try:
             meta, blob = self._compute_df_summary_and_blob(df)
             with self._lock:
@@ -399,6 +417,22 @@ class StateEngine:
             if df is None or df.empty or "Close" not in df.columns:
                 continue
             sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+
+            # Guard against truncating existing history with a small delta:
+            if len(df) < 80:
+                existing_df = None
+                if sym in self._ohlcv_mem_cache:
+                    existing_df, _ = self._ohlcv_mem_cache[sym]
+                if existing_df is None:
+                    existing_df, _ = self.get_ohlcv_df(sym)
+                if existing_df is not None and not existing_df.empty and len(existing_df) > len(df):
+                    if existing_df.index.tz is not None and df.index.tz is None:
+                        df.index = df.index.tz_localize(IST)
+                    elif existing_df.index.tz is None and df.index.tz is not None:
+                        df.index = df.index.tz_localize(None)
+                    df = pd.concat([existing_df, df]).sort_index()
+                    df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+
             self._ohlcv_mem_cache[sym] = (df, now_dt)
             valid_items.append((sym, df))
 
@@ -556,7 +590,7 @@ class StateEngine:
             is_mkt_open, _ = NSEMarketCalendar.can_execute_trades()
 
             needs_live_sync = False
-            if df is None or df.empty:
+            if df is None or df.empty or len(df) < 80:
                 needs_live_sync = True
             else:
                 last_idx = df.index[-1]
@@ -574,6 +608,12 @@ class StateEngine:
                 )
                 if refreshed_df is not None and not refreshed_df.empty:
                     df = refreshed_df
+                # If still truncated (< 80 bars), fetch full 2-year chart directly:
+                if df is None or len(df) < 80:
+                    _, full_df = fetcher.fetch_ticker_chart(sym, range_period="2y", max_retries=2)
+                    if full_df is not None and len(full_df) >= 80:
+                        df = full_df
+                        self.save_ohlcv_df(sym, df)
         except Exception as e:
             logger.debug(f"Auto chart gapfill notice for {sym}: {e}")
 
