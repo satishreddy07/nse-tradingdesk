@@ -422,18 +422,14 @@
           </div>
         </div>
 
-      <!-- Swing Sub-Section Switcher Pills & Top Metric Status Strip -->
-      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl p-3 sm:p-4 shadow-lg">
+      <!-- Swing Sub-Section Switcher & Top Metric Status Strip -->
+      <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl p-3 sm:p-3.5 shadow-lg">
         <!-- Sub-section Navigation Switcher -->
-        <div class="flex items-center gap-2 overflow-x-auto custom-scroll py-0.5">
+        <div class="flex items-center gap-2 shrink-0">
           <button onclick="switchP1SubSection('holdings')" id="p1-sub-btn-holdings" class="p1-sub-btn px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-sm shrink-0">
             <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
             <span>Active Holdings</span>
-            <span id="p1-sub-badge-holdings" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">8 Open</span>
-          </button>
-          <button onclick="switchTab('tab-analytics')" id="p1-sub-btn-analytics" class="p1-sub-btn px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="line-chart" class="w-3.5 h-3.5 text-indigo-400"></i>
-            <span>Portfolio Analytics ↗</span>
+            <span id="p1-sub-badge-holdings" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">0 Open</span>
           </button>
           <button onclick="switchP1SubSection('signals')" id="p1-sub-btn-signals" class="p1-sub-btn px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
             <i data-lucide="target" class="w-3.5 h-3.5"></i>
@@ -442,31 +438,41 @@
           </button>
         </div>
 
-        <!-- Compact Live Status Strip on Main Page -->
-        <div class="flex flex-wrap items-center gap-2 sm:gap-3 font-mono text-xs">
-          <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
-            <span class="text-slate-400 text-[11px]">Slots:</span>
-            <span id="p1-top-slots" class="text-white font-bold">8/10 Used</span>
-            <span id="p1-top-slots-avail" class="text-emerald-400 text-[10px]">(2 Free)</span>
+        <!-- Live Portfolio Metrics Status Strip -->
+        <div class="flex flex-wrap items-center gap-2 sm:gap-2.5 font-mono text-xs">
+          <!-- Total Portfolio Equity (Prominent Net Worth) -->
+          <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-cyan-500/40 shadow-sm shadow-cyan-950/30">
+            <span class="text-cyan-400 text-[11px] font-sans font-semibold">Equity:</span>
+            <span id="p1-top-equity" class="text-white font-bold tracking-tight">₹5,00,000</span>
           </div>
-          <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
-            <span class="text-slate-400 text-[11px]">Free Cash:</span>
-            <span id="p1-top-cash" class="text-cyan-300 font-bold">₹13,359</span>
+
+          <!-- Free Liquid Cash -->
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+            <span class="text-slate-400 text-[11px] font-sans">Cash:</span>
+            <span id="p1-top-cash" class="text-cyan-300 font-bold">₹0</span>
           </div>
-          <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
-            <span class="text-slate-400 text-[11px]">Invested:</span>
-            <span id="p1-top-invested" class="text-slate-200 font-bold">₹4,93,178</span>
+
+          <!-- Invested in Active Holdings -->
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+            <span class="text-slate-400 text-[11px] font-sans">Invested:</span>
+            <span id="p1-top-invested" class="text-slate-200 font-bold">₹0</span>
           </div>
-          <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
-            <span class="text-slate-400 text-[11px]">Realized:</span>
-            <span id="p1-top-realized" class="text-emerald-400 font-bold">+₹6,537</span>
+
+          <!-- Realized PnL -->
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+            <span class="text-slate-400 text-[11px] font-sans">Realized:</span>
+            <span id="p1-top-realized" class="text-emerald-400 font-bold">+₹0</span>
           </div>
-          <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
-            <span class="text-slate-400 text-[11px]">Equity:</span>
-            <span id="p1-top-equity" class="text-white font-bold">₹5,18,138</span>
+
+          <!-- Slots Utilization -->
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+            <span class="text-slate-400 text-[11px] font-sans">Slots:</span>
+            <span id="p1-top-slots" class="text-white font-bold">0/10 Used</span>
+            <span id="p1-top-slots-avail" class="text-emerald-400 text-[10px]">(10 Free)</span>
           </div>
         </div>
       </div>
+
 
       <!-- SUB-SECTION 1: ACTIVE HOLDINGS -->
       <div id="p1-sec-holdings" class="space-y-4">
