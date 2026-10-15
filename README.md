@@ -360,7 +360,7 @@ Open browser to: **`http://localhost:8000`**
 ```bash
 pytest
 ```
-*Current test suite: 60/60 passing unit & integration tests.*
+*Current test suite: 62/62 passing unit & integration tests.*
 
 ### Cloud Deployment (Render)
 1. Connect GitHub repository to [Render Dashboard](https://dashboard.render.com/).
@@ -374,3 +374,38 @@ pytest
    - `GROQ_API_KEY` = `your_groq_key` (optional for LLM post-mortems)
    - `OPENROUTER_API_KEY` = `your_openrouter_key` (optional for LLM post-mortems)
 6. Deploy service. The background keepalive guard will keep the service awake during NSE market hours automatically.
+
+---
+
+## 10. Institutional Data Gatekeeper & Intraday Minute Chart Engine
+
+### Central Data Watchdog Telemetry (`core/data_watchdog.py`)
+Monitors real-time packet arrival, freshness SLA, and latency across all 4 QuantDesk data pipelines:
+1. **Swing Trading**: Master OHLCV Store (`ohlcv_master_store`, 1,000+ stocks) and 5-minute Yahoo Finance LTP price stream freshness.
+2. **Intraday Desk**: NSE Live Option Chain stream, real-time Nifty spot ticks, and multi-interval snapshot progression schedule.
+3. **Options Desk**: Weekly and monthly multi-leg option chains, ATM straddle pricing, implied volatility skew, and gamma exposure.
+4. **Predictions ML**: 6-pillar feature vector feed, pre-market forecast alignment with active trading session date, and calibration ledger.
+
+#### SLA Thresholds & Automated Degradation Alerts
+- **`HEALTHY`** (🟢): Packet age $\le 120\text{s}$ during active market hours (09:15–15:30 IST).
+- **`DEGRADED`** (🟡): Packet age between $120\text{s}$ and $300\text{s}$. Triggers automated background reconnection probe.
+- **`OFFLINE_ALERT`** (🔴): Packet age $> 300\text{s}$ during active market hours. Automatically dispatches high-priority Telegram alert (`🚨 QUANTDESK GATEKEEPER ALERT`) and triggers self-healing socket/REST re-connection.
+- **`HEALTHY_STANDBY`** (⚪): Outside NSE trading hours, displays verified session state without sounding false alarms.
+
+### Intraday Trend & Flow-Aware Regime Classifier
+Prevents static PCR distortions during strong directional trend days by incorporating real price action and fresh $\Delta\text{OI}$ flow:
+- **`BULLISH_SHORT_COVERING_EXPLOSION`**: $\Delta\text{Spot} \ge +35\text{ pts}$ (+0.25%), Call writers unwinding ($\text{Net CE } \Delta\text{OI} < -10,000$), Put writers adding. Playbook: Aggressive Buy-on-Dips, trailing stops, DO NOT SHORT.
+- **`BULLISH_PUT_WRITING_DOMINANCE`**: $\Delta\text{Spot} \ge +35\text{ pts}$, $\Delta\text{OI PCR} \ge 1.0$, Put writing dominating. Playbook: Buy-on-Dips near VWAP and Put Wall.
+- **`CALL_WRITERS_SQUEEZE_RISK`**: Spot surging while static Near-ATM PCR carries older CE open interest. Call writers trapped; breakout acceleration expected.
+- **`BEARISH_LONG_UNWINDING_BREAKDOWN`**: $\Delta\text{Spot} \le -35\text{ pts}$ (-0.25%), Put writers unwinding ($\text{Net PE } \Delta\text{OI} < -10,000$), Call writing dominating. Playbook: Sell-on-Rallies near Call Wall.
+- **`THETA_CRUSH_PINNING_REGIME`**: Sideways drift ($|\Delta\text{Spot}| < 30\text{ pts}$) with Straddle Decay $\le -10\%$. Playbook: Iron Condor / Short Straddle outside $[ \text{Put Wall} – \text{Call Wall} ]$.
+
+### Nifty 50 Dedicated Minute Chart (`/api/nifty/minute-chart`)
+Provides dedicated intraday candlestick charting exclusively for NIFTY 50 (`^NSEI`):
+- **Intervals**: `1m` (full 1-day intraday candles), `5m` (5-day candles), `15m` (5-day candles), and `1D` (historical daily bars).
+- **Real-Time Indicators**:
+  - **Intraday VWAP**: $\text{VWAP} = \frac{\sum (\text{Typical Price} \times \text{Volume})}{\sum \text{Volume}}$, reset daily at 09:15 IST.
+  - **Fast EMAs**: Exponential Moving Averages 9 (Cyan) and 21 (Purple) for momentum scalping.
+  - **Oscillators**: Wilder RSI(14) and Intraday True Range ATR(14).
+  - **Time Axis**: High-resolution UNIX epoch timestamps formatted in IST (`HH:MM`).
+

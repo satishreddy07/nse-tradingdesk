@@ -159,6 +159,11 @@
 
       <!-- Desktop Telemetry Pills -->
       <div class="hidden xl:flex items-center gap-1.5 2xl:gap-2 text-[11px] shrink-0">
+        <button onclick="openWatchdogModal()" id="gatekeeper-nav-pill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200 transition cursor-pointer" title="Gatekeeper Telemetry: Live Health of Swing, Intraday, Options & Predictions feeds">
+          <span id="gatekeeper-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+          <span id="gatekeeper-text" class="font-mono font-bold text-emerald-400 truncate">4/4 FEEDS LIVE</span>
+        </button>
+
         <div id="market-status-pill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 whitespace-nowrap max-w-[200px]" title="Market Status">
           <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
           <span id="market-status-text" class="font-medium truncate">Checking...</span>
@@ -219,6 +224,10 @@
 
     <!-- Compact Telemetry Strip (Shown on Mobile & Tablet < xl) -->
     <div class="xl:hidden flex items-center justify-between gap-2 px-3 sm:px-6 py-1.5 bg-slate-900/95 border-t border-slate-800/80 text-[10px] sm:text-[11px] overflow-x-auto no-scrollbar whitespace-nowrap">
+      <button onclick="openWatchdogModal()" id="mobile-gatekeeper-pill" class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-[10px] font-mono text-emerald-400 shrink-0">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+        <span id="mobile-gatekeeper-text">4/4 LIVE</span>
+      </button>
       <div id="mobile-market-status" class="flex items-center gap-1.5 text-slate-300 shrink-0">
         <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
         <span>Checking Market...</span>
@@ -3433,6 +3442,63 @@
   </div>
 
   <!-- ===================================================================== -->
+  <!-- CENTRAL DATA WATCHDOG & GATEKEEPER TELEMETRY MODAL                    -->
+  <!-- ===================================================================== -->
+  <div id="watchdog-modal" onclick="if(event.target === this) closeWatchdogModal()" style="display: none;" class="hidden fixed inset-0 z-[110] bg-black/80 backdrop-blur-md items-center justify-center p-2 sm:p-4">
+    <div class="bg-[#0b0f19] border border-cyan-500/40 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <!-- Modal Header -->
+      <div class="p-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-bold text-base">
+            🛡️
+          </div>
+          <div>
+            <h3 class="text-base sm:text-lg font-extrabold text-white font-mono flex items-center gap-2">
+              <span>Data Gatekeeper & Pipeline Watchdog</span>
+              <span id="watchdog-modal-summary-badge" class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">4/4 FEEDS LIVE</span>
+            </h3>
+            <p class="text-xs text-slate-400 font-mono mt-0.5">
+              Live telemetry monitoring across Swing Trading, Intraday, Options Desk & Predictions ML
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="probeWatchdogFeeds()" id="btn-probe-feeds" class="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs font-mono flex items-center gap-1.5 transition">
+            <span>⚡ Probe All Feeds</span>
+          </button>
+          <button onclick="closeWatchdogModal()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs font-mono transition">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body (4 Pipeline Cards) -->
+      <div class="p-4 sm:p-6 overflow-y-auto custom-scroll space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="watchdog-cards-container">
+          <!-- Rendered via JS -->
+        </div>
+
+        <!-- Strict SLA & Alerting Policy -->
+        <div class="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] font-mono text-slate-400 space-y-1">
+          <div class="font-bold text-slate-300 flex items-center gap-1.5">
+            <span>📡 Institutional Data SLA & Anti-Stale Protocol:</span>
+          </div>
+          <div>• <b class="text-emerald-400">HEALTHY</b>: Data packet received within &le; 120s during market hours (09:15–15:30 IST).</div>
+          <div>• <b class="text-amber-400">DEGRADED</b>: Packet age between 120s – 300s. Initiates automated background refresh probe.</div>
+          <div>• <b class="text-rose-400">OFFLINE_ALERT</b>: Packet age &gt; 300s during market hours. Automatically dispatches Telegram Alert & triggers stream reconnect.</div>
+          <div>• <b class="text-slate-300">OUTSIDE MARKET HOURS</b>: Shows HEALTHY_STANDBY with last verified session data.</div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-3 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between text-xs font-mono text-slate-500">
+        <span id="watchdog-last-checked-label">Last Checked: --</span>
+        <button onclick="closeWatchdogModal()" class="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
   <!-- GLOBAL INTERACTIVE CANDLESTICK CHART + SL/TARGET + OHLCV DATA MODAL    -->
   <!-- ===================================================================== -->
   <div id="chart-modal" onclick="if(event.target === this) closeStockChartModal()" style="display: none;" class="hidden fixed inset-0 z-[100] bg-black/85 backdrop-blur-md items-center justify-center p-2 sm:p-4">
@@ -3464,7 +3530,17 @@
 
         <!-- Right Controls: Timeframes + CSV + Prominent Top-Right Close Button -->
         <div class="flex items-center gap-1.5 shrink-0">
-          <div class="hidden md:flex items-center gap-1">
+          <!-- Nifty-Specific Intraday Minute Intervals -->
+          <div id="nifty-minute-interval-bar" class="hidden items-center gap-1 bg-slate-950 p-1 rounded-xl border border-cyan-500/30">
+            <span class="text-[10px] font-mono font-bold text-cyan-400 px-1 hidden lg:inline">INTRADAY:</span>
+            <button onclick="switchNiftyMinuteInterval('1m')" id="btn-nifty-int-1m" class="px-2 py-1 rounded-lg bg-cyan-500 text-black font-bold text-[11px] font-mono transition">1m</button>
+            <button onclick="switchNiftyMinuteInterval('5m')" id="btn-nifty-int-5m" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono transition">5m</button>
+            <button onclick="switchNiftyMinuteInterval('15m')" id="btn-nifty-int-15m" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono transition">15m</button>
+            <button onclick="switchNiftyMinuteInterval('1d')" id="btn-nifty-int-1d" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono transition">1D</button>
+          </div>
+
+          <!-- Standard Stock Timeframes -->
+          <div id="stock-daily-range-bar" class="hidden md:flex items-center gap-1">
             <button onclick="setChartRange(30)" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono">1M</button>
             <button onclick="setChartRange(75)" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono">3M</button>
             <button onclick="setChartRange(140)" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono">6M</button>
@@ -3492,7 +3568,13 @@
 
       <!-- Mobile Timeframe Bar -->
       <div class="flex md:hidden items-center justify-between gap-1 px-3 py-2 bg-slate-950 border-b border-slate-800 text-[11px] font-mono">
-        <div class="flex items-center gap-1">
+        <div id="mobile-nifty-interval-bar" class="hidden items-center gap-1">
+          <button onclick="switchNiftyMinuteInterval('1m')" id="btn-mob-nifty-1m" class="px-2 py-1 rounded bg-cyan-500 text-black font-bold">1m</button>
+          <button onclick="switchNiftyMinuteInterval('5m')" id="btn-mob-nifty-5m" class="px-2 py-1 rounded bg-slate-800 text-slate-200">5m</button>
+          <button onclick="switchNiftyMinuteInterval('15m')" id="btn-mob-nifty-15m" class="px-2 py-1 rounded bg-slate-800 text-slate-200">15m</button>
+          <button onclick="switchNiftyMinuteInterval('1d')" id="btn-mob-nifty-1d" class="px-2 py-1 rounded bg-slate-800 text-slate-200">1D</button>
+        </div>
+        <div id="mobile-stock-range-bar" class="flex items-center gap-1">
           <button onclick="setChartRange(30)" class="px-2 py-1 rounded bg-slate-800 text-slate-200">1M</button>
           <button onclick="setChartRange(75)" class="px-2 py-1 rounded bg-slate-800 text-slate-200">3M</button>
           <button onclick="setChartRange(140)" class="px-2 py-1 rounded bg-slate-800 text-slate-200">6M</button>
@@ -4137,14 +4219,22 @@
         sessLbl.innerText = `Session: ${data.session_date || '--'} • Weekly Expiry: ${data.expiry_date || '--'}`;
       }
 
-      const spot = Number(latest.spot_price || 0);
-      const spotDiff = Number(meta.spot_from_open || 0);
+      const liveSpot = data.live_spot || {};
+      const spot = Number(liveSpot.price || latest.spot_price || 0);
+      const isLive = Boolean(liveSpot.is_live);
+      const spotDiff = liveSpot.change_pts !== undefined ? Number(liveSpot.change_pts) : Number(meta.spot_from_open || 0);
+      const spotDiffPct = liveSpot.change_pct !== undefined ? Number(liveSpot.change_pct) : 0;
       const spotEl = document.getElementById('intra-kpi-spot');
       const spotSub = document.getElementById('intra-kpi-spot-sub');
-      if (spotEl) spotEl.innerText = spot > 0 ? `₹${spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--';
+      if (spotEl) {
+        spotEl.innerHTML = spot > 0 
+          ? `₹${spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span class="text-[10px] font-mono px-1.5 py-0.5 rounded ${isLive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse' : 'bg-slate-800 text-slate-400'} align-middle">LIVE TICK</span>` 
+          : '--';
+      }
       if (spotSub) {
         const diffSign = spotDiff >= 0 ? '+' : '';
-        spotSub.innerText = `ATM ${latest.atm_strike || '--'} | ΔOpen: ${diffSign}${spotDiff.toFixed(1)} pts`;
+        const slotNote = latest.slot_time ? ` | Slot ${latest.slot_time}: ₹${(latest.spot_price || 0).toFixed(1)}` : '';
+        spotSub.innerText = `ATM ${latest.atm_strike || Math.round(spot / 50) * 50} | ΔDay: ${diffSign}${spotDiff.toFixed(1)} (${diffSign}${spotDiffPct.toFixed(2)}%)${slotNote}`;
       }
 
       const strad = Number(latest.straddle_premium || 0);
@@ -4188,7 +4278,13 @@
 
       const regEl = document.getElementById('intra-kpi-regime');
       const ivEl = document.getElementById('intra-kpi-iv');
-      if (regEl) regEl.innerText = (latest.market_state || 'BALANCED').replace(/_/g, ' ');
+      const stateText = (latest.market_state || 'BALANCED').replace(/_/g, ' ');
+      if (regEl) {
+        regEl.innerText = stateText;
+        const isBullish = /BULLISH|SQUEEZE|ACCUMULATION/.test(latest.market_state || '');
+        const isBearish = /BEARISH|SUPPLY|UNWINDING/.test(latest.market_state || '');
+        regEl.className = `text-base sm:text-lg font-mono font-bold mt-1 truncate ${isBullish ? 'text-emerald-400' : (isBearish ? 'text-rose-400' : 'text-amber-300')}`;
+      }
       if (ivEl) ivEl.innerText = `ATM IV: ${(latest.atm_iv || 0).toFixed(2)}% | Skew: ${(latest.iv_skew || 0) >= 0 ? '+' : ''}${(latest.iv_skew || 0).toFixed(2)}%`;
 
       // Narrative Cards
@@ -8795,12 +8891,174 @@
     }
 
     // -------------------------------------------------------------------------
+    // CENTRAL DATA GATEKEEPER & WATCHDOG CONTROLLERS
+    // -------------------------------------------------------------------------
+    async function openWatchdogModal() {
+      const modal = document.getElementById('watchdog-modal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        modal.style.display = 'flex';
+      }
+      await refreshWatchdogModal();
+    }
+
+    function closeWatchdogModal() {
+      const modal = document.getElementById('watchdog-modal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        modal.style.display = 'none';
+      }
+    }
+
+    async function probeWatchdogFeeds() {
+      const btn = document.getElementById('btn-probe-feeds');
+      if (btn) btn.innerHTML = '<span>⌛ Probing Feeds...</span>';
+      try {
+        const res = await fetch('/api/system/watchdog/probe', { method: 'POST' });
+        if (res.ok) {
+          const telemetry = await res.json();
+          renderWatchdogUI(telemetry);
+          showToast('Data Gatekeeper: All 4 feeds probed & verified!', 'success');
+        }
+      } catch (e) {
+        showToast('Failed to probe feeds: ' + e.message, 'error');
+      } finally {
+        if (btn) btn.innerHTML = '<span>⚡ Probe All Feeds</span>';
+      }
+    }
+
+    async function refreshWatchdogModal() {
+      try {
+        const res = await fetch('/api/system/watchdog');
+        if (res.ok) {
+          const telemetry = await res.json();
+          renderWatchdogUI(telemetry);
+        }
+      } catch (e) {
+        console.error('Watchdog load error:', e);
+      }
+    }
+
+    function renderWatchdogUI(t) {
+      if (!t) return;
+      const badge = document.getElementById('watchdog-modal-summary-badge');
+      if (badge) {
+        badge.innerText = t.summary_badge || '4/4 FEEDS LIVE';
+        badge.className = `text-xs px-2.5 py-0.5 rounded-full font-bold ${
+          t.overall_status === 'HEALTHY' 
+            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
+            : (t.overall_status === 'ALERT' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40')
+        }`;
+      }
+
+      const lbl = document.getElementById('watchdog-last-checked-label');
+      if (lbl) lbl.innerText = `Last Checked: ${t.last_checked_ist || '--'} • Market: ${t.market_open ? '🟢 OPEN' : '⚪ CLOSED'}`;
+
+      const container = document.getElementById('watchdog-cards-container');
+      if (!container || !t.endpoints) return;
+
+      const icons = {
+        swing_trading: '📈',
+        intraday_desk: '⚡',
+        options_desk: '🔥',
+        predictions_ml: '🤖'
+      };
+
+      container.innerHTML = t.endpoints.map(ep => {
+        const isHealthy = ep.status === 'HEALTHY' || ep.status === 'HEALTHY_STANDBY';
+        const isAlert = ep.status === 'OFFLINE_ALERT';
+        const badgeColor = isHealthy ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' : (isAlert ? 'text-rose-400 bg-rose-500/10 border-rose-500/30 animate-pulse' : 'text-amber-400 bg-amber-500/10 border-amber-500/30');
+        const d = ep.details || {};
+
+        let detailLines = [];
+        if (ep.id === 'swing_trading') {
+          detailLines = [
+            `Master Vault: <b class="text-white">${d.stocks_in_vault || 0}</b> stocks (Latest Bar: <b class="text-cyan-300">${d.latest_bar_date || '--'}</b>)`,
+            `Active Positions: <b class="text-white">${d.active_positions_count || 0}</b> | Stream LTPs: <b class="text-emerald-400">${d.last_stream_updated_count || 0}</b>`,
+            `Last Stream: <span class="text-slate-400">${d.last_stream_time || '--'}</span>`
+          ];
+        } else if (ep.id === 'intraday_desk') {
+          detailLines = [
+            `Live Spot: <b class="text-emerald-300">₹${Number(d.spot_price || 0).toLocaleString('en-IN', {minimumFractionDigits: 1})}</b> (ATM ${d.atm_strike || '--'})`,
+            `Intraday Regime: <b class="text-cyan-300">${(d.market_state || 'BALANCED').replace(/_/g, ' ')}</b>`,
+            `Last Slot: <span class="text-slate-400">${d.last_slot || '--'} IST (${d.session_date || '--'})</span>`
+          ];
+        } else if (ep.id === 'options_desk') {
+          detailLines = [
+            `Weekly Expiry: <b class="text-cyan-300">${d.weekly_expiry || '--'}</b> (${d.strikes_count || 0} active strikes)`,
+            `ATM Straddle: <b class="text-white">₹${Number(d.atm_straddle_prem || 0).toFixed(1)}</b> | PCR: <b class="text-emerald-400">${Number(d.near_atm_pcr || 0).toFixed(2)}</b>`,
+            `Walls: <span class="text-emerald-400">${d.put_wall || '--'} PE</span> / <span class="text-rose-400">${d.call_wall || '--'} CE</span>`
+          ];
+        } else {
+          detailLines = [
+            `Session Forecast: <b class="text-purple-300">${d.prediction_date || '--'}</b> (${d.aligned_today ? '🟢 Aligned' : '⚪ Standby'})`,
+            `Direction: <b class="text-white">${d.predicted_direction || '--'}</b> (Score: ${Number(d.composite_score || 0).toFixed(1)})`,
+            `Locked At: <span class="text-slate-400">${d.created_at || '--'}</span>`
+          ];
+        }
+
+        return `
+          <div class="p-3.5 rounded-xl bg-slate-900 border ${isAlert ? 'border-rose-500/60' : 'border-slate-800'} space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-base">${icons[ep.id] || '📡'}</span>
+                <div>
+                  <h4 class="font-bold text-white text-xs font-mono">${ep.name}</h4>
+                  <span class="text-[10px] text-slate-500 font-mono">${ep.category} PIPELINE</span>
+                </div>
+              </div>
+              <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md border ${badgeColor}">${ep.status.replace(/_/g, ' ')}</span>
+            </div>
+            <div class="space-y-0.5 text-[11px] font-mono text-slate-300 border-t border-slate-800/80 pt-2">
+              ${detailLines.map(l => `<div>• ${l}</div>`).join('')}
+            </div>
+            <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800/50">
+              <span>Latency: <b class="text-slate-200">${ep.latency_ms || 0}ms</b></span>
+              <span>Packet Age: <b class="${ep.age_seconds > 120 ? 'text-amber-400' : 'text-emerald-400'}">${ep.age_seconds !== null ? ep.age_seconds + 's' : '--'}</b></span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // -------------------------------------------------------------------------
     // SYSTEM STATUS, TRADING GATE, RENDER ANTI-SLEEP & DYNAMIC NSE HOLIDAYS
     // -------------------------------------------------------------------------
     async function loadSystemStatus() {
       const res = await fetch('/api/status');
       if (!res.ok) return;
       const data = await res.json();
+
+      // Central Data Watchdog & Gatekeeper Telemetry
+      const wTel = data.data_watchdog;
+      if (wTel) {
+        const gkText = document.getElementById('gatekeeper-text');
+        const gkDot = document.getElementById('gatekeeper-dot');
+        const mobGkText = document.getElementById('mobile-gatekeeper-text');
+        if (gkText) {
+          gkText.innerText = wTel.summary_badge || '4/4 FEEDS LIVE';
+          gkText.className = `font-mono font-bold truncate ${
+            wTel.overall_status === 'HEALTHY' ? 'text-emerald-400' : (wTel.overall_status === 'ALERT' ? 'text-rose-400' : 'text-amber-400')
+          }`;
+        }
+        if (gkDot) {
+          gkDot.className = `w-2 h-2 rounded-full shrink-0 ${
+            wTel.overall_status === 'HEALTHY' ? 'bg-emerald-400 animate-pulse' : (wTel.overall_status === 'ALERT' ? 'bg-rose-500 animate-ping' : 'bg-amber-400')
+          }`;
+        }
+        if (mobGkText) {
+          mobGkText.innerText = wTel.summary_badge ? wTel.summary_badge.replace('FEEDS ', '') : '4/4 LIVE';
+          mobGkText.className = wTel.overall_status === 'HEALTHY' ? 'text-emerald-400' : (wTel.overall_status === 'ALERT' ? 'text-rose-400 font-bold' : 'text-amber-400');
+        }
+
+        // If Watchdog modal is open, auto-refresh it
+        const wdModal = document.getElementById('watchdog-modal');
+        if (wdModal && !wdModal.classList.contains('hidden') && wdModal.style.display !== 'none') {
+          renderWatchdogUI(wTel);
+        }
+      }
 
       // Market Status
       const mStatus = data.market_status || {};
@@ -9516,7 +9774,23 @@
     let chartWheelZoomEnabled = false;
     let currentChartBars = 260;
 
-    async function openStockChartModal(symbol, bars = 260) {
+    let currentNiftyInterval = '1m';
+
+    function switchNiftyMinuteInterval(intVal) {
+      currentNiftyInterval = intVal;
+      ['1m', '5m', '15m', '1d'].forEach(k => {
+        const dBtn = document.getElementById(`btn-nifty-int-${k}`);
+        const mBtn = document.getElementById(`btn-mob-nifty-${k}`);
+        const isActive = (k === intVal);
+        const cls = isActive ? 'px-2 py-1 rounded-lg bg-cyan-500 text-black font-bold text-[11px] font-mono transition' : 'px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono transition';
+        const mCls = isActive ? 'px-2 py-1 rounded bg-cyan-500 text-black font-bold' : 'px-2 py-1 rounded bg-slate-800 text-slate-200';
+        if (dBtn) dBtn.className = cls;
+        if (mBtn) mBtn.className = mCls;
+      });
+      openStockChartModal('^NSEI', currentChartBars || 260, intVal);
+    }
+
+    async function openStockChartModal(symbol, bars = 260, minuteInterval = null) {
       currentChartSymbol = symbol;
       currentChartBars = bars;
       const modal = document.getElementById('chart-modal');
@@ -9527,11 +9801,31 @@
         document.body.style.overflow = 'hidden';
       }
 
+      const isNifty = (symbol === '^NSEI' || symbol === 'NIFTY' || String(symbol).includes('NSEI'));
+
+      // Toggle Timeframe bars: show minute intervals for Nifty, daily ranges for stocks
+      const niftyBar = document.getElementById('nifty-minute-interval-bar');
+      const mobNiftyBar = document.getElementById('mobile-nifty-interval-bar');
+      const stockBar = document.getElementById('stock-daily-range-bar');
+      const mobStockBar = document.getElementById('mobile-stock-range-bar');
+
+      if (isNifty) {
+        if (niftyBar) { niftyBar.classList.remove('hidden'); niftyBar.classList.add('flex'); }
+        if (mobNiftyBar) { mobNiftyBar.classList.remove('hidden'); mobNiftyBar.classList.add('flex'); }
+        if (stockBar) { stockBar.classList.add('hidden'); stockBar.classList.remove('flex'); }
+        if (mobStockBar) { mobStockBar.classList.add('hidden'); mobStockBar.classList.remove('flex'); }
+      } else {
+        if (niftyBar) { niftyBar.classList.add('hidden'); niftyBar.classList.remove('flex'); }
+        if (mobNiftyBar) { mobNiftyBar.classList.add('hidden'); mobNiftyBar.classList.remove('flex'); }
+        if (stockBar) { stockBar.classList.remove('hidden'); stockBar.classList.add('flex'); }
+        if (mobStockBar) { mobStockBar.classList.remove('hidden'); mobStockBar.classList.add('flex'); }
+      }
+
       // Clean symbol name immediately - NO "(Loading...)" string beside ticker
-      document.getElementById('modal-chart-symbol').innerText = symbol;
+      document.getElementById('modal-chart-symbol').innerText = isNifty ? 'NIFTY 50' : symbol;
       const hud = document.getElementById('modal-crosshair-hud');
       if (hud) {
-        hud.innerHTML = `<span class="text-cyan-400 animate-pulse font-mono">⌛ Loading live OHLCV bars & technical indicators for ${symbol}...</span>`;
+        hud.innerHTML = `<span class="text-cyan-400 animate-pulse font-mono">⌛ Loading live ${isNifty ? 'minute' : 'OHLCV'} candles & indicators for ${symbol}...</span>`;
       }
       const priceEl = document.getElementById('modal-chart-price');
       if (priceEl) priceEl.innerText = '₹...';
@@ -9542,7 +9836,14 @@
       }
 
       try {
-        const res = await fetch(`/api/stocks/${encodeURIComponent(symbol)}/chart?bars=${bars}`);
+        let endpointUrl = `/api/stocks/${encodeURIComponent(symbol)}/chart?bars=${bars}`;
+        if (isNifty) {
+          const chosenInterval = minuteInterval || currentNiftyInterval || '1m';
+          if (chosenInterval !== '1d') {
+            endpointUrl = `/api/nifty/minute-chart?interval=${chosenInterval}`;
+          }
+        }
+        const res = await fetch(endpointUrl);
         if (!res.ok) {
           if (hud) hud.innerHTML = `<span class="text-rose-400 font-mono">⚠️ Failed to load chart data for ${symbol} (HTTP ${res.status})</span>`;
           showToast(`Failed to load chart for ${symbol}`, "error");
@@ -9696,8 +9997,12 @@
     });
 
     function formatChartTickDate(dStr) {
-      if (!dStr) return '';
-      const parts = dStr.split('-');
+      if (!dStr && dStr !== 0) return '';
+      if (typeof dStr === 'number') {
+        const d = new Date(dStr * 1000);
+        return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' IST';
+      }
+      const parts = String(dStr).split('-');
       if (parts.length === 3) {
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const mIdx = parseInt(parts[1], 10) - 1;
@@ -9705,7 +10010,7 @@
         const yr = parts[0].slice(2);
         return `${day} ${months[mIdx] || parts[1]} '${yr}`;
       }
-      return dStr;
+      return String(dStr);
     }
 
     function updateChartDateTimelineBar(candles, fromLogical = null, toLogical = null) {
@@ -9802,6 +10107,39 @@
 
         document.getElementById('lvl-rsi-atr').innerText = `RSI: ${latest.rsi14 || 0} | ATR: ₹${latest.atr14 || 0}`;
         document.getElementById('lvl-rr').innerText = `🏁 Trade Closed • Chart Reset`;
+        if (legendTradeLines) legendTradeLines.style.display = 'none';
+      } else if (payload.is_intraday) {
+        if (sourceEl) {
+          sourceEl.innerText = `NIFTY 50 LIVE INTRADAY (${payload.interval ? payload.interval.toUpperCase() : '1M'} BARS)`;
+          sourceEl.className = 'hidden md:inline-block text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950 border border-cyan-700/50 text-cyan-300 font-bold';
+        }
+        if (badgeEl) {
+          badgeEl.innerText = payload.interval ? payload.interval.toUpperCase() : '1M';
+          badgeEl.className = 'hidden sm:flex w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 items-center justify-center text-cyan-300 font-mono font-extrabold text-xs shrink-0';
+        }
+        if (lblEntry) lblEntry.innerText = '📌 Live Spot';
+        if (lvlEntryEl) lvlEntryEl.innerText = `₹${(latest.close || 0).toFixed(2)}`;
+
+        if (lblSl) lblSl.innerText = '⚡ Intraday VWAP';
+        if (lvlSlEl) {
+          lvlSlEl.innerText = `₹${(latest.vwap || 0).toFixed(2)}`;
+          lvlSlEl.className = 'text-sm font-bold text-amber-400 mt-0.5';
+        }
+
+        if (lblT1) lblT1.innerText = '📈 EMA 9 Fast';
+        if (lvlT1El) {
+          lvlT1El.innerText = `₹${(latest.ema9 || 0).toFixed(2)}`;
+          lvlT1El.className = 'text-sm font-bold text-cyan-400 mt-0.5';
+        }
+
+        if (lblT2) lblT2.innerText = '🛡️ EMA 21 Trend';
+        if (lvlT2El) {
+          lvlT2El.innerText = `₹${(latest.ema21 || 0).toFixed(2)}`;
+          lvlT2El.className = 'text-sm font-bold text-purple-400 mt-0.5';
+        }
+
+        document.getElementById('lvl-rsi-atr').innerText = `RSI: ${latest.rsi14 || 0} | ATR: ₹${latest.atr14 || 0}`;
+        document.getElementById('lvl-rr').innerText = `Live Intraday ${payload.interval || '1m'} Candle Stream`;
         if (legendTradeLines) legendTradeLines.style.display = 'none';
       } else if (!showTradeLines) {
         if (sourceEl) {
@@ -9917,7 +10255,7 @@
             borderVisible: true,
             borderColor: '#334155',
             ticksVisible: true,
-            timeVisible: false,
+            timeVisible: Boolean(payload.is_intraday),
             secondsVisible: false,
             minimumHeight: 28,
             rightOffset: 3
@@ -9941,14 +10279,25 @@
           close: c.close
         })));
 
-        // EMA 20, 50, 200 Line Series
-        const ema20Series = tvChart.addLineSeries({ color: '#06b6d4', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-        const ema50Series = tvChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-        const ema200Series = tvChart.addLineSeries({ color: '#8b5cf6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+        if (payload.is_intraday) {
+          // Intraday Lines: VWAP (Amber), EMA 9 (Cyan), EMA 21 (Purple)
+          const vwapSeries = tvChart.addLineSeries({ color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'VWAP' });
+          const ema9Series = tvChart.addLineSeries({ color: '#06b6d4', lineWidth: 1, priceLineVisible: false, lastValueVisible: true, title: 'EMA 9' });
+          const ema21Series = tvChart.addLineSeries({ color: '#a855f7', lineWidth: 1, priceLineVisible: false, lastValueVisible: true, title: 'EMA 21' });
 
-        ema20Series.setData(candles.map(c => ({ time: c.time, value: c.ema20 })));
-        ema50Series.setData(candles.map(c => ({ time: c.time, value: c.ema50 })));
-        ema200Series.setData(candles.map(c => ({ time: c.time, value: c.ema200 })));
+          vwapSeries.setData(candles.filter(c => c.vwap !== undefined && c.vwap !== null).map(c => ({ time: c.time, value: c.vwap })));
+          ema9Series.setData(candles.filter(c => c.ema9 !== undefined && c.ema9 !== null).map(c => ({ time: c.time, value: c.ema9 })));
+          ema21Series.setData(candles.filter(c => c.ema21 !== undefined && c.ema21 !== null).map(c => ({ time: c.time, value: c.ema21 })));
+        } else {
+          // EMA 20, 50, 200 Line Series for Daily Stocks
+          const ema20Series = tvChart.addLineSeries({ color: '#06b6d4', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+          const ema50Series = tvChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+          const ema200Series = tvChart.addLineSeries({ color: '#8b5cf6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+
+          ema20Series.setData(candles.map(c => ({ time: c.time, value: c.ema20 })));
+          ema50Series.setData(candles.map(c => ({ time: c.time, value: c.ema50 })));
+          ema200Series.setData(candles.map(c => ({ time: c.time, value: c.ema200 })));
+        }
 
         // Volume Histogram
         const volumeSeries = tvChart.addHistogramSeries({

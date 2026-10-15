@@ -1807,6 +1807,17 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
         "prices": {k: v[0] for k, v in list(live_ltp_map.items())[:50]}
     }
     state_engine.set_kv("last_price_stream", stream_meta)
+    try:
+        from core.data_watchdog import data_watchdog
+        data_watchdog.record_packet("swing_trading", latency_ms=elapsed * 1000.0, details={
+            "scope": scope_up,
+            "updated_count": len(live_ltp_map),
+            "positions_updated": pos_updated,
+            "reconciled_count": len(reconciled_events),
+            "last_stream_time": now_str
+        })
+    except Exception:
+        pass
     if pos_updated > 0 or len(reconciled_events) > 0:
         try:
             telegram_vault.sync_master_vault_async(

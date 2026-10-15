@@ -520,6 +520,13 @@ def _intraday_collector_watchdog():
                                 slot_override=active_slot, sync_cloud=True, interval_mode="30m"
                             )
 
+                    # Central Data Gatekeeper SLA monitoring
+                    try:
+                        from core.data_watchdog import data_watchdog
+                        data_watchdog.check_all_endpoints(force_probe=False)
+                    except Exception:
+                        pass
+
                     # Watchdog Scheduled Scans Catch-Up:
                     # 3:00 PM MOC Catch-Up (15:00 to 15:28 IST)
                     if 900 <= mins <= 928:

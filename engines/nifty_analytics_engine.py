@@ -920,6 +920,18 @@ class NiftyAnalyticsEngine:
                                 self._option_chain_mem_cache = payload
                                 self._option_chain_cache_ts = now_ts
                             state_engine.set_kv("latest_nifty_option_chain_deep", payload)
+                            try:
+                                from core.data_watchdog import data_watchdog
+                                data_watchdog.record_packet("options_desk", details={
+                                    "weekly_expiry": weekly_analysis.get("expiry"),
+                                    "spot_price": round(spot, 2),
+                                    "strikes_count": len(weekly_analysis.get("strikes", [])),
+                                    "near_atm_pcr": weekly_analysis.get("pcr", {}).get("near_atm_pcr"),
+                                    "call_wall": weekly_analysis.get("walls_and_pain", {}).get("call_wall_1"),
+                                    "put_wall": weekly_analysis.get("walls_and_pain", {}).get("put_wall_1")
+                                })
+                            except Exception:
+                                pass
                             return payload
         except Exception as e:
             logger.warning(f"Live NSE Option Chain fetch warning: {e}")
@@ -1031,20 +1043,52 @@ class NiftyAnalyticsEngine:
         )
         pcr_shift = round(near_atm_pcr - float(first_snap["near_atm_pcr"]), 3) if first_snap else 0.0
 
+        # Institutional Trend & Flow Calculations
+        spot_open_ref = float(first_snap["spot_price"]) if first_snap and float(first_snap.get("spot_price") or 0) > 0 else spot
+        spot_pct_from_open = round(((spot - spot_open_ref) / spot_open_ref) * 100.0, 2)
+
         # Synthesize precise "What Is Happening" & "What Could Happen"
         oi_diff_lakhs = (net_pe_chg - net_ce_chg) / 100000.0
-        if near_atm_pcr >= 1.20 and chg_oi_pcr >= 1.15:
-            market_state = "BULLISH_PUT_WRITING_DOMINANCE"
-        elif near_atm_pcr <= 0.82 and chg_oi_pcr <= 0.85:
-            market_state = "BEARISH_CALL_WRITING_PRESSURE"
-        elif strad_decay_pct <= -12.0 and abs(spot_from_open) <= straddle_prem * 0.6:
-            market_state = "THETA_CRUSH_PINNING_REGIME"
-        elif near_atm_pcr >= 1.05:
-            market_state = "MILD_BULLISH_ACCUMULATION"
-        elif near_atm_pcr <= 0.95:
-            market_state = "MILD_BEARISH_SUPPLY"
+        is_call_short_covering = (net_ce_chg < -10000)
+        is_put_writing_strong = (net_pe_chg > 20000 and net_pe_chg >= net_ce_chg)
+
+        # 1. Strong Bullish Trend Days / Short-Covering Squeeze
+        if spot_from_open >= 35.0 or spot_pct_from_open >= 0.25:
+            if is_call_short_covering and net_pe_chg > 0:
+                market_state = "BULLISH_SHORT_COVERING_EXPLOSION"
+            elif chg_oi_pcr >= 1.0 or is_put_writing_strong or oi_diff_lakhs >= 0.2:
+                market_state = "BULLISH_PUT_WRITING_DOMINANCE"
+            elif near_atm_pcr >= 1.05:
+                market_state = "BULLISH_MOMENTUM_EXPANSION"
+            else:
+                # Price is surging while near-ATM PCR carries older CE debt: Call writers are trapped!
+                market_state = "CALL_WRITERS_SQUEEZE_RISK"
+
+        # 2. Strong Bearish Trend Days / Long Unwinding
+        elif spot_from_open <= -35.0 or spot_pct_from_open <= -0.25:
+            if net_pe_chg < -10000 and net_ce_chg > 0:
+                market_state = "BEARISH_LONG_UNWINDING_BREAKDOWN"
+            elif chg_oi_pcr <= 0.85 or (net_ce_chg > 20000 and net_ce_chg >= net_pe_chg) or oi_diff_lakhs <= -0.2:
+                market_state = "BEARISH_CALL_WRITING_PRESSURE"
+            elif near_atm_pcr <= 0.90:
+                market_state = "BEARISH_MOMENTUM_BREAKDOWN"
+            else:
+                market_state = "PUT_WRITERS_UNDER_THREAT"
+
+        # 3. Sideways / Range-Bound / Expiry Pinning
         else:
-            market_state = "BALANCED_TWO_WAY_STRADDLE"
+            if strad_decay_pct <= -10.0 and abs(spot_from_open) <= straddle_prem * 0.5:
+                market_state = "THETA_CRUSH_PINNING_REGIME"
+            elif near_atm_pcr >= 1.20 and chg_oi_pcr >= 1.15:
+                market_state = "BULLISH_PUT_WRITING_DOMINANCE"
+            elif near_atm_pcr <= 0.80 and chg_oi_pcr <= 0.85:
+                market_state = "BEARISH_CALL_WRITING_PRESSURE"
+            elif near_atm_pcr >= 1.05:
+                market_state = "MILD_BULLISH_ACCUMULATION"
+            elif near_atm_pcr <= 0.90:
+                market_state = "MILD_BEARISH_SUPPLY"
+            else:
+                market_state = "BALANCED_TWO_WAY_STRADDLE"
 
         what_is_happening = (
             f"Nifty Spot is at ₹{spot:,.2f} (ATM {atm_strike}) for Weekly Expiry {w['expiry']}. "
@@ -1052,7 +1096,7 @@ class NiftyAnalyticsEngine:
             f"Across ±8 active strikes, Put writers added {net_pe_chg:+,d} OI vs Call writers adding {net_ce_chg:+,d} OI "
             f"(Net Put-Call flow: {oi_diff_lakhs:+.2f}L contracts). "
             f"ATM {atm_strike} Straddle is trading at ₹{straddle_prem:.2f} ({atm_ce_ltp:.1f} CE + {atm_pe_ltp:.1f} PE)"
-            + (f", changing {strad_decay_pct:+.1f}% since first recorded slot today." if first_snap else ".")
+            + (f", changing {strad_decay_pct:+.1f}% (ΔSpot: {spot_from_open:+.1f} pts, {spot_pct_from_open:+.2f}%) since first recorded slot today." if first_snap else ".")
         )
 
         what_could_happen = (
@@ -1064,20 +1108,22 @@ class NiftyAnalyticsEngine:
             f"4) Expiry Pinning Gravity: Max Pain sits at {max_pain} ({walls_info['spot_vs_max_pain']:+.1f} pts from Spot)."
         )
 
-        if market_state in ("BULLISH_PUT_WRITING_DOMINANCE", "MILD_BULLISH_ACCUMULATION"):
+        if market_state in ("BULLISH_SHORT_COVERING_EXPLOSION", "BULLISH_PUT_WRITING_DOMINANCE", "BULLISH_MOMENTUM_EXPANSION", "CALL_WRITERS_SQUEEZE_RISK", "MILD_BULLISH_ACCUMULATION"):
             quant_suggestion = (
-                f"BULLISH BIAS: Favor Buy-on-Dips near ₹{max(put_wall, atm_strike - 40):,.0f} or Bull Put Credit Spread ({put_wall} PE / {put_wall - 150} PE) "
-                f"with strict stop if Spot breaks below ₹{put_wall - 25:,.0f}. Book partial profits near Call Wall ₹{call_wall:,.0f}."
+                f"BULLISH MOMENTUM ({market_state.replace('_', ' ')}): Spot up {spot_from_open:+.1f} pts ({spot_pct_from_open:+.2f}%). "
+                f"Favor Buy-on-Dips near ₹{max(put_wall, atm_strike - 40):,.0f} or Bull Put Credit Spread ({put_wall} PE / {put_wall - 150} PE). "
+                f"DO NOT SHORT against active Put writing flow (+{net_pe_chg:+,d} PE vs {net_ce_chg:+,d} CE). Trailing stops protected at ₹{max(put_wall - 25, atm_strike - 50):,.0f}."
             )
-        elif market_state in ("BEARISH_CALL_WRITING_PRESSURE", "MILD_BEARISH_SUPPLY"):
+        elif market_state in ("BEARISH_LONG_UNWINDING_BREAKDOWN", "BEARISH_CALL_WRITING_PRESSURE", "BEARISH_MOMENTUM_BREAKDOWN", "PUT_WRITERS_UNDER_THREAT", "MILD_BEARISH_SUPPLY"):
             quant_suggestion = (
-                f"BEARISH BIAS: Favor Sell-on-Rallies near ₹{min(call_wall, atm_strike + 40):,.0f} or Bear Call Credit Spread ({call_wall} CE / {call_wall + 150} CE) "
-                f"with strict stop if Spot clears ₹{call_wall + 25:,.0f}. Target downside Put Wall ₹{put_wall:,.0f}."
+                f"BEARISH SUPPLY ({market_state.replace('_', ' ')}): Spot down {spot_from_open:+.1f} pts ({spot_pct_from_open:+.2f}%). "
+                f"Favor Sell-on-Rallies near ₹{min(call_wall, atm_strike + 40):,.0f} or Bear Call Credit Spread ({call_wall} CE / {call_wall + 150} CE). "
+                f"Downside Put Wall support at ₹{put_wall:,.0f}; trailing stop on spot clearing ₹{call_wall + 25:,.0f}."
             )
         else:
             quant_suggestion = (
-                f"RANGE / THETA DECAY: Spot is pinned between Put Wall {put_wall} PE and Call Wall {call_wall} CE with Max Pain at {max_pain}. "
-                f"Favor Iron Condor / Short Strangle outside [{put_wall} PE – {call_wall} CE] to harvest theta decay; switch directional only on a breakout outside [₹{strad_info['lower_breakeven']:,.0f}, ₹{strad_info['upper_breakeven']:,.0f}]."
+                f"RANGE / THETA HARVESTING: Spot is balanced between Put Wall {put_wall} PE and Call Wall {call_wall} CE with Max Pain at {max_pain}. "
+                f"Favor Iron Condor / Short Straddle outside [{put_wall} PE – {call_wall} CE] to harvest theta decay; switch directional only on a breakout outside [₹{strad_info['lower_breakeven']:,.0f}, ₹{strad_info['upper_breakeven']:,.0f}]."
             )
 
         snap_meta = {
@@ -1139,6 +1185,19 @@ class NiftyAnalyticsEngine:
                 telegram_vault.sync_master_vault_async(note=f"Intraday Option Snapshot ({slot_time} IST)")
             except Exception:
                 pass
+
+        try:
+            from core.data_watchdog import data_watchdog
+            data_watchdog.record_packet("intraday_desk", details={
+                "slot_time": slot_time,
+                "spot_price": spot,
+                "atm_strike": atm_strike,
+                "market_state": market_state,
+                "near_atm_pcr": near_atm_pcr,
+                "delta_oi_diff_lakhs": round(oi_diff_lakhs, 2)
+            })
+        except Exception:
+            pass
 
         return self.get_intraday_expiry_dashboard(session_date=session_date, interval_mode=interval_mode)
 
@@ -1426,6 +1485,8 @@ class NiftyAnalyticsEngine:
         except Exception as aie:
             logger.debug(f"Intraday advanced suite load notice: {aie}")
 
+        live_spot = self.get_live_nifty_spot()
+
         res = {
             "status": "OK" if latest else "EMPTY",
             "session_date": session_date,
@@ -1436,6 +1497,8 @@ class NiftyAnalyticsEngine:
             "snapshots_count": len(snaps),
             "latest_snapshot": latest,
             "opening_snapshot": first,
+            "live_spot": live_spot,
+            "is_market_open": market_open,
             "scheduled_slots": schedule_slots,
             "scheduled_50m_slots": schedule_slots,
             "snapshots": snaps,
@@ -5279,7 +5342,218 @@ class NiftyAnalyticsEngine:
             self._equity_curves_cache = result
             self._equity_curves_cache_ts = now_ts
 
-        return result
+    def get_live_nifty_spot(self) -> Dict[str, Any]:
+        """
+        Retrieves real-time live Nifty 50 spot price with sub-second latency:
+        Priority:
+        1. Live NSE Option Chain cache (if age < 35s)
+        2. Fast Yahoo Finance quote (^NSEI) with 4s timeout
+        3. Latest DB snapshot fallback
+        """
+        now_dt = now_ist()
+        ts_now = format_ist(now_dt)
+
+        # 1. Check live Option Chain cache
+        with self._lock:
+            if hasattr(self, "_option_chain_mem_cache") and self._option_chain_mem_cache:
+                w = self._option_chain_mem_cache.get("weekly", {})
+                cache_age = time.time() - getattr(self, "_option_chain_cache_ts", 0.0)
+                if w and w.get("spot_price") and cache_age < 35.0:
+                    spot = float(w["spot_price"])
+                    return {
+                        "price": round(spot, 2),
+                        "timestamp": ts_now,
+                        "source": "NSE_OPTION_CHAIN_LIVE",
+                        "is_live": True,
+                        "age_seconds": round(cache_age, 1)
+                    }
+
+        # 2. Fast Yahoo Finance quote
+        try:
+            import urllib.request
+            url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?range=1d&interval=1m"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            meta = data["chart"]["result"][0]["meta"]
+            spot = float(meta.get("regularMarketPrice") or 0.0)
+            prev_close = float(meta.get("chartPreviousClose") or meta.get("previousClose") or spot)
+            day_high = float(meta.get("regularMarketDayHigh") or spot)
+            day_low = float(meta.get("regularMarketDayLow") or spot)
+            diff_pts = round(spot - prev_close, 2)
+            diff_pct = round((diff_pts / prev_close) * 100.0, 2) if prev_close > 0 else 0.0
+
+            res = {
+                "price": round(spot, 2),
+                "change_pts": diff_pts,
+                "change_pct": diff_pct,
+                "prev_close": prev_close,
+                "day_high": day_high,
+                "day_low": day_low,
+                "timestamp": ts_now,
+                "source": "YAHOO_LIVE_STREAM",
+                "is_live": True,
+                "age_seconds": 1.0
+            }
+            try:
+                from core.data_watchdog import data_watchdog
+                data_watchdog.record_packet("intraday_desk", details={"spot_price": round(spot, 2)})
+            except Exception:
+                pass
+            return res
+        except Exception as e:
+            logger.debug(f"Fast live Nifty spot fetch notice: {e}")
+
+        # 3. Fallback to latest snapshot in DB
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                r = conn.execute(
+                    "SELECT spot_price, timestamp_ist FROM intraday_option_snapshots ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+                if r:
+                    return {
+                        "price": float(r["spot_price"]),
+                        "timestamp": r["timestamp_ist"],
+                        "source": "DB_SNAPSHOT_CACHE",
+                        "is_live": False,
+                        "age_seconds": 60.0
+                    }
+        return {"price": 22900.0, "timestamp": ts_now, "source": "DEFAULT", "is_live": False, "age_seconds": 0}
+
+    def get_nifty_intraday_minute_chart(self, interval: str = "1m") -> Dict[str, Any]:
+        """
+        Fetches live intraday minute-by-minute candles for NIFTY 50 (^NSEI) from Yahoo Finance v8:
+        - interval: '1m' (1-day intraday bars), '5m' (5-day bars), or '15m' (5-day bars)
+        - Computes Intraday VWAP, EMA(9), EMA(21), RSI(14), and ATR(14).
+        - Timestamps returned as UNIX epoch seconds for TradingView Lightweight Charts.
+        """
+        valid_intervals = {"1m": "1d", "5m": "5d", "15m": "5d"}
+        target_interval = interval if interval in valid_intervals else "1m"
+        range_period = valid_intervals[target_interval]
+
+        try:
+            import urllib.request
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?range={range_period}&interval={target_interval}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+
+            res_chart = data["chart"]["result"][0]
+            meta = res_chart.get("meta", {})
+            timestamps = res_chart.get("timestamp", [])
+            indicators = res_chart.get("indicators", {})
+            quote = (indicators.get("quote") or [{}])[0]
+
+            opens = quote.get("open", [])
+            highs = quote.get("high", [])
+            lows = quote.get("low", [])
+            closes = quote.get("close", [])
+            volumes = quote.get("volume", [])
+
+            df = pd.DataFrame({
+                "timestamp": timestamps,
+                "open": opens,
+                "high": highs,
+                "low": lows,
+                "close": closes,
+                "volume": volumes
+            }).dropna(subset=["close"])
+
+            if df.empty:
+                return {"status": "NO_DATA", "message": f"No intraday candles returned for {target_interval}."}
+
+            df["volume"] = df["volume"].fillna(0).astype(float)
+            df["close"] = df["close"].astype(float)
+            df["open"] = df["open"].astype(float)
+            df["high"] = df["high"].astype(float)
+            df["low"] = df["low"].astype(float)
+
+            # Intraday EMAs (9 and 21)
+            df["ema9"] = df["close"].ewm(span=9, adjust=False).mean().round(2)
+            df["ema21"] = df["close"].ewm(span=21, adjust=False).mean().round(2)
+
+            # Intraday VWAP (cumulative typical price * volume / cumulative volume)
+            typical_px = (df["high"] + df["low"] + df["close"]) / 3.0
+            vol_sum = df["volume"].sum()
+            if vol_sum > 0:
+                df["vwap"] = ((typical_px * df["volume"]).cumsum() / df["volume"].cumsum().replace(0, np.nan)).fillna(typical_px).round(2)
+            else:
+                df["vwap"] = typical_px.expanding().mean().round(2)
+
+            # Intraday RSI(14)
+            delta = df["close"].diff()
+            gain = delta.clip(lower=0)
+            loss = -delta.clip(upper=0)
+            avg_gain = gain.ewm(alpha=1.0/14.0, adjust=False).mean()
+            avg_loss = loss.ewm(alpha=1.0/14.0, adjust=False).mean()
+            rs = avg_gain / avg_loss.replace(0, np.nan)
+            df["rsi14"] = (100.0 - (100.0 / (1.0 + rs))).fillna(50.0).round(1)
+
+            # Intraday ATR(14)
+            tr1 = df["high"] - df["low"]
+            tr2 = (df["high"] - df["close"].shift(1)).abs()
+            tr3 = (df["low"] - df["close"].shift(1)).abs()
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            df["atr14"] = tr.ewm(span=14, adjust=False).mean().round(2)
+
+            candles = []
+            for _, r in df.iterrows():
+                ts_sec = int(r["timestamp"])
+                dt_obj = datetime.datetime.fromtimestamp(ts_sec, IST)
+                candles.append({
+                    "time": ts_sec,
+                    "date": dt_obj.strftime("%Y-%m-%d %H:%M"),
+                    "open": round(float(r["open"]), 2),
+                    "high": round(float(r["high"]), 2),
+                    "low": round(float(r["low"]), 2),
+                    "close": round(float(r["close"]), 2),
+                    "volume": int(r["volume"]),
+                    "ema9": round(float(r["ema9"]), 2),
+                    "ema21": round(float(r["ema21"]), 2),
+                    "vwap": round(float(r["vwap"]), 2),
+                    "rsi14": round(float(r["rsi14"]), 1),
+                    "atr14": round(float(r["atr14"]), 2),
+                })
+
+            ltp = float(meta.get("regularMarketPrice") or df["close"].iloc[-1])
+            prev_c = float(meta.get("chartPreviousClose") or df["close"].iloc[0])
+            d_chg = round(ltp - prev_c, 2)
+            d_chg_pct = round((d_chg / prev_c) * 100.0, 2) if prev_c > 0 else 0.0
+
+            latest_bar = df.iloc[-1]
+            return {
+                "status": "OK",
+                "symbol": "^NSEI",
+                "ticker_display": "NIFTY 50",
+                "interval": target_interval,
+                "is_intraday": True,
+                "latest": {
+                    "close": round(ltp, 2),
+                    "open": round(float(df["open"].iloc[0]), 2),
+                    "high": round(float(meta.get("regularMarketDayHigh") or df["high"].max()), 2),
+                    "low": round(float(meta.get("regularMarketDayLow") or df["low"].min()), 2),
+                    "change_pts": d_chg,
+                    "change_pct": d_chg_pct,
+                    "ema9": round(float(latest_bar["ema9"]), 2),
+                    "ema21": round(float(latest_bar["ema21"]), 2),
+                    "vwap": round(float(latest_bar["vwap"]), 2),
+                    "rsi14": round(float(latest_bar["rsi14"]), 1),
+                    "atr14": round(float(latest_bar["atr14"]), 2),
+                    "timestamp_ist": format_ist()
+                },
+                "trade_levels": {
+                    "source": f"INTRADAY {target_interval.upper()} STREAM (VWAP & EMA 9/21)",
+                    "direction": "BULLISH" if ltp >= latest_bar["vwap"] else "BEARISH",
+                    "show_trade_lines": False
+                },
+                "candles": candles
+            }
+        except Exception as e:
+            logger.error(f"Error fetching Nifty minute chart ({interval}): {e}", exc_info=True)
+            return {
+                "status": "ERROR",
+                "message": f"Failed to fetch {interval} chart for Nifty: {str(e)}"
+            }
 
 
 nifty_analytics_engine = NiftyAnalyticsEngine()

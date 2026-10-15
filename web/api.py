@@ -34,6 +34,7 @@ from engines.nifty500_engine import (
 )
 from execution.state_engine import state_engine
 from core.execution_queue import execution_queue
+from core.data_watchdog import data_watchdog
 from scheduler.cron_scheduler import (
     start_scheduler, shutdown_scheduler, get_scheduler_status,
     register_external_request_origin
@@ -169,6 +170,7 @@ def get_system_status():
         "nse_holidays_meta": scheduler_info.get("nse_holidays_meta", {}),
         "telegram_vault": vault_info,
         "last_price_stream": last_stream,
+        "data_watchdog": data_watchdog.check_all_endpoints(force_probe=False),
         "scheduled_scans_telemetry": state_engine.get_scheduled_scans_telemetry(),
         "portfolio_1_quick": {
             "chartink_fetched_count": p1_status.get("chartink_fetched_count", 0),
@@ -687,6 +689,44 @@ def capture_nifty_intraday_snapshot(slot_override: Optional[str] = None, interva
     """Manually or automatically captures a live Weekly Option Expiry snapshot and syncs to Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     return nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override=slot_override, sync_cloud=True, interval_mode=interval_mode)
+
+
+@app.get("/api/nifty/minute-chart")
+def get_nifty_minute_chart(interval: str = "1m"):
+    """
+    Returns live intraday minute candlestick chart for NIFTY 50 (^NSEI)
+    with VWAP, EMA(9), EMA(21), RSI(14), and ATR(14).
+    Supported intervals: '1m', '5m', '15m'.
+    """
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    return nifty_analytics_engine.get_nifty_intraday_minute_chart(interval=interval)
+
+
+@app.get("/api/system/watchdog")
+def get_system_watchdog_status(force_probe: bool = False):
+    """Returns real-time health telemetry across all 4 QuantDesk data pipelines."""
+    return data_watchdog.check_all_endpoints(force_probe=force_probe)
+
+
+@app.post("/api/system/watchdog/probe")
+def probe_all_system_feeds():
+    """Forces an immediate health check & stream re-connection probe across all 4 data pipelines."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+
+    try:
+        refresh_live_market_prices(scope="ACTIVE")
+    except Exception:
+        pass
+    try:
+        nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=True)
+    except Exception:
+        pass
+    try:
+        nifty_analytics_engine.get_live_nifty_spot()
+    except Exception:
+        pass
+
+    return data_watchdog.check_all_endpoints(force_probe=True)
 
 
 def _sanitize_for_json(obj):
