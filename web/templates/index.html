@@ -4552,6 +4552,21 @@
       if (niftyPredictionsCache && !forceRefresh) {
         renderPredictionsUI(niftyPredictionsCache);
       }
+
+      // Strict Market-Hours Lock Guard (09:00 - 15:30 IST on Monday-Friday)
+      const now = new Date();
+      const istUtcOffset = 5.5 * 60 * 60 * 1000;
+      const istDate = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + istUtcOffset);
+      const istDay = istDate.getDay(); // 0 is Sun, 6 is Sat
+      const istMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+      const isMarketLive = (istDay >= 1 && istDay <= 5) && (istMinutes >= 9 * 60 && istMinutes <= 15 * 60 + 30);
+
+      if (forceRefresh && (isMarketLive || niftyPredictionsCache?.market_hours_locked)) {
+        showToast("🔒 Predictions are strictly locked during market hours (09:00 AM – 03:30 PM IST) to prevent repainting. Automatic evaluation & ML model training runs at 03:40 PM IST.", "warning");
+        if (niftyPredictionsCache) renderPredictionsUI(niftyPredictionsCache);
+        return;
+      }
+
       const btn = document.getElementById('btn-pred-refresh');
       if (forceRefresh && btn) {
         btn.disabled = true;
@@ -4580,7 +4595,11 @@
             fetchLiveEconomicCalendar(forceRefresh);
           }
           if (forceRefresh) {
-            showToast(`🧠 Nifty 50 T+1 & T+5 Forecast Recomputed (Spot ₹${data.spot_price ? Number(data.spot_price).toFixed(2) : '--'})!`, 'success');
+            if (data.recompute_blocked || data.market_hours_locked) {
+              showToast("🔒 Predictions are strictly locked during market hours (09:00–15:30 IST). Returned official frozen forecast.", 'warning');
+            } else {
+              showToast(`🧠 Nifty 50 T+1 & T+5 Forecast Recomputed (Spot ₹${data.spot_price ? Number(data.spot_price).toFixed(2) : '--'})!`, 'success');
+            }
           }
         } else {
           console.warn("Prediction returned non-OK status:", data);
@@ -4592,8 +4611,12 @@
       } finally {
         if (forceRefresh && btn) {
           btn.disabled = false;
-          btn.innerHTML = `<i data-lucide="cpu" class="w-3.5 h-3.5 shrink-0"></i><span>Recompute Live Forecast</span>`;
-          lucide.createIcons();
+          if (niftyPredictionsCache) {
+            renderPredictionsUI(niftyPredictionsCache);
+          } else {
+            btn.innerHTML = `<i data-lucide="cpu" class="w-3.5 h-3.5 shrink-0"></i><span>Recompute Live Forecast</span>`;
+            if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+          }
         }
       }
     }
@@ -4606,6 +4629,31 @@
         renderAiAnalysisUI(data.ai_analysis);
       }
 
+      // Market hours detection for button and badge
+      const now = new Date();
+      const istUtcOffset = 5.5 * 60 * 60 * 1000;
+      const istDate = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + istUtcOffset);
+      const istDay = istDate.getDay();
+      const istMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+      const isMarketLive = (istDay >= 1 && istDay <= 5) && (istMinutes >= 9 * 60 && istMinutes <= 15 * 60 + 30);
+      const isLocked = Boolean(data.market_hours_locked || (isMarketLive && (data.is_premarket_locked || data.status === 'OK')));
+
+      const btn = document.getElementById('btn-pred-refresh');
+      if (btn) {
+        if (isLocked) {
+          btn.innerHTML = `<i data-lucide="lock" class="w-3.5 h-3.5 shrink-0 text-amber-300"></i><span class="text-amber-200">🔒 Locked (09:00–15:30 IST)</span>`;
+          btn.className = "flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-slate-800 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap shadow-sm opacity-90 cursor-not-allowed";
+          btn.title = "Predictions strictly locked during live market hours (09:00–15:30 IST) to prevent repainting. Evaluated & trained at 03:40 PM IST.";
+        } else {
+          btn.innerHTML = `<i data-lucide="cpu" class="w-3.5 h-3.5 shrink-0"></i><span>Recompute Live Forecast</span>`;
+          btn.className = "flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap shadow-sm";
+          btn.title = "";
+        }
+        if (window.lucide && typeof lucide.createIcons === 'function') {
+          lucide.createIcons();
+        }
+      }
+
       const updBadge = document.getElementById('pred-updated-badge');
       if (updBadge) {
         updBadge.innerText = `🧠 ${data.is_premarket_locked ? 'Official Forecast' : 'Calculated'}: For ${data.prediction_date || data.target_date || '--'} (Data up to ${data.data_as_of_date || data.data_date || '--'}) • Spot: ₹${Number(data.premarket_spot_price || data.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
@@ -4613,12 +4661,11 @@
 
       const lockBadge = document.getElementById('pred-lock-badge');
       if (lockBadge) {
-        if (data.is_premarket_locked) {
-          lockBadge.classList.remove('hidden');
+        lockBadge.classList.remove('hidden');
+        if (isLocked || data.is_premarket_locked) {
           lockBadge.className = "px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
-          lockBadge.innerHTML = `🔒 PRE-MARKET FORECAST LOCKED FOR ${data.prediction_date || data.target_date || ''} (Data up to ${data.data_as_of_date || data.data_date || ''}) • Evaluated at 03:45 PM EOD`;
+          lockBadge.innerHTML = `🔒 PRE-MARKET FORECAST LOCKED (09:00–15:30 IST) • Auto EOD Training at 03:40 PM IST`;
         } else {
-          lockBadge.classList.remove('hidden');
           lockBadge.className = "px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40";
           lockBadge.innerHTML = `⚡ Live Rolling Model`;
         }
@@ -5035,34 +5082,40 @@
 
       const cbDiv = document.getElementById('pred-cb-events');
       if (cbDiv) {
-        const cbs = news.central_bank_events || [];
-        cbDiv.innerHTML = cbs.map(ev => {
-          const isDone = ev.status_label === 'COMPLETED' || !!ev.outcome_print;
-          const statusBadge = isDone
-            ? `<span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold shrink-0 whitespace-nowrap">✓ ${ev.status_label || 'COMPLETED'}</span>`
-            : `<span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-800 text-amber-300 font-bold shrink-0 whitespace-nowrap">${ev.status_label}</span>`;
-          const outcomeHtml = ev.outcome_print ? `<div class="text-[10px] text-emerald-300 font-mono mt-1"><b>Outcome Print:</b> ${ev.outcome_print}</div>` : '';
-          const impactHtml = ev.market_impact ? `<span class="quant-badge text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono border border-slate-700 whitespace-nowrap shrink-0">${ev.market_impact}</span>` : '';
-          const consHtml = ev.consensus ? `<span class="text-[10px] text-slate-400 font-mono">(${ev.consensus})</span>` : '';
-          return `
-            <div class="bg-slate-950/80 border border-slate-800 hover:border-slate-700/80 rounded-xl p-3 flex flex-col justify-between gap-2 transition">
-              <div class="space-y-1.5 min-w-0">
-                <div class="flex items-center justify-between gap-2 flex-wrap">
-                  <div class="text-xs text-purple-300 font-bold font-mono tracking-tight flex items-center gap-1.5 flex-wrap">
-                    <span>📅 ${ev.bank}</span>
-                    <span class="text-slate-400 font-normal">• ${ev.date}</span>
+        const rawCbs = news.central_bank_events || [];
+        const cbs = rawCbs.filter(ev => {
+          if (ev.status === 'COMPLETED' || ev.status_label === 'COMPLETED') return false;
+          if (ev.days_from_today !== undefined && ev.days_from_today < 0) return false;
+          return true;
+        });
+
+        if (cbs.length === 0) {
+          cbDiv.innerHTML = `<div class="col-span-full p-4 text-center text-slate-500 font-mono text-xs">No immediate central bank / macro events scheduled. Past completed events archived.</div>`;
+        } else {
+          cbDiv.innerHTML = cbs.map(ev => {
+            const daysLabel = ev.status_label || (ev.days_from_today === 0 ? 'TODAY' : `IN ${ev.days_from_today} DAYS`);
+            const statusBadge = `<span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold shrink-0 whitespace-nowrap">⏳ ${daysLabel}</span>`;
+            const impactHtml = ev.market_impact ? `<span class="quant-badge text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono border border-slate-700 whitespace-nowrap shrink-0">${ev.market_impact}</span>` : '';
+            const consHtml = ev.consensus ? `<span class="text-[10px] text-slate-400 font-mono">(${ev.consensus})</span>` : '';
+            return `
+              <div class="bg-slate-950/80 border border-slate-800 hover:border-slate-700/80 rounded-xl p-3 flex flex-col justify-between gap-2 transition">
+                <div class="space-y-1.5 min-w-0">
+                  <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <div class="text-xs text-purple-300 font-bold font-mono tracking-tight flex items-center gap-1.5 flex-wrap">
+                      <span>📅 ${ev.bank}</span>
+                      <span class="text-slate-400 font-normal">• ${ev.date}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
+                      ${impactHtml}
+                      ${statusBadge}
+                    </div>
                   </div>
-                  <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
-                    ${impactHtml}
-                    ${statusBadge}
-                  </div>
+                  <div class="text-xs text-slate-200 font-semibold leading-relaxed">${ev.title} ${consHtml}</div>
                 </div>
-                <div class="text-xs text-slate-200 font-semibold leading-relaxed">${ev.title} ${consHtml}</div>
-                ${outcomeHtml}
               </div>
-            </div>
-          `;
-        }).join('');
+            `;
+          }).join('');
+        }
       }
 
       const newsList = document.getElementById('pred-news-list');

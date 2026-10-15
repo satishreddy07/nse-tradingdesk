@@ -188,18 +188,19 @@ def test_premarket_telegram_bulletin_dispatch():
 def test_api_endpoints_premarket_lock_and_eod_eval(test_client):
     """Verifies that POST /api/nifty/premarket-forecast/lock and POST /api/nifty/eod-evaluation/run work cleanly."""
     with patch("core.telegram_vault.telegram_vault.send_alert_and_sync"):
-        with patch.object(nifty_analytics_engine, "compute_nifty_predictions", return_value={
-            "status": "OK",
-            "prediction_date": "2026-10-14",
-            "premarket_locked_at_ist": "2026-10-14 08:50:00 IST",
-            "t1_forecast": {"verdict": "MODERATELY BEARISH"},
-            "t5_forecast": {"verdict": "MODERATELY BEARISH"}
-        }):
-            res_lock = test_client.post("/api/nifty/premarket-forecast/lock")
-            assert res_lock.status_code == 200
-            data_lock = res_lock.json()
-            assert data_lock["status"] == "OK"
-            assert data_lock["t1_verdict"] == "MODERATELY BEARISH"
+        with patch.object(state_engine, "get_kv", return_value=None):
+            with patch.object(nifty_analytics_engine, "compute_nifty_predictions", return_value={
+                "status": "OK",
+                "prediction_date": "2026-10-14",
+                "premarket_locked_at_ist": "2026-10-14 08:45:00 IST",
+                "t1_forecast": {"verdict": "MODERATELY BEARISH"},
+                "t5_forecast": {"verdict": "MODERATELY BEARISH"}
+            }):
+                res_lock = test_client.post("/api/nifty/premarket-forecast/lock")
+                assert res_lock.status_code == 200
+                data_lock = res_lock.json()
+                assert data_lock["status"] in ("OK", "LOCKED")
+                assert data_lock["t1_verdict"] == "MODERATELY BEARISH"
 
         with patch.object(nifty_analytics_engine, "evaluate_and_grade_eod_predictions", return_value={
             "status": "OK",
@@ -244,4 +245,43 @@ def test_forward_testing_ledger_dates_and_eod_lifecycle():
         assert prev_entry["t1_validated"] in ("VALIDATED_HIT", "DIRECTION_MISS")
         assert prev_entry["target_date"] is not None
         assert prev_entry["data_date"] is not None
+
+
+def test_strict_market_hours_lock():
+    """Verifies that between 09:00 and 15:30 IST on a trading day, recomputation is strictly blocked even with force_recalculate=True."""
+    from core.market_calendar import NSEMarketCalendar
+    today_str = now_ist().strftime("%Y-%m-%d")
+    mock_pred = {
+        "status": "OK",
+        "prediction_date": today_str,
+        "is_premarket_locked": True,
+        "spot_price": 24500.0,
+        "t1_forecast": {"verdict": "STRONG BULLISH"},
+        "t5_forecast": {"verdict": "MODERATELY BULLISH"}
+    }
+    old_cache = nifty_analytics_engine._predictions_mem_cache
+    try:
+        with patch.object(NSEMarketCalendar, "is_trading_day", return_value=True):
+            fake_market_dt = datetime.datetime.strptime(f"{today_str} 11:30:00", "%Y-%m-%d %H:%M:%S")
+            with patch("engines.nifty_analytics_engine.now_ist", return_value=fake_market_dt):
+                with patch.object(state_engine, "get_kv", return_value=mock_pred):
+                    nifty_analytics_engine._predictions_mem_cache = mock_pred
+                    res = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
+                    assert res["status"] == "OK"
+                    assert res.get("recompute_blocked") is True
+                    assert res.get("market_hours_locked") is True
+                    assert res.get("lock_status") == "MARKET_HOURS_STRICT_LOCK"
+    finally:
+        nifty_analytics_engine._predictions_mem_cache = old_cache
+
+
+def test_macro_events_filter_completed_and_past():
+    """Verifies that completed events and past events are auto-removed from the news and macro catalysts section."""
+    today_dt = now_ist().date()
+    news = nifty_analytics_engine._fetch_live_news_and_events()
+    events = news.get("central_bank_events", [])
+    for ev in events:
+        assert ev.get("status") != "COMPLETED", f"Completed event found in upcoming list: {ev}"
+        assert ev.get("days_from_today", 0) >= 0, f"Past event found in upcoming list: {ev}"
+
 

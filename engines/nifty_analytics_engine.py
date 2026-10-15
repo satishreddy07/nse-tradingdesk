@@ -141,7 +141,7 @@ CENTRAL_BANK_EVENTS_2026 = [
     {"date": "2026-09-16", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "COMPLETED", "outcome_print": "Fed delivers 50 bps Jumbo Cut to 4.75%-5.00%", "market_impact": "STRONG_BULLISH_CATALYST"},
     {"date": "2026-10-09", "bank": "RBI MPC", "title": "RBI Monetary Policy Committee Rate & Stance Decision", "status": "COMPLETED", "outcome_print": "Repo 6.50% Unchanged (5-1) • Stance shifted to NEUTRAL (Dovish Pivot)", "market_impact": "BULLISH_LIQUIDITY_PIVOT"},
     {"date": "2026-10-13", "bank": "INDIA CPI / IIP", "title": "India MOSPI Retail CPI Inflation & Industrial Production", "status": "COMPLETED", "outcome_print": "Retail CPI 5.49% (Food base effect) | IIP -0.1%", "market_impact": "MODERATE_HEADWIND_SHORT_TERM"},
-    {"date": "2026-10-14", "bank": "INDIA WPI", "title": "India Wholesale Price Index (WPI) & Trade Balance Data", "status": "UPCOMING", "consensus": "WPI 1.85% exp (prior 1.31%)", "market_impact": "WATCH_INPUT_COSTS"},
+    {"date": "2026-10-14", "bank": "INDIA WPI", "title": "India Wholesale Price Index (WPI) & Trade Balance Data", "status": "COMPLETED", "outcome_print": "WPI 1.84% (In-line with consensus 1.85%)", "market_impact": "WATCH_INPUT_COSTS"},
     {"date": "2026-10-15", "bank": "US CPI / RETAIL", "title": "US Bureau of Labor Statistics CPI & Core Inflation Print", "status": "UPCOMING", "consensus": "CPI 2.4% YoY / Core 3.3% YoY", "market_impact": "CRITICAL_RATE_PATH_DRIVER"},
     {"date": "2026-10-28", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "UPCOMING", "consensus": "25 bps rate cut expected (Target 4.50%-4.75%)", "market_impact": "HIGH_EVENT_VOLATILITY"},
     {"date": "2026-11-12", "bank": "INDIA CPI / IIP", "title": "India MOSPI Retail CPI Inflation Release", "status": "UPCOMING", "consensus": "CPI 4.80% exp", "market_impact": "RBI_RATE_DECISION_DRIVER"},
@@ -2240,28 +2240,32 @@ class NiftyAnalyticsEngine:
             })
         detected_catalysts.sort(key=lambda x: (abs(x["net_score"]), x["mentions"]), reverse=True)
 
-        # Check upcoming / recent Indian & US Macro / Central Bank events
+        # Check upcoming Indian & US Macro / Central Bank events (Strictly Upcoming - Completed & Past Events Excluded)
         today = now_ist().date()
         upcoming_events = []
         event_risk_flag = "NORMAL"
         event_score_adj = 0.0
         for ev in CENTRAL_BANK_EVENTS_2026:
-            ev_dt = datetime.date.fromisoformat(ev["date"])
+            try:
+                ev_dt = datetime.date.fromisoformat(ev["date"])
+            except Exception:
+                continue
             days_diff = (ev_dt - today).days
-            if -5 <= days_diff <= 45:
-                status = (
-                    "TODAY" if days_diff == 0 else
-                    (f"IN {days_diff} DAYS" if days_diff > 0 else f"{abs(days_diff)} DAYS AGO")
-                )
+            # Remove completed events: strictly exclude past dates (days_diff < 0) or explicit COMPLETED status
+            if days_diff < 0 or ev.get("status") == "COMPLETED":
+                continue
+            if 0 <= days_diff <= 90:
+                status = "TODAY" if days_diff == 0 else f"IN {days_diff} DAYS"
                 if 0 <= days_diff <= 3:
                     event_risk_flag = f"HIGH EVENT VOLATILITY ({ev['bank']} {status})"
                 upcoming_events.append({
                     **ev,
                     "days_from_today": days_diff,
-                    "status_label": status
+                    "status_label": status,
+                    "status": "UPCOMING"
                 })
 
-        upcoming_events.sort(key=lambda x: abs(x["days_from_today"]))
+        upcoming_events.sort(key=lambda x: x["days_from_today"])
         norm_news_score = float(np.clip(round(total_score * 8.5 + event_score_adj, 1), -100.0, 100.0))
         return {
             "score": norm_news_score,
@@ -2638,43 +2642,74 @@ class NiftyAnalyticsEngine:
         """
         from core import config
         now_ts = time.time()
-        today_str = now_ist().strftime("%Y-%m-%d")
+        now_dt = now_ist()
+        today_date = now_dt.date()
+        today_str = today_date.strftime("%Y-%m-%d")
         locked_key = f"nifty_prediction_locked_{today_str}"
+        is_trading = NSEMarketCalendar.is_trading_day(today_date)
+        market_time = now_dt.time()
+        # Market hours strict window: 09:00:00 to 15:30:00 IST on trading days
+        is_market_alive = is_trading and (datetime.time(9, 0) <= market_time <= datetime.time(15, 30))
 
-        # 1. OFFICIAL PRE-MARKET FORECAST FREEZING PROTOCOL:
-        # On trading days, the pre-market forecast is computed at 08:45–09:00 AM IST and FROZEN for the entire session.
-        # It strictly DOES NOT mutate or repaint during live market hours (09:15–15:30 IST) based on intraday ticks.
-        # Only explicit force_recalculate=True (e.g. from the 08:50 AM cron or admin override) recalculates the lock.
-        if not force_recalculate:
-            # Check in-memory locked cache
-            if self._predictions_mem_cache and self._predictions_mem_cache.get("is_premarket_locked") and self._predictions_mem_cache.get("prediction_date") == today_str:
-                cur_ai = self._predictions_mem_cache.get("ai_analysis")
-                if (not cur_ai or cur_ai.get("status") != "OK") and getattr(config, "AI_ENABLED", True):
-                    try:
-                        from ai_engine.service import ai_service
-                        ai_out = ai_service.analyze_predictions(force_refresh=False, predictions_data=self._predictions_mem_cache)
-                        if ai_out:
-                            self._predictions_mem_cache["ai_analysis"] = ai_out.model_dump()
-                    except Exception:
-                        pass
-                return self._predictions_mem_cache
-
-            # Check persistent KV store for today's locked prediction
+        # Check for existing prediction for today across memory, locked KV store, and latest prediction
+        candidate = None
+        if self._predictions_mem_cache and self._predictions_mem_cache.get("prediction_date") == today_str and self._predictions_mem_cache.get("status") == "OK":
+            candidate = self._predictions_mem_cache
+        if not candidate:
             locked_persisted = state_engine.get_kv(locked_key)
             if locked_persisted and isinstance(locked_persisted, dict) and locked_persisted.get("status") == "OK":
-                cur_ai = locked_persisted.get("ai_analysis")
-                if (not cur_ai or cur_ai.get("status") != "OK") and getattr(config, "AI_ENABLED", True):
+                candidate = locked_persisted
+        if not candidate:
+            persisted = state_engine.get_kv("latest_nifty_predictions")
+            if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK" and persisted.get("prediction_date") == today_str:
+                candidate = persisted
+
+        # 1. STRICT MARKET-HOURS PREDICTION LOCK (09:00 AM – 03:30 PM IST):
+        # Forecast NEVER repaints, mutates, or recalculates while market is alive,
+        # EVEN IF force_refresh=True or force_recalculate=True (e.g. manual UI clicks).
+        if is_market_alive and candidate:
+            candidate["is_premarket_locked"] = True
+            candidate["market_hours_locked"] = True
+            candidate["recompute_blocked"] = True
+            candidate["lock_status"] = "MARKET_HOURS_STRICT_LOCK"
+            candidate["lock_message"] = (
+                "Market is currently alive (09:00 AM – 03:30 PM IST). "
+                "Predictions are strictly locked to prevent repainting. "
+                "Automatic EOD evaluation and ML model training will execute at 03:40 PM IST."
+            )
+            if force_refresh or force_recalculate:
+                logger.warning(
+                    f"🔒 [MARKET HOURS STRICT LOCK] Recomputation request blocked during live market hours (09:00–15:30 IST) for {today_str}. "
+                    "Returning locked morning forecast without recalculation."
+                )
+            if "ai_analysis" not in candidate and getattr(config, "AI_ENABLED", True):
+                try:
+                    from ai_engine.service import ai_service
+                    ai_out = ai_service.analyze_predictions(force_refresh=False, predictions_data=candidate)
+                    if ai_out:
+                        candidate["ai_analysis"] = ai_out.model_dump()
+                except Exception:
+                    pass
+            with self._lock:
+                self._predictions_mem_cache = candidate
+                self._predictions_cache_ts = now_ts
+            return candidate
+
+        # 2. General locked or cached forecast outside market hours:
+        if not force_recalculate and candidate:
+            if candidate.get("is_premarket_locked") or candidate.get("prediction_date") == today_str:
+                if "ai_analysis" not in candidate and getattr(config, "AI_ENABLED", True):
                     try:
                         from ai_engine.service import ai_service
-                        ai_out = ai_service.analyze_predictions(force_refresh=False, predictions_data=locked_persisted)
+                        ai_out = ai_service.analyze_predictions(force_refresh=False, predictions_data=candidate)
                         if ai_out:
-                            locked_persisted["ai_analysis"] = ai_out.model_dump()
+                            candidate["ai_analysis"] = ai_out.model_dump()
                     except Exception:
                         pass
                 with self._lock:
-                    self._predictions_mem_cache = locked_persisted
+                    self._predictions_mem_cache = candidate
                     self._predictions_cache_ts = now_ts
-                return locked_persisted
+                return candidate
 
         market_open = NSEMarketCalendar.can_execute_trades()
         cache_ttl = 300 if market_open else 3600
@@ -3550,7 +3585,7 @@ class NiftyAnalyticsEngine:
     def dispatch_premarket_prediction_telegram_alert(self, preds: Dict[str, Any]) -> bool:
         """
         Dispatches the official Pre-Market Prediction Bulletin to Telegram
-        at 08:50 AM IST before market open. Contains the locked T+1 and T+5 forecasts,
+        at 08:45 AM IST before market open. Contains the locked T+1 and T+5 forecasts,
         expected drift cones, crude oil status, and institutional positioning.
         """
         if not preds or preds.get("status") != "OK":
@@ -3601,7 +3636,7 @@ class NiftyAnalyticsEngine:
             f"🌐 <b>MACRO & RISK INDICATORS:</b>\n"
             f"• Brent Crude: ${crude_px:.2f} ({crude_1d:+.2f}% 1D) -> <i>{crude_tag}</i>\n"
             f"• India VIX: {vix_c:.2f}\n\n"
-            f"⚠️ <i>This official forecast is LOCKED for today's market session. It will NOT mutate during live market hours. Directional accuracy will be graded at 03:45 PM IST EOD.</i>"
+            f"⚠️ <i>This official forecast is LOCKED for today's market session. It will NOT mutate during live market hours. Directional accuracy will be graded at 03:40 PM IST EOD.</i>"
         )
         try:
             telegram_vault.send_alert_and_sync(
@@ -3617,7 +3652,7 @@ class NiftyAnalyticsEngine:
 
     def evaluate_and_grade_eod_predictions(self) -> Dict[str, Any]:
         """
-        Runs at 03:45 PM IST EOD after market close.
+        Runs at 03:40 PM IST EOD after market close.
         Evaluates the locked pre-market prediction for today against the actual completed Nifty 50 candle.
         Grades T+1 direction, cone containment, updates self-learning weights, and sends Telegram EOD report.
         """

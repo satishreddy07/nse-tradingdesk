@@ -241,7 +241,7 @@ def scheduled_intraday_flash_bulletin_job(slot_label: str):
 
 def scheduled_premarket_nifty_prediction_job():
     """
-    08:50 AM IST Weekday Job:
+    08:45 AM IST Weekday Job:
     Calculates official Nifty 50 6-Pillar T+1 & T+5 Pre-Market Forecast,
     FREEZES it for today's session, and dispatches the Telegram Pre-Market Bulletin.
     This prediction will NOT mutate or repaint during live market trading.
@@ -249,16 +249,16 @@ def scheduled_premarket_nifty_prediction_job():
     current_dt = now_ist()
     NSEMarketCalendar.sync_holidays_from_nse(force=False)
     if not NSEMarketCalendar.is_trading_day(current_dt.date()):
-        logger.info("⏸️ Today is not an active trading day. 08:50 AM pre-market prediction skipped.")
+        logger.info("⏸️ Today is not an active trading day. 08:45 AM pre-market prediction skipped.")
         return
     try:
         from engines.nifty_analytics_engine import nifty_analytics_engine
-        logger.info(f"🔒 [08:50 AM IST Trigger] Computing & Locking Official Pre-Market Forecast for {current_dt.date()}...")
+        logger.info(f"🔒 [08:45 AM IST Trigger] Computing & Locking Official Pre-Market Forecast for {current_dt.date()}...")
         preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
         nifty_analytics_engine.dispatch_premarket_prediction_telegram_alert(preds)
-        logger.info("✓ [08:50 AM IST Job] Official Pre-Market Forecast LOCKED & Telegram Bulletin Dispatched.")
+        logger.info("✓ [08:45 AM IST Job] Official Pre-Market Forecast LOCKED & Telegram Bulletin Dispatched.")
     except Exception as e:
-        logger.warning(f"08:50 AM Pre-Market Prediction Job error: {e}")
+        logger.warning(f"08:45 AM Pre-Market Prediction Job error: {e}")
 
 
 def scheduled_options_premarket_job():
@@ -550,7 +550,7 @@ def _intraday_collector_watchdog():
 
 def scheduled_daily_prediction_training_job():
     """
-    03:45 PM IST Trading Day Job:
+    03:40 PM IST Trading Day Job:
     - Runs EOD prediction outcome evaluation and online training.
     - Evaluates morning's locked pre-market forecast against actual EOD close.
     - Updates adaptive pillar weights and sends Telegram EOD report.
@@ -565,11 +565,11 @@ def scheduled_daily_prediction_training_job():
         res = nifty_analytics_engine.evaluate_and_grade_eod_predictions()
         st = res.get("self_training", {})
         logger.info(
-            f"🎯 [03:45 PM EOD Training Job] Nifty Predictions Evaluated ({res.get('outcome')}) & Trained. "
+            f"🎯 [03:40 PM EOD Training Job] Nifty Predictions Evaluated ({res.get('outcome')}) & Trained. "
             f"Hit Rates: {st.get('t1_hit_rate_pct')}%, {st.get('t5_hit_rate_pct')}%. Cloud Vault Backed Up."
         )
     except Exception as e:
-        logger.warning(f"03:45 PM Daily Prediction Training Job error: {e}")
+        logger.warning(f"03:40 PM Daily Prediction Training Job error: {e}")
 
     try:
         from engines.swing_quant_ml_engine import swing_quant_ml_engine
@@ -578,12 +578,12 @@ def scheduled_daily_prediction_training_job():
         # 2. Retrain ML meta-classifier & expected R regressor
         ml_meta = swing_quant_ml_engine.train_model()
         logger.info(
-            f"🤖 [03:45 PM Swing ML Self-Training] Shadow Audit: {shadow_audit.get('resolved', 0)} resolved "
+            f"🤖 [03:40 PM Swing ML Self-Training] Shadow Audit: {shadow_audit.get('resolved', 0)} resolved "
             f"({shadow_audit.get('winners', 0)} W / {shadow_audit.get('losers', 0)} L, {shadow_audit.get('remaining_active', 0)} active). "
             f"Model Samples: {ml_meta.get('total_samples', 0)} (Empirical: {ml_meta.get('empirical_samples', 0)}), Brier: {ml_meta.get('brier_score', 0):.4f}."
         )
     except Exception as e:
-        logger.warning(f"03:45 PM Swing Quant ML Training Job error: {e}")
+        logger.warning(f"03:40 PM Swing Quant ML Training Job error: {e}")
 
 
 def start_scheduler():
@@ -598,12 +598,12 @@ def start_scheduler():
 
         _scheduler = BackgroundScheduler(timezone=IST)
 
-        # Job 0A-1: Daily Official Pre-Market Forecast Lock & Telegram Bulletin at 08:50 AM IST Mon-Fri
+        # Job 0A-1: Daily Official Pre-Market Forecast Lock & Telegram Bulletin at 08:45 AM IST Mon-Fri
         _scheduler.add_job(
             scheduled_premarket_nifty_prediction_job,
-            trigger=CronTrigger(day_of_week="mon-fri", hour=8, minute=50, timezone=IST),
-            id="job_premarket_prediction_0850",
-            name="08:50 AM Official Pre-Market Forecast Lock & Bulletin",
+            trigger=CronTrigger(day_of_week="mon-fri", hour=8, minute=45, timezone=IST),
+            id="job_premarket_prediction_0845",
+            name="08:45 AM Official Pre-Market Forecast Lock & Bulletin",
             replace_existing=True,
             misfire_grace_time=300
         )
@@ -710,12 +710,12 @@ def start_scheduler():
             misfire_grace_time=120
         )
 
-        # Job 3: 03:45 PM Daily Prediction Outcomes & Online Training (Mon-Fri)
+        # Job 3: 03:40 PM Daily Prediction Outcomes & Online Training (Mon-Fri)
         _scheduler.add_job(
             scheduled_daily_prediction_training_job,
-            trigger=CronTrigger(day_of_week="mon-fri", hour=15, minute=45, timezone=IST),
-            id="job_daily_prediction_training_1545",
-            name="03:45 PM Daily Prediction Outcomes & Online Training Sync",
+            trigger=CronTrigger(day_of_week="mon-fri", hour=15, minute=40, timezone=IST),
+            id="job_daily_prediction_training_1540",
+            name="03:40 PM Daily Prediction Outcomes & Online Training Sync",
             replace_existing=True,
             misfire_grace_time=600
         )

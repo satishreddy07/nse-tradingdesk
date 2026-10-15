@@ -7,6 +7,7 @@ import asyncio
 import logging
 import threading
 import math
+import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -775,6 +776,27 @@ def get_nifty_predictions(force_refresh: bool = False, force_recalculate: bool =
 def lock_premarket_forecast():
     """Explicitly calculates the official pre-market forecast, locks it for today's session, and dispatches the Telegram Bulletin."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
+    now_dt = now_ist()
+    is_trading = NSEMarketCalendar.is_trading_day(now_dt.date())
+    is_market_alive = is_trading and (datetime.time(9, 0) <= now_dt.time() <= datetime.time(15, 30))
+    today_str = now_dt.strftime("%Y-%m-%d")
+    locked_key = f"nifty_prediction_locked_{today_str}"
+    existing_lock = state_engine.get_kv(locked_key)
+
+    if is_market_alive and existing_lock and isinstance(existing_lock, dict) and existing_lock.get("status") == "OK":
+        return {
+            "status": "LOCKED",
+            "message": "Market is currently alive (09:00 - 15:30 IST). Predictions are strictly locked against manual recomputation to preserve institutional audit integrity. Next auto-evaluation is at 03:40 PM IST.",
+            "is_premarket_locked": True,
+            "market_hours_locked": True,
+            "recompute_blocked": True,
+            "telegram_sent": False,
+            "prediction_date": existing_lock.get("prediction_date"),
+            "premarket_locked_at_ist": existing_lock.get("premarket_locked_at_ist"),
+            "t1_verdict": existing_lock.get("t1_forecast", {}).get("verdict"),
+            "t5_verdict": existing_lock.get("t5_forecast", {}).get("verdict")
+        }
+
     try:
         data = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
         bulletin_sent = nifty_analytics_engine.dispatch_premarket_prediction_telegram_alert(data)
@@ -794,7 +816,7 @@ def lock_premarket_forecast():
 
 @app.post("/api/nifty/eod-evaluation/run")
 def run_eod_prediction_evaluation():
-    """Runs the 03:45 PM EOD prediction outcome evaluation, grades direction and cones, updates learning weights, and sends Telegram review."""
+    """Runs the 03:40 PM EOD prediction outcome evaluation, grades direction and cones, updates learning weights, and sends Telegram review."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     try:
         res = nifty_analytics_engine.evaluate_and_grade_eod_predictions()

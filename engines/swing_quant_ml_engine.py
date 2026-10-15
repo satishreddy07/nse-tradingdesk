@@ -7,7 +7,7 @@ Implements closed-loop learning for institutional swing trading:
 3. Shadow / Counterfactual Ledger: Monitors rejected/skipped candidates to eliminate survivor bias.
 4. EOD Shadow Reconciliation: Tracks whether rejected setups actually hit SL or T1.
 5. Post-Mortem Root-Cause Attribution & AI Diagnostic Explanations.
-6. Daily Online Self-Training at 15:45 IST and on-demand via REST API.
+6. Daily Online Self-Training at 15:40 IST and on-demand via REST API.
 """
 
 import json
