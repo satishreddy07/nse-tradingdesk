@@ -223,6 +223,13 @@ class NiftyAnalyticsEngine:
                     except Exception:
                         pass
 
+                    try:
+                        from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+                        weekly_monthly_options_strategy_engine.tick_active_positional_reentry_monitor("WEEKLY")
+                        weekly_monthly_options_strategy_engine.tick_active_positional_reentry_monitor("MONTHLY")
+                    except Exception:
+                        pass
+
                     elapsed = time.time() - t0
                     time.sleep(max(6.0, 12.0 - elapsed))
                 else:

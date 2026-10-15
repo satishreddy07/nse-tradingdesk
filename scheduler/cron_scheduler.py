@@ -527,6 +527,14 @@ def _intraday_collector_watchdog():
                     except Exception:
                         pass
 
+                    # Monitor Weekly & Monthly Positional Options Strategy Legs
+                    try:
+                        from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+                        weekly_monthly_options_strategy_engine.tick_active_positional_reentry_monitor("WEEKLY")
+                        weekly_monthly_options_strategy_engine.tick_active_positional_reentry_monitor("MONTHLY")
+                    except Exception:
+                        pass
+
                     # Central Data Gatekeeper SLA monitoring
                     try:
                         from core.data_watchdog import data_watchdog
@@ -608,6 +616,18 @@ def scheduled_daily_prediction_training_job():
         )
     except Exception as e:
         logger.warning(f"03:40 PM Intraday Options ML Training Job error: {e}")
+
+    try:
+        from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+        w_ml = weekly_monthly_options_strategy_engine.train_positional_options_ml_model("WEEKLY")
+        m_ml = weekly_monthly_options_strategy_engine.train_positional_options_ml_model("MONTHLY")
+        logger.info(
+            f"🎯 [03:40 PM Positional Options ML Training] "
+            f"Weekly Win Acc: {w_ml.get('win_rate_accuracy_pct', 0)}%, R²: {w_ml.get('expectancy_r2', 0)} | "
+            f"Monthly Win Acc: {m_ml.get('win_rate_accuracy_pct', 0)}%, R²: {m_ml.get('expectancy_r2', 0)}."
+        )
+    except Exception as e:
+        logger.warning(f"03:40 PM Positional Options ML Training Job error: {e}")
 
 
 def start_scheduler():

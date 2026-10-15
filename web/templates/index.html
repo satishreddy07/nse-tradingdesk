@@ -3174,12 +3174,31 @@
     <!-- =================================================================== -->
     <div id="opt-sub-intraday-rules" class="space-y-5 hidden font-mono text-xs">
 
-      <!-- 1. Header Banner & Dynamic Control Desk -->
+      <!-- 1. Header Banner & Dynamic Control Desk with Horizon Switcher -->
       <div class="bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
+        <!-- Horizon Selector Navigation Bar -->
+        <div class="flex flex-wrap items-center gap-2 mb-4 pb-3 border-b border-slate-800/80">
+          <div class="text-[11px] uppercase tracking-wider text-slate-400 font-bold mr-1">Select Horizon:</div>
+          <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800 gap-1">
+            <button onclick="switchRulesHorizon('INTRADAY')" id="btn-horizon-intraday" class="px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-amber-500 text-black shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+              <span>Intraday (30%/40% SL)</span>
+            </button>
+            <button onclick="switchRulesHorizon('WEEKLY')" id="btn-horizon-weekly" class="px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800/70 flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+              <span>Weekly (40% SL • 1-Sigma)</span>
+            </button>
+            <button onclick="switchRulesHorizon('MONTHLY')" id="btn-horizon-monthly" class="px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800/70 flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="calendar-range" class="w-3.5 h-3.5"></i>
+              <span>Monthly (50% SL • 1-Sigma)</span>
+            </button>
+          </div>
+        </div>
+
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div class="flex items-center gap-2">
-              <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            <div id="rules-badges-container" class="flex items-center gap-2">
+              <span id="rules-badge-horizon" class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                 INTRADAY OPTIONS ENGINE
               </span>
               <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
@@ -3189,10 +3208,10 @@
                 PRICE-TRIGGERED RE-ENTRY (P0)
               </span>
             </div>
-            <h2 class="text-base sm:text-lg font-bold text-white mt-1">
+            <h2 id="rules-title-text" class="text-base sm:text-lg font-bold text-white mt-1">
               5-Regime Intraday Options Strategies & ML Execution Engine
             </h2>
-            <p class="text-[11px] text-slate-400 mt-0.5 font-sans">
+            <p id="rules-desc-text" class="text-[11px] text-slate-400 mt-0.5 font-sans">
               Rule-based execution on Nifty 50 predictions: Dynamic 1&sigma;/2&sigma; strike selection, per-leg 30%/40% stop-loss, 
               strict 1-time price-triggered re-entry when premium drops to &le; P0, independent backtesting, and full ML feedback loop.
             </p>
@@ -3209,22 +3228,22 @@
               </select>
             </div>
 
-            <button onclick="runIntradayOptionsBacktest()" id="btn-run-intraday-backtest" class="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition">
+            <button onclick="runSelectedRulesBacktest()" id="btn-run-intraday-backtest" class="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition">
               <i data-lucide="play" class="w-3.5 h-3.5 fill-black"></i>
               <span>Run Backtest</span>
             </button>
 
-            <button onclick="triggerIntradayAutoTrades()" id="btn-trigger-intraday-autotrade" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition">
+            <button onclick="triggerSelectedRulesAutoTrades()" id="btn-trigger-intraday-autotrade" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition">
               <i data-lucide="zap" class="w-3.5 h-3.5 fill-black"></i>
               <span>Auto-Deploy (Live)</span>
             </button>
 
-            <button onclick="retrainOptionsMLModel()" id="btn-retrain-options-ml" class="px-3 py-2 rounded-xl bg-purple-600/80 hover:bg-purple-600 text-white font-bold text-xs flex items-center gap-1.5 border border-purple-500/40 transition">
+            <button onclick="retrainSelectedRulesML()" id="btn-retrain-options-ml" class="px-3 py-2 rounded-xl bg-purple-600/80 hover:bg-purple-600 text-white font-bold text-xs flex items-center gap-1.5 border border-purple-500/40 transition">
               <i data-lucide="brain-circuit" class="w-3.5 h-3.5"></i>
               <span>Retrain ML</span>
             </button>
 
-            <button onclick="loadIntradayRulesData(true)" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="Refresh Data">
+            <button onclick="loadRulesHorizonData(true)" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="Refresh Data">
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
             </button>
           </div>
@@ -3290,7 +3309,7 @@
       </div>
 
       <!-- 3. The 5 Prediction Regime Rule Cards -->
-      <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+      <div id="regime-rule-cards-grid" class="grid grid-cols-1 md:grid-cols-5 gap-3">
         <!-- 1. Strong Bullish -->
         <div class="bg-slate-900/90 border border-emerald-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-emerald-500 transition">
           <div>
@@ -3448,7 +3467,7 @@
           </span>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-5 gap-3 text-[11px]">
+        <div id="reentry-flow-container" class="grid grid-cols-1 md:grid-cols-5 gap-3 text-[11px]">
           <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
             <div class="flex items-center gap-2 text-cyan-400 font-bold">
               <span class="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-[10px]">1</span>
@@ -9019,14 +9038,427 @@
     }
 
     // =========================================================================
-    // MODULE 4D: 5-REGIME INTRADAY OPTIONS STRATEGIES, BACKTEST & ML CONTROLLER
+    // MODULE 4D: 5-REGIME MULTI-HORIZON (INTRADAY, WEEKLY & MONTHLY) OPTIONS CONTROLLER
     // =========================================================================
-    let intradayBacktestCache = null;
-    let intradayActiveTradesCache = null;
-    let intradayMLMetricsCache = null;
+    let currentRulesHorizon = 'INTRADAY'; // 'INTRADAY' | 'WEEKLY' | 'MONTHLY'
+    let rulesBacktestCache = { INTRADAY: null, WEEKLY: null, MONTHLY: null };
+    let rulesActiveTradesCache = { INTRADAY: null, WEEKLY: null, MONTHLY: null };
+    let rulesMLMetricsCache = { INTRADAY: null, WEEKLY: null, MONTHLY: null };
+
+    function switchRulesHorizon(horizon) {
+      currentRulesHorizon = horizon.toUpperCase();
+
+      // 1. Update Horizon Button Styling
+      const btnIntra = document.getElementById('btn-horizon-intraday');
+      const btnWeek = document.getElementById('btn-horizon-weekly');
+      const btnMonth = document.getElementById('btn-horizon-monthly');
+
+      const activeCls = (color) => `px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-${color}-500 text-black shadow-md shadow-${color}-500/20 flex items-center gap-1.5 transition whitespace-nowrap`;
+      const inactiveCls = "px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800/70 flex items-center gap-1.5 transition whitespace-nowrap";
+
+      if (btnIntra) btnIntra.className = currentRulesHorizon === 'INTRADAY' ? activeCls('amber') : inactiveCls;
+      if (btnWeek) btnWeek.className = currentRulesHorizon === 'WEEKLY' ? activeCls('cyan') : inactiveCls;
+      if (btnMonth) btnMonth.className = currentRulesHorizon === 'MONTHLY' ? activeCls('purple') : inactiveCls;
+
+      // 2. Update Header Text & Badges
+      const badgeContainer = document.getElementById('rules-badges-container');
+      const titleText = document.getElementById('rules-title-text');
+      const descText = document.getElementById('rules-desc-text');
+
+      if (currentRulesHorizon === 'WEEKLY') {
+        if (badgeContainer) {
+          badgeContainer.innerHTML = `
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+              WEEKLY OPTIONS ENGINE (40% SL)
+            </span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              5 PREDICTION REGIMES
+            </span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+              PRICE RE-ENTRY (P0)
+            </span>
+          `;
+        }
+        if (titleText) titleText.innerText = "5-Regime Weekly Options Strategies & Execution Matrix";
+        if (descText) descText.innerText = "Independent weekly horizon: Dynamic 1-sigma strike pricing from weekly expiry calendar, 40% premium stop-loss across all 5 regimes, price-triggered 1-time re-entry when premium drops to <= P0, independent backtesting, and dedicated Weekly ML model.";
+      } else if (currentRulesHorizon === 'MONTHLY') {
+        if (badgeContainer) {
+          badgeContainer.innerHTML = `
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+              MONTHLY OPTIONS ENGINE (50% SL)
+            </span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              5 PREDICTION REGIMES
+            </span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+              PRICE RE-ENTRY (P0)
+            </span>
+          `;
+        }
+        if (titleText) titleText.innerText = "5-Regime Monthly Options Strategies & Execution Matrix";
+        if (descText) descText.innerText = "Independent monthly horizon: Dynamic 1-sigma strike pricing from monthly expiry calendar, 50% premium stop-loss across all 5 regimes, price-triggered 1-time re-entry when premium drops to <= P0, independent backtesting, and dedicated Monthly ML model.";
+      } else {
+        if (badgeContainer) {
+          badgeContainer.innerHTML = `
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              INTRADAY OPTIONS ENGINE
+            </span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+              5 PREDICTION REGIMES
+            </span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+              PRICE RE-ENTRY (P0)
+            </span>
+          `;
+        }
+        if (titleText) titleText.innerText = "5-Regime Intraday Options Strategies & ML Execution Engine";
+        if (descText) descText.innerText = "Rule-based execution on Nifty 50 predictions: Dynamic 1σ/2σ strike selection, per-leg 30%/40% stop-loss, strict 1-time price-triggered re-entry when premium drops to <= P0, independent backtesting, and full ML feedback loop.";
+      }
+
+      // 3. Render rule cards & workflow diagram
+      renderRegimeRuleCards();
+      renderReentryFlowDiagram();
+
+      // 4. Update dynamic sigma display & load horizon data
+      updateDynamicSigmaDisplay();
+      loadRulesHorizonData(false);
+
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function renderRegimeRuleCards() {
+      const container = document.getElementById('regime-rule-cards-grid');
+      if (!container) return;
+
+      const h = currentRulesHorizon;
+      const slPctStr = (h === 'WEEKLY') ? '40%' : (h === 'MONTHLY' ? '50%' : '30%/40%');
+
+      if (h === 'WEEKLY' || h === 'MONTHLY') {
+        const sl = h === 'WEEKLY' ? '40%' : '50%';
+        container.innerHTML = `
+          <!-- 1. Strong Bullish -->
+          <div class="bg-slate-900/90 border border-emerald-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-emerald-500 transition">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                  <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
+                  1. Strong Bullish
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">SL ${sl}</span>
+              </div>
+              <div class="space-y-2 text-[11px]">
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                  <div class="text-[10px] text-emerald-300 font-bold uppercase">${h.capitalize()} Strategy:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1-Sigma Strike</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: ${sl} increase in premium</div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+              <span>Re-entry:</span>
+              <span class="text-emerald-300 font-bold">1-Time @ &le; P0</span>
+            </div>
+          </div>
+
+          <!-- 2. Strong Bearish -->
+          <div class="bg-slate-900/90 border border-rose-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-rose-500 transition">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <span class="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                  <i data-lucide="trending-down" class="w-3.5 h-3.5"></i>
+                  2. Strong Bearish
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">SL ${sl}</span>
+              </div>
+              <div class="space-y-2 text-[11px]">
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                  <div class="text-[10px] text-rose-300 font-bold uppercase">${h.capitalize()} Strategy:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1-Sigma Strike</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: ${sl} increase in premium</div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+              <span>Re-entry:</span>
+              <span class="text-rose-300 font-bold">1-Time @ &le; P0</span>
+            </div>
+          </div>
+
+          <!-- 3. Mild Bullish -->
+          <div class="bg-slate-900/90 border border-teal-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-teal-500 transition">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <span class="text-xs font-bold text-teal-400 flex items-center gap-1.5">
+                  <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
+                  3. Mild Bullish
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">SL ${sl}</span>
+              </div>
+              <div class="space-y-2 text-[11px]">
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                  <div class="text-[10px] text-teal-300 font-bold uppercase">${h.capitalize()} Strategy:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1-Sigma Strike</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: ${sl} increase in premium</div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+              <span>Re-entry:</span>
+              <span class="text-teal-300 font-bold">1-Time @ &le; P0</span>
+            </div>
+          </div>
+
+          <!-- 4. Mild Bearish -->
+          <div class="bg-slate-900/90 border border-amber-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-amber-500 transition">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <span class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                  <i data-lucide="arrow-down-right" class="w-3.5 h-3.5"></i>
+                  4. Mild Bearish
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">SL ${sl}</span>
+              </div>
+              <div class="space-y-2 text-[11px]">
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                  <div class="text-[10px] text-amber-300 font-bold uppercase">${h.capitalize()} Strategy:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1-Sigma Strike</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: ${sl} increase in premium</div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+              <span>Re-entry:</span>
+              <span class="text-amber-300 font-bold">1-Time @ &le; P0</span>
+            </div>
+          </div>
+
+          <!-- 5. Range-Bound -->
+          <div class="bg-slate-900/90 border border-cyan-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-cyan-500 transition">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <span class="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                  <i data-lucide="split" class="w-3.5 h-3.5"></i>
+                  5. Range-Bound
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">SL ${sl}</span>
+              </div>
+              <div class="space-y-2 text-[11px]">
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                  <div class="text-[10px] text-cyan-300 font-bold uppercase">${h.capitalize()} Strangle:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1&sigma; + Sell PE @ 1&sigma;</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; ${sl} Stop-Loss independently per leg</div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+              <span>Re-entry:</span>
+              <span class="text-cyan-300 font-bold">1-Time @ &le; P0</span>
+            </div>
+          </div>
+        `;
+      } else {
+        // INTRADAY
+        container.innerHTML = `
+          <!-- 1. Strong Bullish -->
+          <div class="bg-slate-900/90 border border-emerald-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-emerald-500 transition">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                  <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
+                  1. Strong Bullish
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">SL 30%</span>
+              </div>
+              <div class="space-y-2 text-[11px]">
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                  <div class="text-[10px] text-emerald-300 font-bold uppercase">Primary Strategy:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1-Sigma Strike</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 30% increase in premium</div>
+                </div>
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-purple-500/20">
+                  <div class="text-[10px] text-purple-300 font-bold uppercase">Experimental Asymmetric:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1&sigma; + Sell CE @ 2&sigma;</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; 30% SL independently per leg</div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+              <span>Re-entry:</span>
+              <span class="text-emerald-300 font-bold">1-Time @ &le; P0</span>
+            </div>
+          </div>
+
+          <!-- 2. Strong Bearish -->
+          <div class="bg-slate-900/90 border border-rose-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-rose-500 transition">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <span class="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                  <i data-lucide="trending-down" class="w-3.5 h-3.5"></i>
+                  2. Strong Bearish
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">SL 30%</span>
+              </div>
+              <div class="space-y-2 text-[11px]">
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                  <div class="text-[10px] text-rose-300 font-bold uppercase">Primary Strategy:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1-Sigma Strike</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 30% increase in premium</div>
+                </div>
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-purple-500/20">
+                  <div class="text-[10px] text-purple-300 font-bold uppercase">Experimental Asymmetric:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1&sigma; + Sell PE @ 2&sigma;</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; 30% SL independently per leg</div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+              <span>Re-entry:</span>
+              <span class="text-rose-300 font-bold">1-Time @ &le; P0</span>
+            </div>
+          </div>
+
+          <!-- 3. Mild Bullish -->
+          <div class="bg-slate-900/90 border border-teal-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-teal-500 transition">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <span class="text-xs font-bold text-teal-400 flex items-center gap-1.5">
+                  <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
+                  3. Mild Bullish
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">SL 40%</span>
+              </div>
+              <div class="space-y-2 text-[11px]">
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                  <div class="text-[10px] text-teal-300 font-bold uppercase">Primary Strategy:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1-Sigma Strike</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 40% increase in premium</div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+              <span>Re-entry:</span>
+              <span class="text-teal-300 font-bold">1-Time @ &le; P0</span>
+            </div>
+          </div>
+
+          <!-- 4. Mild Bearish -->
+          <div class="bg-slate-900/90 border border-amber-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-amber-500 transition">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <span class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                  <i data-lucide="arrow-down-right" class="w-3.5 h-3.5"></i>
+                  4. Mild Bearish
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">SL 40%</span>
+              </div>
+              <div class="space-y-2 text-[11px]">
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                  <div class="text-[10px] text-amber-300 font-bold uppercase">Primary Strategy:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1-Sigma Strike</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 40% increase in premium</div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+              <span>Re-entry:</span>
+              <span class="text-amber-300 font-bold">1-Time @ &le; P0</span>
+            </div>
+          </div>
+
+          <!-- 5. Range-Bound -->
+          <div class="bg-slate-900/90 border border-cyan-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-cyan-500 transition">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <span class="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                  <i data-lucide="split" class="w-3.5 h-3.5"></i>
+                  5. Range-Bound
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">SL 40%</span>
+              </div>
+              <div class="space-y-2 text-[11px]">
+                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                  <div class="text-[10px] text-cyan-300 font-bold uppercase">Primary Strategy:</div>
+                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1&sigma; + Sell PE @ 1&sigma;</div>
+                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Short Strangle (40% SL per leg)</div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+              <span>Re-entry:</span>
+              <span class="text-cyan-300 font-bold">1-Time @ &le; P0</span>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function renderReentryFlowDiagram() {
+      const container = document.getElementById('reentry-flow-container');
+      if (!container) return;
+
+      const h = currentRulesHorizon;
+      const slText = h === 'WEEKLY' ? '₹140 (+40% SL)' : (h === 'MONTHLY' ? '₹150 (+50% SL)' : '₹130/₹140 (30%/40% SL)');
+      const slPct = h === 'WEEKLY' ? '40%' : (h === 'MONTHLY' ? '50%' : '30%/40%');
+
+      container.innerHTML = `
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+          <div class="flex items-center gap-2 text-cyan-400 font-bold">
+            <span class="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-[10px]">1</span>
+            <span>Initial Sell Entry</span>
+          </div>
+          <div class="text-white mt-2 font-semibold">Sell Option @ P0 (e.g. ₹100)</div>
+          <p class="text-[10px] text-slate-400 mt-1">
+            Leg set to ACTIVE. Calculate initial stop trigger: P0 &times; (1 + SL%) = ${slText}.
+          </p>
+        </div>
+
+        <div class="bg-slate-950/80 border border-rose-500/30 rounded-xl p-3">
+          <div class="flex items-center gap-2 text-rose-400 font-bold">
+            <span class="w-5 h-5 rounded-full bg-rose-500/20 text-rose-300 flex items-center justify-center text-[10px]">2</span>
+            <span>Stop-Loss Exit</span>
+          </div>
+          <div class="text-white mt-2 font-semibold">Premium reaches ${slText}</div>
+          <p class="text-[10px] text-slate-400 mt-1">
+            Trigger buy exit on executable quotes (accounting for slippage). Record actual exit fill. State &rarr; SL_EXITED.
+          </p>
+        </div>
+
+        <div class="bg-slate-950/80 border border-amber-500/30 rounded-xl p-3">
+          <div class="flex items-center gap-2 text-amber-400 font-bold">
+            <span class="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center text-[10px]">3</span>
+            <span>Monitor Same Strike</span>
+          </div>
+          <div class="text-white mt-2 font-semibold">Track Contract &amp; Quotes</div>
+          <p class="text-[10px] text-slate-400 mt-1">
+            No new prediction required. Continuous watchdog monitors live bid/ask quotes for the exact same strike.
+          </p>
+        </div>
+
+        <div class="bg-slate-950/80 border border-emerald-500/30 rounded-xl p-3">
+          <div class="flex items-center gap-2 text-emerald-400 font-bold">
+            <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center text-[10px]">4</span>
+            <span>Price-Triggered Re-Entry</span>
+          </div>
+          <div class="text-white mt-2 font-semibold">Premium &le; P0 (e.g. &le; ₹100)</div>
+          <p class="text-[10px] text-slate-400 mt-1">
+            Submit new sell order. Strictly 1 re-entry per cycle. New SL trigger = Actual Re-entry Fill &times; (1 + ${slPct}). State &rarr; RE_ENTERED.
+          </p>
+        </div>
+
+        <div class="bg-slate-950/80 border border-purple-500/30 rounded-xl p-3">
+          <div class="flex items-center gap-2 text-purple-400 font-bold">
+            <span class="w-5 h-5 rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center text-[10px]">5</span>
+            <span>Final Exit / Expiry Settlement</span>
+          </div>
+          <div class="text-white mt-2 font-semibold">Final SL or Expiry Settlement</div>
+          <p class="text-[10px] text-slate-400 mt-1">
+            If re-entered leg hits new SL &rarr; FINAL_SL_EXITED (zero further re-entries). Else hold into expiry decay for full credit.
+          </p>
+        </div>
+      `;
+    }
 
     function updateDynamicSigmaDisplay(spot = null, iv = null) {
-      // Determine underlying spot price
       let s = spot;
       if (!s || s <= 0) {
         if (niftyOptionsChainCache && niftyOptionsChainCache.spot) {
@@ -9038,7 +9470,6 @@
         }
       }
 
-      // Determine ATM implied volatility
       let ivVal = iv;
       if (!ivVal || ivVal <= 0) {
         if (niftyOptionsChainCache && niftyOptionsChainCache.summary && niftyOptionsChainCache.summary.atm_iv) {
@@ -9048,12 +9479,21 @@
         }
       }
 
-      // Exact mathematical formula: Expected Move = Underlying Price * IV * sqrt(Time to Expiry in Years)
-      const tYears = 1.0 / 365.0; // Intraday 1-day 0DTE horizon
+      const h = currentRulesHorizon;
+      let dte = 1;
+      let tYears = 1.0 / 365.0;
+
+      if (h === 'WEEKLY') {
+        dte = 5;
+        tYears = 5.0 / 365.0;
+      } else if (h === 'MONTHLY') {
+        dte = 25;
+        tYears = 25.0 / 365.0;
+      }
+
       const sigmaDec = ivVal / 100.0;
       const expectedMove = s * sigmaDec * Math.sqrt(tYears);
 
-      // Strike selection rounded to eligible listed NSE strikes (multiples of 50)
       const strike1sPe = Math.round((s - expectedMove) / 50) * 50;
       const strike1sCe = Math.round((s + expectedMove) / 50) * 50;
       const strike2sPe = Math.round((s - 2 * expectedMove) / 50) * 50;
@@ -9070,7 +9510,7 @@
 
       if (spotEl) spotEl.innerText = `₹${s.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       if (ivEl) ivEl.innerText = `${ivVal.toFixed(1)}%`;
-      if (tEl) tEl.innerText = `1-Day (T = ${(tYears).toFixed(5)} yr)`;
+      if (tEl) tEl.innerText = `${h.capitalize()} (${dte}D, T=${tYears.toFixed(4)} yr)`;
       if (emEl) emEl.innerText = `± ${expectedMove.toFixed(1)} pts`;
       if (s1peEl) s1peEl.innerText = `${strike1sPe} PE`;
       if (s1ceEl) s1ceEl.innerText = `${strike1sCe} CE`;
@@ -9078,42 +9518,51 @@
       if (s2ceEl) s2ceEl.innerText = `${strike2sCe} CE`;
     }
 
-    async function loadIntradayRulesData(forceRefresh = false) {
+    async function loadRulesHorizonData(forceRefresh = false) {
+      const h = currentRulesHorizon;
       updateDynamicSigmaDisplay();
 
       try {
-        // Fetch active trade ledger
-        const ledgerPromise = fetch('/api/options/intraday-rules/active-trades')
+        const tradeUrl = (h === 'INTRADAY')
+          ? '/api/options/intraday-rules/active-trades'
+          : `/api/options/positional-rules/active-trades?horizon=${h}`;
+
+        const mlUrl = (h === 'INTRADAY')
+          ? '/api/options/intraday-rules/ml-metrics'
+          : `/api/options/positional-rules/ml-metrics?horizon=${h}`;
+
+        const ledgerPromise = fetch(tradeUrl)
           .then(r => r.ok ? r.json() : null)
           .then(data => {
             if (data && data.trades) {
-              intradayActiveTradesCache = data.trades;
+              rulesActiveTradesCache[h] = data.trades;
               renderIntradayTradesLedger(data.trades);
             }
-          }).catch(e => console.error("Error loading intraday trade ledger:", e));
+          }).catch(e => console.error(`Error loading ${h} trades ledger:`, e));
 
-        // Fetch ML model metrics
-        const mlPromise = fetch('/api/options/intraday-rules/ml-metrics')
+        const mlPromise = fetch(mlUrl)
           .then(r => r.ok ? r.json() : null)
           .then(data => {
             if (data) {
-              intradayMLMetricsCache = data;
+              rulesMLMetricsCache[h] = data;
               renderIntradayMLMetrics(data);
             }
-          }).catch(e => console.error("Error loading intraday ML metrics:", e));
+          }).catch(e => console.error(`Error loading ${h} ML metrics:`, e));
 
-        // If backtest not loaded or forced, run backtest
-        if (!intradayBacktestCache || forceRefresh) {
-          runIntradayOptionsBacktest(false);
+        if (!rulesBacktestCache[h] || forceRefresh) {
+          runSelectedRulesBacktest(false);
+        } else {
+          renderIntradayBacktestUI(rulesBacktestCache[h]);
         }
 
         await Promise.all([ledgerPromise, mlPromise]);
       } catch (err) {
-        console.error("Failed loading intraday rules data:", err);
+        console.error(`Failed loading ${h} rules data:`, err);
       }
     }
 
-    async function runIntradayOptionsBacktest(userInitiated = true) {
+    async function runSelectedRulesBacktest(userInitiated = true) {
+      const h = currentRulesHorizon;
       const btn = document.getElementById('btn-run-intraday-backtest');
       const origHtml = btn ? btn.innerHTML : '';
       const sessionsSel = document.getElementById('sel-intraday-backtest-sessions');
@@ -9121,26 +9570,26 @@
 
       if (btn && userInitiated) {
         btn.disabled = true;
-        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Backtesting ${sessions} Sessions...`;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Backtesting ${h.capitalize()} ${sessions} Sessions...`;
       }
 
       try {
-        const res = await fetch(`/api/options/intraday-rules/backtest?lookback_sessions=${sessions}&lot_size=75`);
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        }
+        const url = (h === 'INTRADAY')
+          ? `/api/options/intraday-rules/backtest?lookback_sessions=${sessions}&lot_size=75`
+          : `/api/options/positional-rules/backtest?horizon=${h}&lookback_sessions=${sessions}&lot_size=75`;
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         const data = await res.json();
-        intradayBacktestCache = data;
+        rulesBacktestCache[h] = data;
         renderIntradayBacktestUI(data);
 
         if (userInitiated) {
-          showToast(`Backtest complete across ${data.sessions_evaluated} sessions (${data.date_range}).`, 'success');
+          showToast(`${h.capitalize()} Backtest complete across ${data.sessions_evaluated} sessions (${data.date_range}).`, 'success');
         }
       } catch (err) {
-        console.error("Backtest error:", err);
-        if (userInitiated) {
-          showToast(`Backtest error: ${err.message}`, 'error');
-        }
+        console.error(`${h} Backtest error:`, err);
+        if (userInitiated) showToast(`Backtest error: ${err.message}`, 'error');
       } finally {
         if (btn && userInitiated) {
           btn.disabled = false;
@@ -9154,14 +9603,11 @@
       if (!data || !data.comparison_matrix) return;
 
       const matrix = data.comparison_matrix;
-      const primaryRe = matrix.PRIMARY_WITH_REENTRY || {};
-      const primaryNoRe = matrix.PRIMARY_WITHOUT_REENTRY || {};
-      const asymRe = matrix.ASYMMETRIC_WITH_REENTRY || {};
-      const asymNoRe = matrix.ASYMMETRIC_WITHOUT_REENTRY || {};
-      const sl30 = matrix.SL_30_SENSITIVITY || {};
-      const sl40 = matrix.SL_40_SENSITIVITY || {};
+      const h = currentRulesHorizon;
+      const baselineKey = (h === 'INTRADAY') ? 'PRIMARY_WITH_REENTRY' : 'SPECIFIED_WITH_REENTRY';
+      const baseline = matrix[baselineKey] || {};
 
-      // 1. KPI Cards for Primary with Re-entry
+      // 1. KPI Cards
       const kpiWin = document.getElementById('bt-kpi-winrate');
       const kpiPnl = document.getElementById('bt-kpi-netpnl');
       const kpiExp = document.getElementById('bt-kpi-expectancy');
@@ -9169,42 +9615,64 @@
       const kpiDd = document.getElementById('bt-kpi-maxdd');
       const kpiTail = document.getElementById('bt-kpi-tailloss');
 
-      if (kpiWin) kpiWin.innerText = `${primaryRe.win_rate_pct || 0}%`;
+      if (kpiWin) kpiWin.innerText = `${baseline.win_rate_pct || 0}%`;
       if (kpiPnl) {
-        const pnl = primaryRe.total_net_pnl_inr || 0;
+        const pnl = baseline.total_net_pnl_inr || 0;
         kpiPnl.innerText = `${pnl >= 0 ? '+' : ''}₹${Number(pnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
         kpiPnl.className = `text-base sm:text-lg font-bold mt-0.5 ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
       }
       if (kpiExp) {
-        const exp = primaryRe.expectancy_inr || 0;
+        const exp = baseline.expectancy_inr || 0;
         kpiExp.innerText = `${exp >= 0 ? '+' : ''}₹${Number(exp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
       }
-      if (kpiPf) kpiPf.innerText = `${primaryRe.profit_factor || 0}`;
-      if (kpiDd) kpiDd.innerText = `₹${Number(primaryRe.max_drawdown_inr || 0).toLocaleString('en-IN')}`;
-      if (kpiTail) kpiTail.innerText = `₹${Number(primaryRe.tail_loss_worst_5pct_inr || 0).toLocaleString('en-IN')}`;
+      if (kpiPf) kpiPf.innerText = `${baseline.profit_factor || 0}`;
+      if (kpiDd) kpiDd.innerText = `₹${Number(baseline.max_drawdown_inr || 0).toLocaleString('en-IN')}`;
+      if (kpiTail) kpiTail.innerText = `₹${Number(baseline.tail_loss_worst_5pct_inr || 0).toLocaleString('en-IN')}`;
 
       // Update banner and timestamp
       const banner = document.getElementById('backtest-meta-banner');
       const badge = document.getElementById('backtest-timestamp-badge');
       if (banner) {
-        banner.innerText = `Evaluated ${data.sessions_evaluated} Historical Sessions (${data.date_range}) • Net P&L Deducts All Regulatory Costs`;
+        banner.innerText = `${h.capitalize()} Horizon • Evaluated ${data.sessions_evaluated} Historical Sessions (${data.date_range}) • Net of All Indian Taxes`;
       }
       if (badge) {
         badge.innerText = `UPDATED ${data.timestamp_ist || ''}`;
       }
 
       // 2. Comparison Matrix Table
-      const compRows = [
-        { name: "Primary Strategy (With 1-Time Re-Entry)", sl: "30% / 40% (Regime-based)", re: "ENABLED (&le; P0)", m: primaryRe, highlight: true },
-        { name: "Primary Strategy (Without Re-Entry)", sl: "30% / 40% (Regime-based)", re: "DISABLED (Vanilla SL)", m: primaryNoRe, highlight: false },
-        { name: "Experimental Asymmetric (With Re-Entry)", sl: "30% per leg", re: "ENABLED (&le; P0)", m: asymRe, highlight: true },
-        { name: "Experimental Asymmetric (Without Re-Entry)", sl: "30% per leg", re: "DISABLED (Vanilla SL)", m: asymNoRe, highlight: false },
-        { name: "30% Stop-Loss Sensitivity Run", sl: "Strict 30% all regimes", re: "ENABLED (&le; P0)", m: sl30, highlight: false },
-        { name: "40% Stop-Loss Sensitivity Run", sl: "Strict 40% all regimes", re: "ENABLED (&le; P0)", m: sl40, highlight: false },
-      ];
-
       const compTbody = document.getElementById('backtest-comparison-tbody');
       if (compTbody) {
+        let compRows = [];
+        if (h === 'INTRADAY') {
+          compRows = [
+            { name: "Primary Strategy (With 1-Time Re-Entry)", sl: "30% / 40%", re: "ENABLED (&le; P0)", m: matrix.PRIMARY_WITH_REENTRY, highlight: true },
+            { name: "Primary Strategy (Without Re-Entry)", sl: "30% / 40%", re: "DISABLED (Vanilla SL)", m: matrix.PRIMARY_WITHOUT_REENTRY, highlight: false },
+            { name: "Experimental Asymmetric (With Re-Entry)", sl: "30% per leg", re: "ENABLED (&le; P0)", m: matrix.ASYMMETRIC_WITH_REENTRY, highlight: true },
+            { name: "Experimental Asymmetric (Without Re-Entry)", sl: "30% per leg", re: "DISABLED (Vanilla SL)", m: matrix.ASYMMETRIC_WITHOUT_REENTRY, highlight: false },
+            { name: "30% Stop-Loss Sensitivity Run", sl: "Strict 30%", re: "ENABLED (&le; P0)", m: matrix.SL_30_SENSITIVITY, highlight: false },
+            { name: "40% Stop-Loss Sensitivity Run", sl: "Strict 40%", re: "ENABLED (&le; P0)", m: matrix.SL_40_SENSITIVITY, highlight: false },
+          ];
+        } else if (h === 'WEEKLY') {
+          compRows = [
+            { name: "Weekly Specified Strategy (With 1-Time Re-Entry)", sl: "Strict 40%", re: "ENABLED (&le; P0)", m: matrix.SPECIFIED_WITH_REENTRY, highlight: true },
+            { name: "Weekly Specified Strategy (Without Re-Entry)", sl: "Strict 40%", re: "DISABLED (Vanilla SL)", m: matrix.SPECIFIED_WITHOUT_REENTRY, highlight: false },
+            { name: "30% Stop-Loss Sensitivity Experiment", sl: "Alternative 30%", re: "ENABLED (&le; P0)", m: matrix.SL_30_SENSITIVITY, highlight: false },
+            { name: "40% Baseline Stop-Loss Run", sl: "Baseline 40%", re: "ENABLED (&le; P0)", m: matrix.SL_40_BASELINE, highlight: true },
+            { name: "50% Stop-Loss Sensitivity Experiment", sl: "Alternative 50%", re: "ENABLED (&le; P0)", m: matrix.SL_50_SENSITIVITY, highlight: false },
+            { name: "60% Stop-Loss Sensitivity Experiment", sl: "Alternative 60%", re: "ENABLED (&le; P0)", m: matrix.SL_60_SENSITIVITY, highlight: false },
+          ];
+        } else {
+          // MONTHLY
+          compRows = [
+            { name: "Monthly Specified Strategy (With 1-Time Re-Entry)", sl: "Strict 50%", re: "ENABLED (&le; P0)", m: matrix.SPECIFIED_WITH_REENTRY, highlight: true },
+            { name: "Monthly Specified Strategy (Without Re-Entry)", sl: "Strict 50%", re: "DISABLED (Vanilla SL)", m: matrix.SPECIFIED_WITHOUT_REENTRY, highlight: false },
+            { name: "40% Stop-Loss Sensitivity Experiment", sl: "Alternative 40%", re: "ENABLED (&le; P0)", m: matrix.SL_40_SENSITIVITY, highlight: false },
+            { name: "50% Baseline Stop-Loss Run", sl: "Baseline 50%", re: "ENABLED (&le; P0)", m: matrix.SL_50_BASELINE, highlight: true },
+            { name: "60% Stop-Loss Sensitivity Experiment", sl: "Alternative 60%", re: "ENABLED (&le; P0)", m: matrix.SL_60_SENSITIVITY, highlight: false },
+            { name: "70% Stop-Loss Sensitivity Experiment", sl: "Alternative 70%", re: "ENABLED (&le; P0)", m: matrix.SL_70_SENSITIVITY, highlight: false },
+          ];
+        }
+
         compTbody.innerHTML = compRows.map(r => {
           const m = r.m || {};
           const pnl = m.total_net_pnl_inr || 0;
@@ -9241,8 +9709,8 @@
         regTbody.innerHTML = regKeys.map(k => {
           const item = rb[k];
           if (!item) return '';
-          const p = item.primary || {};
-          const a = item.asymmetric;
+          const p = (h === 'INTRADAY') ? (item.primary || {}) : item;
+          const a = (h === 'INTRADAY') ? item.asymmetric : 'N/A (Single Horizon)';
           const isAsymObj = typeof a === 'object' && a !== null;
           const pPnl = p.net_pnl_inr || 0;
           const aPnl = isAsymObj ? (a.net_pnl_inr || 0) : 0;
@@ -9255,10 +9723,10 @@
               <td class="p-2.5 text-right font-bold ${pPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${pPnl >= 0 ? '+' : ''}₹${Number(pPnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
               <td class="p-2.5 text-right text-purple-300">${p.profit_factor || 0}</td>
               <td class="p-2.5 text-right font-bold ${isAsymObj ? 'text-emerald-300' : 'text-slate-500'}">
-                ${isAsymObj ? `${a.win_rate_pct || 0}%` : 'N/A'}
+                ${isAsymObj ? `${a.win_rate_pct || 0}%` : (h === 'INTRADAY' ? 'N/A' : '-') }
               </td>
               <td class="p-2.5 text-right font-bold ${isAsymObj ? (aPnl >= 0 ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-500'}">
-                ${isAsymObj ? `${aPnl >= 0 ? '+' : ''}₹${Number(aPnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'N/A (Primary Only)'}
+                ${isAsymObj ? `${aPnl >= 0 ? '+' : ''}₹${Number(aPnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : (h === 'INTRADAY' ? 'N/A (Primary Only)' : '-')}
               </td>
               <td class="p-2.5 text-right text-purple-300">${isAsymObj ? (a.profit_factor || '--') : '--'}</td>
             </tr>
@@ -9266,7 +9734,7 @@
         }).join('');
       }
 
-      // 4. Insights list
+      // 4. Insights List
       const insList = document.getElementById('backtest-insights-list');
       if (insList && data.summary_insights && data.summary_insights.length > 0) {
         insList.innerHTML = data.summary_insights.map(s => `<li>${s}</li>`).join('');
@@ -9278,7 +9746,7 @@
       if (!tbody) return;
 
       if (!trades || trades.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" class="p-4 text-center text-slate-500">No active trades in ledger. Click &quot;Auto-Deploy (Live)&quot; to execute.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11" class="p-4 text-center text-slate-500">No active ${currentRulesHorizon.capitalize()} trades in ledger. Click &quot;Auto-Deploy (Live)&quot; to execute.</td></tr>`;
         return;
       }
 
@@ -9296,7 +9764,7 @@
           <tr class="hover:bg-slate-800/30 transition">
             <td class="p-2.5 text-slate-300">${(t.timestamp_ist || t.entry_time || '').slice(0, 19)}</td>
             <td class="p-2.5 font-bold text-white">${t.regime || '--'}</td>
-            <td class="p-2.5 text-[10px] text-purple-300 font-semibold">${t.strategy_category || 'PRIMARY'}</td>
+            <td class="p-2.5 text-[10px] text-purple-300 font-semibold">${t.strategy_category || currentRulesHorizon}</td>
             <td class="p-2.5 font-bold ${t.option_type === 'CE' ? 'text-rose-400' : 'text-emerald-400'}">${t.strike} ${t.option_type}</td>
             <td class="p-2.5 text-right font-bold text-white">₹${Number(t.original_entry_premium || 0).toFixed(2)}</td>
             <td class="p-2.5 text-right text-rose-300 font-semibold">₹${Number(t.initial_sl_trigger || 0).toFixed(2)}</td>
@@ -9356,35 +9824,44 @@
       }
     }
 
-    async function triggerIntradayAutoTrades() {
+    async function triggerSelectedRulesAutoTrades() {
+      const h = currentRulesHorizon;
       const btn = document.getElementById('btn-trigger-intraday-autotrade');
       const origHtml = btn ? btn.innerHTML : '';
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Evaluating Confidence &amp; Executing...`;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Evaluating ${h.capitalize()} Confidence &amp; Deploying...`;
       }
 
       try {
-        const res = await fetch('/api/options/intraday-rules/auto-deploy', {
+        const url = (h === 'INTRADAY')
+          ? '/api/options/intraday-rules/auto-deploy'
+          : '/api/options/positional-rules/auto-deploy';
+
+        const body = (h === 'INTRADAY')
+          ? { force_refresh: true, confidence_threshold: 8.0, lot_size: 75 }
+          : { horizon: h, force_refresh: true, confidence_threshold: 8.0, lot_size: 75 };
+
+        const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ force_refresh: true, confidence_threshold: 8.0, lot_size: 75 })
+          body: JSON.stringify(body)
         });
         const data = await res.json();
         if (res.ok && data.status === 'OK') {
-          const depList = data.deployed_strategies || [];
+          const depList = data.deployed_strategies || (data.strategy_name ? [data] : []);
           if (depList.length > 0) {
-            const names = depList.map(s => `${s.name} [${s.category}]`).join(', ');
-            showToast(`Auto-Trades Executed: Deployed ${depList.length} strategies: ${names}`, 'success');
+            const names = depList.map(s => `${s.strategy_name || s.name}`).join(', ');
+            showToast(`${h.capitalize()} Auto-Trades Executed: Deployed ${depList.length} strategies: ${names}`, 'success');
           } else {
-            showToast(`Auto-Trader notice: ${data.reason || 'Active intraday strategy already active or confidence threshold not met.'}`, 'info');
+            showToast(`Auto-Trader notice: ${data.reason || 'Active strategy already active or confidence threshold not met.'}`, 'info');
           }
-          await loadIntradayRulesData(true);
+          await loadRulesHorizonData(true);
         } else {
           showToast(`Execution notice: ${data.detail || data.reason || 'Unable to deploy'}`, 'info');
         }
       } catch (err) {
-        console.error("Auto trade execution error:", err);
+        console.error(`${h} Auto trade execution error:`, err);
         showToast(`Auto trade error: ${err.message}`, 'error');
       } finally {
         if (btn) {
@@ -9395,26 +9872,31 @@
       }
     }
 
-    async function retrainOptionsMLModel() {
+    async function retrainSelectedRulesML() {
+      const h = currentRulesHorizon;
       const btn = document.getElementById('btn-retrain-options-ml');
       const origHtml = btn ? btn.innerHTML : '';
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Retraining Online Models...`;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Retraining ${h.capitalize()} Models...`;
       }
 
       try {
-        const res = await fetch('/api/options/intraday-rules/train-ml', { method: 'POST' });
+        const url = (h === 'INTRADAY')
+          ? '/api/options/intraday-rules/train-ml'
+          : `/api/options/positional-rules/train-ml?horizon=${h}`;
+
+        const res = await fetch(url, { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
-          intradayMLMetricsCache = data;
+          rulesMLMetricsCache[h] = data;
           renderIntradayMLMetrics(data);
-          showToast(`ML Model retrained successfully on ${data.total_samples} samples. Win Acc: ${data.win_rate_accuracy_pct}%`, 'success');
+          showToast(`${h.capitalize()} ML Model retrained on ${data.total_samples} samples. Win Acc: ${data.win_rate_accuracy_pct}%`, 'success');
         } else {
           showToast(`ML Retrain failed: ${data.detail || 'Server error'}`, 'error');
         }
       } catch (err) {
-        console.error("ML retrain error:", err);
+        console.error(`${h} ML retrain error:`, err);
         showToast(`ML retrain error: ${err.message}`, 'error');
       } finally {
         if (btn) {
@@ -9423,6 +9905,20 @@
           if (window.lucide) lucide.createIcons();
         }
       }
+    }
+
+    // Legacy alias for compatibility
+    function loadIntradayRulesData(forceRefresh = false) {
+      loadRulesHorizonData(forceRefresh);
+    }
+    function runIntradayOptionsBacktest(userInitiated = true) {
+      runSelectedRulesBacktest(userInitiated);
+    }
+    function triggerIntradayAutoTrades() {
+      triggerSelectedRulesAutoTrades();
+    }
+    function retrainOptionsMLModel() {
+      retrainSelectedRulesML();
     }
 
     // =========================================================================

@@ -1089,6 +1089,98 @@ def post_options_train_ml_endpoint():
 
 
 # ==============================================================================
+# WEEKLY & MONTHLY OPTIONS 5-REGIME RULES: AUTO-TRADES, RE-ENTRY & BACKTEST API
+# ==============================================================================
+class AutoDeployPositionalRequest(BaseModel):
+    horizon: str = "WEEKLY"  # "WEEKLY" or "MONTHLY"
+    force_refresh: bool = False
+    confidence_threshold: float = 8.0
+    lot_size: int = 75
+
+
+@app.get("/api/options/positional-rules/backtest")
+def get_options_positional_backtest_endpoint(
+    horizon: str = "WEEKLY",
+    lookback_sessions: int = 50,
+    lot_size: int = 75
+):
+    """
+    Backtests Weekly (40% SL) or Monthly (50% SL) options strategies separately across all 5 regimes:
+    - Compares specified SL (40% weekly, 50% monthly) vs alternative SL sensitivities
+    - Compares with vs without price-triggered 1-time re-entry
+    - Net P&L after transaction costs, Win Rate %, Expectancy, Profit Factor, Max Drawdown, and Tail Losses
+    - Breakdown by regime and expiry
+    """
+    from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+    return weekly_monthly_options_strategy_engine.run_positional_backtest(
+        horizon=horizon,
+        lookback_sessions=lookback_sessions,
+        lot_size=lot_size
+    )
+
+
+@app.post("/api/options/positional-rules/auto-deploy")
+def post_options_positional_auto_deploy_endpoint(req: Optional[AutoDeployPositionalRequest] = None):
+    """
+    Executes Weekly or Monthly auto-trades whenever the system feels confident based on 5-regime rules.
+    Logs trades with exact timestamps, sigma strikes, and inputs to dedicated SQLite tables.
+    """
+    from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+    horizon = req.horizon if req else "WEEKLY"
+    force = req.force_refresh if req else False
+    conf = req.confidence_threshold if req else 8.0
+    lots = req.lot_size if req else 75
+    return weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades(
+        horizon=horizon,
+        force_refresh=force,
+        confidence_threshold=conf,
+        lot_size=lots
+    )
+
+
+@app.get("/api/options/positional-rules/active-trades")
+def get_options_positional_active_trades_endpoint(horizon: str = "WEEKLY"):
+    """Returns live active Weekly or Monthly options legs, execution status, and re-entry state."""
+    from execution.state_engine import state_engine
+    table_name = "weekly_options_trade_log" if horizon.upper() == "WEEKLY" else "monthly_options_trade_log"
+    with state_engine._lock:
+        with state_engine._get_connection() as conn:
+            rows = conn.execute(f"""
+                SELECT * FROM {table_name}
+                ORDER BY id DESC LIMIT 50
+            """).fetchall()
+    return {
+        "status": "OK",
+        "horizon": horizon.upper(),
+        "trades": [dict(r) for r in rows],
+        "timestamp_ist": format_ist()
+    }
+
+
+@app.get("/api/options/positional-rules/ml-metrics")
+def get_options_positional_ml_metrics_endpoint(horizon: str = "WEEKLY"):
+    """
+    Returns Weekly or Monthly Options ML model metrics, training sample count, and feature importances.
+    STRICT SEPARATION: Never mixes Weekly/Monthly telemetry with Intraday!
+    """
+    from execution.state_engine import state_engine
+    from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+    kv_key = "weekly_options_ml_metadata" if horizon.upper() == "WEEKLY" else "monthly_options_ml_metadata"
+    meta = state_engine.get_kv(kv_key)
+    if not meta:
+        meta = weekly_monthly_options_strategy_engine.train_positional_options_ml_model(horizon=horizon)
+    return meta
+
+
+@app.post("/api/options/positional-rules/train-ml")
+def post_options_positional_train_ml_endpoint(horizon: str = "WEEKLY"):
+    """Retrains the Weekly or Monthly machine learning meta-model exclusively on its own trade logs."""
+    from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+    return weekly_monthly_options_strategy_engine.train_positional_options_ml_model(horizon=horizon)
+
+
+
+# ==============================================================================
 # AI INTELLIGENCE LAYER ENDPOINTS (GROQ + OPENROUTER FREE TIER)
 # ==============================================================================
 class AIAnalyzeRequest(BaseModel):
