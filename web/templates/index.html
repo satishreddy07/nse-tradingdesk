@@ -2373,7 +2373,7 @@
           <table class="w-full text-left text-xs text-slate-300 font-mono">
             <thead class="bg-slate-950/80 text-[10px] sm:text-[11px] uppercase text-slate-400 border-b border-slate-800">
               <tr>
-                <th class="p-3">Prediction Date & Spot</th>
+                <th class="p-3">Prediction Date & Data Up To</th>
                 <th class="p-3">Model Forecast</th>
                 <th class="p-3">T+1 Expected vs Actual</th>
                 <th class="p-3 text-center">T+1 Result</th>
@@ -4248,7 +4248,7 @@
 
       const updBadge = document.getElementById('pred-updated-badge');
       if (updBadge) {
-        updBadge.innerText = `🧠 ${data.is_premarket_locked ? 'Official Forecast' : 'Calculated'}: ${data.timestamp_ist || '--'} • Pre-Market Spot: ₹${Number(data.premarket_spot_price || data.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        updBadge.innerText = `🧠 ${data.is_premarket_locked ? 'Official Forecast' : 'Calculated'}: For ${data.prediction_date || data.target_date || '--'} (Data up to ${data.data_as_of_date || data.data_date || '--'}) • Spot: ₹${Number(data.premarket_spot_price || data.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
       }
 
       const lockBadge = document.getElementById('pred-lock-badge');
@@ -4256,7 +4256,7 @@
         if (data.is_premarket_locked) {
           lockBadge.classList.remove('hidden');
           lockBadge.className = "px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
-          lockBadge.innerHTML = `🔒 PRE-MARKET FORECAST LOCKED (${data.prediction_date || ''}) • Evaluated at 03:45 PM EOD`;
+          lockBadge.innerHTML = `🔒 PRE-MARKET FORECAST LOCKED FOR ${data.prediction_date || data.target_date || ''} (Data up to ${data.data_as_of_date || data.data_date || ''}) • Evaluated at 03:45 PM EOD`;
         } else {
           lockBadge.classList.remove('hidden');
           lockBadge.className = "px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40";
@@ -4868,11 +4868,18 @@
             const t5Status = r.t5_validated === 'VALIDATED_HIT' ? '✓ HIT' : (r.t5_validated === 'DIRECTION_MISS' ? '✗ MISS' : 'PENDING');
             const t5BadgeCls = r.t5_validated === 'VALIDATED_HIT' ? 'text-emerald-400 font-bold' : (r.t5_validated === 'DIRECTION_MISS' ? 'text-rose-400 font-bold' : 'text-slate-400');
 
+            const targetDate = r.target_date || r.prediction_date || '--';
+            const dataDate = r.data_date || '--';
+
             return `
               <tr class="hover:bg-slate-800/40 transition">
                 <td class="p-3 font-mono">
-                  <div class="font-bold text-white text-xs">${r.prediction_date}</div>
-                  <div class="text-[11px] text-slate-400">Spot: ₹${s0.toFixed(2)}</div>
+                  <div class="font-bold text-white text-xs flex items-center gap-1.5">
+                    <span>${targetDate}</span>
+                    ${isPending ? '<span class="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">PENDING</span>' : ''}
+                  </div>
+                  <div class="text-[11px] text-cyan-400 font-sans">Data up to: <b class="font-mono text-cyan-200">${dataDate}</b></div>
+                  <div class="text-[10px] text-slate-400">Spot: ₹${s0.toFixed(2)}</div>
                 </td>
                 <td class="p-3 font-mono">
                   <div class="font-bold text-xs ${sc >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r.t1_verdict || '--'}</div>

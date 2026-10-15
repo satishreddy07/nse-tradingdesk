@@ -277,6 +277,19 @@ class NSEMarketCalendar:
         return True
 
     @classmethod
+    def get_next_trading_day(cls, dt: Optional[datetime.date] = None) -> datetime.date:
+        """Returns the next official NSE trading day after the given date."""
+        cls._load_cached_holidays_from_db()
+        if dt is None:
+            dt = now_ist().date()
+        elif isinstance(dt, datetime.datetime):
+            dt = dt.date()
+        next_d = dt + datetime.timedelta(days=1)
+        while not cls.is_trading_day(next_d):
+            next_d += datetime.timedelta(days=1)
+        return next_d
+
+    @classmethod
     def get_holiday_reason(cls, dt: datetime.date = None) -> str:
         """Returns holiday or weekend reason if applicable."""
         cls._load_cached_holidays_from_db()

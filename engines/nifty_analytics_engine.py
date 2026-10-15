@@ -247,9 +247,22 @@ class NiftyAnalyticsEngine:
                     t5_error_pts REAL,
                     t5_attribution TEXT,
                     pillar_snapshots_json TEXT,
-                    payload_json TEXT
+                    payload_json TEXT,
+                    target_date TEXT,
+                    data_date TEXT
                 );
                 """)
+                cols = [c[1] for c in conn.execute("PRAGMA table_info(nifty_predictions_log)").fetchall()]
+                if "target_date" not in cols:
+                    try:
+                        conn.execute("ALTER TABLE nifty_predictions_log ADD COLUMN target_date TEXT;")
+                    except Exception:
+                        pass
+                if "data_date" not in cols:
+                    try:
+                        conn.execute("ALTER TABLE nifty_predictions_log ADD COLUMN data_date TEXT;")
+                    except Exception:
+                        pass
                 conn.execute("""
                 CREATE TABLE IF NOT EXISTS fii_dii_cash_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2245,7 +2258,7 @@ class NiftyAnalyticsEngine:
                     prev_val = _clean_str(tds[6].get_text())
                     cons_val = _clean_str(tds[7].get_text())
 
-                    surp = _calc_surprise(act_val, cons_val)
+                    surp = cls.calc_economic_surprise(act_val, cons_val)
                     flag_emoji = flag_map.get(c_code, "🌐")
 
                     events.append({
@@ -2612,6 +2625,34 @@ class NiftyAnalyticsEngine:
         # Pillar 1: Nifty 50 Technical Structure (^NSEI)
         n50 = metrics_map.get("^NSEI") or {}
         spot = float(n50.get("close") or 22500.0)
+
+        # Determine data_date (cutoff date of Nifty OHLCV) and target_date (trading session being forecasted)
+        last_bar_dt_str = str(n50.get("last_date") or "")
+        now_dt = now_ist()
+        today_date = now_dt.date()
+        today_str = today_date.strftime("%Y-%m-%d")
+
+        if last_bar_dt_str:
+            try:
+                l_dt = datetime.datetime.strptime(last_bar_dt_str[:10], "%Y-%m-%d").date()
+            except Exception:
+                l_dt = today_date - datetime.timedelta(days=1)
+        else:
+            l_dt = today_date - datetime.timedelta(days=1)
+
+        data_date = l_dt.strftime("%Y-%m-%d")
+
+        # If today is an active trading day and latest completed bar is from a prior day (e.g. 14-Oct completed, today is 15-Oct):
+        # The forecast is for TODAY's session.
+        if NSEMarketCalendar.is_trading_day(today_date) and l_dt < today_date:
+            target_date = today_str
+        elif l_dt >= today_date and now_dt.time() >= datetime.time(15, 30):
+            target_date = NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
+        else:
+            target_date = today_str if NSEMarketCalendar.is_trading_day(today_date) else NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
+
+        pred_date = target_date
+
         atr14 = float(n50.get("atr14") or (spot * 0.01))
         ema9 = float(n50.get("ema9") or spot)
         ema20 = float(n50.get("ema20") or spot)
@@ -2904,7 +2945,8 @@ class NiftyAnalyticsEngine:
         self_training_summary = self._seed_and_grade_forward_testing_ledger(
             series_map=series_map,
             current_breadth_score=breadth_score,
-            current_news_score=combined_news_deriv_score
+            current_news_score=combined_news_deriv_score,
+            latest_target_date=target_date
         )
 
         learned_weights_t1 = self_training_summary.get("learned_weights_t1", {
@@ -3004,8 +3046,8 @@ class NiftyAnalyticsEngine:
         t1_verdict = _verdict_label(composite_score)
         t5_verdict = _verdict_label(composite_score_t5)
 
+
         # Log & Validate Historical Predictions in SQLite (`nifty_predictions_log`)
-        pred_date = str(n50.get("last_date") or now_ist().strftime("%Y-%m-%d"))
         self._record_and_validate_predictions_log(
             pred_date=pred_date,
             spot=spot,
@@ -3022,6 +3064,8 @@ class NiftyAnalyticsEngine:
             t5_high_1s=t5_high_1s,
             nifty_df=series_map.get("^NSEI"),
             pillar_snapshots=pillar_raw_scores,
+            target_date=target_date,
+            data_date=data_date,
         )
         prediction_ledger = self._get_recent_predictions_ledger(limit=18)
 
@@ -3363,6 +3407,9 @@ class NiftyAnalyticsEngine:
         is_trading = NSEMarketCalendar.is_trading_day(now_ist().date())
 
         payload["prediction_date"] = pred_date
+        payload["target_date"] = target_date
+        payload["data_as_of_date"] = data_date
+        payload["data_date"] = data_date
         payload["is_premarket_locked"] = is_trading
         payload["premarket_locked_at_ist"] = format_ist()
         payload["premarket_spot_price"] = spot
@@ -3488,6 +3535,36 @@ class NiftyAnalyticsEngine:
 
         cone_hit = bool(cone_1s[0] <= eod_close <= cone_1s[1])
 
+        # Explicitly grade & update today's prediction entry in SQLite ledger
+        val_status = "VALIDATED_HIT" if outcome == "CORRECT" else "DIRECTION_MISS"
+        exp_close = float(t1_forecast.get("expected_close") or pre_spot)
+        err_pts = round(eod_close - exp_close, 2)
+        if val_status == "VALIDATED_HIT":
+            attr_msg = (
+                f"RIGHT (HIT): Model {t1_verdict} call verified as Nifty moved {actual_change_pct:+.2f}% "
+                f"({actual_change_pts:+.1f} pts) to ₹{eod_close:,.2f} at EOD. "
+                f"Error vs expected close: {err_pts:+.1f} pts."
+            )
+        else:
+            attr_msg = (
+                f"WRONG (MISS): Model projected {t1_verdict} (target ₹{exp_close:,.0f}), but Nifty moved {actual_change_pct:+.2f}% "
+                f"({actual_change_pts:+.1f} pts) to ₹{eod_close:,.2f} at EOD. "
+                f"Error vs expected: {err_pts:+.1f} pts."
+            )
+
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                conn.execute("""
+                UPDATE nifty_predictions_log
+                SET actual_t1_close = ?,
+                    t1_validated = ?,
+                    t1_actual_return_pct = ?,
+                    t1_error_pts = ?,
+                    t1_attribution = ?
+                WHERE prediction_date = ?
+                """, (eod_close, val_status, actual_change_pct, err_pts, attr_msg, today_str))
+                conn.commit()
+
         fresh_preds = self.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
         st = fresh_preds.get("self_training_engine", {})
 
@@ -3528,7 +3605,8 @@ class NiftyAnalyticsEngine:
         self,
         series_map: Dict[str, pd.DataFrame],
         current_breadth_score: float,
-        current_news_score: float
+        current_news_score: float,
+        latest_target_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Seeds & grades a walk-forward forward-testing ledger across the last ~18 real trading sessions
@@ -3581,11 +3659,34 @@ class NiftyAnalyticsEngine:
         # Evaluate last 18 sessions
         start_idx = max(25, n_bars - 18)
 
+        now_dt = now_ist()
+        today_date = now_dt.date()
+        today_str = today_date.strftime("%Y-%m-%d")
+        last_bar_dt_str = dates[-1] if dates else today_str
+        try:
+            l_dt = datetime.datetime.strptime(last_bar_dt_str, "%Y-%m-%d").date()
+        except Exception:
+            l_dt = today_date - datetime.timedelta(days=1)
+
+        if not latest_target_date:
+            if NSEMarketCalendar.is_trading_day(today_date) and l_dt < today_date:
+                latest_target_date = today_str
+            elif l_dt >= today_date and now_dt.time() >= datetime.time(15, 30):
+                latest_target_date = NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
+            else:
+                latest_target_date = today_str if NSEMarketCalendar.is_trading_day(today_date) else NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
+
         with state_engine._lock:
             with state_engine._get_connection() as conn:
                 for i in range(start_idx, n_bars):
-                    dt_str = dates[i]
+                    data_dt = dates[i]
+                    dt_str = data_dt
                     s0 = closes[i]
+
+                    if i + 1 < n_bars:
+                        target_dt = dates[i + 1]
+                    else:
+                        target_dt = latest_target_date
 
                     # 1. Historical technical score at bar i
                     c_window = closes[:i + 1]
@@ -3662,7 +3763,7 @@ class NiftyAnalyticsEngine:
                     ret_pct_1 = None
                     err_pts_1 = None
                     val_1 = "PENDING"
-                    attr_1 = ""
+                    attr_1 = f"Awaiting {target_dt} session close..."
 
                     if actual_1 is not None:
                         t1_evaluated += 1
@@ -3726,7 +3827,7 @@ class NiftyAnalyticsEngine:
                     ret_pct_5 = None
                     err_pts_5 = None
                     val_5 = "PENDING"
-                    attr_5 = ""
+                    attr_5 = "Awaiting T+5 weekly resolution..."
 
                     if actual_5 is not None:
                         t5_evaluated += 1
@@ -3784,8 +3885,8 @@ class NiftyAnalyticsEngine:
                         actual_t1_close, actual_t5_close, t1_validated, t5_validated,
                         t1_actual_return_pct, t1_error_pts, t1_attribution,
                         t5_actual_return_pct, t5_error_pts, t5_attribution,
-                        pillar_snapshots_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        pillar_snapshots_json, target_date, data_date
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(prediction_date) DO UPDATE SET
                         spot_at_prediction = excluded.spot_at_prediction,
                         composite_score = excluded.composite_score,
@@ -3807,9 +3908,11 @@ class NiftyAnalyticsEngine:
                         t5_actual_return_pct = excluded.t5_actual_return_pct,
                         t5_error_pts = excluded.t5_error_pts,
                         t5_attribution = excluded.t5_attribution,
-                        pillar_snapshots_json = excluded.pillar_snapshots_json;
+                        pillar_snapshots_json = excluded.pillar_snapshots_json,
+                        target_date = excluded.target_date,
+                        data_date = excluded.data_date;
                     """, (
-                        dt_str, f"{dt_str} 15:30:00 IST", s0, score_i,
+                        target_dt, f"{data_dt} 15:30:00 IST", s0, score_i,
                         v_t1, 0.45 if score_i > 0 else 0.25, 0.25, 0.45 if score_i < 0 else 0.25,
                         exp_close_1, low_1s_1, high_1s_1,
                         v_t5, 0.50 if score_i > 0 else 0.20, 0.20, 0.50 if score_i < 0 else 0.20,
@@ -3817,7 +3920,8 @@ class NiftyAnalyticsEngine:
                         actual_1, actual_5, val_1, val_5,
                         ret_pct_1, err_pts_1, attr_1,
                         ret_pct_5, err_pts_5, attr_5,
-                        json.dumps(pillar_snap)
+                        json.dumps(pillar_snap),
+                        target_dt, data_dt
                     ))
                 conn.commit()
 
@@ -3870,8 +3974,12 @@ class NiftyAnalyticsEngine:
         t5_high_1s: float,
         nifty_df: Optional[pd.DataFrame],
         pillar_snapshots: Optional[Dict[str, float]] = None,
+        target_date: Optional[str] = None,
+        data_date: Optional[str] = None,
     ) -> None:
         ts_ist = format_ist()
+        t_date = target_date or pred_date
+        d_date = data_date or ""
         with state_engine._lock:
             with state_engine._get_connection() as conn:
                 conn.execute("""
@@ -3879,8 +3987,8 @@ class NiftyAnalyticsEngine:
                     prediction_date, timestamp_ist, spot_at_prediction, composite_score,
                     t1_verdict, t1_prob_up, t1_prob_flat, t1_prob_down, t1_expected_close, t1_low_1s, t1_high_1s,
                     t5_verdict, t5_prob_up, t5_prob_flat, t5_prob_down, t5_expected_close, t5_low_1s, t5_high_1s,
-                    pillar_snapshots_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    pillar_snapshots_json, target_date, data_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(prediction_date) DO UPDATE SET
                     timestamp_ist = excluded.timestamp_ist,
                     spot_at_prediction = excluded.spot_at_prediction,
@@ -3899,12 +4007,15 @@ class NiftyAnalyticsEngine:
                     t5_expected_close = excluded.t5_expected_close,
                     t5_low_1s = excluded.t5_low_1s,
                     t5_high_1s = excluded.t5_high_1s,
-                    pillar_snapshots_json = COALESCE(excluded.pillar_snapshots_json, nifty_predictions_log.pillar_snapshots_json);
+                    pillar_snapshots_json = COALESCE(excluded.pillar_snapshots_json, nifty_predictions_log.pillar_snapshots_json),
+                    target_date = COALESCE(excluded.target_date, nifty_predictions_log.target_date),
+                    data_date = COALESCE(excluded.data_date, nifty_predictions_log.data_date);
                 """, (
                     pred_date, ts_ist, spot, composite_score,
                     t1_verdict, t1_probs["up"], t1_probs["flat"], t1_probs["down"], t1_expected_close, t1_low_1s, t1_high_1s,
                     t5_verdict, t5_probs["up"], t5_probs["flat"], t5_probs["down"], t5_expected_close, t5_low_1s, t5_high_1s,
-                    json.dumps(pillar_snapshots or {})
+                    json.dumps(pillar_snapshots or {}),
+                    t_date, d_date
                 ))
                 conn.commit()
 
@@ -3918,6 +4029,10 @@ class NiftyAnalyticsEngine:
                 out = []
                 for r in rows:
                     d = dict(r)
+                    if not d.get("target_date"):
+                        d["target_date"] = d.get("prediction_date")
+                    if not d.get("data_date"):
+                        d["data_date"] = d.get("prediction_date")
                     if d.get("pillar_snapshots_json"):
                         try:
                             d["pillar_snapshots"] = json.loads(d["pillar_snapshots_json"])

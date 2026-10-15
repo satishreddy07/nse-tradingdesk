@@ -211,3 +211,37 @@ def test_api_endpoints_premarket_lock_and_eod_eval(test_client):
             data_eval = res_eval.json()
             assert data_eval["status"] == "OK"
             assert data_eval["outcome"] == "CORRECT"
+
+
+def test_forward_testing_ledger_dates_and_eod_lifecycle():
+    """
+    Verifies that the forward-testing ledger keys every prediction by the Target Session Date (target_date),
+    strictly preserves the Data Cutoff Date (data_date), and marks active forecasts as PENDING until EOD.
+    """
+    preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
+    assert preds["status"] == "OK"
+    target_dt = preds.get("target_date")
+    data_dt = preds.get("data_date")
+    assert target_dt is not None
+    assert data_dt is not None
+    assert preds.get("data_as_of_date") == data_dt
+
+    ledger = preds.get("prediction_ledger", [])
+    assert len(ledger) > 0
+
+    top_entry = ledger[0]
+    # Top entry must be for the active target session
+    assert top_entry["prediction_date"] == target_dt
+    assert top_entry["target_date"] == target_dt
+    assert top_entry["data_date"] == data_dt
+    assert top_entry["t1_validated"] == "PENDING"
+    assert top_entry["actual_t1_close"] is None
+
+    # Verify prior entries are closed and graded
+    if len(ledger) > 1:
+        prev_entry = ledger[1]
+        assert prev_entry["actual_t1_close"] is not None
+        assert prev_entry["t1_validated"] in ("VALIDATED_HIT", "DIRECTION_MISS")
+        assert prev_entry["target_date"] is not None
+        assert prev_entry["data_date"] is not None
+
