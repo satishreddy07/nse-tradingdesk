@@ -42,7 +42,7 @@ _scheduler_lock = threading.Lock()
 _detected_external_url: Optional[str] = None
 
 _keepalive_telemetry: Dict[str, Any] = {
-    "window_rule": "09:00 AM – 03:50 PM IST (Mon-Fri, Excl. NSE Holidays)",
+    "window_rule": "08:40 AM – 03:50 PM IST (Mon-Fri, Excl. NSE Holidays)",
     "interval_minutes": 4,
     "last_ping_ist": None,
     "last_ping_status": "IDLE",
@@ -528,6 +528,13 @@ def _intraday_collector_watchdog():
                         pass
 
                     # Watchdog Scheduled Scans Catch-Up:
+                    # 08:45 AM Pre-Market Prediction Catch-Up (08:45 to 15:30 IST)
+                    today_str = dt_now.strftime("%Y-%m-%d")
+                    is_pred_locked = bool(state_engine.get_kv(f"nifty_prediction_locked_{today_str}"))
+                    if not is_pred_locked and mins >= 525:  # 525 mins = 08:45 AM IST
+                        logger.info(f"🛡️ [Watchdog Catch-Up] 08:45 AM pre-market prediction pending for {today_str}. Running now...")
+                        scheduled_premarket_nifty_prediction_job()
+
                     # 3:00 PM MOC Catch-Up (15:00 to 15:28 IST)
                     if 900 <= mins <= 928:
                         scans_tel = state_engine.get_scheduled_scans_telemetry()
@@ -618,12 +625,12 @@ def start_scheduler():
             misfire_grace_time=600
         )
 
-        # Job 0B: Strict Render Anti-Sleep Keep-Alive Pinger (Every 4 mins, 09:00 AM – 03:50 PM IST Mon-Fri)
+        # Job 0B: Strict Render Anti-Sleep Keep-Alive Pinger (Every 4 mins, 08:40 AM – 03:50 PM IST Mon-Fri)
         _scheduler.add_job(
             scheduled_render_keepalive_job,
-            trigger=CronTrigger(day_of_week="mon-fri", hour="9-15", minute="*/4", timezone=IST),
+            trigger=CronTrigger(day_of_week="mon-fri", hour="8-15", minute="*/4", timezone=IST),
             id="job_render_keepalive",
-            name="09:00 AM – 03:50 PM Render Anti-Sleep Guard (Every 4m)",
+            name="08:40 AM – 03:50 PM Render Anti-Sleep Guard (Every 4m)",
             replace_existing=True,
             misfire_grace_time=120
         )
@@ -765,6 +772,18 @@ def start_scheduler():
         threading.Thread(target=scheduled_nifty_intraday_50min_job, daemon=True).start()
         # Launch dedicated continuous Intraday Watchdog
         threading.Thread(target=_intraday_collector_watchdog, daemon=True, name="IntradayWatchdog").start()
+        # Zero-Failure Cold-Boot Catch-Up: If container booted >= 08:45 AM on a trading day and prediction not locked, dispatch immediately
+        try:
+            curr_ist = now_ist()
+            if NSEMarketCalendar.is_trading_day(curr_ist.date()):
+                today_str = curr_ist.strftime("%Y-%m-%d")
+                mins_now = curr_ist.hour * 60 + curr_ist.minute
+                is_pred_locked = bool(state_engine.get_kv(f"nifty_prediction_locked_{today_str}"))
+                if not is_pred_locked and mins_now >= 525:  # >= 08:45 AM IST
+                    logger.info(f"🛡️ [Cold Boot Catch-Up] Container started >= 08:45 AM ({curr_ist.strftime('%H:%M:%S')} IST). Dispatching pre-market prediction...")
+                    threading.Thread(target=scheduled_premarket_nifty_prediction_job, daemon=True, name="ColdBootPrediction").start()
+        except Exception as e:
+            logger.debug(f"Cold boot prediction check error: {e}")
         # Launch dedicated zero-broker live options & spot background streamer
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
@@ -773,7 +792,7 @@ def start_scheduler():
             pass
         logger.info(
             "✓ Automated Scheduler active on Asia/Kolkata timezone: "
-            "08:55 AM NSE Holiday Sync, 09:00–15:50 Render Anti-Sleep Guard, 5m Live Price Stream, "
+            "08:45 AM Pre-Market Lock, 08:55 AM NSE Holiday Sync, 08:40–15:50 Render Anti-Sleep Guard, 5m Live Price Stream, "
             "30m/50m Nifty Weekly Option Expiry Collector (09:30–15:30), 10:20 AM & 3:00 PM Scans, with Continuous Auto-Gapfill Watchdog & Zero-Broker 12s Streamer."
         )
         return _scheduler

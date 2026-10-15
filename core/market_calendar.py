@@ -310,9 +310,9 @@ class NSEMarketCalendar:
     def is_render_keepalive_window(cls, dt: datetime.datetime = None) -> Tuple[bool, str]:
         """
         Strict Render Anti-Sleep Guard Window:
-        Returns (True, reason) ONLY between 09:00:00 AM and 03:50:00 PM IST
+        Returns (True, reason) ONLY between 08:40:00 AM and 03:50:00 PM IST
         on active NSE trading days (Monday-Friday, excluding NSE holidays).
-        Outside 09:00–15:50 IST or on weekends/holidays, returns (False, reason)
+        Outside 08:40–15:50 IST or on weekends/holidays, returns (False, reason)
         so Render is allowed to sleep and conserve resources.
         """
         cls._load_cached_holidays_from_db()
@@ -328,13 +328,13 @@ class NSEMarketCalendar:
             reason = cls.get_holiday_reason(curr_date)
             return False, f"SLEEP ALLOWED — Non-trading day ({reason})"
 
-        t_wake = datetime.time(9, 0, 0)
+        t_wake = datetime.time(8, 40, 0)
         t_sleep = datetime.time(15, 50, 0)
 
         if t_wake <= curr_time <= t_sleep:
-            return True, f"NO-SLEEP GUARD ACTIVE (09:00 AM – 03:50 PM IST Trading Window • Now {curr_time.strftime('%H:%M:%S')} IST)"
+            return True, f"NO-SLEEP GUARD ACTIVE (08:40 AM – 03:50 PM IST Trading Window • Now {curr_time.strftime('%H:%M:%S')} IST)"
 
-        return False, f"SLEEP ALLOWED — Outside 09:00 AM – 03:50 PM IST window (Now {curr_time.strftime('%H:%M:%S')} IST)"
+        return False, f"SLEEP ALLOWED — Outside 08:40 AM – 03:50 PM IST window (Now {curr_time.strftime('%H:%M:%S')} IST)"
 
     @classmethod
     def get_market_status(cls, dt: datetime.datetime = None) -> Dict[str, Any]:
