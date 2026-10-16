@@ -6474,6 +6474,7 @@ class NiftyAnalyticsEngine:
         with self._lock:
             self._equity_curves_cache = result
             self._equity_curves_cache_ts = now_ts
+        return result
 
     def get_live_nifty_spot(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
