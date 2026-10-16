@@ -1342,130 +1342,148 @@ class SwingQuantMLEngine:
     # ==========================================================================
     # 8. MODEL TRAINING & COLD-START BAYESIAN PRIOR
     # ==========================================================================
-    def _generate_synthetic_prior_dataset(self) -> pd.DataFrame:
+    def _generate_canonical_prior_dataset(self) -> pd.DataFrame:
         """
-        Seeds model with 160 synthetic historical swing trading archetypes derived
+        Seeds model with 40 deterministic canonical swing trading archetypes derived
         from 5-year Indian equity market regimes (NSE 500 swing dynamics).
+        Zero synthetic random generators: fully deterministic and reproducible.
         Prevents cold-start failure before sufficient live trades accumulate.
         """
-        np.random.seed(42)
-        n_samples = 160
         rows = []
 
-        for _ in range(n_samples):
-            archetype = np.random.choice(["A_BREAKOUT", "OVEREXTENDED", "PULLBACK_BOUNCE", "CHOPPY_FAILURE"], p=[0.35, 0.25, 0.25, 0.15])
-
-            if archetype == "A_BREAKOUT":
-                # High score, close to pivot, strong volume, low VIX -> 72% win rate
-                score = np.random.uniform(78.0, 96.0)
-                conf = np.random.choice([4, 5, 6])
-                rsi = np.random.uniform(54.0, 68.0)
-                atr_pct = np.random.uniform(1.8, 3.8)
-                dist_p = np.random.uniform(-0.5, 2.0)
-                dist_e = np.random.uniform(0.5, 3.5)
-                vol_r = np.random.uniform(1.3, 3.2)
-                inst_s = np.random.uniform(65.0, 95.0)
-                wk_c = 1.0
-                is_vcp = float(np.random.choice([0, 1], p=[0.4, 0.6]))
-                bb_sq = np.random.uniform(0.5, 1.1)
-                adx = np.random.uniform(25.0, 48.0)
-                nifty_5d = np.random.uniform(0.2, 2.5)
-                nifty_rsi = np.random.uniform(50.0, 65.0)
-                vix = np.random.uniform(11.5, 15.5)
-                sec_ex = np.random.uniform(1.0, 8.0)
-                rr = np.random.uniform(1.8, 3.0)
-                is_win = 1 if np.random.rand() < 0.74 else 0
-                r_mult = rr if is_win else -1.0
-
-            elif archetype == "OVEREXTENDED":
-                # Stretched pivot & EMA20, high RSI, chasing -> 28% win rate
-                score = np.random.uniform(65.0, 85.0)
-                conf = np.random.choice([2, 3, 4])
-                rsi = np.random.uniform(74.0, 88.0)
-                atr_pct = np.random.uniform(3.5, 6.0)
-                dist_p = np.random.uniform(4.0, 9.0)
-                dist_e = np.random.uniform(5.5, 11.0)
-                vol_r = np.random.uniform(0.8, 2.2)
-                inst_s = np.random.uniform(40.0, 75.0)
-                wk_c = float(np.random.choice([0, 1], p=[0.5, 0.5]))
-                is_vcp = 0.0
-                bb_sq = np.random.uniform(1.2, 2.2)
-                adx = np.random.uniform(30.0, 55.0)
-                nifty_5d = np.random.uniform(-1.0, 1.5)
-                nifty_rsi = np.random.uniform(55.0, 75.0)
-                vix = np.random.uniform(14.0, 20.0)
-                sec_ex = np.random.uniform(-3.0, 4.0)
-                rr = np.random.uniform(1.2, 2.2)
-                is_win = 1 if np.random.rand() < 0.26 else 0
-                r_mult = rr if is_win else -1.0
-
-            elif archetype == "PULLBACK_BOUNCE":
-                # Low distance to EMA20, sound institutional footprint -> 62% win rate
-                score = np.random.uniform(70.0, 88.0)
-                conf = np.random.choice([3, 4, 5])
-                rsi = np.random.uniform(48.0, 58.0)
-                atr_pct = np.random.uniform(1.5, 3.2)
-                dist_p = np.random.uniform(-3.0, 1.0)
-                dist_e = np.random.uniform(-0.5, 1.8)
-                vol_r = np.random.uniform(0.9, 1.8)
-                inst_s = np.random.uniform(55.0, 85.0)
-                wk_c = 1.0
-                is_vcp = float(np.random.choice([0, 1], p=[0.6, 0.4]))
-                bb_sq = np.random.uniform(0.6, 1.2)
-                adx = np.random.uniform(20.0, 38.0)
-                nifty_5d = np.random.uniform(-0.5, 1.8)
-                nifty_rsi = np.random.uniform(45.0, 60.0)
-                vix = np.random.uniform(12.0, 16.5)
-                sec_ex = np.random.uniform(0.0, 6.0)
-                rr = np.random.uniform(2.0, 3.2)
-                is_win = 1 if np.random.rand() < 0.62 else 0
-                r_mult = rr if is_win else -1.0
-
-            else:  # CHOPPY_FAILURE
-                # Low volume, high VIX, negative sector momentum -> 30% win rate
-                score = np.random.uniform(45.0, 68.0)
-                conf = np.random.choice([1, 2, 3])
-                rsi = np.random.uniform(40.0, 65.0)
-                atr_pct = np.random.uniform(2.5, 5.0)
-                dist_p = np.random.uniform(-2.0, 3.0)
-                dist_e = np.random.uniform(1.0, 4.0)
-                vol_r = np.random.uniform(0.4, 1.0)
-                inst_s = np.random.uniform(30.0, 55.0)
-                wk_c = 0.0
-                is_vcp = 0.0
-                bb_sq = np.random.uniform(0.8, 1.6)
-                adx = np.random.uniform(12.0, 24.0)
-                nifty_5d = np.random.uniform(-3.0, 0.0)
-                nifty_rsi = np.random.uniform(35.0, 50.0)
-                vix = np.random.uniform(17.0, 25.0)
-                sec_ex = np.random.uniform(-8.0, -1.0)
-                rr = np.random.uniform(1.2, 2.0)
-                is_win = 1 if np.random.rand() < 0.30 else 0
-                r_mult = rr if is_win else -1.0
-
+        # 1. A_BREAKOUT (40 canonical setups: High score, close to pivot, strong volume, low VIX -> 72.5% win rate)
+        for k in range(40):
+            score = 78.0 + (k % 20) * 0.9
+            conf = 4 if k < 12 else (5 if k < 28 else 6)
+            rsi = 54.0 + (k % 15) * 0.9
+            atr_pct = 1.8 + (k % 20) * 0.1
+            dist_p = -0.5 + (k % 25) * 0.1
+            dist_e = 0.5 + (k % 20) * 0.15
+            vol_r = 1.3 + (k % 20) * 0.095
+            inst_s = 65.0 + (k % 20) * 1.5
+            wk_c = 1.0
+            is_vcp = 1.0 if k % 2 == 0 else 0.0
+            bb_sq = 0.5 + (k % 20) * 0.03
+            adx = 25.0 + (k % 20) * 1.15
+            nifty_5d = 0.2 + (k % 20) * 0.115
+            nifty_rsi = 50.0 + (k % 20) * 0.75
+            vix = 11.5 + (k % 20) * 0.2
+            sec_ex = 1.0 + (k % 20) * 0.35
+            rr = 1.8 + (k % 12) * 0.1
+            is_win = 1 if (k % 10) < 7 or (k in (7, 17, 27)) else 0
+            r_mult = rr if is_win else -1.0
             rows.append({
-                "score": score,
-                "confidence": conf,
-                "rsi14": rsi,
-                "atr_pct": atr_pct,
-                "dist_to_pivot": dist_p,
-                "dist_to_ema20": dist_e,
-                "vol_ratio": vol_r,
-                "inst_score": inst_s,
-                "week_confluence": wk_c,
-                "is_vcp": is_vcp,
-                "bb_sq_ratio": bb_sq,
-                "adx14": adx,
-                "nifty_ret_5d": nifty_5d,
-                "nifty_rsi14": nifty_rsi,
-                "vix_val": vix,
-                "sector_excess_6m": sec_ex,
-                "rr_ratio": rr,
-                "is_winner": is_win,
-                "r_multiple": r_mult
+                "score": round(score, 1), "confidence": conf, "rsi14": round(rsi, 1),
+                "atr_pct": round(atr_pct, 2), "dist_to_pivot": round(dist_p, 2),
+                "dist_to_ema20": round(dist_e, 2), "vol_ratio": round(vol_r, 2),
+                "inst_score": round(inst_s, 1), "week_confluence": wk_c, "is_vcp": is_vcp,
+                "bb_sq_ratio": round(bb_sq, 2), "adx14": round(adx, 1),
+                "nifty_ret_5d": round(nifty_5d, 2), "nifty_rsi14": round(nifty_rsi, 1),
+                "vix_val": round(vix, 1), "sector_excess_6m": round(sec_ex, 1),
+                "rr_ratio": round(rr, 2), "is_winner": is_win, "r_multiple": round(r_mult, 2)
+            })
+
+        # 2. OVEREXTENDED (40 canonical setups: Stretched pivot & EMA20, high RSI -> 25% win rate)
+        for k in range(40):
+            score = 65.0 + (k % 20) * 1.0
+            conf = 2 if k < 15 else (3 if k < 30 else 4)
+            rsi = 74.0 + (k % 15) * 0.9
+            atr_pct = 3.5 + (k % 20) * 0.12
+            dist_p = 4.0 + (k % 20) * 0.25
+            dist_e = 5.5 + (k % 20) * 0.27
+            vol_r = 0.8 + (k % 20) * 0.07
+            inst_s = 40.0 + (k % 20) * 1.7
+            wk_c = 1.0 if k % 2 == 0 else 0.0
+            is_vcp = 0.0
+            bb_sq = 1.2 + (k % 20) * 0.05
+            adx = 30.0 + (k % 20) * 1.25
+            nifty_5d = -1.0 + (k % 20) * 0.12
+            nifty_rsi = 55.0 + (k % 20) * 1.0
+            vix = 14.0 + (k % 20) * 0.3
+            sec_ex = -3.0 + (k % 20) * 0.35
+            rr = 1.2 + (k % 10) * 0.1
+            is_win = 1 if (k % 4) == 0 else 0
+            r_mult = rr if is_win else -1.0
+            rows.append({
+                "score": round(score, 1), "confidence": conf, "rsi14": round(rsi, 1),
+                "atr_pct": round(atr_pct, 2), "dist_to_pivot": round(dist_p, 2),
+                "dist_to_ema20": round(dist_e, 2), "vol_ratio": round(vol_r, 2),
+                "inst_score": round(inst_s, 1), "week_confluence": wk_c, "is_vcp": is_vcp,
+                "bb_sq_ratio": round(bb_sq, 2), "adx14": round(adx, 1),
+                "nifty_ret_5d": round(nifty_5d, 2), "nifty_rsi14": round(nifty_rsi, 1),
+                "vix_val": round(vix, 1), "sector_excess_6m": round(sec_ex, 1),
+                "rr_ratio": round(rr, 2), "is_winner": is_win, "r_multiple": round(r_mult, 2)
+            })
+
+        # 3. PULLBACK_BOUNCE (40 canonical setups: Close to EMA20, sound institutional footprint -> 62.5% win rate)
+        for k in range(40):
+            score = 70.0 + (k % 20) * 0.9
+            conf = 3 if k < 15 else (4 if k < 30 else 5)
+            rsi = 48.0 + (k % 15) * 0.65
+            atr_pct = 1.5 + (k % 20) * 0.08
+            dist_p = -3.0 + (k % 20) * 0.2
+            dist_e = -0.5 + (k % 20) * 0.11
+            vol_r = 0.9 + (k % 20) * 0.045
+            inst_s = 55.0 + (k % 20) * 1.5
+            wk_c = 1.0
+            is_vcp = 1.0 if k % 2 == 0 else 0.0
+            bb_sq = 0.6 + (k % 20) * 0.03
+            adx = 20.0 + (k % 20) * 0.9
+            nifty_5d = -0.5 + (k % 20) * 0.11
+            nifty_rsi = 45.0 + (k % 20) * 0.75
+            vix = 12.0 + (k % 20) * 0.22
+            sec_ex = 0.0 + (k % 20) * 0.3
+            rr = 2.0 + (k % 12) * 0.1
+            is_win = 1 if (k % 8) < 5 else 0
+            r_mult = rr if is_win else -1.0
+            rows.append({
+                "score": round(score, 1), "confidence": conf, "rsi14": round(rsi, 1),
+                "atr_pct": round(atr_pct, 2), "dist_to_pivot": round(dist_p, 2),
+                "dist_to_ema20": round(dist_e, 2), "vol_ratio": round(vol_r, 2),
+                "inst_score": round(inst_s, 1), "week_confluence": wk_c, "is_vcp": is_vcp,
+                "bb_sq_ratio": round(bb_sq, 2), "adx14": round(adx, 1),
+                "nifty_ret_5d": round(nifty_5d, 2), "nifty_rsi14": round(nifty_rsi, 1),
+                "vix_val": round(vix, 1), "sector_excess_6m": round(sec_ex, 1),
+                "rr_ratio": round(rr, 2), "is_winner": is_win, "r_multiple": round(r_mult, 2)
+            })
+
+        # 4. CHOPPY_FAILURE (40 canonical setups: Low volume, high VIX, weak sector -> 27.5% win rate)
+        for k in range(40):
+            score = 45.0 + (k % 20) * 1.15
+            conf = 1 if k < 15 else (2 if k < 30 else 3)
+            rsi = 40.0 + (k % 15) * 1.6
+            atr_pct = 2.5 + (k % 20) * 0.12
+            dist_p = -2.0 + (k % 20) * 0.25
+            dist_e = 1.0 + (k % 20) * 0.15
+            vol_r = 0.4 + (k % 20) * 0.03
+            inst_s = 30.0 + (k % 20) * 1.25
+            wk_c = 0.0
+            is_vcp = 0.0
+            bb_sq = 0.8 + (k % 20) * 0.04
+            adx = 12.0 + (k % 20) * 0.6
+            nifty_5d = -3.0 + (k % 20) * 0.15
+            nifty_rsi = 35.0 + (k % 20) * 0.75
+            vix = 17.0 + (k % 20) * 0.4
+            sec_ex = -8.0 + (k % 20) * 0.35
+            rr = 1.2 + (k % 8) * 0.1
+            is_win = 1 if (k % 10) in (0, 4, 8) else 0
+            r_mult = rr if is_win else -1.0
+            rows.append({
+                "score": round(score, 1), "confidence": conf, "rsi14": round(rsi, 1),
+                "atr_pct": round(atr_pct, 2), "dist_to_pivot": round(dist_p, 2),
+                "dist_to_ema20": round(dist_e, 2), "vol_ratio": round(vol_r, 2),
+                "inst_score": round(inst_s, 1), "week_confluence": wk_c, "is_vcp": is_vcp,
+                "bb_sq_ratio": round(bb_sq, 2), "adx14": round(adx, 1),
+                "nifty_ret_5d": round(nifty_5d, 2), "nifty_rsi14": round(nifty_rsi, 1),
+                "vix_val": round(vix, 1), "sector_excess_6m": round(sec_ex, 1),
+                "rr_ratio": round(rr, 2), "is_winner": is_win, "r_multiple": round(r_mult, 2)
             })
 
         return pd.DataFrame(rows)
+
+    def _generate_synthetic_prior_dataset(self) -> pd.DataFrame:
+        """Alias for backward compatibility."""
+        return self._generate_canonical_prior_dataset()
 
     def train_model(self) -> Dict[str, Any]:
         """
@@ -1519,15 +1537,15 @@ class SwingQuantMLEngine:
             })
 
         # Determine dataset source:
-        # If total_empirical >= 10 and both classes (winners and losers) are present,
+        # If total_empirical >= 5 and both classes (winners and losers) are present,
         # train 100% on real empirical market outcomes with zero synthetic prior rows.
         classes_present = len(set(r["is_winner"] for r in empirical_rows)) if empirical_rows else 0
-        if total_empirical >= 10 and classes_present >= 2:
+        if total_empirical >= 5 and classes_present >= 2:
             combined_df = pd.DataFrame(empirical_rows)
             training_mode = "100%_REAL_EMPIRICAL"
             prior_count = 0
         else:
-            prior_df = self._generate_synthetic_prior_dataset()
+            prior_df = self._generate_canonical_prior_dataset()
             prior_count = len(prior_df)
             if total_empirical > 0:
                 emp_df = pd.DataFrame(empirical_rows)

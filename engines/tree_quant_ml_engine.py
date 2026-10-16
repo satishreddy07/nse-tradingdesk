@@ -562,69 +562,74 @@ class TreeQuantMLEngine:
     # =========================================================================
     def _generate_domain_prior_dataset(self, horizon: str, count: int = 60) -> pd.DataFrame:
         """
-        Generates realistic empirical market prior rows based on verified NSE regimes
+        Generates deterministic empirical market prior rows based on verified NSE regimes
         when a brand new database horizon is initialized with zero trade records.
+        Eliminates all random noise generators: 100% deterministic and reproducible.
         """
-        np.random.seed(42)
         rows = []
         horizon_code_map = {"INTRADAY": 1.0, "WEEKLY": 2.0, "MONTHLY": 3.0, "SWING": 4.0}
         h_code = horizon_code_map.get(horizon, 1.0)
+        regimes = [2.0, 1.0, 0.0, -1.0, -2.0]
 
-        for i in range(count):
-            reg = np.random.choice([2.0, 1.0, 0.0, -1.0, -2.0], p=[0.2, 0.25, 0.2, 0.2, 0.15])
-            vix = float(np.random.uniform(11.5, 18.5))
-            comp_score = float(reg * 18.0 + np.random.normal(0, 5))
-            rsi = float(np.clip(50.0 + reg * 8.0 + np.random.normal(0, 4), 25.0, 75.0))
-            pcr = float(np.clip(1.0 + reg * 0.15 + np.random.normal(0, 0.08), 0.6, 1.6))
-            adx = float(np.random.uniform(18.0, 35.0))
-            ret5 = float(reg * 0.8 + np.random.normal(0, 0.5))
+        steps_per_regime = max(2, count // len(regimes))
+        for reg in regimes:
+            for s in range(steps_per_regime):
+                step_norm = (s / max(1, steps_per_regime - 1)) - 0.5  # -0.5 to +0.5
+                vix = 11.5 + abs(reg) * 1.5 + s * 0.4
+                comp_score = reg * 18.0 + step_norm * 8.0
+                rsi = float(np.clip(50.0 + reg * 8.0 + step_norm * 6.0, 25.0, 75.0))
+                pcr = float(np.clip(1.0 + reg * 0.15 + step_norm * 0.10, 0.6, 1.6))
+                adx = 22.0 + abs(reg) * 3.0 + s * 1.0
+                ret5 = reg * 0.8 + step_norm * 0.4
 
-            # Domain rule: Bullish regimes with strong score and good PCR have 65% win probability
-            prob_win = 0.50 + (comp_score * 0.006) + ((pcr - 1.0) * 0.15) - ((vix - 14.0) * 0.01)
-            prob_win = float(np.clip(prob_win, 0.25, 0.80))
-            is_w = 1 if np.random.random() < prob_win else 0
+                prob_win = 0.50 + (comp_score * 0.006) + ((pcr - 1.0) * 0.15) - ((vix - 14.0) * 0.01)
+                prob_win = float(np.clip(prob_win, 0.25, 0.80))
+                # Deterministic threshold for binary classification
+                is_w = 1 if (prob_win >= 0.50 or (prob_win >= 0.42 and s % 2 == 0)) else 0
+                net_pnl = round(float(2200.0 if is_w else -1400.0), 2)
 
-            net_pnl = round(float(np.random.uniform(1200, 3500) if is_w else np.random.uniform(-2500, -800)), 2)
+                vol_ratio = 1.0 + max(0.0, reg * 0.15) + (s % 3) * 0.15
+                gap_pct = round(reg * 0.12 + step_norm * 0.15, 2)
 
-            feat = {
-                "nifty_spot": 25000.0 + ret5 * 250.0,
-                "nifty_ret_1d": round(ret5 * 0.25, 2),
-                "nifty_ret_5d": round(ret5, 2),
-                "composite_score": round(comp_score, 1),
-                "vix_spot": round(vix, 2),
-                "realized_vol_daily": 0.85,
-                "realized_vol_5d": 1.95,
-                "fii_net_flow_cr": round(reg * 500.0, 1),
-                "fii_fut_long_pct": round(45.0 + reg * 5.0, 1),
-                "breadth_ratio": round(1.0 + reg * 0.3, 2),
-                "rsi14": round(rsi, 1),
-                "atr_pct": round(float(vix * 0.12), 2),
-                "dist_to_ema20_pct": round(reg * 0.8, 2),
-                "dist_to_ema50_pct": round(reg * 1.5, 2),
-                "dist_to_pivot_pct": round(reg * 0.6, 2),
-                "volume_ratio_50d": round(float(np.random.uniform(0.9, 1.8)), 2),
-                "trend_strength_adx": round(adx, 1),
-                "overnight_gap_pct": round(float(np.random.normal(0, 0.3)), 2),
-                "near_atm_pcr": round(pcr, 2),
-                "chg_oi_pcr": round(pcr * 0.95, 2),
-                "iv_spot": round(vix, 1),
-                "iv_skew": round(float((pcr - 1.0) * 1.5), 2),
-                "straddle_decay_pct": 12.5,
-                "dist_to_call_wall_pct": 1.5,
-                "dist_to_put_wall_pct": 1.5,
-                "sigma_distance": 1.0,
-                "time_to_expiry_years": 0.015 if horizon == "INTRADAY" else (0.02 if horizon == "WEEKLY" else 0.08),
-                "horizon_code": h_code,
-                "regime_code": reg,
-                "reward_to_risk_est": 1.5,
-                "sl_threshold_pct": 0.40 if horizon == "WEEKLY" else 0.50,
-                "time_of_day_mins": 600.0,
-                "is_winner": is_w,
-                "target_hit_before_sl": is_w,
-                "net_pnl": net_pnl,
-                "trading_horizon": horizon
-            }
-            rows.append(feat)
+                feat = {
+                    "nifty_spot": 25000.0 + ret5 * 250.0,
+                    "nifty_ret_1d": round(ret5 * 0.25, 2),
+                    "nifty_ret_5d": round(ret5, 2),
+                    "composite_score": round(comp_score, 1),
+                    "vix_spot": round(vix, 2),
+                    "realized_vol_daily": 0.85,
+                    "realized_vol_5d": 1.95,
+                    "fii_net_flow_cr": round(reg * 500.0, 1),
+                    "fii_fut_long_pct": round(45.0 + reg * 5.0, 1),
+                    "breadth_ratio": round(1.0 + reg * 0.3, 2),
+                    "rsi14": round(rsi, 1),
+                    "atr_pct": round(float(vix * 0.12), 2),
+                    "dist_to_ema20_pct": round(reg * 0.8, 2),
+                    "dist_to_ema50_pct": round(reg * 1.5, 2),
+                    "dist_to_pivot_pct": round(reg * 0.6, 2),
+                    "volume_ratio_50d": round(float(vol_ratio), 2),
+                    "trend_strength_adx": round(adx, 1),
+                    "overnight_gap_pct": float(gap_pct),
+                    "near_atm_pcr": round(pcr, 2),
+                    "chg_oi_pcr": round(pcr * 0.95, 2),
+                    "iv_spot": round(vix, 1),
+                    "iv_skew": round(float((pcr - 1.0) * 1.5), 2),
+                    "straddle_decay_pct": 12.5,
+                    "dist_to_call_wall_pct": 1.5,
+                    "dist_to_put_wall_pct": 1.5,
+                    "sigma_distance": 1.0,
+                    "time_to_expiry_years": 0.015 if horizon == "INTRADAY" else (0.02 if horizon == "WEEKLY" else 0.08),
+                    "horizon_code": h_code,
+                    "regime_code": reg,
+                    "reward_to_risk_est": 1.5,
+                    "sl_threshold_pct": 0.40 if horizon == "WEEKLY" else 0.50,
+                    "time_of_day_mins": 600.0,
+                    "is_winner": is_w,
+                    "target_hit_before_sl": is_w,
+                    "net_pnl": net_pnl,
+                    "trading_horizon": horizon
+                }
+                rows.append(feat)
 
         return pd.DataFrame(rows)
 

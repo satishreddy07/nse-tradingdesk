@@ -191,39 +191,40 @@ class NiftyForecastLearningEngine:
         return hist_df
 
     def _generate_domain_prior_dataset(self, horizon: str, count: int = 80) -> pd.DataFrame:
-        """Generates synthetic prior domain dataset for cold-start bootstrapping."""
-        np.random.seed(42 if horizon == "T+1" else 105)
+        """Generates deterministic prior domain dataset for cold-start bootstrapping."""
         dir_thresh = 0.08 if horizon == "T+1" else 0.25
+        cycle_patterns = [1.2, -1.1, 0.0, 1.5, -1.4, 0.1, 0.9, -0.9, 0.0, 1.8, -1.6, 0.0]
         rows = []
         for i in range(count):
-            comp = float(np.random.normal(loc=5.0, scale=25.0))
+            mult = cycle_patterns[i % len(cycle_patterns)]
+            base_mag = 12.0 + (i % 20) * 1.5
+            comp = round(mult * base_mag, 1)
             drift = (comp / 100.0) * (0.6 if horizon == "T+1" else 1.8)
-            noise = float(np.random.normal(0, 0.45 if horizon == "T+1" else 0.95))
-            ret_fwd = drift + noise
+            ret_fwd = round(drift, 2)
             tc = 1 if ret_fwd >= dir_thresh else (-1 if ret_fwd <= -dir_thresh else 0)
             rows.append({
                 "prediction_date": f"2026-01-{(i%28)+1:02d}",
                 "spot_price": 25000.0 + i * 10,
                 "composite_score": comp,
-                "composite_score_t5": comp * 1.05,
-                "technical_score": comp * 0.9,
-                "breadth_score": comp * 0.8,
-                "sectoral_score": comp * 0.7,
-                "global_score": comp * 0.6,
-                "macro_score": comp * 0.5,
-                "news_and_deriv_score": comp * 0.4,
-                "institutional_score": comp * 0.5,
+                "composite_score_t5": round(comp * 1.05, 1),
+                "technical_score": round(comp * 0.9, 1),
+                "breadth_score": round(comp * 0.8, 1),
+                "sectoral_score": round(comp * 0.7, 1),
+                "global_score": round(comp * 0.6, 1),
+                "macro_score": round(comp * 0.5, 1),
+                "news_and_deriv_score": round(comp * 0.4, 1),
+                "institutional_score": round(comp * 0.5, 1),
                 "vix_spot": 14.0,
                 "near_atm_pcr": 1.1,
                 "chg_oi_pcr": 1.05,
-                "dist_to_ema20_pct": 1.2,
-                "dist_to_ema50_pct": 2.5,
+                "dist_to_ema20_pct": round(comp * 0.04, 2),
+                "dist_to_ema50_pct": round(comp * 0.08, 2),
                 "crude_oil_ret_1d": 0.1,
                 "crude_oil_ret_5d": 0.5,
-                "fii_fut_long_pct": 52.0,
-                "sp500_ret_1d": 0.2,
-                "nifty_ret_5d": 0.8,
-                "actual_return_pct": round(ret_fwd, 2),
+                "fii_fut_long_pct": round(50.0 + comp * 0.15, 1),
+                "sp500_ret_1d": round(comp * 0.01, 2),
+                "nifty_ret_5d": round(comp * 0.03, 2),
+                "actual_return_pct": ret_fwd,
                 "target_class": tc,
                 "realized_direction": "BULLISH" if tc == 1 else ("BEARISH" if tc == -1 else "FLAT"),
                 "weight": 1.0
@@ -291,7 +292,18 @@ class NiftyForecastLearningEngine:
 
             p_lgb = lgb_fold.predict_proba(X_va)
             p_xgb = xgb_fold.predict_proba(X_va)
-            p_ens = 0.5 * p_lgb + 0.5 * p_xgb
+
+            p_lgb_full = np.zeros((len(X_va), 3), dtype=np.float64)
+            for idx, cls in enumerate(lgb_fold.classes_):
+                if 0 <= cls < 3:
+                    p_lgb_full[:, cls] = p_lgb[:, idx] if p_lgb.ndim > 1 else p_lgb
+
+            p_xgb_full = np.zeros((len(X_va), 3), dtype=np.float64)
+            for idx, cls in enumerate(xgb_fold.classes_):
+                if 0 <= cls < 3:
+                    p_xgb_full[:, cls] = p_xgb[:, idx] if p_xgb.ndim > 1 else p_xgb
+
+            p_ens = 0.5 * p_lgb_full + 0.5 * p_xgb_full
             y_pred_fold = np.argmax(p_ens, axis=1)
 
             # Accuracy & Brier score
@@ -299,9 +311,10 @@ class NiftyForecastLearningEngine:
             val_accs.append(acc)
 
             # Multiclass Brier score: mean squared difference from one-hot target
-            y_one_hot = np.zeros_like(p_ens)
+            y_one_hot = np.zeros((len(X_va), 3), dtype=np.float64)
             for r_i, c_i in enumerate(y_va_c):
-                y_one_hot[r_i, c_i] = 1.0
+                if 0 <= c_i < 3:
+                    y_one_hot[r_i, c_i] = 1.0
             brier = float(np.mean(np.sum((p_ens - y_one_hot) ** 2, axis=1)))
             val_briers.append(brier)
 
@@ -314,8 +327,9 @@ class NiftyForecastLearningEngine:
             base_acc = float(np.mean(y_va_c == maj_class))
             base_accs.append(base_acc)
 
-            p_base = np.zeros_like(p_ens)
-            p_base[:, maj_class] = 1.0
+            p_base = np.zeros((len(X_va), 3), dtype=np.float64)
+            if 0 <= maj_class < 3:
+                p_base[:, maj_class] = 1.0
             base_brier = float(np.mean(np.sum((p_base - y_one_hot) ** 2, axis=1)))
             base_briers.append(base_brier)
 
