@@ -48,7 +48,7 @@ import pandas as pd
 from sklearn.linear_model import Ridge, LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from core import config
-from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL
+from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL, NIFTY_LOT_SIZE
 
 from core.data_quality import IST, now_ist, format_ist
 from core.market_calendar import NSEMarketCalendar
@@ -3264,7 +3264,12 @@ class NiftyAnalyticsEngine:
                 _, df = self.yf_fetcher.fetch_ticker_chart(tk, range_period="1y", max_retries=2)
             except Exception:
                 df = None
-            if df is None or len(df) < 5:
+            if df is not None and not df.empty and len(df) >= 5:
+                try:
+                    state_engine.save_ohlcv_df(tk, df)
+                except Exception:
+                    pass
+            elif df is None or len(df) < 5:
                 try:
                     cached_df, _ = state_engine.get_ohlcv_df(tk)
                     if cached_df is not None and not cached_df.empty:
@@ -3413,72 +3418,80 @@ class NiftyAnalyticsEngine:
         )
         global_score = float(np.clip(round((us_forward_signal * 0.75) + (asian_impulse * 0.25), 1), -100.0, 100.0))
 
+        spy_fwd_close = us_intel.get("us_t1_forecast", {}).get("expected_close_spy")
+        spy_fwd_pct = us_intel.get("us_t1_forecast", {}).get("expected_pct_spy")
+        disp_regime = us_intel.get("breadth_analysis", {}).get("dispersion_regime", "BALANCED")
+        disp_val = us_intel.get("breadth_analysis", {}).get("rsp_vs_spy_dispersion")
+        vix_spot_val = us_intel.get("volatility_surface", {}).get("vix_spot")
+        nikkei_c = nikkei_m.get("close")
+        hangseng_c = hangseng_m.get("close")
+
         global_rows = [
             {
                 "name": f"US T+1 Prediction: {us_intel.get('us_t1_forecast', {}).get('verdict', 'NEUTRAL')}",
                 "ticker": "SPY",
-                "ltp": float(us_intel.get("us_t1_forecast", {}).get("expected_close_spy", 0.0)),
-                "ret_1d": float(us_intel.get("us_t1_forecast", {}).get("expected_pct_spy", 0.0)),
-                "ret_5d": 0.0,
-                "ema20": 0.0,
+                "ltp": float(spy_fwd_close) if spy_fwd_close is not None else None,
+                "ret_1d": float(spy_fwd_pct) if spy_fwd_pct is not None else None,
+                "ret_5d": None,
+                "ema20": None,
                 "trend": "BULLISH_TAILWIND" if us_pred_score >= 10 else ("BEARISH_HEADWIND" if us_pred_score <= -10 else "NEUTRAL"),
                 "signal_score": round(us_pred_score, 1),
-                "note": f"US T+1 Model (Prob Up: {us_intel.get('us_t1_forecast', {}).get('prob_up', 0.33)*100:.0f}%, Confidence: {us_intel.get('us_t1_forecast', {}).get('confidence', 'MEDIUM')})",
+                "note": f"US T+1 Model (Prob Up: {us_intel.get('us_t1_forecast', {}).get('prob_up', 0.33)*100:.0f}%, Confidence: {us_intel.get('us_t1_forecast', {}).get('confidence', 'MEDIUM')})" if spy_fwd_close is not None else "US T+1 data temporarily unavailable",
             },
             {
-                "name": f"US Breadth: {us_intel.get('breadth_analysis', {}).get('dispersion_regime', 'BALANCED')}",
+                "name": f"US Breadth: {disp_regime}",
                 "ticker": "RSP-SPY",
-                "ltp": float(us_intel.get("breadth_analysis", {}).get("rsp_vs_spy_dispersion", 0.0)),
-                "ret_1d": float(us_intel.get("breadth_analysis", {}).get("rsp_vs_spy_dispersion", 0.0)),
-                "ret_5d": 0.0,
-                "ema20": 0.0,
-                "trend": "BULLISH_TAILWIND" if us_breadth_score >= 10 else ("BEARISH_HEADWIND" if us_breadth_score <= -10 else "NEUTRAL"),
+                "ltp": float(disp_val) if disp_val is not None else None,
+                "ret_1d": float(disp_val) if disp_val is not None else None,
+                "ret_5d": None,
+                "ema20": None,
+                "trend": "UNAVAILABLE" if disp_regime == "UNAVAILABLE" or disp_val is None else ("BULLISH_TAILWIND" if us_breadth_score >= 10 else ("BEARISH_HEADWIND" if us_breadth_score <= -10 else "NEUTRAL")),
                 "signal_score": round(us_breadth_score, 1),
                 "note": str(us_intel.get("breadth_analysis", {}).get("dispersion_note", "")),
             },
             {
                 "name": f"US VIX Term Structure: {us_intel.get('volatility_surface', {}).get('regime', 'CONTANGO')}",
                 "ticker": "^VIX",
-                "ltp": float(us_intel.get("volatility_surface", {}).get("vix_spot", 15.0)),
-                "ret_1d": 0.0,
-                "ret_5d": 0.0,
-                "ema20": 0.0,
-                "trend": "BULLISH_TAILWIND" if us_vix_score >= 10 else ("BEARISH_HEADWIND" if us_vix_score <= -10 else "NEUTRAL"),
+                "ltp": float(vix_spot_val) if (vix_spot_val is not None and float(vix_spot_val) > 0) else None,
+                "ret_1d": None,
+                "ret_5d": None,
+                "ema20": None,
+                "trend": "UNAVAILABLE" if vix_spot_val is None else ("BULLISH_TAILWIND" if us_vix_score >= 10 else ("BEARISH_HEADWIND" if us_vix_score <= -10 else "NEUTRAL")),
                 "signal_score": round(us_vix_score, 1),
                 "note": str(us_intel.get("volatility_surface", {}).get("note", "")),
             },
             {
                 "name": "E-mini S&P Futures & Fair Value Gap",
                 "ticker": "ES=F",
-                "ltp": es_price,
-                "ret_1d": es_ret1,
-                "ret_5d": 0.0,
-                "ema20": 0.0,
-                "trend": "BULLISH_TAILWIND" if es_ret1 > 0.1 else ("BEARISH_HEADWIND" if es_ret1 < -0.1 else "NEUTRAL"),
-                "signal_score": round(float(np.clip(es_ret1 * 14.0, -50.0, 50.0)), 1),
-                "note": f"Fair Value Gap: {futures_radar.get('expected_fair_gap_pts', 0):+.1f} pts ({futures_radar.get('gap_verdict', '')})",
+                "ltp": es_price if (es_price is not None and es_price > 0) else None,
+                "ret_1d": es_ret1 if (es_price is not None and es_price > 0) else None,
+                "ret_5d": None,
+                "ema20": None,
+                "trend": ("BULLISH_TAILWIND" if es_ret1 > 0.1 else ("BEARISH_HEADWIND" if es_ret1 < -0.1 else "NEUTRAL")) if (es_price is not None and es_price > 0) else "UNAVAILABLE",
+                "signal_score": round(float(np.clip(es_ret1 * 14.0, -50.0, 50.0)), 1) if (es_price is not None and es_price > 0) else 0.0,
+                "note": f"Fair Value Gap: {futures_radar.get('expected_fair_gap_pts', 0):+.1f} pts ({futures_radar.get('gap_verdict', '')})" if (es_price is not None and es_price > 0) else "Futures data temporarily unavailable",
             },
             {
                 "name": "Nikkei 225 (Japan)",
                 "ticker": "^N225",
-                "ltp": float(nikkei_m.get("close") or 0.0),
-                "ret_1d": nikkei_1d,
-                "ret_5d": float(nikkei_m.get("ret_5d") or 0.0),
-                "ema20": float(nikkei_m.get("ema20") or 0.0),
-                "trend": "BULLISH_TAILWIND" if nikkei_1d > 0.2 else ("BEARISH_HEADWIND" if nikkei_1d < -0.2 else "NEUTRAL"),
-                "signal_score": round(float(np.clip(nikkei_1d * 8.0, -30.0, 30.0)), 1),
-                "note": "Regional Asian session risk sentiment",
+                "ltp": round(float(nikkei_c), 2) if (nikkei_c is not None and float(nikkei_c) > 0) else None,
+                "ret_1d": nikkei_1d if (nikkei_c is not None and float(nikkei_c) > 0) else None,
+                "ret_5d": float(nikkei_m.get("ret_5d")) if (nikkei_c is not None and nikkei_m.get("ret_5d") is not None) else None,
+                "ema20": float(nikkei_m.get("ema20")) if (nikkei_c is not None and nikkei_m.get("ema20") is not None) else None,
+                "trend": ("BULLISH_TAILWIND" if nikkei_1d > 0.2 else ("BEARISH_HEADWIND" if nikkei_1d < -0.2 else "NEUTRAL")) if (nikkei_c is not None and float(nikkei_c) > 0) else "UNAVAILABLE",
+                "signal_score": round(float(np.clip(nikkei_1d * 8.0, -30.0, 30.0)), 1) if (nikkei_c is not None and float(nikkei_c) > 0) else 0.0,
+                "note": "Regional Asian session risk sentiment" if (nikkei_c is not None and float(nikkei_c) > 0) else "Nikkei 225 data temporarily unavailable",
             },
             {
                 "name": "Hang Seng (Hong Kong)",
                 "ticker": "^HSI",
-                "ltp": float(hangseng_m.get("close") or 0.0),
-                "ret_1d": hangseng_1d,
-                "ret_5d": float(hangseng_m.get("ret_5d") or 0.0),
-                "ema20": float(hangseng_m.get("ema20") or 0.0),
-                "trend": "BULLISH_TAILWIND" if hangseng_1d > 0.2 else ("BEARISH_HEADWIND" if hangseng_1d < -0.2 else "NEUTRAL"),
-                "signal_score": round(float(np.clip(hangseng_1d * 8.0, -30.0, 30.0)), 1),
-                "note": "China & Asian liquidity proxy",
+                "ltp": round(float(hangseng_c), 2) if (hangseng_c is not None and float(hangseng_c) > 0) else None,
+                "ret_1d": hangseng_1d if (hangseng_c is not None and float(hangseng_c) > 0) else None,
+                "ret_5d": float(hangseng_m.get("ret_5d")) if (hangseng_c is not None and hangseng_m.get("ret_5d") is not None) else None,
+                "ema20": float(hangseng_m.get("ema20")) if (hangseng_c is not None and hangseng_m.get("ema20") is not None) else None,
+                "trend": ("BULLISH_TAILWIND" if hangseng_1d > 0.2 else ("BEARISH_HEADWIND" if hangseng_1d < -0.2 else "NEUTRAL")) if (hangseng_c is not None and float(hangseng_c) > 0) else "UNAVAILABLE",
+                "signal_score": round(float(np.clip(hangseng_1d * 8.0, -30.0, 30.0)), 1) if (hangseng_c is not None and float(hangseng_c) > 0) else 0.0,
+                "note": "China & Asian liquidity proxy" if (hangseng_c is not None and float(hangseng_c) > 0) else "Hang Seng data temporarily unavailable",
             },
         ]
         global_score = float(np.clip(round(global_score, 1), -100.0, 100.0))
@@ -3494,22 +3507,38 @@ class NiftyAnalyticsEngine:
         ]
         macro_rows = []
         macro_score = 0.0
+        total_macro_w = 0.0
         crude_oil_status = {
             "ticker": "BZ=F",
-            "ltp": 0.0,
-            "ret_1d": 0.0,
-            "ret_5d": 0.0,
+            "ltp": None,
+            "ret_1d": None,
+            "ret_5d": None,
             "signal_score": 0.0,
-            "impact": "NEUTRAL",
+            "impact": "UNAVAILABLE",
             "is_spike": False,
-            "transmission_mechanism": "Energy prices are steady.",
+            "transmission_mechanism": "Brent crude oil data temporarily unavailable.",
         }
         for m_name, m_tk, m_w, is_inv, m_note in macro_defs:
             mm = metrics_map.get(m_tk) or {}
-            c_val = mm.get("close") or 0.0
+            c_raw = mm.get("close")
+            if c_raw is None or float(c_raw) <= 0:
+                macro_rows.append({
+                    "name": m_name,
+                    "ticker": m_tk,
+                    "ltp": None,
+                    "ret_1d": None,
+                    "ret_5d": None,
+                    "ema20": None,
+                    "impact_on_nifty": "UNAVAILABLE",
+                    "signal_score": 0.0,
+                    "note": f"{m_name} data temporarily unavailable",
+                })
+                continue
+
+            c_val = float(c_raw)
             r1 = float(mm.get("ret_1d") or 0.0)
             r5 = float(mm.get("ret_5d") or 0.0)
-            e20_val = mm.get("ema20") or c_val
+            e20_val = float(mm.get("ema20") or c_val)
             if is_inv:
                 raw_sig = (-r1 * 14.0) + (-r5 * 5.0) + (15.0 if c_val <= e20_val else -15.0)
             else:
@@ -3548,18 +3577,22 @@ class NiftyAnalyticsEngine:
                 sig = float(np.clip(raw_sig, -100.0, 100.0))
 
             macro_score += sig * m_w
+            total_macro_w += m_w
             macro_rows.append({
                 "name": m_name,
                 "ticker": m_tk,
-                "ltp": c_val,
-                "ret_1d": r1,
-                "ret_5d": r5,
-                "ema20": e20_val,
+                "ltp": round(c_val, 2),
+                "ret_1d": round(r1, 2),
+                "ret_5d": round(r5, 2),
+                "ema20": round(e20_val, 2),
                 "impact_on_nifty": impact_tag,
                 "signal_score": round(sig, 1),
                 "note": m_note,
             })
-        macro_score = float(np.clip(round(macro_score, 1), -100.0, 100.0))
+        if total_macro_w > 0:
+            macro_score = float(np.clip(round(macro_score / total_macro_w, 1), -100.0, 100.0))
+        else:
+            macro_score = 0.0
 
         # Pillar 6: Live News & Central Bank (RBI MPC / Fed FOMC) Sentiment
         news_data = self._fetch_live_news_and_events()
@@ -3568,6 +3601,11 @@ class NiftyAnalyticsEngine:
         # Institutional Flows: FII & DII Cash Market Turnover + F&O Participant Open Interest
         inst_flow_data = self.fetch_fii_dii_cash_and_participant_oi(force_refresh=force_refresh)
         inst_score = float(inst_flow_data.get("flow_score") or 0.0)
+
+        # Feed Health & Degradation Gatekeeper tracking
+        data_quality_flags: List[str] = []
+        if not (inst_flow_data.get("latest_oi") or inst_flow_data.get("latest_cash")):
+            data_quality_flags.append("INSTITUTIONAL_FLOWS_FEED_UNAVAILABLE")
 
         # Optional Derivatives Overlay from Live Option Chain (if available)
         oc_data = self.fetch_and_analyze_option_chain(force_refresh=False)
@@ -3586,6 +3624,12 @@ class NiftyAnalyticsEngine:
                 "straddle_premium": w_oc.get("straddle", {}).get("straddle_premium"),
                 "atm_iv": float(w_oc.get("volatility_and_gex", {}).get("atm_iv") or 0.0),
             }
+        else:
+            data_quality_flags.append("OPTION_CHAIN_LIVE_FEED_UNAVAILABLE")
+
+        if us_intel.get("status") != "OK" and not us_intel.get("pillar_scores"):
+            data_quality_flags.append("GLOBAL_MACRO_FEED_UNAVAILABLE")
+        feed_health_status = "DEGRADED" if data_quality_flags else "HEALTHY"
 
         combined_news_deriv_score = float(np.clip(round(news_score * 0.5 + deriv_score * 0.5, 1), -100.0, 100.0))
 
@@ -3819,17 +3863,21 @@ class NiftyAnalyticsEngine:
         elif sp500_ret <= -0.25 or nasdaq_ret <= -0.4:
             headwinds_t1.append(f"US Markets closed negative: S&P 500 {sp500_ret:+.2f}%, Nasdaq {nasdaq_ret:+.2f}%")
 
-        if crude_oil_status.get("is_spike"):
-            headwinds_t1.append(f"⚠️ Brent Crude Oil surged {crude_oil_status.get('ret_1d'):+.2f}% to ${crude_oil_status.get('ltp'):.2f}/bbl (Severe CAD, inflation & margin drag)")
-        elif crude_oil_status.get("ret_1d", 0) <= -1.5:
-            tailwinds_t1.append(f"Brent Crude Oil softened {crude_oil_status.get('ret_1d'):+.2f}% to ${crude_oil_status.get('ltp'):.2f}/bbl (Relief for Indian economy & CAD)")
+        crude_r1 = crude_oil_status.get("ret_1d")
+        crude_ltp = crude_oil_status.get("ltp")
+        if crude_r1 is not None and crude_ltp is not None:
+            if crude_oil_status.get("is_spike"):
+                headwinds_t1.append(f"⚠️ Brent Crude Oil surged {crude_r1:+.2f}% to ${crude_ltp:.2f}/bbl (Severe CAD, inflation & margin drag)")
+            elif crude_r1 <= -1.5:
+                tailwinds_t1.append(f"Brent Crude Oil softened {crude_r1:+.2f}% to ${crude_ltp:.2f}/bbl (Relief for Indian economy & CAD)")
 
         vix_m = metrics_map.get("^INDIAVIX", {})
-        vix_c = float(vix_m.get("close", 0.0))
-        vix_1d = float(vix_m.get("ret_1d", 0.0))
+        vix_raw = vix_m.get("close")
+        vix_c = float(vix_raw) if (vix_raw is not None and float(vix_raw) > 0) else 0.0
+        vix_1d = float(vix_m.get("ret_1d") or 0.0) if vix_c > 0 else 0.0
         if vix_c >= 16.0 or vix_1d >= 4.0:
             headwinds_t1.append(f"India VIX elevated at {vix_c:.2f} ({vix_1d:+.2f}% 1D) — higher hedging demand & volatility")
-        elif vix_c < 13.5:
+        elif 0 < vix_c < 13.5:
             tailwinds_t1.append(f"India VIX subdued at {vix_c:.2f} — low volatility complacency supports index stability")
 
         fii_net = float(inst_flow_data.get("latest_cash", {}).get("fii_net", 0.0))
@@ -3843,9 +3891,9 @@ class NiftyAnalyticsEngine:
 
         top_sec = sectoral_rows[0] if sectoral_rows else {}
         worst_sec = sectoral_rows[-1] if sectoral_rows else {}
-        if top_sec and top_sec.get("ret_1d", 0) > 0.4:
+        if top_sec and top_sec.get("ret_1d") is not None and top_sec.get("ret_1d", 0) > 0.4:
             tailwinds_t1.append(f"Sectoral impulse led by {top_sec.get('name')} ({top_sec.get('ret_1d'):+.2f}% 1D)")
-        if worst_sec and worst_sec.get("ret_1d", 0) < -0.4:
+        if worst_sec and worst_sec.get("ret_1d") is not None and worst_sec.get("ret_1d", 0) < -0.4:
             headwinds_t1.append(f"Sectoral drag from {worst_sec.get('name')} ({worst_sec.get('ret_1d'):+.2f}% 1D)")
 
         pillar_labels_t1 = {
@@ -3857,12 +3905,16 @@ class NiftyAnalyticsEngine:
             "news_deriv": "Pillar 6: News Sentiment & Options Overlay",
             "institutional": "Pillar 7: FII/DII Cash & Derivatives OI",
         }
+        crude_str_t1 = f"Brent Crude {crude_r1:+.2f}%" if crude_r1 is not None else "Brent Crude N/A"
+        inr_raw = metrics_map.get('INR=X', {}).get('close')
+        inr_str = f"USD/INR {float(inr_raw):.2f}" if inr_raw is not None else "USD/INR N/A"
+        vix_str = f"India VIX {vix_c:.1f}" if vix_c > 0 else "India VIX N/A"
         pillar_drivers_t1 = {
             "technical": f"Nifty ₹{spot:,.1f} vs EMA20 ₹{ema20:,.1f}, RSI(14)={rsi14:.1f}, MACD Hist={macd_h:+.1f}",
             "breadth": f"{n50_adv} Adv / {n50_dec} Dec ({ad_ratio:.2f} ratio), {breadth_data.get('nifty50_pct_above_ema20', 0):.0f}% stocks > EMA20",
             "sectoral": f"BankNifty {metrics_map.get('^NSEBANK', {}).get('ret_1d', 0):+.2f}%, IT {metrics_map.get('^CNXIT', {}).get('ret_1d', 0):+.2f}%, Weighted Impulse {sectoral_score:+.1f}",
             "global": f"S&P 500 {sp500_ret:+.2f}%, Nasdaq {nasdaq_ret:+.2f}%, US Sentiment {us_intel.get('us_regime', 'NEUTRAL')}",
-            "macro": f"Brent Crude {crude_oil_status.get('ret_1d', 0):+.2f}%, India VIX {vix_c:.1f}, USD/INR {metrics_map.get('INR=X', {}).get('close', 0):.2f}",
+            "macro": f"{crude_str_t1}, {vix_str}, {inr_str}",
             "news_deriv": f"Near-ATM PCR {oc_summary.get('near_atm_pcr', 1.0):.2f}, News Sentiment {news_data.get('sentiment_label', 'NEUTRAL')}",
             "institutional": f"FII Cash ₹{fii_net:+,.0f} Cr, DII Cash ₹{dii_net:+,.0f} Cr, FII Futures Long {inst_flow_data.get('latest_oi', {}).get('fii_fut_long_pct', 50):.1f}%",
         }
@@ -3928,10 +3980,12 @@ class NiftyAnalyticsEngine:
         else:
             headwinds_t5.append(f"Institutional FII derivatives sentiment is net short: {fii_fut_long_pct:.1f}% long ratio ({100.0 - fii_fut_long_pct:.1f}% short)")
 
-        if crude_oil_status.get("ret_5d", 0) >= 5.0:
-            headwinds_t5.append(f"Brent Crude 5-day surge ({crude_oil_status.get('ret_5d'):+.2f}%) elevates multi-week CAD and fuel inflation concerns")
-        elif crude_oil_status.get("ret_5d", 0) <= -3.0:
-            tailwinds_t5.append(f"Brent Crude 5-day easing ({crude_oil_status.get('ret_5d'):+.2f}%) provides weekly tailwind for corporate margins")
+        crude_r5 = crude_oil_status.get("ret_5d")
+        if crude_r5 is not None and crude_ltp is not None:
+            if crude_r5 >= 5.0:
+                headwinds_t5.append(f"Brent Crude 5-day surge ({crude_r5:+.2f}%) elevates multi-week CAD and fuel inflation concerns")
+            elif crude_r5 <= -3.0:
+                tailwinds_t5.append(f"Brent Crude 5-day easing ({crude_r5:+.2f}%) provides weekly tailwind for corporate margins")
 
         pillar_labels_t5 = {
             "technical": "Structural Moving Averages (EMA 50 & 200)",
@@ -3949,12 +4003,13 @@ class NiftyAnalyticsEngine:
             "macro": macro_score_t5,
             "institutional": inst_score_t5,
         }
+        crude_str_t5 = f"Brent Crude 5-day return {crude_r5:+.2f}%" if crude_r5 is not None else "Brent Crude 5-day return N/A"
         pillar_drivers_t5 = {
             "technical": f"Spot ₹{spot:,.1f} vs EMA50 ₹{ema50:,.1f} & EMA200 ₹{ema200:,.1f}, 5-Day Trend {ret_5d:+.2f}%",
             "breadth": f"{pct_e50_val:.1f}% stocks > EMA50, {pct_e200_val:.1f}% stocks > EMA200",
             "sectoral": f"Sectoral leadership breadth across Banking, IT, Auto and Energy over weekly cycle",
             "global": f"US S&P 500 weekly regime, 50-day moving average support & Treasury yield trajectory",
-            "macro": f"Brent Crude 5-day return {crude_oil_status.get('ret_5d', 0):+.2f}%, USD/INR stability & US VIX",
+            "macro": f"{crude_str_t5}, USD/INR stability & US VIX",
             "institutional": f"FII Index Futures Long Ratio {fii_fut_long_pct:.1f}% ({inst_flow_data.get('latest_oi', {}).get('fii_fut_net', 0):,} contracts)",
         }
         t5_pillar_contributions = []
@@ -4059,6 +4114,8 @@ class NiftyAnalyticsEngine:
             "fii_dii_and_oi": inst_flow_data,
             "quant_suggestions": quant_suggestions,
             "prediction_ledger": prediction_ledger,
+            "data_feed_health": feed_health_status,
+            "data_quality_flags": data_quality_flags,
         }
 
         def _clean_payload_json(obj):
@@ -4875,7 +4932,7 @@ class NiftyAnalyticsEngine:
 
         # Auto-derive calculated metrics if not supplied by caller
         if (net_premium == 0.0 or abs(net_premium) < 0.01) and legs:
-            prem = sum(((-1 if l.get("action") == "BUY" else 1) * float(l.get("entry_price", l.get("price", 0.0)))) * int(l.get("qty", 75)) for l in legs)
+            prem = sum(((-1 if l.get("action") == "BUY" else 1) * float(l.get("entry_price", l.get("price", 0.0)))) * int(l.get("qty", NIFTY_LOT_SIZE)) for l in legs)
             net_premium = round(prem, 2)
 
         if target_pnl == 0.0:
@@ -4944,7 +5001,7 @@ class NiftyAnalyticsEngine:
             typ = l.get("type", "CE")
             stk = l.get("strike", 0)
             lots = l.get("lots", 1)
-            qty = l.get("qty", lots * 75)
+            qty = l.get("qty", lots * NIFTY_LOT_SIZE)
             px = l.get("entry_price", l.get("price", 0.0))
             icon = "🟢" if act == "BUY" else "🔴"
             leg_bullets.append(f"{icon} Leg {i}: {act} {stk} {typ} | {lots} Lots ({qty} Qty) @ ₹{px:.2f}")
@@ -5035,7 +5092,7 @@ class NiftyAnalyticsEngine:
             stk = leg.get("strike")
             opt_type = leg.get("type", "CE")
             action = leg.get("action", "BUY")
-            qty = leg.get("qty", 75)
+            qty = leg.get("qty", NIFTY_LOT_SIZE)
             entry_px = float(leg.get("entry_price", leg.get("price", 0.0)))
             cmp_val = active_map.get(stk, {}).get(opt_type)
             if cmp_val is None:
@@ -5229,7 +5286,7 @@ class NiftyAnalyticsEngine:
                 stk = leg.get("strike")
                 opt_type = leg.get("type", "CE")
                 action = leg.get("action", "BUY")
-                qty = leg.get("qty", 75)
+                qty = leg.get("qty", NIFTY_LOT_SIZE)
                 entry_px = float(leg.get("entry_price", leg.get("price", 0.0)))
 
                 try:
@@ -5325,21 +5382,6 @@ class NiftyAnalyticsEngine:
                 "label": cs.get("strategy_name")
             })
 
-        if active_strategies:
-            live_equity = running_equity + total_unrealized_pnl
-            if live_equity > peak_equity:
-                peak_equity = live_equity
-            dd = (peak_equity - live_equity) / peak_equity * 100.0 if peak_equity > 0 else 0.0
-            if dd > max_dd:
-                max_dd = dd
-            equity_curve.append({
-                "timestamp": "Live MTM",
-                "date": "Today Live",
-                "equity": round(live_equity, 2),
-                "pnl": round(total_unrealized_pnl, 2),
-                "label": f"Live MTM ({len(active_strategies)} Active)"
-            })
-
         total_trades = wins + losses
         win_rate = round((wins / total_trades) * 100.0, 1) if total_trades > 0 else 0.0
 
@@ -5374,7 +5416,7 @@ class NiftyAnalyticsEngine:
         strikes_data: List[Dict[str, Any]],
         atm_strike: int,
         spot_price: float,
-        lot_size: int = 75
+        lot_size: int = NIFTY_LOT_SIZE
     ) -> Dict[str, Any]:
         """
         Synthesizes executable multi-leg option strategies using real live strike prices,
@@ -5938,7 +5980,7 @@ class NiftyAnalyticsEngine:
                         strikes_data=strikes_source,
                         atm_strike=atm_source,
                         spot_price=spot_price,
-                        lot_size=75
+                        lot_size=NIFTY_LOT_SIZE
                     )
                     readable_name = st_type.replace("_", " ").title()
                     strat_name = f"{m_upper.capitalize()} {readable_name}"
@@ -6167,16 +6209,6 @@ class NiftyAnalyticsEngine:
                     "label": f"🎯 T1 Booked: {r['symbol']} (+₹{t1_p:,.0f})"
                 })
 
-        p1_mtm = sum((float(r["current_price"] or r["entry_price"]) - float(r["entry_price"])) * int(r["quantity"]) for r in p1_active)
-        if p1_active:
-            p1_curve.append({
-                "timestamp": "Live MTM",
-                "date": "Today Live",
-                "equity": round(p1_running + p1_mtm, 2),
-                "pnl": round(p1_mtm, 2),
-                "label": f"Open Positions ({len(p1_active)} Stocks: +₹{p1_mtm:,.0f} MTM)"
-            })
-
         # Build P2 curve (Nifty 500 Compounding Desk, Base ₹1,00,000)
         p2_base = float(P2_BASE_CAPITAL)
         p2_running = p2_base
@@ -6204,16 +6236,6 @@ class NiftyAnalyticsEngine:
                     "label": f"🎯 T1 Booked: {r['symbol']} (+₹{t1_p:,.0f})"
                 })
 
-        p2_mtm = sum((float(r["current_price"] or r["entry_price"]) - float(r["entry_price"])) * int(r["quantity"]) for r in p2_active)
-        if p2_active:
-            p2_curve.append({
-                "timestamp": "Live MTM",
-                "date": "Today Live",
-                "equity": round(p2_running + p2_mtm, 2),
-                "pnl": round(p2_mtm, 2),
-                "label": f"Open Positions ({len(p2_active)} Stocks: +₹{p2_mtm:,.0f} MTM)"
-            })
-
         result = {
             "status": "OK",
             "options_curve": opt_curve,
@@ -6239,11 +6261,20 @@ class NiftyAnalyticsEngine:
         now_dt = now_ist()
         now_ts = time.time()
         ts_now = format_ist(now_dt)
+        is_market_open, _ = NSEMarketCalendar.can_execute_trades(now_dt)
+        mkt_status = NSEMarketCalendar.get_market_status(now_dt)
+        mkt_phase = mkt_status.get("session_phase", "CLOSED")
+        mkt_state_str = "OPEN" if is_market_open else "CLOSED"
 
-        # 1. Check ultra-fast in-memory cache (1.5s) unless force_refresh is requested
+        # 1. Check ultra-fast in-memory cache unless force_refresh is requested
         with self._lock:
-            if not force_refresh and self._live_spot_cache and (now_ts - self._live_spot_cache_ts) < 1.5:
-                return self._live_spot_cache
+            cache_ttl = 1.5 if is_market_open else 15.0
+            if not force_refresh and self._live_spot_cache and (now_ts - self._live_spot_cache_ts) < cache_ttl:
+                cached = dict(self._live_spot_cache)
+                cached["is_live"] = is_market_open
+                cached["market_status"] = mkt_state_str
+                cached["session_phase"] = mkt_phase
+                return cached
 
         # 2. Fast Yahoo Finance chart quote (^NSEI)
         try:
@@ -6275,7 +6306,9 @@ class NiftyAnalyticsEngine:
                 "atm_strike": atm_strike,
                 "timestamp": ts_now,
                 "source": "YAHOO_LIVE_FAST_STREAM",
-                "is_live": True,
+                "is_live": is_market_open,
+                "market_status": mkt_state_str,
+                "session_phase": mkt_phase,
                 "age_seconds": tick_age,
                 "latency_ms": lat_ms
             }
@@ -6320,7 +6353,9 @@ class NiftyAnalyticsEngine:
                             "atm_strike": atm_strike,
                             "timestamp": ts_now,
                             "source": "NSE_ALL_INDICES_STREAM",
-                            "is_live": True,
+                            "is_live": is_market_open,
+                            "market_status": mkt_state_str,
+                            "session_phase": mkt_phase,
                             "age_seconds": 1.2,
                             "latency_ms": lat_ms
                         }
@@ -6342,7 +6377,9 @@ class NiftyAnalyticsEngine:
                         "price": round(spot, 2),
                         "timestamp": ts_now,
                         "source": "NSE_OPTION_CHAIN_LIVE",
-                        "is_live": True,
+                        "is_live": is_market_open,
+                        "market_status": mkt_state_str,
+                        "session_phase": mkt_phase,
                         "age_seconds": round(cache_age, 1)
                     }
 
@@ -6358,6 +6395,8 @@ class NiftyAnalyticsEngine:
                         "timestamp": r["timestamp_ist"],
                         "source": "DB_SNAPSHOT_CACHE",
                         "is_live": False,
+                        "market_status": mkt_state_str,
+                        "session_phase": mkt_phase,
                         "age_seconds": 60.0
                     }
         # 6. Fallback to latest historical close in ohlcv_master_store or nifty_predictions_log
@@ -6366,13 +6405,29 @@ class NiftyAnalyticsEngine:
                 with state_engine._get_connection() as conn:
                     p_row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
                     if p_row and p_row["spot_at_prediction"]:
-                        return {"price": float(p_row["spot_at_prediction"]), "timestamp": ts_now, "source": "PREDICTION_LEDGER_ANCHOR", "is_live": False, "age_seconds": 120.0}
+                        return {
+                            "price": float(p_row["spot_at_prediction"]),
+                            "timestamp": ts_now,
+                            "source": "PREDICTION_LEDGER_ANCHOR",
+                            "is_live": False,
+                            "market_status": mkt_state_str,
+                            "session_phase": mkt_phase,
+                            "age_seconds": 120.0
+                        }
                     ohlcv_row = conn.execute("SELECT close FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY') AND close > 0 ORDER BY date DESC LIMIT 1").fetchone()
                     if ohlcv_row and ohlcv_row["close"]:
-                        return {"price": float(ohlcv_row["close"]), "timestamp": ts_now, "source": "OHLCV_MASTER_ANCHOR", "is_live": False, "age_seconds": 300.0}
+                        return {
+                            "price": float(ohlcv_row["close"]),
+                            "timestamp": ts_now,
+                            "source": "OHLCV_MASTER_ANCHOR",
+                            "is_live": False,
+                            "market_status": mkt_state_str,
+                            "session_phase": mkt_phase,
+                            "age_seconds": 300.0
+                        }
         except Exception:
             pass
-        return {"price": 0.0, "timestamp": ts_now, "source": "UNAVAILABLE", "is_live": False, "age_seconds": 0}
+        return {"price": 0.0, "timestamp": ts_now, "source": "UNAVAILABLE", "is_live": False, "market_status": mkt_state_str, "session_phase": mkt_phase, "age_seconds": 0}
 
     def get_nifty_intraday_minute_chart(self, interval: str = "1m") -> Dict[str, Any]:
         """
@@ -6422,6 +6477,67 @@ class NiftyAnalyticsEngine:
             df["high"] = df["high"].astype(float)
             df["low"] = df["low"].astype(float)
 
+            # -----------------------------------------------------------------
+            # CLEANSE FROZEN / ILLIQUID EOD PLACEHOLDER CANDLES
+            # -----------------------------------------------------------------
+            # 1. Deduplicate consecutive identical zero-range bars across the series:
+            # When index feed freezes, vendors emit repeated bars with high == low, volume == 0,
+            # and identical close price. These are non-traded synthetic duplicates.
+            is_zero_range = (df["high"] == df["low"]) & (df["volume"] == 0)
+            is_repeat = (df["close"] == df["close"].shift(1)) & is_zero_range
+            df = df[~is_repeat].copy()
+
+            # 2. Filter out trailing EOD illiquid / frozen zero-range bars:
+            # In Indian markets, continuous cash trading ends at 15:30 IST.
+            # Feed vendors frequently insert flat dummy bars (high == low) after 15:14 IST
+            # or extra post-market settlement bars at/after 15:30 IST.
+            df["_ist_dt"] = df["timestamp"].apply(lambda t: datetime.datetime.fromtimestamp(int(t), IST))
+            df["_trade_date"] = df["_ist_dt"].apply(lambda d: d.date())
+
+            cleaned_groups = []
+            for date, group in df.groupby("_trade_date", sort=False):
+                valid_bars = []
+                for _, row in group.iterrows():
+                    r_dt = row["_ist_dt"]
+                    r_zero_range = (row["high"] == row["low"]) and (row["volume"] == 0)
+
+                    # Trailing zero-range placeholder bars after 15:14 IST
+                    is_eod_flat = (r_dt.hour == 15 and r_dt.minute >= 15 and r_zero_range)
+                    # Extra post-close bars at or after 15:30 IST
+                    is_post_close_bar = (r_dt.hour == 15 and r_dt.minute >= 30 and (r_zero_range or target_interval in ("5m", "15m")))
+                    is_after_hours = (r_dt.hour > 15)
+
+                    if is_eod_flat or is_post_close_bar or is_after_hours:
+                        continue
+                    valid_bars.append(row)
+
+                if valid_bars:
+                    g_clean = pd.DataFrame(valid_bars)
+                    is_latest_day = (date == df["_trade_date"].iloc[-1])
+                    official_close = float(meta.get("regularMarketPrice") or 0.0) if is_latest_day else None
+
+                    # If this is the latest day and an official settlement price exists:
+                    # Align the final closing bar timestamp cleanly to 15:30 IST
+                    if is_latest_day and official_close and official_close > 0:
+                        last_idx = g_clean.index[-1]
+                        last_dt = g_clean.loc[last_idx, "_ist_dt"]
+                        if last_dt.hour == 15 and last_dt.minute >= 25:
+                            if target_interval == "1m":
+                                close_dt = IST.localize(datetime.datetime(date.year, date.month, date.day, 15, 30))
+                                close_ts = int(close_dt.timestamp())
+                                g_clean.loc[last_idx, "timestamp"] = close_ts
+                                g_clean.loc[last_idx, "_ist_dt"] = close_dt
+                                g_clean.loc[last_idx, "close"] = round(official_close, 2)
+                                g_clean.loc[last_idx, "high"] = round(max(g_clean.loc[last_idx, "high"], official_close), 2)
+                                g_clean.loc[last_idx, "low"] = round(min(g_clean.loc[last_idx, "low"], official_close), 2)
+                    cleaned_groups.append(g_clean)
+                else:
+                    cleaned_groups.append(group)
+
+            if cleaned_groups:
+                df = pd.concat(cleaned_groups, ignore_index=True)
+            df = df.drop(columns=["_ist_dt", "_trade_date"], errors="ignore")
+
             # Intraday EMAs (9 and 21)
             df["ema9"] = df["close"].ewm(span=9, adjust=False).mean().round(2)
             df["ema21"] = df["close"].ewm(span=21, adjust=False).mean().round(2)
@@ -6454,9 +6570,14 @@ class NiftyAnalyticsEngine:
             for _, r in df.iterrows():
                 ts_sec = int(r["timestamp"])
                 dt_obj = datetime.datetime.fromtimestamp(ts_sec, IST)
+                # Shift timestamp by IST offset (+19800 seconds / +5h 30m) so TradingView
+                # Lightweight Charts timeScale engine renders Native Indian Standard Time (09:15 - 15:30)
+                ts_ist = ts_sec + 19800
                 candles.append({
-                    "time": ts_sec,
+                    "time": ts_ist,
+                    "time_utc": ts_sec,
                     "date": dt_obj.strftime("%Y-%m-%d %H:%M"),
+                    "display_time": dt_obj.strftime("%H:%M IST"),
                     "open": round(float(r["open"]), 2),
                     "high": round(float(r["high"]), 2),
                     "low": round(float(r["low"]), 2),

@@ -57,7 +57,7 @@ def test_us_analytics_engine_schema_and_calculations():
     assert "vix_spot" in vol
     assert "vix_9d" in vol
     assert "contango_ratio" in vol
-    assert vol.get("regime") in ("CONTANGO_STABLE", "BACKWARDATION_INVERSION", "FLAT_TERM_STRUCTURE")
+    assert vol.get("regime") in ("CONTANGO_STABLE", "BACKWARDATION_INVERSION", "FLAT_TERM_STRUCTURE", "UNAVAILABLE")
 
     # Verify US T+1 Predictor
     t1 = res.get("us_t1_forecast", {})

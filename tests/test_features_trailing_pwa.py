@@ -4,7 +4,7 @@ Automated Tests for:
 2. Progressive Web App (PWA) manifest.json and sw.js endpoints.
 3. Resilient yfinance import fallback.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from unittest.mock import patch, MagicMock
 import pytest
@@ -58,7 +58,7 @@ def test_trailing_stop_loss_progression():
     strat_payload = {
         "strategy_name": "Test Trailing Bull Spread",
         "symbol": "NIFTY",
-        "expiry_date": "2026-10-15",
+        "expiry_date": (datetime.now().date() + timedelta(days=7)).isoformat(),
         "expiry_type": "WEEKLY",
         "spot_at_entry": 24800.0,
         "net_premium": 25.0,
@@ -74,7 +74,7 @@ def test_trailing_stop_loss_progression():
         ],
         "target_pnl": 4000.0,
         "stoploss_pnl": -2000.0,
-        "auto_trade_mode": "INTRADAY",
+        "auto_trade_mode": "MANUAL",
         "market_condition": "STRONG_BULLISH_MOMENTUM"
     }
 

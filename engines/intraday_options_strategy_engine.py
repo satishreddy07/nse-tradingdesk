@@ -672,7 +672,7 @@ class IntradayOptionsStrategyEngine:
     def run_comprehensive_backtest(
         cls,
         lookback_sessions: int = 60,
-        lot_size: int = 75
+        lot_size: int = NIFTY_LOT_SIZE
     ) -> Dict[str, Any]:
         """
         Evaluates and backtests each regime and strategy independently.
@@ -775,7 +775,7 @@ class IntradayOptionsStrategyEngine:
         use_asymmetric: bool = False,
         enable_reentry: bool = True,
         forced_sl: Optional[float] = None,
-        lot_size: int = 75
+        lot_size: int = NIFTY_LOT_SIZE
     ) -> Dict[str, Any]:
         """
         Simulates intraday option strategy across historical sessions using exact tick-by-tick bridge.
@@ -922,7 +922,7 @@ class IntradayOptionsStrategyEngine:
         }
 
     @classmethod
-    def _compute_regime_breakdown(cls, sessions: List[Dict[str, Any]], lot_size: int = 75) -> Dict[str, Any]:
+    def _compute_regime_breakdown(cls, sessions: List[Dict[str, Any]], lot_size: int = NIFTY_LOT_SIZE) -> Dict[str, Any]:
         """Computes performance sliced across each of the 5 market regimes independently."""
         regimes = ["STRONG_BULLISH", "STRONG_BEARISH", "MILD_BULLISH", "MILD_BEARISH", "RANGE_BOUND"]
         out = {}
@@ -1269,7 +1269,7 @@ class IntradayOptionsStrategyEngine:
         self,
         force_refresh: bool = False,
         confidence_threshold: float = 8.0,
-        lot_size: int = 75
+        lot_size: int = NIFTY_LOT_SIZE
     ) -> Dict[str, Any]:
         """
         Executes auto-trades whenever the system feels confident:
@@ -1489,7 +1489,7 @@ class IntradayOptionsStrategyEngine:
                 "type": l.option_type,
                 "strike": l.strike,
                 "qty": l.qty,
-                "lots": max(1, l.qty // 75),
+                "lots": max(1, l.qty // NIFTY_LOT_SIZE),
                 "entry_price": l.original_entry_premium,
                 "current_price": l.original_entry_premium,
                 "sl_trigger": l.initial_sl_trigger,
@@ -1669,7 +1669,8 @@ class IntradayOptionsStrategyEngine:
                     # MOC squareoff
                     close_px = round(exec_buy, 2)
                     pnl_pts = round(p0 - close_px, 2)
-                    pnl_inr = round(pnl_pts * 75, 2)
+                    leg_lot_mult = int(d.get("lot_size") or NIFTY_LOT_SIZE)
+                    pnl_inr = round(pnl_pts * leg_lot_mult, 2)
                     with state_engine._lock:
                         with state_engine._get_connection() as conn:
                             conn.execute("""
@@ -1739,7 +1740,8 @@ class IntradayOptionsStrategyEngine:
                     phase1_pnl = float(d.get("gross_pnl_pts") or (p0 - float(d.get("initial_sl_fill") or p0)))
                     phase2_pnl = round(re_entry_fill - settle_px, 2) if re_entry_fill else 0.0
                     tot_pts = round(phase1_pnl + phase2_pnl, 2)
-                    tot_inr = round(tot_pts * 75, 2)
+                    leg_lot_mult = int(d.get("lot_size") or NIFTY_LOT_SIZE)
+                    tot_inr = round(tot_pts * leg_lot_mult, 2)
                     with state_engine._lock:
                         with state_engine._get_connection() as conn:
                             conn.execute("""
@@ -1770,7 +1772,8 @@ class IntradayOptionsStrategyEngine:
                     phase1_pnl = float(d.get("gross_pnl_pts") or (p0 - float(d.get("initial_sl_fill") or p0)))
                     phase2_pnl = round(re_entry_fill - fin_exit, 2) if re_entry_fill else 0.0
                     tot_pts = round(phase1_pnl + phase2_pnl, 2)
-                    tot_inr = round(tot_pts * 75, 2)
+                    leg_lot_mult = int(d.get("lot_size") or NIFTY_LOT_SIZE)
+                    tot_inr = round(tot_pts * leg_lot_mult, 2)
                     with state_engine._lock:
                         with state_engine._get_connection() as conn:
                             conn.execute("""
@@ -1855,7 +1858,7 @@ class IntradayOptionsStrategyEngine:
                 r_c = regime_map.get(s["verdict"], 0.0)
                 iv = s["iv_pct"]
                 em = s["spot"] * (iv / 100.0) * math.sqrt(1.0 / 365.0)
-                sim_res = self._simulate_strategy_variant([s], use_asymmetric=False, enable_reentry=True, forced_sl=0.35, lot_size=75)
+                sim_res = self._simulate_strategy_variant([s], use_asymmetric=False, enable_reentry=True, forced_sl=0.35, lot_size=NIFTY_LOT_SIZE)
                 if sim_res.get("trades"):
                     tr = sim_res["trades"][0]
                     is_w = int(tr.get("win", 0))

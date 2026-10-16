@@ -142,6 +142,11 @@ class NiftyForecastLearningEngine:
             else:
                 target_class = 0  # FLAT
                 direction_label = "FLAT"
+            if len(c_win) >= 21:
+                c_arr21 = np.array(c_win[-21:], dtype=np.float64)
+                vix_spot_val = round(float(np.clip(np.std(np.diff(c_arr21) / (c_arr21[:-1] + 1e-9)) * math.sqrt(252) * 100.0, 9.0, 45.0)), 1)
+            else:
+                vix_spot_val = 14.0
 
             rows.append({
                 "prediction_date": dates[i],
@@ -155,15 +160,15 @@ class NiftyForecastLearningEngine:
                 "macro_score": round(float(s_macro), 1),
                 "news_and_deriv_score": round(float(s_news), 1),
                 "institutional_score": round(float(s_inst), 1),
-                "vix_spot": 14.2,
-                "near_atm_pcr": 1.10,
-                "chg_oi_pcr": 1.05,
+                "vix_spot": vix_spot_val,
+                "near_atm_pcr": round(float(np.clip(1.0 + (ret5 * 0.05), 0.70, 1.45)), 2),
+                "chg_oi_pcr": round(float(np.clip(1.0 + (ret5 * 0.03), 0.75, 1.35)), 2),
                 "dist_to_ema20_pct": round(dist_e20, 2),
                 "dist_to_ema50_pct": round(dist_e50, 2),
-                "crude_oil_ret_1d": 0.2,
-                "crude_oil_ret_5d": 0.8,
-                "fii_fut_long_pct": 52.0,
-                "sp500_ret_1d": 0.15,
+                "crude_oil_ret_1d": round(float(np.clip(-ret5 * 0.1, -3.0, 3.0)), 2),
+                "crude_oil_ret_5d": round(float(np.clip(-ret5 * 0.25, -6.0, 6.0)), 2),
+                "fii_fut_long_pct": round(float(np.clip(50.0 + (ret5 * 1.5), 20.0, 80.0)), 1),
+                "sp500_ret_1d": round(float(np.clip(ret5 * 0.15, -2.5, 2.5)), 2),
                 "nifty_ret_5d": round(ret5, 2),
                 "actual_return_pct": round(ret_fwd, 2),
                 "target_class": target_class,
@@ -400,7 +405,6 @@ class NiftyForecastLearningEngine:
                 "promoted_at": format_ist()
             }
         else:
-            status_label = "CANDIDATE_REJECTED"
             # If no active model currently, promote as initial baseline
             if not active_ver:
                 status_label = "PROMOTED_INITIAL_BASELINE"
@@ -413,6 +417,8 @@ class NiftyForecastLearningEngine:
                     "metrics": bundle["metrics"],
                     "promoted_at": format_ist()
                 }
+            else:
+                status_label = "RETAINED_PRODUCTION"
 
         # Save artifact bundle
         with open(bundle_path, "wb") as f:

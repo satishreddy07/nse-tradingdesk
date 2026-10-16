@@ -102,6 +102,32 @@ class DataWatchdog:
                 "failure_count": 0,
                 "last_alert_ts": 0.0,
             },
+            "chartink_scanner": {
+                "id": "chartink_scanner",
+                "name": "Chartink Scanner Live Feed",
+                "category": "SCANNER",
+                "status": "INITIALIZING",
+                "last_success_ts": 0.0,
+                "last_packet_time_ist": None,
+                "age_seconds": None,
+                "latency_ms": 0.0,
+                "details": {},
+                "failure_count": 0,
+                "last_alert_ts": 0.0,
+            },
+            "yahoo_finance": {
+                "id": "yahoo_finance",
+                "name": "Yahoo Finance OHLCV & Price Stream",
+                "category": "MARKET_DATA",
+                "status": "INITIALIZING",
+                "last_success_ts": 0.0,
+                "last_packet_time_ist": None,
+                "age_seconds": None,
+                "latency_ms": 0.0,
+                "details": {},
+                "failure_count": 0,
+                "last_alert_ts": 0.0,
+            },
         }
         self._last_full_check_ts: float = 0.0
         self._alert_cooldown_seconds: float = 900.0  # 15 minutes cooldown per endpoint
@@ -365,6 +391,53 @@ class DataWatchdog:
                 logger.debug(f"Watchdog predictions check notice: {e}")
                 self._endpoints["predictions_ml"]["status"] = "DEGRADED"
 
+            # 5. CHARTINK SCANNER EVALUATION
+            try:
+                ep_chart = self._endpoints["chartink_scanner"]
+                inst_snap = state_engine.get_kv("institutional_snapshot", {})
+                last_chart_count = inst_snap.get("chartink_fetched_count", 0)
+                chart_age = None
+                if ep_chart["last_success_ts"] > 0:
+                    chart_age = max(0, int(now_ts - ep_chart["last_success_ts"]))
+                ep_chart["age_seconds"] = chart_age if chart_age is not None else 0
+                ep_chart["details"]["last_count"] = last_chart_count
+                if is_market_open:
+                    if chart_age is not None and chart_age <= 900:  # 15 minutes
+                        ep_chart["status"] = "HEALTHY"
+                    elif chart_age is not None and chart_age <= 1800:
+                        ep_chart["status"] = "DEGRADED"
+                    elif last_chart_count > 0:
+                        ep_chart["status"] = "HEALTHY_STANDBY"
+                    else:
+                        ep_chart["status"] = "DEGRADED"
+                else:
+                    ep_chart["status"] = "HEALTHY_STANDBY"
+            except Exception as e:
+                logger.debug(f"Watchdog chartink check notice: {e}")
+                self._endpoints["chartink_scanner"]["status"] = "DEGRADED"
+
+            # 6. YAHOO FINANCE EVALUATION
+            try:
+                ep_yf = self._endpoints["yahoo_finance"]
+                yf_age = None
+                if ep_yf["last_success_ts"] > 0:
+                    yf_age = max(0, int(now_ts - ep_yf["last_success_ts"]))
+                elif stream_age is not None:
+                    yf_age = stream_age
+                ep_yf["age_seconds"] = yf_age if yf_age is not None else 0
+                if is_market_open:
+                    if yf_age is not None and yf_age <= 900:  # 15 minutes
+                        ep_yf["status"] = "HEALTHY"
+                    elif yf_age is not None and yf_age <= 1800:
+                        ep_yf["status"] = "DEGRADED"
+                    else:
+                        ep_yf["status"] = "OFFLINE_ALERT" if ep_yf.get("failure_count", 0) >= 3 else "DEGRADED"
+                else:
+                    ep_yf["status"] = "HEALTHY_STANDBY"
+            except Exception as e:
+                logger.debug(f"Watchdog yahoo check notice: {e}")
+                self._endpoints["yahoo_finance"]["status"] = "DEGRADED"
+
             # Compute overall telemetry score
             healthy_count = sum(1 for ep in self._endpoints.values() if ep["status"] in ("HEALTHY", "HEALTHY_STANDBY"))
             alert_count = sum(1 for ep in self._endpoints.values() if ep["status"] == "OFFLINE_ALERT")
@@ -383,7 +456,7 @@ class DataWatchdog:
             self._last_full_check_ts = now_ts
             return {
                 "overall_status": overall_status,
-                "summary_badge": f"{healthy_count}/4 FEEDS LIVE" if overall_status == "HEALTHY" else (
+                "summary_badge": f"{healthy_count}/{len(self._endpoints)} FEEDS LIVE" if overall_status == "HEALTHY" else (
                     f"{alert_count} FEEDS OFFLINE" if overall_status == "ALERT" else f"{degraded_count} FEEDS DEGRADED"
                 ),
                 "healthy_count": healthy_count,

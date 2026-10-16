@@ -3,6 +3,7 @@
 FastAPI REST API & Web Application
 ========================================================================================
 """
+import os
 import asyncio
 import logging
 import threading
@@ -18,6 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from contextlib import asynccontextmanager
@@ -25,7 +27,7 @@ from contextlib import asynccontextmanager
 from core.data_quality import now_ist, format_ist
 from core.market_calendar import NSEMarketCalendar
 from core.telegram_vault import telegram_vault
-from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL, P2_MAX_SLOTS
+from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL, P2_MAX_SLOTS, NIFTY_LOT_SIZE
 from engines.institutional_engine import (
     InstitutionalEngine, get_institutional_status, refresh_live_market_prices,
     PORTFOLIO_TYPE as P1_TYPE
@@ -72,6 +74,27 @@ app = FastAPI(
     lifespan=lifespan
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# CORS Configuration with origin whitelisting
+allowed_origins_env = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+if allowed_origins_env:
+    cors_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+else:
+    cors_origins = [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://nse-tradingdesk.onrender.com",
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins if cors_origins else ["*"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
+    allow_headers=["*"],
+)
 
 # Template setup
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -806,11 +829,16 @@ def get_nifty_predictions(force_refresh: bool = False, force_recalculate: bool =
     from engines.nifty_analytics_engine import nifty_analytics_engine
     try:
         data = nifty_analytics_engine.compute_nifty_predictions(force_refresh=force_refresh, force_recalculate=force_recalculate)
+        if isinstance(data, dict):
+            scans_tel = state_engine.get_scheduled_scans_telemetry()
+            data["auto_run_telemetry"] = scans_tel.get("premarket_0845", {})
         return _sanitize_for_json(data)
     except Exception as e:
         logger.error(f"Error computing live predictions: {e}", exc_info=True)
         cached = state_engine.get_kv("latest_nifty_predictions")
         if cached and isinstance(cached, dict) and cached.get("status") == "OK":
+            scans_tel = state_engine.get_scheduled_scans_telemetry()
+            cached["auto_run_telemetry"] = scans_tel.get("premarket_0845", {})
             return _sanitize_for_json(cached)
         return {"status": "ERROR", "message": f"Prediction service error: {str(e)}"}
 
@@ -849,6 +877,13 @@ def lock_premarket_forecast():
     try:
         data = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
         bulletin_sent = nifty_analytics_engine.dispatch_premarket_prediction_telegram_alert(data)
+        state_engine.record_scheduled_scan_outcome(
+            run_key="premarket_0845",
+            status="SUCCESS",
+            buy_now_count=0,
+            total_scanned=50,
+            note=f"Pre-Market Forecast Locked at {format_ist(now_dt)} • T+1: {data.get('t1_forecast', {}).get('verdict')} | T+5: {data.get('t5_forecast', {}).get('verdict')}"
+        )
         return {
             "status": "OK",
             "message": "Pre-market forecast computed, locked, and Telegram bulletin dispatched.",
@@ -860,6 +895,13 @@ def lock_premarket_forecast():
         }
     except Exception as e:
         logger.error(f"Error locking pre-market forecast: {e}", exc_info=True)
+        state_engine.record_scheduled_scan_outcome(
+            run_key="premarket_0845",
+            status="FAILED",
+            buy_now_count=0,
+            total_scanned=0,
+            note=f"08:45 AM Lock Error: {str(e)}"
+        )
         return {"status": "ERROR", "message": str(e)}
 
 
@@ -1044,11 +1086,11 @@ def get_portfolio_equity_curves_endpoint():
 class AutoDeploy5RegimeRequest(BaseModel):
     force_refresh: bool = False
     confidence_threshold: float = 8.0
-    lot_size: int = 75
+    lot_size: int = NIFTY_LOT_SIZE
 
 
 @app.get("/api/options/intraday-rules/backtest")
-def get_options_intraday_backtest_endpoint(lookback_sessions: int = 50, lot_size: int = 75):
+def get_options_intraday_backtest_endpoint(lookback_sessions: int = 50, lot_size: int = NIFTY_LOT_SIZE):
     """
     Backtests the 5 prediction regimes independently:
     - Compares 30% vs 40% stop-losses
@@ -1072,7 +1114,7 @@ def post_options_auto_deploy_endpoint(req: Optional[AutoDeploy5RegimeRequest] = 
     from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
     force = req.force_refresh if req else False
     conf = req.confidence_threshold if req else 8.0
-    lots = req.lot_size if req else 75
+    lots = req.lot_size if req else NIFTY_LOT_SIZE
     return intraday_options_strategy_engine.evaluate_and_execute_auto_trades(
         force_refresh=force,
         confidence_threshold=conf,
@@ -1151,14 +1193,14 @@ class AutoDeployPositionalRequest(BaseModel):
     horizon: str = "WEEKLY"  # "WEEKLY" or "MONTHLY"
     force_refresh: bool = False
     confidence_threshold: float = 8.0
-    lot_size: int = 75
+    lot_size: int = NIFTY_LOT_SIZE
 
 
 @app.get("/api/options/positional-rules/backtest")
 def get_options_positional_backtest_endpoint(
     horizon: str = "WEEKLY",
     lookback_sessions: int = 50,
-    lot_size: int = 75
+    lot_size: int = NIFTY_LOT_SIZE
 ):
     """
     Backtests Weekly (40% SL) or Monthly (50% SL) options strategies separately across all 5 regimes:
@@ -1185,7 +1227,7 @@ def post_options_positional_auto_deploy_endpoint(req: Optional[AutoDeployPositio
     horizon = req.horizon if req else "WEEKLY"
     force = req.force_refresh if req else False
     conf = req.confidence_threshold if req else 8.0
-    lots = req.lot_size if req else 75
+    lots = req.lot_size if req else NIFTY_LOT_SIZE
     return weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades(
         horizon=horizon,
         force_refresh=force,

@@ -274,6 +274,17 @@ def scheduled_premarket_nifty_prediction_job():
         nifty_analytics_engine.dispatch_premarket_prediction_telegram_alert(preds)
         logger.info("✓ [08:45 AM IST Job] Official Pre-Market Forecast LOCKED & Telegram Bulletin Dispatched.")
 
+        # Record SUCCESS telemetry for 08:45 AM auto run
+        t1_v = preds.get("t1_forecast", {}).get("verdict") if preds else "--"
+        t5_v = preds.get("t5_forecast", {}).get("verdict") if preds else "--"
+        state_engine.record_scheduled_scan_outcome(
+            run_key="premarket_0845",
+            status="SUCCESS",
+            buy_now_count=0,
+            total_scanned=50,
+            note=f"Official Pre-Market Forecast Locked at {format_ist(current_dt)} • T+1: {t1_v} | T+5: {t5_v}"
+        )
+
         # STRICT HARD GATE PIPELINE: Trigger options strategy evaluation only after prediction lock
         if preds and preds.get("status") in ("OK", "LOCKED"):
             try:
@@ -289,6 +300,13 @@ def scheduled_premarket_nifty_prediction_job():
                 logger.warning(f"08:45 AM Options Strategy Deployment notice: {e_opt}")
     except Exception as e:
         logger.warning(f"08:45 AM Pre-Market Prediction Job error: {e}")
+        state_engine.record_scheduled_scan_outcome(
+            run_key="premarket_0845",
+            status="FAILED",
+            buy_now_count=0,
+            total_scanned=0,
+            note=f"08:45 AM Run Failed: {str(e)}"
+        )
 
 
 def scheduled_intraday_options_entry_job():

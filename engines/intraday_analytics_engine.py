@@ -301,8 +301,10 @@ class IntradayAnalyticsEngine:
         except Exception:
             days_to_exp = 3.0
 
-        T = days_to_exp / 365.0
-        lot_size = 75
+        T = max(1.0 / 365.0, days_to_exp / 365.0)
+
+        from core.config import NIFTY_LOT_SIZE
+        lot_size = NIFTY_LOT_SIZE
         strike_gex_list = []
         total_call_gex_cr = 0.0
         total_put_gex_cr = 0.0

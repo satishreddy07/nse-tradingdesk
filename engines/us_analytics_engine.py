@@ -75,24 +75,33 @@ class USAnalyticsEngine:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         })
 
-    def _fetch_yahoo_chart(self, ticker: str, range_period: str = "1mo", max_retries: int = 2) -> Tuple[str, Optional[pd.DataFrame], Optional[Dict[str, Any]]]:
-        """Fetches OHLCV daily bars and live quote metadata directly from Yahoo Finance."""
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+    def _fetch_yahoo_chart(self, ticker: str, range_period: str = "1mo", max_retries: int = 3) -> Tuple[str, Optional[pd.DataFrame], Optional[Dict[str, Any]]]:
+        """
+        Fetches OHLCV daily bars and live quote metadata directly from Yahoo Finance with dual endpoints,
+        automatic local SQLite cache fallback, and persistent master store retention.
+        """
+        endpoints = [
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}",
+            f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}"
+        ]
         params = {"range": range_period, "interval": "1d", "includePrePost": "false"}
         for attempt in range(max_retries):
+            url = endpoints[attempt % len(endpoints)]
             try:
                 resp = self.session.get(url, params=params, timeout=7)
                 if resp.status_code == 200:
                     data = resp.json()
                     res = data.get("chart", {}).get("result", [])
                     if not res:
-                        return ticker, None, None
+                        continue
                     quote_data = res[0]
                     meta = quote_data.get("meta", {}) or {}
                     timestamps = quote_data.get("timestamp", [])
                     quotes = quote_data.get("indicators", {}).get("quote", [{}])[0]
                     if not timestamps or not quotes.get("close"):
-                        return ticker, None, meta
+                        if meta and meta.get("regularMarketPrice"):
+                            return ticker, None, meta
+                        continue
 
                     dates = [datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).date() for ts in timestamps]
                     df = pd.DataFrame({
@@ -104,31 +113,66 @@ class USAnalyticsEngine:
                     }, index=pd.Index(dates))
                     df.dropna(subset=["Close"], inplace=True)
                     if df.empty:
-                        return ticker, None, meta
+                        if meta and meta.get("regularMarketPrice"):
+                            return ticker, None, meta
+                        continue
                     df = df.sort_index()
                     df = df[~pd.Series(df.index).duplicated(keep="last").values]
+                    # Persistently maintain fetched data in SQLite master store
+                    try:
+                        state_engine.save_ohlcv_df(ticker, df)
+                    except Exception:
+                        pass
                     return ticker, df, meta
                 elif resp.status_code == 429:
                     time.sleep(0.5 + 0.3 * attempt)
             except Exception as e:
                 logger.debug(f"Fetch {ticker} attempt {attempt+1} warning: {e}")
                 time.sleep(0.4)
+
+        # Fallback to local SQLite master store cache on network failure
+        try:
+            cached_df, _ = state_engine.get_ohlcv_df(ticker)
+            if cached_df is not None and not cached_df.empty and len(cached_df) >= 2:
+                last_c = float(cached_df["Close"].iloc[-1])
+                prev_c = float(cached_df["Close"].iloc[-2]) if len(cached_df) >= 2 else last_c
+                cached_meta = {
+                    "regularMarketPrice": last_c,
+                    "previousClose": prev_c,
+                    "chartPreviousClose": prev_c,
+                    "source": "SQLITE_CACHE",
+                }
+                return ticker, cached_df, cached_meta
+        except Exception:
+            pass
+
         return ticker, None, None
 
     def _calc_series_metrics(self, df: Optional[pd.DataFrame], meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Computes technical, momentum, and moving average metrics for a daily price series."""
         out = {
-            "close": 0.0, "ret_1d": 0.0, "ret_5d": 0.0, "ret_20d": 0.0,
-            "ema20": 0.0, "ema50": 0.0, "ema200": 0.0, "rsi14": 50.0,
-            "macd_hist": 0.0, "trend": "NEUTRAL", "impulse_score": 0.0
+            "close": None, "ret_1d": None, "ret_5d": None, "ret_20d": None,
+            "ema20": None, "ema50": None, "ema200": None, "rsi14": None,
+            "macd_hist": None, "trend": "UNAVAILABLE", "impulse_score": 0.0,
+            "status": "UNAVAILABLE"
         }
         if df is None or df.empty or len(df) < 2:
-            if meta and meta.get("regularMarketPrice"):
+            if meta and meta.get("regularMarketPrice") is not None and float(meta.get("regularMarketPrice") or 0.0) > 0:
                 p = float(meta["regularMarketPrice"])
                 prev = float(meta.get("chartPreviousClose") or meta.get("previousClose") or p)
                 r1 = ((p - prev) / max(0.01, prev)) * 100.0 if prev > 0 else 0.0
-                out["close"] = p
+                out["close"] = round(p, 2)
                 out["ret_1d"] = round(r1, 2)
+                out["ret_5d"] = 0.0
+                out["ret_20d"] = 0.0
+                out["ema20"] = round(p, 2)
+                out["ema50"] = round(p, 2)
+                out["ema200"] = round(p, 2)
+                out["rsi14"] = 50.0
+                out["macd_hist"] = 0.0
+                out["trend"] = "NEUTRAL"
+                out["impulse_score"] = 0.0
+                out["status"] = "AVAILABLE"
             return out
 
         c = df["Close"].to_numpy(dtype=np.float64)
@@ -195,6 +239,7 @@ class USAnalyticsEngine:
             "macd_hist": round(macd_h, 3),
             "trend": trend,
             "impulse_score": impulse,
+            "status": "AVAILABLE",
         }
 
     def _fetch_us_news_and_fed_sentiment(self) -> Dict[str, Any]:
@@ -328,44 +373,67 @@ class USAnalyticsEngine:
         total_tech_w = 0.0
         for tk, name, w in US_BENCHMARKS:
             m = metrics_map.get(tk) or {}
-            impulse = m.get("impulse_score", 0.0)
-            weighted_tech_sum += impulse * w
-            total_tech_w += w
-            bench_rows.append({
-                "ticker": tk,
-                "name": name,
-                "weight": w,
-                "close": m.get("close", 0.0),
-                "ret_1d": m.get("ret_1d", 0.0),
-                "ret_5d": m.get("ret_5d", 0.0),
-                "ema20": m.get("ema20", 0.0),
-                "ema50": m.get("ema50", 0.0),
-                "rsi14": m.get("rsi14", 50.0),
-                "trend": m.get("trend", "NEUTRAL"),
-                "impulse_score": impulse,
-            })
-        us_tech_score = float(np.clip(round(weighted_tech_sum / max(0.01, total_tech_w), 1), -100.0, 100.0))
+            c_val = m.get("close")
+            if c_val is not None and m.get("status") != "UNAVAILABLE":
+                impulse = float(m.get("impulse_score") or 0.0)
+                weighted_tech_sum += impulse * w
+                total_tech_w += w
+                bench_rows.append({
+                    "ticker": tk,
+                    "name": name,
+                    "weight": w,
+                    "close": round(float(c_val), 2),
+                    "ret_1d": m.get("ret_1d", 0.0),
+                    "ret_5d": m.get("ret_5d", 0.0),
+                    "ema20": m.get("ema20", 0.0),
+                    "ema50": m.get("ema50", 0.0),
+                    "rsi14": m.get("rsi14", 50.0),
+                    "trend": m.get("trend", "NEUTRAL"),
+                    "impulse_score": impulse,
+                    "status": "AVAILABLE",
+                })
+            else:
+                bench_rows.append({
+                    "ticker": tk,
+                    "name": name,
+                    "weight": w,
+                    "close": None,
+                    "ret_1d": None,
+                    "ret_5d": None,
+                    "ema20": None,
+                    "ema50": None,
+                    "rsi14": None,
+                    "trend": "UNAVAILABLE",
+                    "impulse_score": 0.0,
+                    "status": "UNAVAILABLE",
+                })
+        us_tech_score = float(np.clip(round(weighted_tech_sum / max(0.01, total_tech_w), 1), -100.0, 100.0)) if total_tech_w > 0 else 0.0
 
         # Pillar B: US Market Breadth & Sector Rotation
         # 1. Equal-Weight vs Market-Cap: RSP vs SPY Dispersion
         spy_m = metrics_map.get("SPY") or {}
         rsp_m = metrics_map.get("RSP") or {}
-        spy_1d = spy_m.get("ret_1d", 0.0)
-        rsp_1d = rsp_m.get("ret_1d", 0.0)
-        breadth_dispersion = round(float(rsp_1d - spy_1d), 2)
-
-        if breadth_dispersion >= 0.25:
-            dispersion_regime = "BROAD_BASED_EXPANSION"
-            dispersion_sig = 25.0
-            dispersion_note = "Equal-weight RSP outperforming SPY indicates broad participation across US stocks (Healthy Bullish)"
-        elif breadth_dispersion <= -0.35:
-            dispersion_regime = "CONCENTRATED_MEGA_CAP_RISK"
-            dispersion_sig = -25.0
-            dispersion_note = "SPY gaining while Equal-weight RSP lags flags mega-cap concentration masking broader market weakness"
+        if spy_m.get("close") is not None and rsp_m.get("close") is not None:
+            spy_1d = float(spy_m.get("ret_1d") or 0.0)
+            rsp_1d = float(rsp_m.get("ret_1d") or 0.0)
+            breadth_dispersion = round(float(rsp_1d - spy_1d), 2)
+            if breadth_dispersion >= 0.25:
+                dispersion_regime = "BROAD_BASED_EXPANSION"
+                dispersion_sig = 25.0
+                dispersion_note = "Equal-weight RSP outperforming SPY indicates broad participation across US stocks (Healthy Bullish)"
+            elif breadth_dispersion <= -0.35:
+                dispersion_regime = "CONCENTRATED_MEGA_CAP_RISK"
+                dispersion_sig = -25.0
+                dispersion_note = "SPY gaining while Equal-weight RSP lags flags mega-cap concentration masking broader market weakness"
+            else:
+                dispersion_regime = "BALANCED_PARTICIPATION"
+                dispersion_sig = 0.0
+                dispersion_note = "Equal-weight and market-cap weighted benchmarks moving in synchronized equilibrium"
         else:
-            dispersion_regime = "BALANCED_PARTICIPATION"
+            breadth_dispersion = 0.0
+            dispersion_regime = "UNAVAILABLE"
             dispersion_sig = 0.0
-            dispersion_note = "Equal-weight and market-cap weighted benchmarks moving in synchronized equilibrium"
+            dispersion_note = "RSP/SPY breadth dispersion data temporarily unavailable"
 
         # 2. 11 SPDR Sector ETFs Analysis
         sector_rows = []
@@ -373,94 +441,128 @@ class USAnalyticsEngine:
         sec_dec = 0
         sec_cyclical_sum = 0.0
         sec_defensive_sum = 0.0
+        sec_valid_count = 0
 
         for tk, name, cat in US_SECTOR_ETFS:
             sm = metrics_map.get(tk) or {}
-            r1 = sm.get("ret_1d", 0.0)
-            if r1 > 0.05:
-                sec_adv += 1
-            elif r1 < -0.05:
-                sec_dec += 1
+            c_val = sm.get("close")
+            if c_val is not None and sm.get("status") != "UNAVAILABLE":
+                sec_valid_count += 1
+                r1 = float(sm.get("ret_1d") or 0.0)
+                if r1 > 0.05:
+                    sec_adv += 1
+                elif r1 < -0.05:
+                    sec_dec += 1
 
-            if "CYCLICAL" in cat or "HIGH_BETA" in cat:
-                sec_cyclical_sum += r1
-            elif "DEFENSIVE" in cat:
-                sec_defensive_sum += r1
+                if "CYCLICAL" in cat or "HIGH_BETA" in cat:
+                    sec_cyclical_sum += r1
+                elif "DEFENSIVE" in cat:
+                    sec_defensive_sum += r1
 
-            sector_rows.append({
-                "ticker": tk,
-                "sector": name,
-                "category": cat,
-                "close": sm.get("close", 0.0),
-                "ret_1d": r1,
-                "ret_5d": sm.get("ret_5d", 0.0),
-                "trend": sm.get("trend", "NEUTRAL"),
-            })
+                sector_rows.append({
+                    "ticker": tk,
+                    "sector": name,
+                    "category": cat,
+                    "close": round(float(c_val), 2),
+                    "ret_1d": r1,
+                    "ret_5d": sm.get("ret_5d", 0.0),
+                    "trend": sm.get("trend", "NEUTRAL"),
+                    "status": "AVAILABLE",
+                })
+            else:
+                sector_rows.append({
+                    "ticker": tk,
+                    "sector": name,
+                    "category": cat,
+                    "close": None,
+                    "ret_1d": None,
+                    "ret_5d": None,
+                    "trend": "UNAVAILABLE",
+                    "status": "UNAVAILABLE",
+                })
 
-        sec_total = max(1, len(US_SECTOR_ETFS))
-        sec_pct_adv = round((sec_adv / sec_total) * 100.0, 1)
+        sec_total = max(1, sec_valid_count)
+        sec_pct_adv = round((sec_adv / sec_total) * 100.0, 1) if sec_valid_count > 0 else 0.0
         cyclical_leadership = round(sec_cyclical_sum - sec_defensive_sum, 2)
 
         us_breadth_score = (
             ((sec_pct_adv - 50.0) * 1.2)
             + dispersion_sig
             + float(np.clip(cyclical_leadership * 6.0, -25.0, 25.0))
-        )
+        ) if sec_valid_count > 0 else 0.0
         us_breadth_score = float(np.clip(round(us_breadth_score, 1), -100.0, 100.0))
 
         # Pillar C: US Volatility Surface (VIX Spot vs VIX 9D Contango/Backwardation)
         vix_m = metrics_map.get("^VIX") or {}
         vix9d_m = metrics_map.get("^VIX9D") or {}
-        vix_spot = float(vix_m.get("close") or 15.0)
-        vix_9d = float(vix9d_m.get("close") or vix_spot)
-        vix_1d = float(vix_m.get("ret_1d") or 0.0)
+        vix_c = vix_m.get("close")
+        vix9d_c = vix9d_m.get("close")
 
-        # Contango ratio: Spot VIX / 9D VIX
-        # In calm bull markets, Spot VIX > 9D VIX (Contango / Roll Yield positive).
-        # In panic hedging, 9D VIX spikes above Spot VIX (Backwardation inversion).
-        contango_ratio = round(vix_spot / max(1.0, vix_9d), 3)
-        if contango_ratio >= 1.05:
-            vix_regime = "CONTANGO_STABLE"
-            vix_term_sig = 20.0
-            vix_term_note = f"Spot VIX ({vix_spot:.1f}) is above 9D VIX ({vix_9d:.1f}) (Contango): Normal calm volatility regime"
-        elif contango_ratio <= 0.95:
-            vix_regime = "BACKWARDATION_INVERSION"
-            vix_term_sig = -30.0
-            vix_term_note = f"9D VIX ({vix_9d:.1f}) spiked above Spot VIX ({vix_spot:.1f}) (Backwardation): Urgent short-term hedging demand detected"
+        if vix_c is not None and float(vix_c) > 0:
+            vix_spot = round(float(vix_c), 2)
+            vix_9d = round(float(vix9d_c), 2) if (vix9d_c is not None and float(vix9d_c) > 0) else vix_spot
+            vix_1d = float(vix_m.get("ret_1d") or 0.0)
+
+            # Contango ratio: Spot VIX / 9D VIX
+            # In calm bull markets, Spot VIX > 9D VIX (Contango / Roll Yield positive).
+            # In panic hedging, 9D VIX spikes above Spot VIX (Backwardation inversion).
+            contango_ratio = round(vix_spot / max(1.0, vix_9d), 3)
+            if contango_ratio >= 1.05:
+                vix_regime = "CONTANGO_STABLE"
+                vix_term_sig = 20.0
+                vix_term_note = f"Spot VIX ({vix_spot:.1f}) is above 9D VIX ({vix_9d:.1f}) (Contango): Normal calm volatility regime"
+            elif contango_ratio <= 0.95:
+                vix_regime = "BACKWARDATION_INVERSION"
+                vix_term_sig = -30.0
+                vix_term_note = f"9D VIX ({vix_9d:.1f}) spiked above Spot VIX ({vix_spot:.1f}) (Backwardation): Urgent short-term hedging demand detected"
+            else:
+                vix_regime = "FLAT_TERM_STRUCTURE"
+                vix_term_sig = 0.0
+                vix_term_note = f"VIX Term Structure flat at {contango_ratio:.2f}: Neutral volatility balance"
+
+            # VIX absolute level impact
+            vix_level_sig = 0.0
+            if vix_spot < 14.5:
+                vix_level_sig = 20.0
+            elif vix_spot > 28.0:
+                vix_level_sig = -50.0
+            elif vix_spot > 22.0:
+                vix_level_sig = -25.0
+
+            us_vix_score = float(np.clip(round(vix_term_sig + vix_level_sig - (vix_1d * 2.0), 1), -100.0, 100.0))
         else:
-            vix_regime = "FLAT_TERM_STRUCTURE"
-            vix_term_sig = 0.0
-            vix_term_note = f"VIX Term Structure flat at {contango_ratio:.2f}: Neutral volatility balance"
-
-        # VIX absolute level impact
-        vix_level_sig = 0.0
-        if vix_spot < 14.5:
-            vix_level_sig = 20.0
-        elif vix_spot > 22.0:
-            vix_level_sig = -25.0
-        elif vix_spot > 28.0:
-            vix_level_sig = -50.0
-
-        us_vix_score = float(np.clip(round(vix_term_sig + vix_level_sig - (vix_1d * 2.0), 1), -100.0, 100.0))
+            vix_spot = None
+            vix_9d = None
+            contango_ratio = None
+            vix_regime = "UNAVAILABLE"
+            vix_term_note = "VIX volatility data temporarily unavailable"
+            us_vix_score = 0.0
 
         # Pillar D: US Macro, Yields & Currency
         tnx_m = metrics_map.get("^TNX") or {}
         irx_m = metrics_map.get("^IRX") or {}
         dxy_m = metrics_map.get("DX-Y.NYB") or {}
 
-        us_10y_yield = float(tnx_m.get("close") or 4.25)
-        us_3m_yield = float(irx_m.get("close") or 4.50)
-        dxy_val = float(dxy_m.get("close") or 103.5)
+        tnx_c = tnx_m.get("close")
+        irx_c = irx_m.get("close")
+        dxy_c = dxy_m.get("close")
 
-        tnx_1d = float(tnx_m.get("ret_1d") or 0.0)
-        dxy_1d = float(dxy_m.get("ret_1d") or 0.0)
+        us_10y_yield = round(float(tnx_c), 2) if (tnx_c is not None and float(tnx_c) > 0) else None
+        us_3m_yield = round(float(irx_c), 2) if (irx_c is not None and float(irx_c) > 0) else None
+        dxy_val = round(float(dxy_c), 2) if (dxy_c is not None and float(dxy_c) > 0) else None
+
+        tnx_1d = float(tnx_m.get("ret_1d") or 0.0) if us_10y_yield is not None else 0.0
+        dxy_1d = float(dxy_m.get("ret_1d") or 0.0) if dxy_val is not None else 0.0
 
         # Falling yields and softer dollar are positive tailwinds for equities & emerging markets
-        us_macro_score = (-tnx_1d * 12.0) + (-dxy_1d * 18.0)
-        if us_10y_yield < float(tnx_m.get("ema20") or us_10y_yield):
-            us_macro_score += 15.0
-        else:
-            us_macro_score -= 15.0
+        us_macro_score = 0.0
+        if us_10y_yield is not None:
+            us_macro_score += (-tnx_1d * 12.0)
+            e20_tnx = tnx_m.get("ema20")
+            if e20_tnx is not None and float(e20_tnx) > 0:
+                us_macro_score += 15.0 if us_10y_yield < float(e20_tnx) else -15.0
+        if dxy_val is not None:
+            us_macro_score += (-dxy_1d * 18.0)
         us_macro_score = float(np.clip(round(us_macro_score, 1), -100.0, 100.0))
 
         # Pillar E: US Local News & Fed Sentiment
@@ -505,9 +607,17 @@ class USAnalyticsEngine:
         p_down_us = round(rem_us * (1.0 - raw_p_us), 3)
         p_flat_us = round(1.0 - p_up_us - p_down_us, 3)
 
-        spy_price = float(spy_m.get("close") or 520.0)
-        spy_expected_pts = round((us_composite_score / 100.0) * (spy_price * 0.0075), 2)
-        spy_expected_pct = round((spy_expected_pts / max(1.0, spy_price)) * 100.0, 2)
+        spy_c = spy_m.get("close")
+        if spy_c is not None and float(spy_c) > 0:
+            spy_price = round(float(spy_c), 2)
+            spy_expected_pts = round((us_composite_score / 100.0) * (spy_price * 0.0075), 2)
+            spy_expected_pct = round((spy_expected_pts / max(1.0, spy_price)) * 100.0, 2)
+            expected_close_spy = round(spy_price + spy_expected_pts, 2)
+        else:
+            spy_price = None
+            spy_expected_pts = None
+            spy_expected_pct = None
+            expected_close_spy = None
 
         us_t1_forecast = {
             "verdict": us_t1_verdict,
@@ -517,17 +627,19 @@ class USAnalyticsEngine:
             "prob_down": p_down_us,
             "expected_pts_spy": spy_expected_pts,
             "expected_pct_spy": spy_expected_pct,
-            "expected_close_spy": round(spy_price + spy_expected_pts, 2),
+            "expected_close_spy": expected_close_spy,
             "confidence": "HIGH" if abs(us_composite_score) >= 25 else ("MEDIUM" if abs(us_composite_score) >= 10 else "LOW"),
         }
 
         # Pillar G: Futures Lead-Lag & Relative Move Engine
         es_m = metrics_map.get("ES=F") or {}
         nq_m = metrics_map.get("NQ=F") or {}
-        es_price = float(es_m.get("close") or 0.0)
-        es_1d = float(es_m.get("ret_1d") or 0.0)
-        nq_price = float(nq_m.get("close") or 0.0)
-        nq_1d = float(nq_m.get("ret_1d") or 0.0)
+        es_c = es_m.get("close")
+        nq_c = nq_m.get("close")
+        es_price = round(float(es_c), 2) if (es_c is not None and float(es_c) > 0) else None
+        es_1d = float(es_m.get("ret_1d") or 0.0) if es_price is not None else 0.0
+        nq_price = round(float(nq_c), 2) if (nq_c is not None and float(nq_c) > 0) else None
+        nq_1d = float(nq_m.get("ret_1d") or 0.0) if nq_price is not None else 0.0
 
         # Dynamic Rolling Beta of Nifty vs S&P 500 (Historically ~0.48 to 0.58 in Indian market)
         rolling_beta = 0.52
@@ -548,11 +660,19 @@ class USAnalyticsEngine:
                             dynamic_spot = float(row[0])
             except Exception:
                 pass
-        ref_spot = dynamic_spot if dynamic_spot > 0 else 24800.0
-        expected_fair_gap_pct = round((es_1d * rolling_beta) + ((us_composite_score / 100.0) * 0.06), 2)
-        expected_fair_gap_pts = round(ref_spot * (expected_fair_gap_pct / 100.0), 1)
 
-        if expected_fair_gap_pct >= 0.35 and us_composite_score >= 15.0:
+        if dynamic_spot > 0:
+            ref_spot = dynamic_spot
+            expected_fair_gap_pct = round((es_1d * rolling_beta) + ((us_composite_score / 100.0) * 0.06), 2) if es_price is not None else 0.0
+            expected_fair_gap_pts = round(ref_spot * (expected_fair_gap_pct / 100.0), 1) if es_price is not None else 0.0
+        else:
+            ref_spot = None
+            expected_fair_gap_pct = 0.0
+            expected_fair_gap_pts = 0.0
+
+        if es_price is None:
+            gap_verdict = "UNAVAILABLE (US Futures Data Temporarily Unavailable)"
+        elif expected_fair_gap_pct >= 0.35 and us_composite_score >= 15.0:
             gap_verdict = "BULLISH_GAP_CONTINUATION (Healthy US Momentum Tailwinds)"
         elif expected_fair_gap_pct >= 0.40 and us_composite_score <= -8.0:
             gap_verdict = "EXHAUSTION_GAP_UP (Overbought Open — High Mean Reversion Fade Risk)"
@@ -565,9 +685,9 @@ class USAnalyticsEngine:
 
         futures_relative_radar = {
             "es_futures_price": es_price,
-            "es_futures_ret_1d": es_1d,
+            "es_futures_ret_1d": es_1d if es_price is not None else None,
             "nq_futures_price": nq_price,
-            "nq_futures_ret_1d": nq_1d,
+            "nq_futures_ret_1d": nq_1d if nq_price is not None else None,
             "rolling_beta_to_nifty": rolling_beta,
             "expected_fair_gap_pts": expected_fair_gap_pts,
             "expected_fair_gap_pct": expected_fair_gap_pct,
@@ -606,7 +726,7 @@ class USAnalyticsEngine:
             "macro_rates_currency": {
                 "us_10y_yield": us_10y_yield,
                 "us_3m_yield": us_3m_yield,
-                "yield_curve_spread": round(us_10y_yield - us_3m_yield, 2),
+                "yield_curve_spread": round(us_10y_yield - us_3m_yield, 2) if (us_10y_yield is not None and us_3m_yield is not None) else None,
                 "us_dollar_dxy": dxy_val,
                 "macro_score": us_macro_score,
             },

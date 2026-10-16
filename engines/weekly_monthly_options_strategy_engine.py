@@ -692,7 +692,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
         horizon: str = "WEEKLY",
         expiry_date: Optional[str] = None,
         weekly_model_info: Optional[Dict[str, Any]] = None,
-        lot_size: int = 75
+        lot_size: int = NIFTY_LOT_SIZE
     ) -> Dict[str, Any]:
         """
         Pre-Trade Probability Tournament:
@@ -1178,7 +1178,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             horizon=horizon,
             expiry_date=expiry_date,
             weekly_model_info=weekly_model_info,
-            lot_size=75
+            lot_size=NIFTY_LOT_SIZE
         )
 
     # =========================================================================
@@ -1189,7 +1189,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
         cls,
         horizon: str = "WEEKLY",
         lookback_sessions: int = 50,
-        lot_size: int = 75
+        lot_size: int = NIFTY_LOT_SIZE
     ) -> Dict[str, Any]:
         """
         Backtests Weekly or Monthly strategies separately across historical market sessions:
@@ -1289,7 +1289,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
         horizon: str = "WEEKLY",
         enable_reentry: bool = True,
         forced_sl: Optional[float] = None,
-        lot_size: int = 75
+        lot_size: int = NIFTY_LOT_SIZE
     ) -> Dict[str, Any]:
         """Simulates positional options holding across multi-day sessions."""
         trades: List[Dict[str, Any]] = []
@@ -1430,7 +1430,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
         cls,
         sessions: List[Dict[str, Any]],
         horizon: str = "WEEKLY",
-        lot_size: int = 75
+        lot_size: int = NIFTY_LOT_SIZE
     ) -> Dict[str, Any]:
         """Slices performance across each of the 5 market regimes independently."""
         regimes = ["STRONG_BULLISH", "STRONG_BEARISH", "MILD_BULLISH", "MILD_BEARISH", "RANGE_BOUND"]
@@ -1585,7 +1585,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
         horizon: str = "WEEKLY",
         force_refresh: bool = False,
         confidence_threshold: float = 8.0,
-        lot_size: int = 75
+        lot_size: int = NIFTY_LOT_SIZE
     ) -> Dict[str, Any]:
         """
         Executes Weekly or Monthly auto-trades when system feels confident:
@@ -1825,7 +1825,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "type": l.option_type,
                 "strike": l.strike,
                 "qty": l.qty,
-                "lots": max(1, l.qty // 75),
+                "lots": max(1, l.qty // NIFTY_LOT_SIZE),
                 "entry_price": l.original_entry_premium,
                 "current_price": l.original_entry_premium,
                 "sl_trigger": l.initial_sl_trigger,
@@ -1955,7 +1955,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 strike=stk,
                 option_type=typ,
                 action=r["action"],
-                qty=75,
+                qty=NIFTY_LOT_SIZE,
                 entry_premium=float(r["original_entry_premium"]),
                 sl_pct=float(r["sl_threshold_pct"] or (0.40 if horizon == "WEEKLY" else 0.50)),
                 entry_time=str(r["entry_time"]),

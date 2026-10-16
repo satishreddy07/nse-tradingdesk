@@ -403,7 +403,7 @@ class SwingQuantMLEngine:
         fatal_flags = []
 
         if feat_dict["dist_to_pivot"] > 3.0:
-            msg = f"OVEREXTENDED_FROM_PIVOT: Stock is {feat_dict['dist_to_pivot']:.1f}% above 50-day pivot (chasing resistance)"
+            msg = f"OVEREXTENDED_FROM_PIVOT: Stock is {feat_dict['dist_to_pivot']:.1f}% above 20-day base pivot (chasing resistance)"
             risk_flags.append(msg)
             if feat_dict["dist_to_pivot"] > 4.5:
                 fatal_flags.append(msg)

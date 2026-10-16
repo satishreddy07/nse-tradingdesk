@@ -34,6 +34,7 @@ import numpy as np
 import pandas as pd
 
 from core.data_quality import format_ist, now_ist
+from core.config import NIFTY_LOT_SIZE
 from core.unified_ml_dataset import UNIFIED_FEATURE_COLS, unified_ml_dataset
 from engines.tree_quant_ml_engine import tree_quant_ml_engine
 from execution.state_engine import state_engine
@@ -258,8 +259,8 @@ class HorizonLearningOrchestrator:
                         # Premium never dropped back to 100: No re-entry triggered
                         reentry_pts = -leg1_loss
 
-                # Net INR calculations (Lot size = 65, Statutory costs = Rs. 140 per trade)
-                lot = 65
+                # Net INR calculations (Official NSE Nifty Lot size, Statutory costs = Rs. 140 per trade)
+                lot = NIFTY_LOT_SIZE
                 cost_base = 140.0
                 cost_reentry = 280.0 if (path_high >= sl_trigger and drops_back) else 140.0
 

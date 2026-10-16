@@ -130,6 +130,7 @@ class ChartinkUniverseFetcher:
     def fetch_tickers(self) -> List[str]:
         logger.info(f"Connecting to Chartink screener: {self.url}")
         try:
+            t0_chart = time.time()
             res = self.session.get(self.url, timeout=15)
             res.raise_for_status()
 
@@ -161,9 +162,18 @@ class ChartinkUniverseFetcher:
                 if sym:
                     tickers.append(format_nse_ticker(sym))
 
+            t_chart_ms = (time.time() - t0_chart) * 1000.0
+            from core.data_watchdog import data_watchdog
+            data_watchdog.record_packet("chartink_scanner", latency_ms=t_chart_ms, details={"stocks_count": len(tickers)})
+
             logger.info(f"Fetched {len(tickers)} stocks dynamically from Chartink screener.")
             return sorted(list(set(tickers)))
         except Exception as e:
+            try:
+                from core.data_watchdog import data_watchdog
+                data_watchdog.record_failure("chartink_scanner", str(e))
+            except Exception:
+                pass
             logger.warning(f"Chartink fetch encountered notice: {e}. Falling back to cached seed tickers.")
             return []
 
@@ -514,6 +524,11 @@ class DirectYahooFinanceFetcher:
             f"{stats['cache_hits']} cached, {stats['gap_filled']} gap-filled, {stats['full_downloads']} full 2Y -> "
             f"{len(results)} liquid stocks eligible."
         )
+        try:
+            from core.data_watchdog import data_watchdog
+            data_watchdog.record_packet("yahoo_finance", details={"eligible": len(results), "gap_filled": stats["gap_filled"]})
+        except Exception:
+            pass
         return results, stats
 
 
@@ -595,15 +610,18 @@ class FeatureEngine:
 
     @staticmethod
     def calc_rsi_np(close_np: np.ndarray, period: int = 14) -> float:
-        """Fast pure-NumPy SMA-RSI(14) last-value calculation matching calc_rsi(close, 14).iloc[-1]."""
+        """Welles Wilder's 14-period smoothed RSI calculation matching pd.Series(close).ewm(alpha=1/period)."""
         if len(close_np) < period + 1:
             return 50.0
-        d = np.diff(close_np[-(period + 1):])
-        gain = float(np.mean(np.where(d > 0.0, d, 0.0)))
-        loss = float(np.mean(np.where(d < 0.0, -d, 0.0)))
-        rs = gain / (loss + 1e-9)
+        m = min(len(close_np), period * 8)
+        d = np.diff(close_np[-m:])
+        gain = np.where(d > 0.0, d, 0.0)
+        loss = np.where(d < 0.0, -d, 0.0)
+        avg_gain = float(pd.Series(gain, copy=False).ewm(alpha=1.0 / period, adjust=False).mean().iloc[-1])
+        avg_loss = float(pd.Series(loss, copy=False).ewm(alpha=1.0 / period, adjust=False).mean().iloc[-1])
+        rs = avg_gain / (avg_loss + 1e-9)
         val = 100.0 - (100.0 / (1.0 + rs))
-        return val if not math.isnan(val) else 50.0
+        return float(val) if not math.isnan(val) else 50.0
 
     @staticmethod
     def check_minervini_np(
@@ -723,12 +741,13 @@ class FeatureEngine:
 
         rsi14 = cls.calc_rsi_np(close_np, 14)
 
-        # Fast ATR-14 (last 14 True Range bars)
-        h14 = high_np[-14:]
-        l14 = low_np[-14:]
-        cp14 = close_np[-15:-1]
-        tr14 = np.maximum(h14 - l14, np.maximum(np.abs(h14 - cp14), np.abs(l14 - cp14)))
-        atr14 = float(np.mean(tr14))
+        # Welles Wilder's 14-period Smoothed ATR matching nifty500_engine (alpha=1/14)
+        m_atr = min(len(close_np) - 1, 70)
+        h_slice = high_np[-m_atr:]
+        l_slice = low_np[-m_atr:]
+        cp_slice = close_np[-(m_atr + 1):-1]
+        tr_slice = np.maximum(h_slice - l_slice, np.maximum(np.abs(h_slice - cp_slice), np.abs(l_slice - cp_slice)))
+        atr14 = float(pd.Series(tr_slice, copy=False).ewm(alpha=1.0 / 14.0, adjust=False).mean().iloc[-1])
         atr_pct = (atr14 / c_now) * 100.0
         atr_distance = abs(atr_pct - 2.5)
 
@@ -769,8 +788,9 @@ class FeatureEngine:
         pocket_pivot = bool(intraday_pct > 0.0 and effective_last_vol > max_down_vol)
         vol_dryup = float(np.mean(vol_np[-5:]) / (vol_50d_avg_prev + 1e-9))
 
-        pivot_20d = float(np.max(high_np[-20:]))
-        dist_to_pivot = ((pivot_20d - c_now) / (pivot_20d + 1e-9)) * 100.0
+        prior_highs = high_np[-21:-1] if len(high_np) >= 22 else (high_np[:-1] if len(high_np) > 1 else high_np)
+        pivot_20d = float(np.max(prior_highs))
+        dist_to_pivot = ((c_now - pivot_20d) / (pivot_20d + 1e-9)) * 100.0
         dist_to_ema20 = ((c_now - ema20_now) / (ema20_now + 1e-9)) * 100.0
 
         close_10d = close_np[-10:]
