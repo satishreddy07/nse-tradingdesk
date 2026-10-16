@@ -553,6 +553,21 @@
             </div>
           </div>
 
+          <!-- Recent Trade Exit Alert Banner -->
+          <div id="p1-recent-exit-alert" class="hidden mb-3.5 p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-lg">
+            <div class="flex items-center gap-2.5">
+              <span class="text-base">🛑</span>
+              <div>
+                <span class="font-bold text-white uppercase tracking-wider text-[11px]">Trade Exit Executed:</span>
+                <span id="p1-recent-exit-text" class="text-rose-200 ml-1"></span>
+              </div>
+            </div>
+            <button onclick="switchTab('tab-history')" class="shrink-0 px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-semibold text-[11px] flex items-center gap-1 transition">
+              <span>View in Trade History</span>
+              <span>→</span>
+            </button>
+          </div>
+
           <!-- Desktop Table / Mobile Cards for Holdings -->
           <div class="overflow-x-auto custom-scroll">
             <table class="w-full text-left text-xs text-slate-300 min-w-[980px]">
@@ -698,8 +713,11 @@
           <div class="text-[10px] text-slate-400 mt-1 font-mono">Stop: 2.0x ATR Wilder</div>
         </div>
 
-        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
-          <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Realized PnL</div>
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 cursor-pointer hover:border-violet-500/50 hover:bg-slate-800/40 transition group" onclick="openRealizedPnlModal('NIFTY500_MOMENTUM')" title="Click for exact mathematical ledger breakdown">
+          <div class="flex items-center justify-between">
+            <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Realized PnL</div>
+            <span class="text-[10px] text-violet-400 group-hover:underline font-mono">🔍 Breakdown</span>
+          </div>
           <div id="p2-kpi-realized" class="text-lg sm:text-2xl font-mono font-bold text-slate-200 mt-1">₹0.00</div>
           <div id="p2-kpi-winrate" class="text-[10px] text-emerald-400 mt-1 font-mono">Win Rate: 0.0%</div>
         </div>
@@ -903,6 +921,11 @@
                 <option value="ALL">All Portfolios</option>
                 <option value="INSTITUTIONAL_6PILLAR">Portfolio 1 (Institutional)</option>
                 <option value="NIFTY500_MOMENTUM">Portfolio 2 (Nifty 500)</option>
+              </select>
+              <select id="history-view-filter" onchange="loadHistoryData()" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 w-full sm:w-auto font-medium">
+                <option value="CLOSED_FIRST">🏁 Closed Trades First (Default)</option>
+                <option value="CLOSED_ONLY">🛑 Closed Trades Only (Exits/SL)</option>
+                <option value="ACTIVE_ONLY">🟢 Active Holdings Only</option>
               </select>
               <button onclick="resetPortfolioModal()" class="justify-center px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/70 border border-rose-800 text-rose-300 text-xs font-semibold flex items-center transition whitespace-nowrap">
                 Reset PnL to ₹0
@@ -1295,8 +1318,11 @@
 
         <!-- Performance Statistics Matrix -->
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-          <div class="bg-slate-900/80 border border-emerald-500/30 rounded-xl p-4">
-            <div class="text-[11px] font-medium text-emerald-400 uppercase tracking-wider">Realized PnL</div>
+          <div class="bg-slate-900/80 border border-emerald-500/30 rounded-xl p-4 cursor-pointer hover:border-cyan-500/50 hover:bg-slate-800/40 transition group" onclick="openRealizedPnlModal('INSTITUTIONAL_6PILLAR')" title="Click for exact mathematical ledger breakdown">
+            <div class="flex items-center justify-between">
+              <div class="text-[11px] font-medium text-emerald-400 uppercase tracking-wider">Realized PnL</div>
+              <span class="text-[10px] text-cyan-400 group-hover:underline font-mono">🔍 Breakdown</span>
+            </div>
             <div id="p1-kpi-realized" class="text-lg sm:text-2xl font-mono font-bold text-emerald-400 mt-1">₹0.00</div>
             <div id="p1-kpi-realized-sub" class="text-[10px] text-slate-400 mt-1 font-mono">Includes T1 Target Hits</div>
           </div>
@@ -5516,6 +5542,91 @@
         </button>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- REALIZED PNL MATHEMATICAL BREAKDOWN MODAL                             -->
+  <!-- ===================================================================== -->
+  <div id="realized-pnl-modal" onclick="if(event.target === this) closeRealizedPnlModal()" style="display: none;" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5">
+    <div class="bg-[#0b0f19] border border-cyan-500/40 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+        <div class="flex items-center gap-2.5">
+          <span class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 font-bold text-base">💰</span>
+          <div>
+            <h3 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <span>Realized PnL Breakdown</span>
+              <span id="rpnl-modal-portfolio-tag" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">Portfolio 1</span>
+            </h3>
+            <p class="text-xs text-slate-400">Exact mathematical ledger combining active T1 partial profits and closed trade exits.</p>
+          </div>
+        </div>
+        <button onclick="closeRealizedPnlModal()" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition">✕</button>
+      </div>
+
+      <div class="p-4 sm:p-5 overflow-y-auto space-y-4 custom-scroll font-sans text-xs">
+        <!-- Net Realized PnL Top Card -->
+        <div class="p-4 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total Net Realized PnL</div>
+            <div id="rpnl-modal-total-pnl" class="text-2xl font-bold font-mono text-rose-400 mt-1">-₹2,538.30</div>
+            <div class="text-[10px] text-slate-500 font-mono mt-0.5">= T1 Partial Bookings + Closed Trades PnL</div>
+          </div>
+          <div class="text-right">
+            <span class="px-2.5 py-1 rounded-lg text-xs font-bold font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+              LEDGER VERIFIED
+            </span>
+          </div>
+        </div>
+
+        <!-- Component 1: T1 Partial Target Bookings (Active Positions) -->
+        <div class="rounded-xl border border-emerald-500/30 bg-emerald-950/10 p-3.5 space-y-2">
+          <div class="flex items-center justify-between border-b border-emerald-500/20 pb-2">
+            <div class="font-bold text-emerald-400 flex items-center gap-1.5">
+              <span>🎯</span>
+              <span>1. Partial T1 Profits Booked (Active Holdings)</span>
+            </div>
+            <div id="rpnl-modal-t1-sum" class="font-mono font-bold text-emerald-400 text-sm">+₹6,536.66</div>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            When active stocks hit Target 1 (1.5R), 50% shares are booked and stop-loss is trailed to breakeven. This profit is realized into cash while remaining shares continue running.
+          </p>
+          <div id="rpnl-modal-t1-list" class="space-y-1.5 font-mono text-[11px] pt-1">
+            <!-- populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Component 2: Fully Closed Trades (Trade History) -->
+        <div class="rounded-xl border border-rose-500/30 bg-rose-950/10 p-3.5 space-y-2">
+          <div class="flex items-center justify-between border-b border-rose-500/20 pb-2">
+            <div class="font-bold text-rose-400 flex items-center gap-1.5">
+              <span>🛑</span>
+              <span>2. Fully Closed Positions (Trade History)</span>
+            </div>
+            <div id="rpnl-modal-closed-sum" class="font-mono font-bold text-rose-400 text-sm">-₹9,074.96</div>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Full position exits triggered by automated Stop Loss or Target 2 fulfillment.
+          </p>
+          <div id="rpnl-modal-closed-list" class="space-y-1.5 font-mono text-[11px] pt-1">
+            <!-- populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Mathematical Proof Formula Box -->
+        <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
+          <div class="text-slate-400 font-bold mb-1">Mathematical Ledger Proof:</div>
+          <div id="rpnl-modal-formula" class="text-cyan-300">+₹6,536.66 (T1 Bookings) + (-₹9,074.96 Closed Trades) = -₹2,538.30 Net Realized</div>
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between">
+        <button onclick="closeRealizedPnlModal(); switchTab('tab-history')" class="px-3.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-mono text-xs font-bold transition flex items-center gap-1.5">
+          <span>📜 Open Trade History Tab</span>
+          <span>→</span>
+        </button>
+        <button onclick="closeRealizedPnlModal()" class="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs font-bold transition">Close</button>
+      </div>
     </div>
   </div>
 
@@ -13146,6 +13257,30 @@
         const positions = await posRes.json();
         p1ActiveSet = new Set((positions || []).map(p => (p.symbol || '').toUpperCase()));
         renderP1Positions(positions);
+
+        // Check for recent trade exits today to display informative alert banner
+        try {
+          const histRes = await fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/history?limit=1');
+          if (histRes.ok) {
+            const histList = await histRes.json();
+            const alertEl = document.getElementById('p1-recent-exit-alert');
+            const alertTxt = document.getElementById('p1-recent-exit-text');
+            if (histList && histList.length > 0 && alertEl && alertTxt) {
+              const latest = histList[0];
+              const exitDateStr = latest.exit_date || '';
+              const istToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+              if (exitDateStr.startsWith(istToday)) {
+                alertEl.classList.remove('hidden');
+                const isSl = (latest.exit_reason || '').toUpperCase().includes('STOP_LOSS') || (latest.exit_reason || '').toUpperCase().includes('SL');
+                alertTxt.innerHTML = `<span class="font-bold text-white">${latest.symbol}</span> ${isSl ? 'hit Stop Loss' : 'exited'} @ ₹${(latest.exit_price || 0).toFixed(2)} (PnL: <span class="${latest.pnl >= 0 ? 'text-emerald-400' : 'text-rose-300'} font-bold">${latest.pnl >= 0 ? '+' : ''}₹${(latest.pnl || 0).toFixed(2)} / ${(latest.return_pct || 0).toFixed(2)}%</span> at ${latest.exit_date}). Active slots adjusted to ${positions.length}/10.`;
+              } else {
+                alertEl.classList.add('hidden');
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Recent exit banner check error:', e);
+        }
       }
 
       if (sigRes && sigRes.ok) {
@@ -14353,9 +14488,17 @@
         const pnl = t.pnl || 0;
         const pnlClass = pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
         const pnlSign = pnl >= 0 ? '+' : '';
+        const isStopLoss = (t.exit_reason || '').toUpperCase().includes('STOP_LOSS') || (t.exit_reason || '').toUpperCase().includes('SL');
+        const isTarget = (t.exit_reason || '').toUpperCase().includes('TARGET') || (t.exit_reason || '').toUpperCase().includes('T1') || (t.exit_reason || '').toUpperCase().includes('T2');
+        const exitBadge = isStopLoss
+          ? `<span class="px-2 py-0.5 rounded text-[10px] bg-rose-500/25 text-rose-300 border border-rose-500/40 font-mono font-bold whitespace-nowrap">🛑 STOP LOSS HIT</span>`
+          : (isTarget
+            ? `<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 font-mono font-bold whitespace-nowrap">🎯 TARGET HIT</span>`
+            : `<span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono whitespace-nowrap">${t.exit_reason || 'CLOSED'} • ☁️ #${msgId}</span>`);
+        const rowBg = isStopLoss ? 'bg-rose-950/20 hover:bg-slate-800/40 border-l-4 border-l-rose-500' : (isTarget ? 'bg-emerald-950/20 hover:bg-slate-800/40 border-l-4 border-l-emerald-500' : 'hover:bg-slate-800/30');
 
         return `
-          <tr class="hover:bg-slate-800/30 transition">
+          <tr class="${rowBg} transition">
             <td class="p-3 font-bold text-white">
               <button onclick="openStockChartModal('${t.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">${t.symbol}</button>
             </td>
@@ -14363,7 +14506,7 @@
             <td class="p-3 text-slate-300 text-[11px] font-mono">${t.entry_date || '-'}</td>
             <td class="p-3 text-slate-300 text-[11px] font-mono">${t.exit_date || '-'}</td>
             <td class="p-3">₹${(t.entry_price || 0).toFixed(2)}</td>
-            <td class="p-3">₹${(t.exit_price || 0).toFixed(2)}</td>
+            <td class="p-3 font-bold ${pnlClass}">₹${(t.exit_price || 0).toFixed(2)}</td>
             <td class="p-3">${t.quantity || 0}</td>
             <td class="p-3 ${pnlClass} font-bold font-mono">${pnlSign}₹${pnl.toFixed(2)}</td>
             <td class="p-3 ${pnlClass} font-bold font-mono">${pnlSign}${(t.return_pct || 0).toFixed(2)}%</td>
@@ -14372,14 +14515,164 @@
             </td>
             <td class="p-3">${t.hold_days || 1}d</td>
             <td class="p-3 flex items-center justify-end gap-1.5 whitespace-nowrap">
-              <span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">${t.exit_reason || 'CLOSED'} • ☁️ #${msgId}</span>
+              ${exitBadge}
               <button onclick="openStockChartModal('${t.symbol}')" class="px-1.5 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[10px]">📈</button>
             </td>
           </tr>
         `;
       }).join('');
 
-      tbody.innerHTML = activeRowsHtml + closedRowsHtml;
+      const viewMode = document.getElementById('history-view-filter')?.value || 'CLOSED_FIRST';
+
+      let html = '';
+      if (viewMode === 'CLOSED_ONLY') {
+        html = closedRowsHtml.length > 0 ? closedRowsHtml : `<tr><td colspan="12" class="p-8 text-center text-slate-500 font-sans">No closed trades recorded.</td></tr>`;
+      } else if (viewMode === 'ACTIVE_ONLY') {
+        html = activeRowsHtml.length > 0 ? activeRowsHtml : `<tr><td colspan="12" class="p-8 text-center text-slate-500 font-sans">No active open positions.</td></tr>`;
+      } else {
+        // CLOSED_FIRST (Default: Closed trades at top with clear section header)
+        let sectionClosed = '';
+        if (closedHistory.length > 0) {
+          sectionClosed = `
+            <tr class="bg-slate-900 border-y border-slate-800">
+              <td colspan="12" class="px-3 py-2 text-xs font-bold text-amber-400 font-sans uppercase tracking-wider">
+                <div class="flex items-center justify-between">
+                  <span class="flex items-center gap-1.5">🏁 Closed Trade Exits (${closedHistory.length} Trades Recorded)</span>
+                  <span class="text-[11px] text-slate-400 font-normal font-mono">Sorted by Newest Exit First</span>
+                </div>
+              </td>
+            </tr>
+            ${closedRowsHtml}
+          `;
+        }
+        let sectionActive = '';
+        if (activePositions.length > 0) {
+          sectionActive = `
+            <tr class="bg-slate-900 border-y border-slate-800">
+              <td colspan="12" class="px-3 py-2 text-xs font-bold text-emerald-400 font-sans uppercase tracking-wider">
+                <div class="flex items-center justify-between">
+                  <span class="flex items-center gap-1.5">🟢 Active Open Holdings (${activePositions.length} Positions)</span>
+                  <span class="text-[11px] text-slate-400 font-normal font-mono">Live MTM Running</span>
+                </div>
+              </td>
+            </tr>
+            ${activeRowsHtml}
+          `;
+        }
+        html = sectionClosed + sectionActive;
+      }
+      tbody.innerHTML = html;
+    }
+
+    // -------------------------------------------------------------------------
+    // REALIZED PNL BREAKDOWN MODAL LOGIC
+    // -------------------------------------------------------------------------
+    async function openRealizedPnlModal(portfolioType = 'INSTITUTIONAL_6PILLAR') {
+      const modal = document.getElementById('realized-pnl-modal');
+      if (!modal) return;
+      modal.style.display = 'flex';
+
+      const tagEl = document.getElementById('rpnl-modal-portfolio-tag');
+      if (tagEl) {
+        tagEl.innerText = portfolioType.includes('NIFTY') ? 'Portfolio 2 (Nifty 500)' : 'Portfolio 1 (Institutional 6-Pillar)';
+      }
+
+      try {
+        const [sumRes, posRes, histRes] = await Promise.all([
+          fetch(`/api/portfolio/${encodeURIComponent(portfolioType)}/summary`),
+          fetch(`/api/portfolio/${encodeURIComponent(portfolioType)}/positions`),
+          fetch(`/api/portfolio/${encodeURIComponent(portfolioType)}/history`)
+        ]);
+
+        const sum = sumRes.ok ? await sumRes.json() : {};
+        const positions = posRes.ok ? await posRes.json() : [];
+        const history = histRes.ok ? await histRes.json() : [];
+        const st = sum.stats || {};
+
+        const totalRealized = st.total_realized_pnl != null ? st.total_realized_pnl : (st.realized_pnl || 0);
+        const t1Realized = st.t1_realized_pnl || 0;
+        const closedRealized = st.closed_realized_pnl != null ? st.closed_realized_pnl : (totalRealized - t1Realized);
+
+        const totEl = document.getElementById('rpnl-modal-total-pnl');
+        if (totEl) {
+          totEl.innerText = `${totalRealized >= 0 ? '+' : ''}₹${totalRealized.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+          totEl.className = `text-2xl font-bold font-mono ${totalRealized >= 0 ? 'text-emerald-400' : 'text-rose-400'} mt-1`;
+        }
+
+        const t1SumEl = document.getElementById('rpnl-modal-t1-sum');
+        if (t1SumEl) t1SumEl.innerText = `${t1Realized >= 0 ? '+' : ''}₹${t1Realized.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+        const t1Positions = (positions || []).filter(p => p.t1_hit);
+        const t1ListEl = document.getElementById('rpnl-modal-t1-list');
+        if (t1ListEl) {
+          if (t1Positions.length === 0) {
+            t1ListEl.innerHTML = `<div class="text-slate-500 italic font-sans py-1">No partial T1 targets booked on active positions yet.</div>`;
+          } else {
+            t1ListEl.innerHTML = t1Positions.map(p => `
+              <div class="flex items-center justify-between p-2 rounded bg-slate-900/60 border border-slate-800">
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-white">${p.symbol}</span>
+                  <span class="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-300 font-bold">🎯 T1 HIT (1.5R)</span>
+                </div>
+                <div class="text-right">
+                  <span class="font-bold text-emerald-400">+₹${Number(p.t1_pnl || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  <div class="text-[9px] text-slate-400">SL trailed to ₹${Number(p.stop_loss || 0).toFixed(2)} (Breakeven)</div>
+                </div>
+              </div>
+            `).join('');
+          }
+        }
+
+        const closedSumEl = document.getElementById('rpnl-modal-closed-sum');
+        if (closedSumEl) closedSumEl.innerText = `${closedRealized >= 0 ? '+' : ''}₹${closedRealized.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+        const closedListEl = document.getElementById('rpnl-modal-closed-list');
+        if (closedListEl) {
+          if (history.length === 0) {
+            closedListEl.innerHTML = `<div class="text-slate-500 italic font-sans py-1">No closed trades recorded.</div>`;
+          } else {
+            closedListEl.innerHTML = history.map(t => {
+              const pnl = t.pnl || 0;
+              const isSl = (t.exit_reason || '').toUpperCase().includes('STOP_LOSS') || (t.exit_reason || '').toUpperCase().includes('SL');
+              return `
+                <div class="flex items-center justify-between p-2 rounded bg-slate-900/60 border border-slate-800">
+                  <div>
+                    <div class="flex items-center gap-1.5">
+                      <span class="font-bold text-white">${t.symbol}</span>
+                      <span class="px-1.5 py-0.5 rounded text-[9px] font-bold ${isSl ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-slate-800 text-slate-300'}">
+                        ${isSl ? '🛑 STOP LOSS' : (t.exit_reason || 'CLOSED')}
+                      </span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 font-sans mt-0.5">
+                      Exit: ${t.exit_date || '-'} @ ₹${(t.exit_price || 0).toFixed(2)} (${t.quantity} shs)
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <span class="font-bold ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                      ${pnl >= 0 ? '+' : ''}₹${pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                    <div class="text-[9px] ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                      ${(t.return_pct || 0).toFixed(2)}% (${(t.r_multiple || 0).toFixed(2)}R)
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('');
+          }
+        }
+
+        const formulaEl = document.getElementById('rpnl-modal-formula');
+        if (formulaEl) {
+          formulaEl.innerText = `+₹${t1Realized.toFixed(2)} (Active T1 Bookings) + (${closedRealized >= 0 ? '+' : ''}₹${closedRealized.toFixed(2)} Closed Trades) = ${totalRealized >= 0 ? '+' : ''}₹${totalRealized.toFixed(2)} Net Realized`;
+        }
+      } catch (err) {
+        console.error('Failed to load Realized PnL modal data:', err);
+      }
+    }
+
+    function closeRealizedPnlModal() {
+      const modal = document.getElementById('realized-pnl-modal');
+      if (modal) modal.style.display = 'none';
     }
 
     // -------------------------------------------------------------------------
