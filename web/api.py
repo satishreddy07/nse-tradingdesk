@@ -86,6 +86,10 @@ else:
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://nse-tradingdesk.onrender.com",
+        "https://nseuniverse.duckdns.org",
+        "http://nseuniverse.duckdns.org",
+        "https://nseuniverse.duckdns.com",
+        "http://nseuniverse.duckdns.com",
     ]
 
 app.add_middleware(
