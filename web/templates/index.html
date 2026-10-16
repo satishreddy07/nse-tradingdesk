@@ -6025,26 +6025,35 @@
         });
       }
 
-      // Smart Polling: Only poll automatically during 09:00 AM – 03:50 PM IST trading days (or when a manual scan is running)
-      // and only when browser tab is visible, so an idle open tab never wastes network or battery.
+      // Smart Bandwidth-Optimized Polling: Only poll during active market hours (09:00 AM – 03:50 PM IST)
+      // and only when browser tab is visible and focused. Idle or background tabs consume 0 bandwidth.
       setInterval(() => {
-        if (wasScanRunning || (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow())) {
+        // Only poll frequently (2.5s) if a scan is actively running; otherwise gentle 60s idle check
+        if (wasScanRunning) {
           pollScanProgress();
         }
       }, 2500);
+
+      setInterval(() => {
+        if (!wasScanRunning && !document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+          pollScanProgress();
+        }
+      }, 60000);
+
       setInterval(() => {
         if (!document.hidden && (wasScanRunning || (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()))) {
           refreshAllData();
         }
-      }, 30000);
-      // 1. High-frequency 2-Second Live Spot Tick Streamer (Zero-Broker)
+      }, 60000);
+
+      // 1. High-frequency 4-Second Live Spot Tick Streamer (Zero-Broker, bandwidth-throttled)
       setInterval(() => {
         if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
           pollLiveSpotTick();
         }
-      }, 2000);
+      }, 4000);
 
-      // 2. High-speed 6-Second Options & 10-Second Intraday Streamer (Active Desk Aware)
+      // 2. 15-Second Options & Intraday Streamer (Active Desk Aware)
       setInterval(() => {
         if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
           const optMod = document.getElementById('module-options');
@@ -6055,15 +6064,15 @@
             loadIntradayExpiryProgression(false);
           }
         }
-      }, 6000);
+      }, 15000);
 
-      // 3. 60-Second Live Price Stream for all Active Positions, Screened Stocks, and Options Strategies
+      // 3. 90-Second Live Price Stream for all Active Positions, Screened Stocks, and Options Strategies
       setInterval(() => {
         if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
           refreshLivePrices(true);
           loadOptionsPortfolioDesk();
         }
-      }, 60000);
+      }, 90000);
 
       // Instant refresh when user switches back to this tab
       document.addEventListener('visibilitychange', () => {
