@@ -946,12 +946,28 @@ class StateEngine:
         p_type = self._normalize_portfolio_type(portfolio_type)
         now_str = format_ist()  # Full timestamp: YYYY-MM-DD HH:MM:SS IST
 
-        metrics_str = json.dumps(entry_metrics or {})
-        features_str = json.dumps(trade_features or {})
-
         with self._lock:
             with self._get_connection() as conn:
                 try:
+                    # If entry_metrics not explicitly provided (e.g. UI manual execution), auto-inherit from latest screened signals or shadow dataset
+                    if not entry_metrics or "score" not in entry_metrics:
+                        sig_row = conn.execute(
+                            "SELECT * FROM latest_signals WHERE symbol = ? AND portfolio_type = ?",
+                            (sym_clean, p_type)
+                        ).fetchone()
+                        if sig_row:
+                            entry_metrics = dict(sig_row)
+                        else:
+                            shadow_row = conn.execute(
+                                "SELECT * FROM quant_trade_dataset WHERE symbol = ? AND trade_type = 'SHADOW' ORDER BY id DESC LIMIT 1",
+                                (sym_clean,)
+                            ).fetchone()
+                            if shadow_row:
+                                entry_metrics = dict(shadow_row)
+
+                    metrics_str = json.dumps(entry_metrics or {})
+                    features_str = json.dumps(trade_features or (json.loads(entry_metrics.get("features_json")) if isinstance(entry_metrics, dict) and isinstance(entry_metrics.get("features_json"), str) else {}))
+
                     existing = conn.execute(
                         "SELECT id, quantity, entry_price FROM active_positions WHERE symbol = ?",
                         (sym_clean,)
