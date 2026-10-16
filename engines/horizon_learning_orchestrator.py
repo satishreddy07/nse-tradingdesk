@@ -192,8 +192,6 @@ class HorizonLearningOrchestrator:
 
         per_regime_samples = max(10, sample_size // len(regimes))
 
-        np.random.seed(101)
-
         for reg in regimes:
             reg_base_pnl = 0.0
             reg_reentry_pnl = 0.0
@@ -205,17 +203,17 @@ class HorizonLearningOrchestrator:
             # Volatility modifier by regime
             reg_vol = 12.0 if "RANGE" in reg else (15.0 if "MILD" in reg else 19.0)
 
-            for _ in range(per_regime_samples):
+            for s in range(per_regime_samples):
+                step_frac = s / max(1, per_regime_samples - 1)  # 0.0 to 1.0
                 entry_premium = 100.0
                 sl_trigger = entry_premium * (1.0 + sl_pct)
                 # Realistic fill includes slippage: 1.5% adverse
                 actual_sl_fill = sl_trigger * 1.015
 
-                # Simulate option path:
-                # Max excursion reached during trade
+                # Deterministic option excursion grid based on regime volatility
                 drift = 0.0 if "RANGE" in reg else (0.15 if "MILD" in reg else 0.30)
-                path_high = entry_premium * float(np.random.uniform(0.6, 1.8 + drift))
-                path_settlement = entry_premium * float(np.random.uniform(0.1, 1.4))
+                path_high = entry_premium * (0.6 + step_frac * (1.2 + drift))
+                path_settlement = entry_premium * (0.1 + (1.0 - step_frac) * 1.3)
 
                 # Leg 1 (Initial Sell Order):
                 if path_high < sl_trigger:
@@ -236,14 +234,14 @@ class HorizonLearningOrchestrator:
                     reg_triggers += 1
                     reentry_triggers_count += 1
 
-                    drops_back = (path_settlement <= entry_premium) or (np.random.random() < 0.55)
+                    drops_back = (path_settlement <= entry_premium) or (step_frac < 0.55)
                     if drops_back:
                         # Leg 2 Re-entry submitted! Actual fill at 100.0 (or slippage: 99.5)
                         reentry_fill = 100.0 * 0.995
                         reentry_sl = reentry_fill * (1.0 + sl_pct)
 
                         # Does Leg 2 hit stop loss again?
-                        leg2_high = reentry_fill * float(np.random.uniform(0.7, 1.5))
+                        leg2_high = reentry_fill * (0.7 + (1.0 - step_frac) * 0.75)
                         if leg2_high >= reentry_sl:
                             # Re-entry also hits SL: Terminal exit
                             leg2_loss = (reentry_sl * 1.015) - reentry_fill
