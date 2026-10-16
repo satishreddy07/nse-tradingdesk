@@ -476,6 +476,14 @@ class IntradayOptionsStrategyEngine:
             if spot <= 0:
                 raise RuntimeError("Live Nifty Spot Price unavailable for intraday strike calculation.")
         if iv_pct <= 0:
+            try:
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                vix_data = nifty_analytics_engine.get_india_vix()
+                if vix_data and vix_data.get("current_vix", 0) > 0:
+                    iv_pct = float(vix_data["current_vix"])
+            except Exception:
+                pass
+        if iv_pct <= 0:
             iv_pct = 13.0
 
         now_dt = now_ist()
@@ -692,6 +700,17 @@ class IntradayOptionsStrategyEngine:
             sessions_data = cls._load_real_historical_sessions(count=lookback_sessions)
         else:
             sessions_data = []
+            vix_default = 0.0
+            try:
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                vix_d = nifty_analytics_engine.get_india_vix()
+                if vix_d and vix_d.get("current_vix", 0) > 0:
+                    vix_default = float(vix_d["current_vix"])
+            except Exception:
+                pass
+            if vix_default <= 0.0:
+                vix_default = 13.0
+
             for r in rows[-lookback_sessions:]:
                 s_spot = float(r["spot_at_prediction"] or 0.0)
                 if s_spot <= 0:
@@ -716,7 +735,7 @@ class IntradayOptionsStrategyEngine:
                     "ret_pct": ret_pct,
                     "verdict": verdict,
                     "composite_score": float(r["composite_score"] or 0.0),
-                    "iv_pct": 13.0,
+                    "iv_pct": vix_default,
                 })
 
         # Test Configurations Matrix:
@@ -1966,11 +1985,22 @@ class IntradayOptionsStrategyEngine:
         # Fallback to nifty_predictions_log if ohlcv_master_store is not populated
         if not sessions:
             try:
+                vix_fallback = 0.0
+                try:
+                    from engines.nifty_analytics_engine import nifty_analytics_engine
+                    vix_d = nifty_analytics_engine.get_india_vix()
+                    if vix_d and vix_d.get("current_vix", 0) > 0:
+                        vix_fallback = float(vix_d["current_vix"])
+                except Exception:
+                    pass
+                if vix_fallback <= 0.0:
+                    vix_fallback = 13.0
+
                 with state_engine._lock:
                     with state_engine._get_connection() as conn:
                         rows = conn.execute("""
                             SELECT prediction_date, spot_at_prediction, composite_score, t1_verdict,
-                                   actual_t1_close, t1_actual_return_pct
+                                   actual_t1_close, t1_actual_return_pct, t1_high_1s, t1_low_1s
                             FROM nifty_predictions_log
                             WHERE spot_at_prediction > 0
                             ORDER BY id DESC LIMIT ?
@@ -1979,16 +2009,18 @@ class IntradayOptionsStrategyEngine:
                             s_spot = float(r["spot_at_prediction"])
                             ret_p = float(r["t1_actual_return_pct"] or 0.0)
                             close_p = float(r["actual_t1_close"] or (s_spot * (1.0 + ret_p / 100.0)))
+                            h_val = float(r["t1_high_1s"]) if r["t1_high_1s"] else max(s_spot, close_p)
+                            l_val = float(r["t1_low_1s"]) if r["t1_low_1s"] else min(s_spot, close_p)
                             sessions.append({
                                 "date": str(r["prediction_date"]),
                                 "spot": round(s_spot, 2),
                                 "close": round(close_p, 2),
-                                "high": round(max(s_spot, close_p) * 1.003, 2),
-                                "low": round(min(s_spot, close_p) * 0.997, 2),
+                                "high": round(max(h_val, max(s_spot, close_p)), 2),
+                                "low": round(min(l_val, min(s_spot, close_p)), 2),
                                 "ret_pct": round(ret_p, 2),
                                 "verdict": str(r["t1_verdict"] or "RANGE BOUND").replace("_", " "),
                                 "composite_score": float(r["composite_score"] or 0.0),
-                                "iv_pct": 13.0
+                                "iv_pct": vix_fallback
                             })
             except Exception:
                 pass

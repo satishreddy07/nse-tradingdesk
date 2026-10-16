@@ -1423,9 +1423,18 @@ class NiftyAnalyticsEngine:
         # Anchor parameters dynamically from live spot or existing snapshots
         live_spot_dict = self.get_live_nifty_spot()
         dynamic_spot = float(live_spot_dict.get("price") or 0.0)
+        if dynamic_spot <= 0.0:
+            try:
+                with state_engine._lock:
+                    with state_engine._get_connection() as conn:
+                        row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
+                        if row:
+                            dynamic_spot = float(row[0])
+            except Exception:
+                pass
         dynamic_atm = int(round(dynamic_spot / 50.0) * 50) if dynamic_spot > 0 else 0
         base_spot = dynamic_spot
-        base_strad = 75.0
+        base_strad = round(dynamic_spot * 0.0035, 2) if dynamic_spot > 0 else 75.0
         base_pcr = 1.05
         base_atm = dynamic_atm
         call_w = dynamic_atm + 100 if dynamic_atm > 0 else 0
@@ -1515,6 +1524,16 @@ class NiftyAnalyticsEngine:
                         "interval_mode": interval_mode
                     }
 
+                    dynamic_iv = 0.0
+                    try:
+                        vix_info = self.get_india_vix()
+                        if vix_info and vix_info.get("current_vix", 0) > 0:
+                            dynamic_iv = float(vix_info["current_vix"])
+                    except Exception:
+                        pass
+                    if dynamic_iv <= 0.0:
+                        dynamic_iv = 13.5
+
                     conn.execute("""
                         INSERT OR REPLACE INTO intraday_option_snapshots (
                             session_date, slot_time, timestamp_ist, expiry_date,
@@ -1528,7 +1547,7 @@ class NiftyAnalyticsEngine:
                     """, (
                         target_date, slot_code, ts_ist, exp_label, spot, atm_strike,
                         ce_ltp, pe_ltp, strad, pcr, pcr, pcr,
-                        pcr, max_p, call_w, put_w, 0, 0, 0.0, 14.5,
+                        pcr, max_p, call_w, put_w, 0, 0, 0.0, dynamic_iv,
                         m_state, what_is, what_could, quant_sugg, json.dumps(snap_meta)
                     ))
                     existing_sorted.append((slot_mins, {
