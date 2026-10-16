@@ -74,6 +74,27 @@ def deduplicate_database(db_path: str):
 
     conn.commit()
 
+    # Normalize any non-Thursday active expiries to authentic NSE Thursday expiries
+    try:
+        from core.market_calendar import NSEMarketCalendar
+        active_exp = NSEMarketCalendar.get_active_options_expiries()
+        w_exp = active_exp["current_weekly"]   # '22-Oct-2026'
+        m_exp = active_exp["current_monthly"]  # '29-Oct-2026'
+        for key, r in to_keep:
+            new_exp = None
+            if key == "WEEKLY" and r["expiry_date"] != w_exp:
+                new_exp = w_exp
+            elif key == "MONTHLY" and r["expiry_date"] != m_exp:
+                new_exp = m_exp
+            elif key == "INTRADAY" and r["expiry_date"] != w_exp:
+                new_exp = w_exp
+            if new_exp:
+                print(f"  [NORMALIZE EXPIRY] Updating {r['strategy_id']} expiry from {r['expiry_date']} -> {new_exp}")
+                c.execute("UPDATE options_strategies SET expiry_date = ? WHERE strategy_id = ?", (new_exp, r["strategy_id"]))
+        conn.commit()
+    except Exception as e_norm:
+        print(f"Expiry normalization note: {e_norm}")
+
     # Re-verify active count
     c.execute("SELECT strategy_id, strategy_name, auto_trade_mode, expiry_type, expiry_date, status, created_at FROM options_strategies WHERE status='ACTIVE'")
     remaining_active = c.fetchall()
