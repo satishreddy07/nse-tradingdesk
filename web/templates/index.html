@@ -217,12 +217,6 @@
       <!-- Right Action Buttons (Never Wrap or Overlap on Mobile) -->
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
 
-        <!-- Mobile Active Desk Indicator (Tappable to open drawer) -->
-        <button onclick="toggleMobileDrawer()" class="lg:hidden flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-bold text-slate-200 hover:border-cyan-500/40 transition shrink-0" title="Switch Trading Desk">
-          <span id="mobile-active-desk-dot" class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-          <span id="mobile-active-desk-text" class="text-cyan-300">Swing</span>
-          <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400"></i>
-        </button>
 
         <!-- Quick Scan Trigger Dropdown -->
         <div class="relative">
@@ -486,17 +480,17 @@
 
       <!-- Swing Sub-Section Switcher & Top Metric Status Strip -->
       <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl p-3 sm:p-3.5 shadow-lg">
-        <!-- Sub-section Navigation Switcher -->
-        <div class="flex items-center gap-2 shrink-0">
-          <button onclick="switchP1SubSection('holdings')" id="p1-sub-btn-holdings" class="p1-sub-btn px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-sm shrink-0">
-            <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
-            <span>Active Holdings</span>
-            <span id="p1-sub-badge-holdings" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">0 Open</span>
+        <!-- Sub-section Navigation Switcher (Responsive 50/50 Grid on Mobile, Inline on Desktop) -->
+        <div class="grid grid-cols-2 gap-2 w-full sm:flex sm:items-center sm:w-auto">
+          <button onclick="switchP1SubSection('holdings')" id="p1-sub-btn-holdings" class="p1-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-bold transition-all bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-sm min-w-0">
+            <i data-lucide="briefcase" class="w-3.5 h-3.5 shrink-0"></i>
+            <span class="truncate">Active Holdings</span>
+            <span id="p1-sub-badge-holdings" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-500/30 shrink-0">0 Open</span>
           </button>
-          <button onclick="switchP1SubSection('signals')" id="p1-sub-btn-signals" class="p1-sub-btn px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="target" class="w-3.5 h-3.5"></i>
-            <span>Screened Signals</span>
-            <span id="p1-sub-badge-signals" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">BUY NOW</span>
+          <button onclick="switchP1SubSection('signals')" id="p1-sub-btn-signals" class="p1-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent min-w-0">
+            <i data-lucide="target" class="w-3.5 h-3.5 shrink-0"></i>
+            <span class="truncate">Screened Signals</span>
+            <span id="p1-sub-badge-signals" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300 shrink-0">BUY NOW</span>
           </button>
         </div>
 
@@ -547,12 +541,12 @@
               <span id="p1-active-count-tag" class="text-xs font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">0 Open</span>
               <span id="p1-price-stream-badge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-700/40 text-emerald-300">🟢 5m Live Stream Active</span>
             </div>
-            <div class="flex items-center gap-2">
-              <button onclick="refreshLivePrices(false)" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs flex items-center gap-1 transition">
+            <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+              <button onclick="refreshLivePrices(false)" class="flex-1 sm:flex-initial justify-center px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs flex items-center gap-1 transition">
                 <i data-lucide="zap" class="w-3 h-3"></i>
                 <span>Refresh Live Prices</span>
               </button>
-              <button onclick="reconcilePortfolio('INSTITUTIONAL_6PILLAR')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition">
+              <button onclick="reconcilePortfolio('INSTITUTIONAL_6PILLAR')" class="flex-1 sm:flex-initial justify-center px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition">
                 <i data-lucide="refresh-cw" class="w-3 h-3"></i>
                 <span>Reconcile Stops</span>
               </button>
@@ -11886,9 +11880,9 @@
         }
         if (btn) {
           if (id === secId) {
-            btn.className = 'p1-sub-btn px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-sm shrink-0';
+            btn.className = 'p1-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-bold transition-all bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-sm min-w-0';
           } else {
-            btn.className = 'p1-sub-btn px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0';
+            btn.className = 'p1-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent min-w-0';
           }
         }
       });
