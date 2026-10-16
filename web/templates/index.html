@@ -3217,7 +3217,7 @@
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
               <span>Refresh Portfolio</span>
             </button>
-            <button onclick="resetOptionsPortfolio()" id="btn-reset-options-portfolio" class="px-3 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-rose-300 text-xs font-mono font-bold flex items-center gap-1.5 border border-rose-800/60 transition" title="Reset Options Portfolio to ₹0 and clear all strategies">
+            <button onclick="resetOptionsPortfolio()" id="btn-reset-options-portfolio" class="px-3 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-rose-300 text-xs font-mono font-bold flex items-center gap-1.5 border border-rose-800/60 transition" title="Clear closed trades and reset Options realized PnL to ₹0 (keeps active strategies)">
               <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
               <span>Reset Portfolio</span>
             </button>
@@ -10531,18 +10531,19 @@
     }
 
     async function resetOptionsPortfolio() {
-      if (!confirm("Are you sure you want to RESET the Options Portfolio to ₹0.00?\n\nThis will clear all active strategies, clear closed trade history, and reset realized PnL back to zero in the database and cloud vault.")) {
+      if (!confirm("Are you sure you want to RESET the Options Portfolio?\n\nThis will KEEP all ACTIVE strategies intact, delete all closed strategy history, and reset the equity curve to Base Capital ₹2,00,000 (tracking only future realized PnL).")) {
         return;
       }
 
       try {
         const res = await fetch('/api/options/reset-portfolio', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keep_active: true })
         });
         const data = await res.json();
-        if (res.ok && data.status === 'OK') {
-          showToast("Options Portfolio reset to ₹0 realized PnL and 0 strategies!", "success");
+        if (res.ok && (data.status === 'OK' || data.status === 'SUCCESS')) {
+          showToast("Options Portfolio reset: Closed trades cleared, active strategies kept, and equity curve reset to Base ₹2,00,000!", "success");
           await loadOptionsPortfolioDesk();
           await loadAllEquityCurves();
         } else {
@@ -12527,6 +12528,73 @@
       ctx.lineTo(padLeft + plotWidth, padTop + plotHeight);
       ctx.stroke();
 
+      const baseLabel = (baseEq / 100000).toFixed(baseEq % 100000 === 0 ? 0 : 1);
+
+      if (curveData.length === 1) {
+        // Draw clean horizontal baseline across plot width for reset/starting state
+        const yBase = yToCanvas(baseEq);
+
+        // Subtle gradient under baseline
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(padLeft, padTop, plotWidth, plotHeight);
+        ctx.clip();
+        ctx.beginPath();
+        ctx.moveTo(padLeft, padTop + plotHeight);
+        ctx.lineTo(padLeft, yBase);
+        ctx.lineTo(padLeft + plotWidth, yBase);
+        ctx.lineTo(padLeft + plotWidth, padTop + plotHeight);
+        ctx.closePath();
+        const grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotHeight);
+        grad.addColorStop(0, strokeColor + '30');
+        grad.addColorStop(1, strokeColor + '05');
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.restore();
+
+        // Baseline stroke
+        ctx.beginPath();
+        ctx.moveTo(padLeft, yBase);
+        ctx.lineTo(padLeft + plotWidth, yBase);
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([]);
+        ctx.stroke();
+
+        // Start dot at padLeft
+        ctx.fillStyle = strokeColor + '40';
+        ctx.beginPath();
+        ctx.arc(padLeft, yBase, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = strokeColor;
+        ctx.beginPath();
+        ctx.arc(padLeft, yBase, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // X tick at padLeft
+        ctx.strokeStyle = '#475569';
+        ctx.beginPath();
+        ctx.moveTo(padLeft, padTop + plotHeight);
+        ctx.lineTo(padLeft, padTop + plotHeight + 5);
+        ctx.stroke();
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '9px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Base (${baseLabel}L)`, padLeft, padTop + plotHeight + 18);
+
+        // Center badge
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Clean Baseline: ₹${baseEq.toLocaleString('en-IN')} (Awaiting Realized PnL)`, padLeft + plotWidth / 2, yBase - 10);
+
+        const hud = document.getElementById(hudId);
+        if (hud) {
+          hud.innerHTML = `Milestone: <b class="text-white">Base Capital</b> • Equity: <b class="text-cyan-300">₹${Number(baseEq).toLocaleString('en-IN')}</b> • Realized P&L: <b class="text-emerald-400">₹0.00</b> (Reset Clean)`;
+        }
+        return;
+      }
+
       // X-Axis Tick Marks and Labels
       curveData.forEach((pt, idx) => {
         const xPos = xToCanvas(idx);
@@ -12542,7 +12610,7 @@
 
         // Shorten label for X-axis tick
         let xLabel = pt.date || 'T';
-        if (idx === 0) xLabel = 'Base (5L)';
+        if (idx === 0) xLabel = `Base (${baseLabel}L)`;
         else if (pt.label && pt.label.includes('T1 Booked:')) {
           const parts = pt.label.split(':');
           xLabel = '🎯 T1 ' + (parts[1] ? parts[1].trim().split(' ')[0] : '');

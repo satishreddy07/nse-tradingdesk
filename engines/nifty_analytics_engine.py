@@ -5247,21 +5247,27 @@ class NiftyAnalyticsEngine:
             "message": f"Strategy '{d.get('strategy_name')}' closed with PnL ₹{total_pnl:,.2f}!"
         }
 
-    def reset_options_portfolio(self) -> Dict[str, Any]:
+    def reset_options_portfolio(self, keep_active: bool = True) -> Dict[str, Any]:
         """
-        Resets the entire Options Trading Portfolio to zero:
-        deletes all active and closed strategies from `options_strategies` table in SQLite,
+        Resets the Options Trading Portfolio:
+        deletes closed strategies from `options_strategies` table (and non-active records in `intraday_options_trade_log`) in SQLite,
+        preserving active strategies if keep_active=True,
         invalidates equity curve cache, and syncs master cloud vault.
         """
         with state_engine._lock:
             with state_engine._get_connection() as conn:
-                conn.execute("DELETE FROM options_strategies")
+                if keep_active:
+                    conn.execute("DELETE FROM options_strategies WHERE status != 'ACTIVE'")
+                    conn.execute("DELETE FROM intraday_options_trade_log WHERE status != 'ACTIVE'")
+                else:
+                    conn.execute("DELETE FROM options_strategies")
+                    conn.execute("DELETE FROM intraday_options_trade_log")
                 conn.commit()
         self.invalidate_equity_curves_cache()
-        telegram_vault.sync_master_vault_async(note="Options Portfolio Reset to ₹0")
+        telegram_vault.sync_master_vault_async(note="Options Portfolio Reset")
         return {
-            "status": "SUCCESS",
-            "message": "Options Trading Portfolio reset to zero.",
+            "status": "OK",
+            "message": "Options Trading Portfolio reset (closed strategies cleared, active preserved)." if keep_active else "Options Trading Portfolio reset completely.",
             "timestamp": format_ist()
         }
 

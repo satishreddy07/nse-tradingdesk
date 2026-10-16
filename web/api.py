@@ -1027,6 +1027,10 @@ class AutoDeployOptionsRequest(BaseModel):
     force_refresh: Optional[bool] = True
 
 
+class ResetPortfolioRequest(BaseModel):
+    keep_active: Optional[bool] = True
+
+
 @app.get("/api/options/portfolio")
 def get_options_portfolio_endpoint():
     """Returns Options Trading Portfolio with live MTM valuation, Greeks, and closed performance."""
@@ -1035,10 +1039,15 @@ def get_options_portfolio_endpoint():
 
 
 @app.post("/api/options/reset-portfolio")
-def reset_options_portfolio_endpoint():
-    """Resets the Options Trading Portfolio: clears all active and closed strategies, wipes realized PnL to ₹0, and syncs cloud vault."""
+def reset_options_portfolio_endpoint(req: Optional[ResetPortfolioRequest] = None, keep_active: Optional[bool] = None):
+    """Resets the Options Trading Portfolio: clears closed strategies, wipes historical realized PnL back to ₹0, preserves active strategies by default, and syncs cloud vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
-    return nifty_analytics_engine.reset_options_portfolio()
+    should_keep = True
+    if keep_active is not None:
+        should_keep = keep_active
+    elif req is not None and req.keep_active is not None:
+        should_keep = req.keep_active
+    return nifty_analytics_engine.reset_options_portfolio(keep_active=should_keep)
 
 
 
