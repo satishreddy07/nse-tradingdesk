@@ -13388,20 +13388,56 @@
         else if (s.bucket === 'PRE_BREAKOUT') bStyle = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
         else if (s.bucket === 'WAIT_PULLBACK') bStyle = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
 
+        const mlVerdict = s.ml_verdict || '';
+        const isAiRejected = mlVerdict.includes('AI_REJECTED') || (s.rejection_reason || '').includes('AI Rejected');
+        const isMlRejected = mlVerdict.includes('ML_REJECTED') || (s.rejection_reason || '').includes('ML Rejected');
+        const isRejected = isAiRejected || isMlRejected;
+        const isAiApproved = mlVerdict.includes('AI_APPROVED');
+
+        let verdictTagHtml = '';
+        if (isAiRejected) {
+          verdictTagHtml = `<span class="quant-badge px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40" title="Rejected by Gemini AI Gatekeeper">🛑 AI REJECTED</span>`;
+        } else if (isMlRejected) {
+          verdictTagHtml = `<span class="quant-badge px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40" title="Rejected by Quant ML Model">⚠️ ML REJECTED</span>`;
+        } else if (isAiApproved && s.bucket === 'BUY_NOW') {
+          verdictTagHtml = `<span class="quant-badge px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">✅ ML+AI APPROVED</span>`;
+        }
+
+        let rejectionNoticeHtml = '';
+        if (isRejected && s.rejection_reason) {
+          rejectionNoticeHtml = `
+            <div class="mt-1 text-[10px] bg-rose-950/40 border border-rose-500/30 text-rose-200 px-2 py-1 rounded flex items-start gap-1 font-sans">
+              <span class="shrink-0 text-amber-400">🛡️</span>
+              <div>
+                <span class="font-bold text-rose-300">${s.rejection_reason}</span>
+                <span class="text-cyan-300 text-[9px] ml-1 font-mono">(Added in Shadow for ML Training)</span>
+              </div>
+            </div>
+          `;
+        }
+
         const symUpper = (s.symbol || '').toUpperCase();
         const isAlreadyOpen = p1ActiveSet.has(symUpper);
         let actionBtnHtml = '';
         if (isAlreadyOpen) {
           actionBtnHtml = `<span class="px-2 py-1 rounded bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 font-bold text-[10px]">✓ IN PORTFOLIO</span>`;
         } else if (s.bucket === 'BUY_NOW') {
-          actionBtnHtml = `<button onclick="executeSignalOrder('${s.symbol}', ${s.entry || s.close}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2}, 'INSTITUTIONAL_6PILLAR', this)" class="px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[10px] transition">Buy CNC</button>`;
+          if (isRejected) {
+            actionBtnHtml = `<button onclick="executeSignalOrder('${s.symbol}', ${s.entry || s.close}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2}, 'INSTITUTIONAL_6PILLAR', this)" class="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold text-[10px] transition" title="Auto-buy was blocked by ${isAiRejected ? 'AI Gatekeeper' : 'ML Model'}. Click to override manually.">⚠️ Manual Override</button>`;
+          } else {
+            actionBtnHtml = `<button onclick="executeSignalOrder('${s.symbol}', ${s.entry || s.close}, ${s.shares}, ${s.sl}, ${s.t1}, ${s.t2}, 'INSTITUTIONAL_6PILLAR', this)" class="px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[10px] transition">Buy CNC</button>`;
+          }
         }
 
         return `
           <tr class="hover:bg-slate-800/30 transition">
             <td class="p-3 font-bold text-white">
-              <button onclick="openStockChartModal('${s.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4 text-left">${s.symbol}</button>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <button onclick="openStockChartModal('${s.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4 text-left font-bold">${s.symbol}</button>
+                ${verdictTagHtml}
+              </div>
               <div class="text-[10px] text-slate-400 font-normal">${s.sector || 'EQUITY'}</div>
+              ${rejectionNoticeHtml}
             </td>
             <td class="p-3">
               <span class="px-2 py-0.5 rounded text-[10px] font-bold ${bStyle}">${s.bucket}</span>

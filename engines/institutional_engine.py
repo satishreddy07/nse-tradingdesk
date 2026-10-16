@@ -1538,7 +1538,16 @@ class InstitutionalEngine:
                 fatal_flags = list(eval_res.get("fatal_flags", []))
 
                 if ml_decision != "PASS_TO_AI":
-                    logger.info(f"🚫 [ML Gate Rejected] {ticker}: decision={ml_decision}, prob={ml_prob:.2f}")
+                    ml_reason_str = ", ".join(risk_flags) if risk_flags else f"Low win probability ({ml_prob*100:.0f}%) or negative expected R"
+                    tech_rejection_msg = f"Due to technical analysis this stock was rejected: {ml_reason_str}"
+                    logger.info(f"🚫 [ML Gate Rejected] {ticker}: decision={ml_decision}, {tech_rejection_msg}")
+                    state_engine.update_signal_ml_verdict(
+                        symbol=ticker,
+                        portfolio_type=PORTFOLIO_TYPE,
+                        ml_verdict="ML_REJECTED",
+                        rejection_reason=tech_rejection_msg,
+                        ai_summary=""
+                    )
                     swing_quant_ml_engine.record_decision_audit(
                         candidate_id=cand_id,
                         symbol=ticker,
@@ -1561,6 +1570,12 @@ class InstitutionalEngine:
                         final_status="ML_REJECTED" if ml_decision == "REJECT" else ml_decision,
                         failure_attribution=""
                     )
+                    shadow_meta = r.to_dict()
+                    shadow_meta.update({
+                        "ml_win_prob": ml_prob,
+                        "ml_decision": ml_decision,
+                        "rejection_reason": tech_rejection_msg
+                    })
                     swing_quant_ml_engine.record_shadow_candidate(
                         symbol=ticker,
                         portfolio_type=PORTFOLIO_TYPE,
@@ -1568,8 +1583,8 @@ class InstitutionalEngine:
                         stop_loss=float(r['sl']),
                         target=float(r['t1']),
                         target_2=float(r['t2']),
-                        candidate_meta=r.to_dict(),
-                        rejection_reason=f"ML_{ml_decision}"
+                        candidate_meta=shadow_meta,
+                        rejection_reason=f"ML_{ml_decision}: {tech_rejection_msg}"
                     )
                     continue
 
@@ -1697,13 +1712,23 @@ class InstitutionalEngine:
                         final_status="AI_DO_NOT_BUY",
                         failure_attribution=""
                     )
+                    tech_rejection_msg = f"Due to technical analysis this stock was rejected: {ai_res.reason_code} - {ai_res.summary}"
+                    logger.info(f"🛑 [P1 AI Gate Blocked] {ticker} rejected by AI Gatekeeper: {tech_rejection_msg}")
+                    state_engine.update_signal_ml_verdict(
+                        symbol=ticker,
+                        portfolio_type=PORTFOLIO_TYPE,
+                        ml_verdict=f"AI_REJECTED: {ai_res.reason_code}",
+                        rejection_reason=tech_rejection_msg,
+                        ai_summary=ai_res.summary
+                    )
                     shadow_meta = r.to_dict()
                     shadow_meta.update({
                         "ml_win_prob": ml_prob,
                         "ml_decision": ml_decision,
                         "ai_decision": ai_res.final_decision,
                         "ai_reason_code": ai_res.reason_code,
-                        "ai_summary": ai_res.summary
+                        "ai_summary": ai_res.summary,
+                        "rejection_reason": tech_rejection_msg
                     })
                     swing_quant_ml_engine.record_shadow_candidate(
                         symbol=ticker,
@@ -1713,7 +1738,7 @@ class InstitutionalEngine:
                         target=float(r['t1']),
                         target_2=float(r['t2']),
                         candidate_meta=shadow_meta,
-                        rejection_reason=f"AI_{ai_res.reason_code}"
+                        rejection_reason=f"AI_{ai_res.reason_code}: {tech_rejection_msg}"
                     )
                     state_engine.update_scan_progress(
                         stage=f"🛑 AI Gated DO NOT BUY {ticker}: {ai_res.reason_code}",
@@ -1723,6 +1748,13 @@ class InstitutionalEngine:
                     continue
 
                 # Step 4: AI Approved! Now Apply Deterministic Risk Engine Checks
+                state_engine.update_signal_ml_verdict(
+                    symbol=ticker,
+                    portfolio_type=PORTFOLIO_TYPE,
+                    ml_verdict="AI_APPROVED",
+                    rejection_reason="",
+                    ai_summary=ai_res.summary
+                )
                 if not auto_execute:
                     # Gated analysis recorded, but auto execution is disabled
                     swing_quant_ml_engine.record_decision_audit(

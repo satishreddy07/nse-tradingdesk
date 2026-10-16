@@ -193,6 +193,8 @@ class StateEngine:
                     rs_spread REAL,
                     expected_r REAL DEFAULT 0.0,
                     ml_verdict TEXT DEFAULT 'APPROVED',
+                    rejection_reason TEXT DEFAULT '',
+                    ai_summary TEXT DEFAULT '',
                     updated_at TEXT NOT NULL,
                     UNIQUE(symbol, portfolio_type)
                 );
@@ -204,6 +206,14 @@ class StateEngine:
                     pass
                 try:
                     cursor.execute("ALTER TABLE latest_signals ADD COLUMN ml_verdict TEXT DEFAULT 'APPROVED';")
+                except Exception:
+                    pass
+                try:
+                    cursor.execute("ALTER TABLE latest_signals ADD COLUMN rejection_reason TEXT DEFAULT '';")
+                except Exception:
+                    pass
+                try:
+                    cursor.execute("ALTER TABLE latest_signals ADD COLUMN ai_summary TEXT DEFAULT '';")
                 except Exception:
                     pass
 
@@ -1528,8 +1538,8 @@ class StateEngine:
                         tier, close, entry, sl, t1, t2, rr, shares, capital_at_risk,
                         risk_pct, atr_pct, rsi14, dist_to_pivot, dist_to_ema20,
                         inst_score, week_confluence, intraday_pct, intraday_adj, rs_spread,
-                        expected_r, ml_verdict, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        expected_r, ml_verdict, rejection_reason, ai_summary, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         sym_clean, p_type, s.get("sector", "DIVERSIFIED"), s.get("bucket", "WATCH"),
                         float(s.get("score", 0.0)), int(s.get("confidence", 0)), float(s.get("ml_prob", 0.0)),
@@ -1542,9 +1552,36 @@ class StateEngine:
                         float(s.get("intraday_pct", 0.0)), float(s.get("intraday_adj", 0.0)),
                         float(s.get("rs_spread", 0.0)),
                         float(s.get("expected_r", 0.0)), str(s.get("ml_verdict", "APPROVED")),
+                        str(s.get("rejection_reason", "")), str(s.get("ai_summary", "")),
                         now_str
                     ))
                 conn.commit()
+
+    def update_signal_ml_verdict(
+        self,
+        symbol: str,
+        portfolio_type: str,
+        ml_verdict: str,
+        rejection_reason: str = "",
+        ai_summary: str = ""
+    ) -> bool:
+        """Updates ML/AI verdict, rejection reason, and AI summary for a screened signal in latest_signals."""
+        sym_clean = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+        p_type = self._normalize_portfolio_type(portfolio_type)
+        now_str = format_ist()
+        with self._lock:
+            with self._get_connection() as conn:
+                try:
+                    conn.execute("""
+                    UPDATE latest_signals
+                    SET ml_verdict = ?, rejection_reason = ?, ai_summary = ?, updated_at = ?
+                    WHERE symbol = ? AND portfolio_type = ?
+                    """, (ml_verdict, rejection_reason, ai_summary, now_str, sym_clean, p_type))
+                    conn.commit()
+                    return True
+                except Exception as e:
+                    logger.error(f"Failed to update signal verdict for {sym_clean}: {e}")
+                    return False
 
     def update_signals_live_prices(self, live_ltp_map: Dict[str, Tuple[float, float]], updated_at: str) -> int:
         """Batch-updates latest_signals close and intraday_pct from a live price stream map."""
