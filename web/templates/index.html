@@ -8712,10 +8712,13 @@
 
     function switchOptionsExpiryView(mode) {
       selectedOptionsExpiryType = mode === 'monthly' ? 'monthly' : 'weekly';
+      builderCompactChainMode = selectedOptionsExpiryType;
       const btnW = document.getElementById('btn-opt-weekly');
       const btnM = document.getElementById('btn-opt-monthly');
       const bStratW = document.getElementById('btn-strat-exp-weekly');
       const bStratM = document.getElementById('btn-strat-exp-monthly');
+      const bCompW = document.getElementById('btn-builder-compact-w');
+      const bCompM = document.getElementById('btn-builder-compact-m');
       
       [[btnW, btnM], [bStratW, bStratM]].forEach(([w, m]) => {
         if (!w || !m) return;
@@ -8728,8 +8731,27 @@
         }
       });
 
+      if (bCompW && bCompM) {
+        if (selectedOptionsExpiryType === 'weekly') {
+          bCompW.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-cyan-500 text-black transition";
+          bCompM.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold text-slate-400 hover:text-white transition";
+        } else {
+          bCompM.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-cyan-500 text-black transition";
+          bCompW.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold text-slate-400 hover:text-white transition";
+        }
+      }
+
+      const expLbl = document.getElementById('builder-compact-chain-exp-lbl');
+      if (expLbl && niftyOptionsChainCache) {
+        const active = selectedOptionsExpiryType === 'monthly' ? (niftyOptionsChainCache?.monthly || {}) : (niftyOptionsChainCache?.weekly || {});
+        expLbl.innerText = `${selectedOptionsExpiryType.toUpperCase()} (${active.expiry || '--'})`;
+      }
+
       if (niftyOptionsChainCache) {
         renderOptionsChainUI(niftyOptionsChainCache);
+      }
+      if (typeof renderBuilderCompactChain === 'function') {
+        renderBuilderCompactChain();
       }
     }
 
@@ -9139,24 +9161,7 @@
     }
 
     function switchBuilderCompactChainExpiry(mode) {
-      builderCompactChainMode = mode === 'monthly' ? 'monthly' : 'weekly';
-      const btnW = document.getElementById('btn-builder-compact-w');
-      const btnM = document.getElementById('btn-builder-compact-m');
-      const lbl = document.getElementById('builder-compact-chain-exp-lbl');
-      if (btnW && btnM) {
-        if (builderCompactChainMode === 'weekly') {
-          btnW.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-cyan-500 text-black transition";
-          btnM.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold text-slate-400 hover:text-white transition";
-        } else {
-          btnM.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-cyan-500 text-black transition";
-          btnW.className = "px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold text-slate-400 hover:text-white transition";
-        }
-      }
-      if (lbl) {
-        const active = builderCompactChainMode === 'monthly' ? (niftyOptionsChainCache?.monthly || {}) : (niftyOptionsChainCache?.weekly || {});
-        lbl.innerText = `${builderCompactChainMode.toUpperCase()} (${active.expiry || '--'})`;
-      }
-      renderBuilderCompactChain();
+      switchOptionsExpiryView(mode);
       setTimeout(scrollBuilderChainToAtm, 50);
     }
 
@@ -10004,12 +10009,17 @@
 
       const nameInput = document.getElementById('strat-name-input');
       const stratName = (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : "Custom Options Strategy";
+      const stratNameLower = stratName.toLowerCase();
 
-      const active = (selectedOptionsExpiryType === 'monthly')
+      // Ensure Monthly selection is respected across builder toggle, desk toggle, or name
+      const isMonthlyStrat = (builderCompactChainMode === 'monthly' || selectedOptionsExpiryType === 'monthly' || stratNameLower.includes('monthly'));
+      const activeExpiryMode = isMonthlyStrat ? 'monthly' : 'weekly';
+      const active = activeExpiryMode === 'monthly'
         ? (niftyOptionsChainCache?.monthly || {})
         : (niftyOptionsChainCache?.weekly || {});
       const spot = active.spot_price || optionsPortfolioCache?.spot_price || niftyOptionsChainCache?.spot_price || 0;
-      const expiryDate = active.expiry || "";
+      const expiryDate = active.expiry || (activeExpiryMode === 'monthly' ? niftyOptionsChainCache?.monthly?.expiry : niftyOptionsChainCache?.weekly?.expiry) || "";
+      const expiryType = activeExpiryMode.toUpperCase();
 
       const btn = document.getElementById('btn-deploy-strategy');
       const origHtml = btn ? btn.innerHTML : '';
@@ -10049,7 +10059,7 @@
           strategy_name: stratName,
           symbol: "NIFTY",
           expiry_date: expiryDate,
-          expiry_type: selectedOptionsExpiryType.toUpperCase(),
+          expiry_type: expiryType,
           spot_at_entry: spot,
           net_premium: netPrem,
           max_profit: maxProfVal,
@@ -10063,10 +10073,10 @@
           legs: strategyLegs.map(l => {
             let px = Number(l.price || 0);
             if (px <= 0 && window.niftyOptionsChainCache) {
-              const active = (selectedOptionsExpiryType === 'monthly')
+              const chainActive = isMonthlyStrat
                 ? (niftyOptionsChainCache?.monthly || {})
                 : (niftyOptionsChainCache?.weekly || {});
-              const allStrikes = active.all_strikes || active.strikes || [];
+              const allStrikes = chainActive.all_strikes || chainActive.strikes || [];
               const stkRow = allStrikes.find(s => Number(s.strike) === Number(l.strike));
               if (stkRow) {
                 px = l.type === 'CE' ? Number(stkRow.ce_ltp || 0) : Number(stkRow.pe_ltp || 0);
@@ -10078,7 +10088,9 @@
               action: l.action,
               qty: Number(l.qty),
               entry_price: Number(px > 0 ? px : 0.05),
-              iv: Number(l.iv || 13.5)
+              iv: Number(l.iv || 13.5),
+              expiry_type: expiryType,
+              expiry_date: expiryDate
             };
           }),
           notes: `Deployed from Sensibull Builder (${strategyLegs.length} legs)`
@@ -10194,7 +10206,34 @@
             const isProfit = (st.unrealized_pnl || 0) >= 0;
             const pnlClass = isProfit ? 'text-emerald-400' : 'text-rose-400';
             const legs = st.legs || [];
-            const g = st.greeks || {};
+            let g = st.greeks;
+            if (!g || (Number(g.delta || 0) === 0 && Number(g.theta || 0) === 0 && Number(g.gamma || 0) === 0 && Number(g.vega || 0) === 0 && legs.length > 0)) {
+              let netDelta = 0, netTheta = 0, netGamma = 0, netVega = 0;
+              const spotVal = Number(data.spot_price || st.spot_at_entry || 0);
+              const isMonthly = st.expiry_type === 'MONTHLY';
+              let dteDays = isMonthly ? 13 : 3;
+              if (st.expiry_date) {
+                try {
+                  const parts = st.expiry_date.split('-');
+                  if (parts.length === 3) {
+                    const expDate = new Date(`${parts[1]} ${parts[0]}, ${parts[2]}`);
+                    const diff = Math.ceil((expDate - new Date()) / (1000 * 60 * 60 * 24));
+                    if (!isNaN(diff) && diff >= 0) dteDays = Math.max(0.5, diff);
+                  }
+                } catch (err) {}
+              }
+              legs.forEach(l => {
+                const sign = l.action === 'BUY' ? 1 : -1;
+                const legIv = Number(l.iv || 12.0);
+                const bs = calculateBsOption(spotVal, Number(l.strike), dteDays, legIv, l.type);
+                const lots = Number(l.qty || NIFTY_LOT_SIZE) / NIFTY_LOT_SIZE;
+                netDelta += sign * bs.delta * lots;
+                netTheta += sign * bs.theta * Number(l.qty || NIFTY_LOT_SIZE);
+                netGamma += sign * bs.gamma * lots;
+                netVega += sign * bs.vega * Number(l.qty || NIFTY_LOT_SIZE);
+              });
+              g = { delta: netDelta, theta: netTheta, gamma: netGamma, vega: netVega };
+            }
 
             return `
               <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 sm:p-4 hover:border-purple-500/40 transition space-y-3">
@@ -10234,8 +10273,8 @@
                   <div><span class="text-slate-500">Net Prem:</span> <b class="${(st.net_premium || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">₹${Math.round(st.net_premium || 0).toLocaleString('en-IN')}</b></div>
                   <div><span class="text-slate-500">Target / Init SL:</span> <b class="text-emerald-400">+₹${Math.round(st.target_pnl || 0).toLocaleString('en-IN')}</b> / <b class="text-rose-400">-₹${Math.abs(Math.round(st.stoploss_pnl || 0)).toLocaleString('en-IN')}</b></div>
                   <div><span class="text-slate-500">🛡️ Trailing SL:</span> <b class="${(st.trailing_stop_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-amber-400'}">${(st.trailing_stop_pnl || 0) >= 0 ? '+' : ''}₹${Math.round(st.trailing_stop_pnl != null ? st.trailing_stop_pnl : (st.stoploss_pnl || 0)).toLocaleString('en-IN')}</b> ${st.trailing_status && st.trailing_status !== 'INACTIVE' ? `<span class="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">${st.trailing_status}</span>` : ''}</div>
-                  <div><span class="text-slate-500">Delta / Theta:</span> <b class="text-purple-300">Δ ${Number(g.delta || 0).toFixed(2)} | Θ ₹${Math.round(g.theta || 0)}/d</b></div>
-                  <div><span class="text-slate-500">Gamma / Vega:</span> <b class="text-cyan-300">Γ ${Number(g.gamma || 0).toFixed(4)} | V ₹${Math.round(g.vega || 0)}/%</b></div>
+                  <div><span class="text-slate-500">Delta / Theta:</span> <b class="text-purple-300">Δ ${g.delta >= 0 ? '+' : ''}${Number(g.delta || 0).toFixed(2)} | Θ ${g.theta >= 0 ? '+' : ''}₹${Math.round(g.theta || 0)}/d</b></div>
+                  <div><span class="text-slate-500">Gamma / Vega:</span> <b class="text-cyan-300">Γ ${Number(g.gamma || 0).toFixed(4)} | V ${g.vega >= 0 ? '+' : ''}₹${Math.round(g.vega || 0)}/%</b></div>
                 </div>
 
                 <!-- Constituent Legs Table -->
@@ -10381,7 +10420,34 @@
       const pnl = s.status === 'ACTIVE' ? (s.unrealized_pnl || 0) : (s.realized_pnl || 0);
       const isProfit = pnl >= 0;
       const pnlCls = isProfit ? 'text-emerald-400' : 'text-rose-400';
-      const g = s.greeks || {};
+      let g = s.greeks;
+      if (!g || (Number(g.delta || 0) === 0 && Number(g.theta || 0) === 0 && Number(g.gamma || 0) === 0 && Number(g.vega || 0) === 0 && (s.legs || []).length > 0)) {
+        let netDelta = 0, netTheta = 0, netGamma = 0, netVega = 0;
+        const spotVal = Number(optionsPortfolioCache?.spot_price || s.spot_at_entry || 0);
+        const isMonthly = s.expiry_type === 'MONTHLY';
+        let dteDays = isMonthly ? 13 : 3;
+        if (s.expiry_date) {
+          try {
+            const parts = s.expiry_date.split('-');
+            if (parts.length === 3) {
+              const expDate = new Date(`${parts[1]} ${parts[0]}, ${parts[2]}`);
+              const diff = Math.ceil((expDate - new Date()) / (1000 * 60 * 60 * 24));
+              if (!isNaN(diff) && diff >= 0) dteDays = Math.max(0.5, diff);
+            }
+          } catch (err) {}
+        }
+        (s.legs || []).forEach(l => {
+          const sign = l.action === 'BUY' ? 1 : -1;
+          const legIv = Number(l.iv || 12.0);
+          const bs = calculateBsOption(spotVal, Number(l.strike), dteDays, legIv, l.type);
+          const lots = Number(l.qty || NIFTY_LOT_SIZE) / NIFTY_LOT_SIZE;
+          netDelta += sign * bs.delta * lots;
+          netTheta += sign * bs.theta * Number(l.qty || NIFTY_LOT_SIZE);
+          netGamma += sign * bs.gamma * lots;
+          netVega += sign * bs.vega * Number(l.qty || NIFTY_LOT_SIZE);
+        });
+        g = { delta: netDelta, theta: netTheta, gamma: netGamma, vega: netVega };
+      }
 
       if (kpisEl) {
         kpisEl.innerHTML = `
@@ -10397,12 +10463,12 @@
           </div>
           <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
             <div class="text-[10px] text-purple-400 uppercase">Delta & Theta</div>
-            <div class="text-xs font-bold text-purple-300 mt-1">Δ ${Number(g.delta || 0).toFixed(2)} | Θ ₹${Math.round(g.theta || 0)}/d</div>
+            <div class="text-xs font-bold text-purple-300 mt-1">Δ ${g.delta >= 0 ? '+' : ''}${Number(g.delta || 0).toFixed(2)} | Θ ${g.theta >= 0 ? '+' : ''}₹${Math.round(g.theta || 0)}/d</div>
             <div class="text-[10px] text-slate-500">Directional & Decay Risk</div>
           </div>
           <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
             <div class="text-[10px] text-cyan-400 uppercase">Gamma & Vega</div>
-            <div class="text-xs font-bold text-cyan-300 mt-1">Γ ${Number(g.gamma || 0).toFixed(4)} | V ₹${Math.round(g.vega || 0)}/%</div>
+            <div class="text-xs font-bold text-cyan-300 mt-1">Γ ${Number(g.gamma || 0).toFixed(4)} | V ${g.vega >= 0 ? '+' : ''}₹${Math.round(g.vega || 0)}/%</div>
             <div class="text-[10px] text-slate-500">Curvature & Vol Risk</div>
           </div>
         `;
