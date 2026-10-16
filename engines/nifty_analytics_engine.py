@@ -5383,16 +5383,52 @@ class NiftyAnalyticsEngine:
         stoploss_pnl = 0.0
         est_margin = 45000.0
 
+        # Standard Normal CDF
+        def _norm_cdf(x: float) -> float:
+            return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+        # Dynamic Black-Scholes pricing
+        t_years = 5.0 / 365.0
+        r = 0.07
+        base_iv = float(atm_row.get("ce_iv") or atm_row.get("pe_iv") or 13.0)
+        sig = max(0.05, base_iv / 100.0)
+
+        def _bs_price(spot: float, strike: float, opt_type: str, iv: float) -> float:
+            s_val = max(0.05, iv / 100.0)
+            d1 = (math.log(max(1e-4, spot) / max(1e-4, strike)) + (r + 0.5 * s_val ** 2) * t_years) / (s_val * math.sqrt(t_years))
+            d2 = d1 - s_val * math.sqrt(t_years)
+            if opt_type.upper() == "CE":
+                px = spot * _norm_cdf(d1) - strike * math.exp(-r * t_years) * _norm_cdf(d2)
+            else:
+                px = strike * math.exp(-r * t_years) * _norm_cdf(-d2) - spot * _norm_cdf(-d1)
+            return max(0.05, round(px, 2))
+
+        def _get_leg_ltp(stk_row: Dict[str, Any], opt_type: str) -> float:
+            key = "ce_ltp" if opt_type.upper() == "CE" else "pe_ltp"
+            iv_key = "ce_iv" if opt_type.upper() == "CE" else "pe_iv"
+            ltp = float(stk_row.get(key) or 0.0)
+            if ltp > 0.0:
+                return round(ltp, 2)
+            iv = float(stk_row.get(iv_key) or base_iv)
+            return _bs_price(spot_price, stk_row["strike"], opt_type, iv)
+
+        def _calc_d2_prob(target_spot: float) -> float:
+            if target_spot <= 0.0:
+                return 0.50
+            d1 = (math.log(max(1e-4, spot_price) / max(1e-4, target_spot)) + (r + 0.5 * sig ** 2) * t_years) / (sig * math.sqrt(t_years))
+            d2 = d1 - sig * math.sqrt(t_years)
+            return max(0.01, min(0.99, _norm_cdf(d2)))
+
         st = strategy_type.upper()
 
         if st == "BULL_CALL_SPREAD":
             l1_stk = _get_strike(atm_strike)
             l2_stk = _get_strike(atm_strike + 2 * stk_step)
-            p1 = max(0.5, l1_stk.get("ce_ltp") or 100.0)
-            p2 = max(0.1, l2_stk.get("ce_ltp") or 45.0)
+            p1 = _get_leg_ltp(l1_stk, "CE")
+            p2 = _get_leg_ltp(l2_stk, "CE")
             legs = [
-                {"action": "BUY", "type": "CE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("ce_iv", 13.0)},
-                {"action": "SELL", "type": "CE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("ce_iv", 13.0)}
+                {"action": "BUY", "type": "CE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("ce_iv", base_iv)},
+                {"action": "SELL", "type": "CE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("ce_iv", base_iv)}
             ]
             net_debit = (p1 - p2) * lot_size
             net_premium = -round(net_debit, 2)
@@ -5401,19 +5437,20 @@ class NiftyAnalyticsEngine:
             max_loss = -round(net_debit, 2)
             target_pnl = round(max_profit * 0.65, 2)
             stoploss_pnl = -round(net_debit * 0.50, 2)
-            breakevens = [round(l1_stk["strike"] + (p1 - p2), 1)]
+            breakeven = round(l1_stk["strike"] + (p1 - p2), 1)
+            breakevens = [breakeven]
             rr_str = f"1:{max_profit / max(1.0, net_debit):.2f}"
-            pop_pct = 58.0
-            est_margin = round(net_debit, 2)
+            pop_pct = round(_calc_d2_prob(breakeven) * 100.0, 1)
+            est_margin = round(abs(net_debit), 2)
 
         elif st == "BULL_PUT_SPREAD":
             l1_stk = _get_strike(atm_strike - 1 * stk_step)
             l2_stk = _get_strike(atm_strike - 3 * stk_step)
-            p1 = max(0.5, l1_stk.get("pe_ltp") or 65.0)
-            p2 = max(0.1, l2_stk.get("pe_ltp") or 25.0)
+            p1 = _get_leg_ltp(l1_stk, "PE")
+            p2 = _get_leg_ltp(l2_stk, "PE")
             legs = [
-                {"action": "SELL", "type": "PE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("pe_iv", 13.0)},
-                {"action": "BUY", "type": "PE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("pe_iv", 13.0)}
+                {"action": "SELL", "type": "PE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("pe_iv", base_iv)},
+                {"action": "BUY", "type": "PE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("pe_iv", base_iv)}
             ]
             net_credit = (p1 - p2) * lot_size
             net_premium = round(net_credit, 2)
@@ -5422,19 +5459,20 @@ class NiftyAnalyticsEngine:
             max_loss = -round(width - net_credit, 2)
             target_pnl = round(net_credit * 0.70, 2)
             stoploss_pnl = -round(net_credit * 1.50, 2)
-            breakevens = [round(l1_stk["strike"] - (p1 - p2), 1)]
+            breakeven = round(l1_stk["strike"] - (p1 - p2), 1)
+            breakevens = [breakeven]
             rr_str = f"1:{abs(max_loss) / max(1.0, max_profit):.2f}"
-            pop_pct = 68.0
-            est_margin = round(abs(max_loss) + 15000.0, 2)
+            pop_pct = round(_calc_d2_prob(breakeven) * 100.0, 1)
+            est_margin = round(abs(max_loss), 2)
 
         elif st == "BEAR_PUT_SPREAD":
             l1_stk = _get_strike(atm_strike)
             l2_stk = _get_strike(atm_strike - 2 * stk_step)
-            p1 = max(0.5, l1_stk.get("pe_ltp") or 100.0)
-            p2 = max(0.1, l2_stk.get("pe_ltp") or 45.0)
+            p1 = _get_leg_ltp(l1_stk, "PE")
+            p2 = _get_leg_ltp(l2_stk, "PE")
             legs = [
-                {"action": "BUY", "type": "PE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("pe_iv", 13.0)},
-                {"action": "SELL", "type": "PE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("pe_iv", 13.0)}
+                {"action": "BUY", "type": "PE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("pe_iv", base_iv)},
+                {"action": "SELL", "type": "PE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("pe_iv", base_iv)}
             ]
             net_debit = (p1 - p2) * lot_size
             net_premium = -round(net_debit, 2)
@@ -5443,19 +5481,20 @@ class NiftyAnalyticsEngine:
             max_loss = -round(net_debit, 2)
             target_pnl = round(max_profit * 0.65, 2)
             stoploss_pnl = -round(net_debit * 0.50, 2)
-            breakevens = [round(l1_stk["strike"] - (p1 - p2), 1)]
+            breakeven = round(l1_stk["strike"] - (p1 - p2), 1)
+            breakevens = [breakeven]
             rr_str = f"1:{max_profit / max(1.0, net_debit):.2f}"
-            pop_pct = 58.0
-            est_margin = round(net_debit, 2)
+            pop_pct = round((1.0 - _calc_d2_prob(breakeven)) * 100.0, 1)
+            est_margin = round(abs(net_debit), 2)
 
         elif st == "BEAR_CALL_SPREAD":
             l1_stk = _get_strike(atm_strike + 1 * stk_step)
             l2_stk = _get_strike(atm_strike + 3 * stk_step)
-            p1 = max(0.5, l1_stk.get("ce_ltp") or 65.0)
-            p2 = max(0.1, l2_stk.get("ce_ltp") or 25.0)
+            p1 = _get_leg_ltp(l1_stk, "CE")
+            p2 = _get_leg_ltp(l2_stk, "CE")
             legs = [
-                {"action": "SELL", "type": "CE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("ce_iv", 13.0)},
-                {"action": "BUY", "type": "CE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("ce_iv", 13.0)}
+                {"action": "SELL", "type": "CE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("ce_iv", base_iv)},
+                {"action": "BUY", "type": "CE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("ce_iv", base_iv)}
             ]
             net_credit = (p1 - p2) * lot_size
             net_premium = round(net_credit, 2)
@@ -5464,10 +5503,11 @@ class NiftyAnalyticsEngine:
             max_loss = -round(width - net_credit, 2)
             target_pnl = round(net_credit * 0.70, 2)
             stoploss_pnl = -round(net_credit * 1.50, 2)
-            breakevens = [round(l1_stk["strike"] + (p1 - p2), 1)]
+            breakeven = round(l1_stk["strike"] + (p1 - p2), 1)
+            breakevens = [breakeven]
             rr_str = f"1:{abs(max_loss) / max(1.0, max_profit):.2f}"
-            pop_pct = 68.0
-            est_margin = round(abs(max_loss) + 15000.0, 2)
+            pop_pct = round((1.0 - _calc_d2_prob(breakeven)) * 100.0, 1)
+            est_margin = round(abs(max_loss), 2)
 
         elif st == "IRON_CONDOR":
             l_pe_w = _get_strike(atm_strike - 4 * stk_step)
@@ -5475,16 +5515,16 @@ class NiftyAnalyticsEngine:
             l_ce_s = _get_strike(atm_strike + 2 * stk_step)
             l_ce_w = _get_strike(atm_strike + 4 * stk_step)
 
-            pe_w_p = max(0.1, l_pe_w.get("pe_ltp") or 12.0)
-            pe_s_p = max(0.5, l_pe_s.get("pe_ltp") or 45.0)
-            ce_s_p = max(0.5, l_ce_s.get("ce_ltp") or 45.0)
-            ce_w_p = max(0.1, l_ce_w.get("ce_ltp") or 12.0)
+            pe_w_p = _get_leg_ltp(l_pe_w, "PE")
+            pe_s_p = _get_leg_ltp(l_pe_s, "PE")
+            ce_s_p = _get_leg_ltp(l_ce_s, "CE")
+            ce_w_p = _get_leg_ltp(l_ce_w, "CE")
 
             legs = [
-                {"action": "BUY", "type": "PE", "strike": l_pe_w["strike"], "lots": 1, "qty": lot_size, "price": pe_w_p, "entry_price": pe_w_p, "iv": l_pe_w.get("pe_iv", 13.0)},
-                {"action": "SELL", "type": "PE", "strike": l_pe_s["strike"], "lots": 1, "qty": lot_size, "price": pe_s_p, "entry_price": pe_s_p, "iv": l_pe_s.get("pe_iv", 13.0)},
-                {"action": "SELL", "type": "CE", "strike": l_ce_s["strike"], "lots": 1, "qty": lot_size, "price": ce_s_p, "entry_price": ce_s_p, "iv": l_ce_s.get("ce_iv", 13.0)},
-                {"action": "BUY", "type": "CE", "strike": l_ce_w["strike"], "lots": 1, "qty": lot_size, "price": ce_w_p, "entry_price": ce_w_p, "iv": l_ce_w.get("ce_iv", 13.0)},
+                {"action": "BUY", "type": "PE", "strike": l_pe_w["strike"], "lots": 1, "qty": lot_size, "price": pe_w_p, "entry_price": pe_w_p, "iv": l_pe_w.get("pe_iv", base_iv)},
+                {"action": "SELL", "type": "PE", "strike": l_pe_s["strike"], "lots": 1, "qty": lot_size, "price": pe_s_p, "entry_price": pe_s_p, "iv": l_pe_s.get("pe_iv", base_iv)},
+                {"action": "SELL", "type": "CE", "strike": l_ce_s["strike"], "lots": 1, "qty": lot_size, "price": ce_s_p, "entry_price": ce_s_p, "iv": l_ce_s.get("ce_iv", base_iv)},
+                {"action": "BUY", "type": "CE", "strike": l_ce_w["strike"], "lots": 1, "qty": lot_size, "price": ce_w_p, "entry_price": ce_w_p, "iv": l_ce_w.get("ce_iv", base_iv)},
             ]
             net_credit = ((pe_s_p - pe_w_p) + (ce_s_p - ce_w_p)) * lot_size
             net_premium = round(net_credit, 2)
@@ -5494,25 +5534,27 @@ class NiftyAnalyticsEngine:
             target_pnl = round(net_credit * 0.65, 2)
             stoploss_pnl = -round(net_credit * 1.50, 2)
             prem_pts = net_credit / lot_size
-            breakevens = [round(l_pe_s["strike"] - prem_pts, 1), round(l_ce_s["strike"] + prem_pts, 1)]
+            be_low = round(l_pe_s["strike"] - prem_pts, 1)
+            be_high = round(l_ce_s["strike"] + prem_pts, 1)
+            breakevens = [be_low, be_high]
             rr_str = f"1:{abs(max_loss) / max(1.0, max_profit):.2f}"
-            pop_pct = 74.0
-            est_margin = round(abs(max_loss) + 20000.0, 2)
+            pop_pct = round(max(5.0, (_calc_d2_prob(be_low) - _calc_d2_prob(be_high)) * 100.0), 1)
+            est_margin = round(abs(max_loss), 2)
 
         elif st == "IRON_BUTTERFLY":
             l_pe_w = _get_strike(atm_strike - 3 * stk_step)
             l_ce_w = _get_strike(atm_strike + 3 * stk_step)
 
-            ce_atm_p = max(0.5, atm_row.get("ce_ltp") or 85.0)
-            pe_atm_p = max(0.5, atm_row.get("pe_ltp") or 85.0)
-            pe_w_p = max(0.1, l_pe_w.get("pe_ltp") or 20.0)
-            ce_w_p = max(0.1, l_ce_w.get("ce_ltp") or 20.0)
+            ce_atm_p = _get_leg_ltp(atm_row, "CE")
+            pe_atm_p = _get_leg_ltp(atm_row, "PE")
+            pe_w_p = _get_leg_ltp(l_pe_w, "PE")
+            ce_w_p = _get_leg_ltp(l_ce_w, "CE")
 
             legs = [
-                {"action": "BUY", "type": "PE", "strike": l_pe_w["strike"], "lots": 1, "qty": lot_size, "price": pe_w_p, "entry_price": pe_w_p, "iv": l_pe_w.get("pe_iv", 13.0)},
-                {"action": "SELL", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_atm_p, "entry_price": pe_atm_p, "iv": atm_row.get("pe_iv", 13.0)},
-                {"action": "SELL", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_atm_p, "entry_price": ce_atm_p, "iv": atm_row.get("ce_iv", 13.0)},
-                {"action": "BUY", "type": "CE", "strike": l_ce_w["strike"], "lots": 1, "qty": lot_size, "price": ce_w_p, "entry_price": ce_w_p, "iv": l_ce_w.get("ce_iv", 13.0)},
+                {"action": "BUY", "type": "PE", "strike": l_pe_w["strike"], "lots": 1, "qty": lot_size, "price": pe_w_p, "entry_price": pe_w_p, "iv": l_pe_w.get("pe_iv", base_iv)},
+                {"action": "SELL", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_atm_p, "entry_price": pe_atm_p, "iv": atm_row.get("pe_iv", base_iv)},
+                {"action": "SELL", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_atm_p, "entry_price": ce_atm_p, "iv": atm_row.get("ce_iv", base_iv)},
+                {"action": "BUY", "type": "CE", "strike": l_ce_w["strike"], "lots": 1, "qty": lot_size, "price": ce_w_p, "entry_price": ce_w_p, "iv": l_ce_w.get("ce_iv", base_iv)},
             ]
             net_credit = ((pe_atm_p - pe_w_p) + (ce_atm_p - ce_w_p)) * lot_size
             net_premium = round(net_credit, 2)
@@ -5522,17 +5564,19 @@ class NiftyAnalyticsEngine:
             target_pnl = round(net_credit * 0.55, 2)
             stoploss_pnl = -round(net_credit * 1.20, 2)
             prem_pts = net_credit / lot_size
-            breakevens = [round(atm_row["strike"] - prem_pts, 1), round(atm_row["strike"] + prem_pts, 1)]
+            be_low = round(atm_row["strike"] - prem_pts, 1)
+            be_high = round(atm_row["strike"] + prem_pts, 1)
+            breakevens = [be_low, be_high]
             rr_str = f"1:{abs(max_loss) / max(1.0, max_profit):.2f}"
-            pop_pct = 58.0
-            est_margin = round(abs(max_loss) + 20000.0, 2)
+            pop_pct = round(max(5.0, (_calc_d2_prob(be_low) - _calc_d2_prob(be_high)) * 100.0), 1)
+            est_margin = round(abs(max_loss), 2)
 
         elif st == "LONG_STRADDLE":
-            ce_p = max(0.5, atm_row.get("ce_ltp") or 90.0)
-            pe_p = max(0.5, atm_row.get("pe_ltp") or 90.0)
+            ce_p = _get_leg_ltp(atm_row, "CE")
+            pe_p = _get_leg_ltp(atm_row, "PE")
             legs = [
-                {"action": "BUY", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": atm_row.get("ce_iv", 13.0)},
-                {"action": "BUY", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": atm_row.get("pe_iv", 13.0)},
+                {"action": "BUY", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": atm_row.get("ce_iv", base_iv)},
+                {"action": "BUY", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": atm_row.get("pe_iv", base_iv)},
             ]
             net_debit = (ce_p + pe_p) * lot_size
             net_premium = -round(net_debit, 2)
@@ -5541,19 +5585,21 @@ class NiftyAnalyticsEngine:
             target_pnl = round(net_debit * 0.40, 2)
             stoploss_pnl = -round(net_debit * 0.30, 2)
             prem_pts = ce_p + pe_p
-            breakevens = [round(atm_row["strike"] - prem_pts, 1), round(atm_row["strike"] + prem_pts, 1)]
+            be_low = round(atm_row["strike"] - prem_pts, 1)
+            be_high = round(atm_row["strike"] + prem_pts, 1)
+            breakevens = [be_low, be_high]
             rr_str = "1:2.5+"
-            pop_pct = 42.0
+            pop_pct = round(max(5.0, (1.0 - (_calc_d2_prob(be_low) - _calc_d2_prob(be_high))) * 100.0), 1)
             est_margin = round(net_debit, 2)
 
         elif st == "LONG_STRANGLE":
             l_pe = _get_strike(atm_strike - 2 * stk_step)
             l_ce = _get_strike(atm_strike + 2 * stk_step)
-            pe_p = max(0.5, l_pe.get("pe_ltp") or 45.0)
-            ce_p = max(0.5, l_ce.get("ce_ltp") or 45.0)
+            pe_p = _get_leg_ltp(l_pe, "PE")
+            ce_p = _get_leg_ltp(l_ce, "CE")
             legs = [
-                {"action": "BUY", "type": "PE", "strike": l_pe["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": l_pe.get("pe_iv", 13.0)},
-                {"action": "BUY", "type": "CE", "strike": l_ce["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": l_ce.get("ce_iv", 13.0)},
+                {"action": "BUY", "type": "PE", "strike": l_pe["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": l_pe.get("pe_iv", base_iv)},
+                {"action": "BUY", "type": "CE", "strike": l_ce["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": l_ce.get("ce_iv", base_iv)},
             ]
             net_debit = (pe_p + ce_p) * lot_size
             net_premium = -round(net_debit, 2)
@@ -5562,15 +5608,17 @@ class NiftyAnalyticsEngine:
             target_pnl = round(net_debit * 0.45, 2)
             stoploss_pnl = -round(net_debit * 0.30, 2)
             prem_pts = pe_p + ce_p
-            breakevens = [round(l_pe["strike"] - prem_pts, 1), round(l_ce["strike"] + prem_pts, 1)]
+            be_low = round(l_pe["strike"] - prem_pts, 1)
+            be_high = round(l_ce["strike"] + prem_pts, 1)
+            breakevens = [be_low, be_high]
             rr_str = "1:3.0+"
-            pop_pct = 38.0
+            pop_pct = round(max(5.0, (1.0 - (_calc_d2_prob(be_low) - _calc_d2_prob(be_high))) * 100.0), 1)
             est_margin = round(net_debit, 2)
 
         elif st == "LONG_CALL":
-            ce_p = max(0.5, atm_row.get("ce_ltp") or 90.0)
+            ce_p = _get_leg_ltp(atm_row, "CE")
             legs = [
-                {"action": "BUY", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": atm_row.get("ce_iv", 13.0)}
+                {"action": "BUY", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": atm_row.get("ce_iv", base_iv)}
             ]
             net_debit = ce_p * lot_size
             net_premium = -round(net_debit, 2)
@@ -5578,15 +5626,16 @@ class NiftyAnalyticsEngine:
             max_loss = -round(net_debit, 2)
             target_pnl = round(net_debit * 0.50, 2)
             stoploss_pnl = -round(net_debit * 0.35, 2)
-            breakevens = [round(atm_row["strike"] + ce_p, 1)]
+            breakeven = round(atm_row["strike"] + ce_p, 1)
+            breakevens = [breakeven]
             rr_str = "1:2.5"
-            pop_pct = 45.0
+            pop_pct = round(_calc_d2_prob(breakeven) * 100.0, 1)
             est_margin = round(net_debit, 2)
 
         elif st == "LONG_PUT":
-            pe_p = max(0.5, atm_row.get("pe_ltp") or 90.0)
+            pe_p = _get_leg_ltp(atm_row, "PE")
             legs = [
-                {"action": "BUY", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": atm_row.get("pe_iv", 13.0)}
+                {"action": "BUY", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": atm_row.get("pe_iv", base_iv)}
             ]
             net_debit = pe_p * lot_size
             net_premium = -round(net_debit, 2)
@@ -5594,17 +5643,18 @@ class NiftyAnalyticsEngine:
             max_loss = -round(net_debit, 2)
             target_pnl = round(net_debit * 0.50, 2)
             stoploss_pnl = -round(net_debit * 0.35, 2)
-            breakevens = [round(atm_row["strike"] - pe_p, 1)]
+            breakeven = round(atm_row["strike"] - pe_p, 1)
+            breakevens = [breakeven]
             rr_str = "1:2.5"
-            pop_pct = 45.0
+            pop_pct = round((1.0 - _calc_d2_prob(breakeven)) * 100.0, 1)
             est_margin = round(net_debit, 2)
 
         elif st == "SHORT_STRADDLE":
-            ce_p = max(0.5, atm_row.get("ce_ltp") or 90.0)
-            pe_p = max(0.5, atm_row.get("pe_ltp") or 90.0)
+            ce_p = _get_leg_ltp(atm_row, "CE")
+            pe_p = _get_leg_ltp(atm_row, "PE")
             legs = [
-                {"action": "SELL", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": atm_row.get("ce_iv", 13.0)},
-                {"action": "SELL", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": atm_row.get("pe_iv", 13.0)},
+                {"action": "SELL", "type": "CE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": atm_row.get("ce_iv", base_iv)},
+                {"action": "SELL", "type": "PE", "strike": atm_row["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": atm_row.get("pe_iv", base_iv)},
             ]
             net_credit = (ce_p + pe_p) * lot_size
             net_premium = round(net_credit, 2)
@@ -5613,19 +5663,21 @@ class NiftyAnalyticsEngine:
             target_pnl = round(net_credit * 0.40, 2)
             stoploss_pnl = -round(net_credit * 0.50, 2)
             prem_pts = ce_p + pe_p
-            breakevens = [round(atm_row["strike"] - prem_pts, 1), round(atm_row["strike"] + prem_pts, 1)]
+            be_low = round(atm_row["strike"] - prem_pts, 1)
+            be_high = round(atm_row["strike"] + prem_pts, 1)
+            breakevens = [be_low, be_high]
             rr_str = "Credit"
-            pop_pct = 64.0
-            est_margin = 140000.0
+            pop_pct = round(max(5.0, (_calc_d2_prob(be_low) - _calc_d2_prob(be_high)) * 100.0), 1)
+            est_margin = round((0.12 * spot_price + prem_pts) * lot_size, 2)
 
         elif st == "SHORT_STRANGLE":
             l_pe = _get_strike(atm_strike - 2 * stk_step)
             l_ce = _get_strike(atm_strike + 2 * stk_step)
-            pe_p = max(0.5, l_pe.get("pe_ltp") or 45.0)
-            ce_p = max(0.5, l_ce.get("ce_ltp") or 45.0)
+            pe_p = _get_leg_ltp(l_pe, "PE")
+            ce_p = _get_leg_ltp(l_ce, "CE")
             legs = [
-                {"action": "SELL", "type": "PE", "strike": l_pe["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": l_pe.get("pe_iv", 13.0)},
-                {"action": "SELL", "type": "CE", "strike": l_ce["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": l_ce.get("ce_iv", 13.0)},
+                {"action": "SELL", "type": "PE", "strike": l_pe["strike"], "lots": 1, "qty": lot_size, "price": pe_p, "entry_price": pe_p, "iv": l_pe.get("pe_iv", base_iv)},
+                {"action": "SELL", "type": "CE", "strike": l_ce["strike"], "lots": 1, "qty": lot_size, "price": ce_p, "entry_price": ce_p, "iv": l_ce.get("ce_iv", base_iv)},
             ]
             net_credit = (pe_p + ce_p) * lot_size
             net_premium = round(net_credit, 2)
@@ -5634,10 +5686,12 @@ class NiftyAnalyticsEngine:
             target_pnl = round(net_credit * 0.50, 2)
             stoploss_pnl = -round(net_credit * 0.60, 2)
             prem_pts = pe_p + ce_p
-            breakevens = [round(l_pe["strike"] - prem_pts, 1), round(l_ce["strike"] + prem_pts, 1)]
+            be_low = round(l_pe["strike"] - prem_pts, 1)
+            be_high = round(l_ce["strike"] + prem_pts, 1)
+            breakevens = [be_low, be_high]
             rr_str = "Credit"
-            pop_pct = 72.0
-            est_margin = 135000.0
+            pop_pct = round(max(5.0, (_calc_d2_prob(be_low) - _calc_d2_prob(be_high)) * 100.0), 1)
+            est_margin = round((0.12 * spot_price + prem_pts) * lot_size, 2)
 
         return {
             "strategy_type": st,

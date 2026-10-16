@@ -18,6 +18,10 @@ data/historical_data/*.pkl
 data/historical_data/*.csv
 
 # SQLite databases, WAL, and local backups
+*.db
+*.sqlite*
+*.db-wal
+*.db-shm
 data/*.db
 data/*.sqlite*
 data/*.db-wal
