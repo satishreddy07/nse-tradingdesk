@@ -5046,6 +5046,95 @@ class NiftyAnalyticsEngine:
             "message": f"Strategy '{strategy_name}' deployed successfully to Options Trading Portfolio!"
         }
 
+    def adjust_options_strategy(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Adjusts an active multi-leg option strategy:
+        updates constituent legs, recalculates net premium, max profit/loss, breakevens,
+        and margin requirements in SQLite, sends an adjustment Telegram alert, and syncs cloud vault.
+        """
+        strategy_id = data.get("strategy_id")
+        if not strategy_id:
+            raise ValueError("strategy_id is required for strategy adjustment.")
+
+        legs = data.get("legs") or []
+        if not legs:
+            raise ValueError("Adjusted strategy must contain at least one leg.")
+
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                row = conn.execute("SELECT * FROM options_strategies WHERE strategy_id = ?", (strategy_id,)).fetchone()
+                if not row:
+                    return {"status": "ERROR", "message": f"Strategy '{strategy_id}' not found."}
+                current_strat = dict(row)
+
+                if current_strat.get("status") != "ACTIVE":
+                    return {"status": "ERROR", "message": f"Cannot adjust non-active strategy '{strategy_id}' (status: {current_strat.get('status')})."}
+
+                # Recalculate Net Premium across adjusted legs
+                net_premium = float(data.get("net_premium") if data.get("net_premium") is not None else 0.0)
+                if net_premium == 0.0:
+                    net_premium = sum(((-1 if l.get("action") == "BUY" else 1) * float(l.get("entry_price", l.get("price", 0.0)))) * int(l.get("qty", NIFTY_LOT_SIZE)) for l in legs)
+
+                max_profit = data.get("max_profit", current_strat.get("max_profit"))
+                max_loss = data.get("max_loss", current_strat.get("max_loss"))
+                breakevens = json.dumps(data.get("breakevens") or []) if isinstance(data.get("breakevens"), list) else str(data.get("breakevens") or current_strat.get("breakevens") or "[]")
+                est_margin = float(data.get("est_margin") or current_strat.get("est_margin") or 0.0)
+                target_pnl = float(data.get("target_pnl") or current_strat.get("target_pnl") or 0.0)
+                stoploss_pnl = float(data.get("stoploss_pnl") or current_strat.get("stoploss_pnl") or 0.0)
+                notes = data.get("notes") or "Strategy adjusted with updated legs"
+
+                conn.execute("""
+                    UPDATE options_strategies
+                    SET legs_json = ?, net_premium = ?, max_profit = ?, max_loss = ?,
+                        breakevens = ?, est_margin = ?, target_pnl = ?, stoploss_pnl = ?
+                    WHERE strategy_id = ?
+                """, (
+                    json.dumps(legs), net_premium, max_profit, max_loss,
+                    breakevens, est_margin, target_pnl, stoploss_pnl,
+                    strategy_id
+                ))
+                conn.commit()
+
+        # Format Telegram Alert
+        leg_bullets = []
+        for i, l in enumerate(legs, 1):
+            act = l.get("action", "BUY")
+            typ = l.get("type", "CE")
+            stk = l.get("strike", 0)
+            qty = l.get("qty", NIFTY_LOT_SIZE)
+            px = l.get("entry_price", l.get("price", 0.0))
+            icon = "🟢" if act == "BUY" else "🔴"
+            leg_bullets.append(f"{icon} Leg {i}: {act} {stk} {typ} | {qty} Qty @ ₹{px:.2f}")
+
+        telegram_msg = (
+            f"🛠️ <b>OPTIONS STRATEGY ADJUSTED</b>\n\n"
+            f"📊 <b>Strategy:</b> {current_strat.get('strategy_name')}\n"
+            f"🆔 <b>ID:</b> <code>{strategy_id}</code>\n"
+            f"⏳ <b>Expiry:</b> {current_strat.get('expiry_date')} ({current_strat.get('expiry_type')})\n"
+            f"💵 <b>Updated Premium:</b> ₹{net_premium:,.2f}\n"
+            f"💼 <b>Est. Margin:</b> ₹{est_margin:,.0f}\n\n"
+            f"📋 <b>Adjusted Legs ({len(legs)}):</b>\n" + "\n".join(leg_bullets) + f"\n\n"
+            f"📝 <b>Notes:</b> {notes}\n"
+            f"🕒 <b>Adjusted At:</b> {format_ist()}"
+        )
+
+        try:
+            telegram_vault.send_alert_and_sync(
+                title=f"Options Strategy Adjusted: {current_strat.get('strategy_name')}",
+                message=telegram_msg,
+                sync_db=True
+            )
+        except Exception as e:
+            logger.warning(f"Telegram alert error on adjust options strategy: {e}")
+
+        self.invalidate_equity_curves_cache()
+
+        return {
+            "status": "OK",
+            "strategy_id": strategy_id,
+            "message": f"Strategy '{current_strat.get('strategy_name')}' adjusted successfully with {len(legs)} legs!"
+        }
+
     def exit_options_strategy(self, strategy_id: str, exit_reason: str = "MANUAL_EXIT") -> Dict[str, Any]:
         """
         Exits all legs of an active strategy at current live market prices,

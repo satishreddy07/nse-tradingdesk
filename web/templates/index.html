@@ -3112,6 +3112,15 @@
                 </button>
               </div>
 
+              <!-- Strategy Adjustment Mode Alert Banner -->
+              <div id="builder-adjustment-banner" class="hidden mb-2.5 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between text-xs font-mono">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span class="text-amber-400 font-bold text-[10px] sm:text-[11px] whitespace-nowrap">🛠️ ADJUSTING STRATEGY:</span>
+                  <span id="builder-adjustment-target-text" class="text-white font-bold truncate text-[10px] sm:text-[11px]">--</span>
+                </div>
+                <button onclick="cancelStrategyAdjustment()" class="ml-2 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold border border-slate-700 text-[10px] transition">Cancel</button>
+              </div>
+
               <!-- Legs Container -->
               <div id="strat-legs-list" class="space-y-2 max-h-72 overflow-y-auto custom-scroll pr-1 text-xs font-mono">
                 <div class="text-slate-500 py-8 text-center font-sans">
@@ -4743,7 +4752,13 @@
             <div id="modal-strat-meta" class="text-xs font-mono text-cyan-300">--</div>
           </div>
         </div>
-        <button onclick="closeStrategyDetailModal()" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-sm transition">✕</button>
+        <div class="flex items-center gap-2">
+          <button id="modal-btn-adjust-strategy" onclick="startStrategyAdjustmentFromModal()" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-mono text-xs font-bold shadow-md flex items-center gap-1.5 transition" title="Adjust / Roll Legs in Strategy Builder">
+            <span>🛠️</span>
+            <span>Adjust Strategy</span>
+          </button>
+          <button onclick="closeStrategyDetailModal()" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-sm transition">✕</button>
+        </div>
       </div>
 
       <div class="p-4 sm:p-5 overflow-y-auto custom-scroll space-y-4 font-mono text-xs">
@@ -4814,19 +4829,21 @@
                 </div>
                 <span id="modal-weekly-spot-lbl" class="text-[11px] font-mono font-bold text-amber-400">Spot: ₹--</span>
               </div>
-              <div class="max-h-64 overflow-y-auto custom-scroll border border-slate-800/80 rounded-lg overflow-x-auto">
-                <table class="w-full text-center text-[11px] font-mono border-collapse min-w-[340px]">
+              <div id="modal-weekly-chain-scroll-container" class="max-h-96 overflow-y-auto custom-scroll border border-slate-800/80 rounded-lg overflow-x-auto">
+                <table class="w-full text-center text-[11px] font-mono border-collapse min-w-[420px]">
                   <thead class="bg-slate-950 sticky top-0 z-10 text-[9px] uppercase text-slate-400 border-b border-slate-800">
                     <tr>
+                      <th class="p-1.5 text-rose-400">Act</th>
                       <th class="p-1.5 text-rose-400">CE LTP</th>
                       <th class="p-1.5 text-rose-400 border-r border-slate-800">CE OI</th>
                       <th class="p-1.5 text-cyan-300 bg-slate-900 font-black">STRIKE</th>
                       <th class="p-1.5 text-emerald-400 border-l border-slate-800">PE OI</th>
                       <th class="p-1.5 text-emerald-400">PE LTP</th>
+                      <th class="p-1.5 text-emerald-400">Act</th>
                     </tr>
                   </thead>
                   <tbody id="modal-weekly-chain-tbody" class="divide-y divide-slate-800/50">
-                    <tr><td colspan="5" class="p-4 text-slate-500 text-center">Loading weekly option chain...</td></tr>
+                    <tr><td colspan="7" class="p-4 text-slate-500 text-center">Loading weekly option chain...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -4842,19 +4859,21 @@
                 </div>
                 <span id="modal-monthly-spot-lbl" class="text-[11px] font-mono font-bold text-amber-400">Spot: ₹--</span>
               </div>
-              <div class="max-h-64 overflow-y-auto custom-scroll border border-slate-800/80 rounded-lg overflow-x-auto">
-                <table class="w-full text-center text-[11px] font-mono border-collapse min-w-[340px]">
+              <div id="modal-monthly-chain-scroll-container" class="max-h-96 overflow-y-auto custom-scroll border border-slate-800/80 rounded-lg overflow-x-auto">
+                <table class="w-full text-center text-[11px] font-mono border-collapse min-w-[420px]">
                   <thead class="bg-slate-950 sticky top-0 z-10 text-[9px] uppercase text-slate-400 border-b border-slate-800">
                     <tr>
+                      <th class="p-1.5 text-rose-400">Act</th>
                       <th class="p-1.5 text-rose-400">CE LTP</th>
                       <th class="p-1.5 text-rose-400 border-r border-slate-800">CE OI</th>
                       <th class="p-1.5 text-cyan-300 bg-slate-900 font-black">STRIKE</th>
                       <th class="p-1.5 text-emerald-400 border-l border-slate-800">PE OI</th>
                       <th class="p-1.5 text-emerald-400">PE LTP</th>
+                      <th class="p-1.5 text-emerald-400">Act</th>
                     </tr>
                   </thead>
                   <tbody id="modal-monthly-chain-tbody" class="divide-y divide-slate-800/50">
-                    <tr><td colspan="5" class="p-4 text-slate-500 text-center">Loading monthly option chain...</td></tr>
+                    <tr><td colspan="7" class="p-4 text-slate-500 text-center">Loading monthly option chain...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -9105,6 +9124,34 @@
       drawPayoffGraph();
     }
 
+    function stepStrategyLegStrike(id, deltaStrike) {
+      const leg = strategyLegs.find(l => l.id === id);
+      if (!leg) return;
+      const newStrike = Math.max(5000, Number(leg.strike) + Number(deltaStrike));
+      leg.strike = newStrike;
+
+      // Automatically sync live LTP and IV from option chain cache
+      if (window.niftyOptionsChainCache) {
+        const isMonthly = (builderCompactChainMode === 'monthly' || selectedOptionsExpiryType === 'monthly');
+        const activeChain = isMonthly ? (niftyOptionsChainCache?.monthly || {}) : (niftyOptionsChainCache?.weekly || {});
+        const strikesList = activeChain.all_strikes || activeChain.strikes || [];
+        const found = strikesList.find(s => Number(s.strike) === newStrike);
+        if (found) {
+          const newLtp = leg.type === 'CE' ? Number(found.ce_ltp || 0) : Number(found.pe_ltp || 0);
+          const newIv = leg.type === 'CE' ? Number(found.ce_iv || 13.5) : Number(found.pe_iv || 13.5);
+          if (newLtp > 0) leg.price = newLtp;
+          if (newIv > 0) leg.iv = newIv;
+        }
+      }
+
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+      if (typeof renderBuilderCompactChain === 'function') {
+        renderBuilderCompactChain();
+      }
+    }
+
     function updateStrategyLeg(id, field, val) {
       const leg = strategyLegs.find(l => l.id === id);
       if (!leg) return;
@@ -9320,7 +9367,11 @@
               <button onclick="updateStrategyLeg(${l.id}, 'type', '${isCe ? 'PE' : 'CE'}'); renderStrategyLegs();" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCe ? 'bg-cyan-500/20 text-cyan-300' : 'bg-purple-500/20 text-purple-300'} hover:opacity-80 transition">
                 ${l.type}
               </button>
-              <span class="font-bold text-white text-xs">${l.strike}</span>
+              <div class="flex items-center bg-slate-950 border border-slate-800 rounded px-1">
+                <button onclick="stepStrategyLegStrike(${l.id}, -50)" class="text-[10px] font-bold text-slate-400 hover:text-cyan-300 px-1 py-0.5 transition" title="Roll Down 50 pts">▼</button>
+                <span class="font-bold text-white text-xs px-1">${l.strike}</span>
+                <button onclick="stepStrategyLegStrike(${l.id}, 50)" class="text-[10px] font-bold text-slate-400 hover:text-cyan-300 px-1 py-0.5 transition" title="Roll Up 50 pts">▲</button>
+              </div>
             </div>
 
             <div class="flex items-center gap-2">
@@ -9608,8 +9659,10 @@
       const minStrike = Math.min(...strategyLegs.map(l => l.strike));
       const maxStrike = Math.max(...strategyLegs.map(l => l.strike));
       const marginBuffer = Math.max(800, (maxStrike - minStrike) * 0.7);
-      const spotMin = Math.round(Math.min(minStrike - marginBuffer, spot * 0.94));
-      const spotMax = Math.round(Math.max(maxStrike + marginBuffer, spot * 1.06));
+      const isMonthlyStrat = (builderCompactChainMode === 'monthly' || selectedOptionsExpiryType === 'monthly');
+      const sigs = calculateSigmaLevels(spot, isMonthlyStrat ? 'MONTHLY' : 'WEEKLY');
+      const spotMin = Math.round(Math.min(minStrike - marginBuffer, spot * 0.94, sigs.twoSigmaDown - 150));
+      const spotMax = Math.round(Math.max(maxStrike + marginBuffer, spot * 1.06, sigs.twoSigmaUp + 150));
 
       const stepCount = 180;
       const step = (spotMax - spotMin) / stepCount;
@@ -9770,6 +9823,51 @@
       };
     }
 
+    function calculateSigmaLevels(spot, expiryType = 'WEEKLY', customDte = null, customIv = null) {
+      const isMonthly = String(expiryType).toUpperCase() === 'MONTHLY';
+      let dte = customDte;
+      if (!dte || dte <= 0) {
+        const chain = isMonthly ? niftyOptionsChainCache?.monthly : niftyOptionsChainCache?.weekly;
+        if (chain && chain.expiry) {
+          try {
+            const parts = chain.expiry.split('-');
+            if (parts.length === 3) {
+              const expDate = new Date(`${parts[1]} ${parts[0]}, ${parts[2]}`);
+              const diff = Math.ceil((expDate - new Date()) / (1000 * 60 * 60 * 24));
+              if (!isNaN(diff) && diff >= 0) dte = Math.max(0.5, diff);
+            }
+          } catch (e) {}
+        }
+      }
+      if (!dte || dte <= 0) {
+        dte = isMonthly ? 13 : 3;
+      }
+
+      let iv = customIv;
+      if (!iv || iv <= 0) {
+        const chain = isMonthly ? niftyOptionsChainCache?.monthly : niftyOptionsChainCache?.weekly;
+        iv = Number(chain?.atm_iv || chain?.pcr?.iv || 13.0);
+      }
+      if (!iv || iv <= 0) iv = 13.0;
+
+      const t = Math.max(0.001, dte / 365.0);
+      const oneSigmaVal = spot * (iv / 100.0) * Math.sqrt(t);
+      const twoSigmaVal = 2.0 * oneSigmaVal;
+
+      return {
+        spot: Math.round(spot),
+        dte: Math.round(dte),
+        iv: Number(iv.toFixed(1)),
+        expiryType: isMonthly ? 'MONTHLY' : 'WEEKLY',
+        oneSigmaVal: Math.round(oneSigmaVal),
+        twoSigmaVal: Math.round(twoSigmaVal),
+        oneSigmaDown: Math.round(spot - oneSigmaVal),
+        oneSigmaUp: Math.round(spot + oneSigmaVal),
+        twoSigmaDown: Math.round(spot - twoSigmaVal),
+        twoSigmaUp: Math.round(spot + twoSigmaVal)
+      };
+    }
+
     function drawPayoffGraph() {
       const canvas = document.getElementById('opt-payoff-canvas');
       if (!canvas) return;
@@ -9810,6 +9908,26 @@
       const xToCanvas = (s) => padLeft + ((s - spotMin) / (spotMax - spotMin)) * plotWidth;
       const yToCanvas = (p) => padTop + plotHeight - ((p - pnlMinY) / (pnlMaxY - pnlMinY)) * plotHeight;
 
+      // 1-Sigma and 2-Sigma probability bounds based on strategy horizon
+      const expiryMode = (builderCompactChainMode === 'monthly' || selectedOptionsExpiryType === 'monthly') ? 'MONTHLY' : 'WEEKLY';
+      const sigmas = calculateSigmaLevels(spot, expiryMode);
+
+      // Shaded 2-Sigma Corridor (95.4% probability)
+      const x2D = Math.max(padLeft, Math.min(padLeft + plotWidth, xToCanvas(sigmas.twoSigmaDown)));
+      const x2U = Math.max(padLeft, Math.min(padLeft + plotWidth, xToCanvas(sigmas.twoSigmaUp)));
+      if (x2U > x2D) {
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.04)';
+        ctx.fillRect(x2D, padTop, x2U - x2D, plotHeight);
+      }
+
+      // Shaded 1-Sigma Corridor (68.2% probability)
+      const x1D = Math.max(padLeft, Math.min(padLeft + plotWidth, xToCanvas(sigmas.oneSigmaDown)));
+      const x1U = Math.max(padLeft, Math.min(padLeft + plotWidth, xToCanvas(sigmas.oneSigmaUp)));
+      if (x1U > x1D) {
+        ctx.fillStyle = 'rgba(168, 85, 247, 0.08)';
+        ctx.fillRect(x1D, padTop, x1U - x1D, plotHeight);
+      }
+
       // Grid lines
       const yZero = yToCanvas(0);
       ctx.beginPath();
@@ -9839,6 +9957,45 @@
         ctx.fillStyle = tp >= 0 ? '#34d399' : '#f87171';
         ctx.fillText(`${tp >= 0 ? '+' : ''}₹${(tp / 1000).toFixed(0)}k`, padLeft - 6, y + 3);
       });
+
+      // 2-Sigma vertical lines (Amber, 95.4% confidence)
+      [sigmas.twoSigmaDown, sigmas.twoSigmaUp].forEach((lvl, idx) => {
+        const x = xToCanvas(lvl);
+        if (x >= padLeft && x <= padLeft + plotWidth) {
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(x, padTop);
+          ctx.lineTo(x, padTop + plotHeight);
+          ctx.stroke();
+
+          ctx.fillStyle = '#fbbf24';
+          ctx.font = '9px JetBrains Mono, monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(idx === 0 ? `-2σ (${lvl})` : `+2σ (${lvl})`, x, padTop + 20);
+        }
+      });
+
+      // 1-Sigma vertical lines (Purple, 68.2% confidence)
+      [sigmas.oneSigmaDown, sigmas.oneSigmaUp].forEach((lvl, idx) => {
+        const x = xToCanvas(lvl);
+        if (x >= padLeft && x <= padLeft + plotWidth) {
+          ctx.strokeStyle = '#c084fc';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(x, padTop);
+          ctx.lineTo(x, padTop + plotHeight);
+          ctx.stroke();
+
+          ctx.fillStyle = '#c084fc';
+          ctx.font = '9px JetBrains Mono, monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(idx === 0 ? `-1σ (${lvl})` : `+1σ (${lvl})`, x, padTop + 10);
+        }
+      });
+      ctx.setLineDash([]);
 
       // Spot Line
       const xSpot = xToCanvas(spot);
@@ -9950,9 +10107,18 @@
         ctx.arc(payoffCanvasHoverX, yTnow, 4, 0, Math.PI * 2);
         ctx.fill();
 
+        let zoneText = '';
+        if (hoverSpot >= sigmas.oneSigmaDown && hoverSpot <= sigmas.oneSigmaUp) {
+          zoneText = `<span class="text-purple-300 font-bold px-1 rounded bg-purple-500/20">Inside 1σ (68.2%)</span>`;
+        } else if (hoverSpot >= sigmas.twoSigmaDown && hoverSpot <= sigmas.twoSigmaUp) {
+          zoneText = `<span class="text-amber-300 font-bold px-1 rounded bg-amber-500/20">Inside 2σ (95.4%)</span>`;
+        } else {
+          zoneText = `<span class="text-rose-400 font-bold px-1 rounded bg-rose-500/20">Outside 2σ Tail (&gt;95%)</span>`;
+        }
+
         const hud = document.getElementById('payoff-crosshair-hud');
         if (hud) {
-          hud.innerHTML = `Nifty: <b class="text-white">₹${Math.round(hoverSpot)}</b> • Expiry: <b class="${expPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${expPnl >= 0 ? '+' : ''}₹${Math.round(expPnl).toLocaleString('en-IN')}</b> • T+Now: <b class="${tPnl >= 0 ? 'text-cyan-300' : 'text-rose-400'}">${tPnl >= 0 ? '+' : ''}₹${Math.round(tPnl).toLocaleString('en-IN')}</b>`;
+          hud.innerHTML = `Nifty: <b class="text-white">₹${Math.round(hoverSpot)}</b> • Expiry: <b class="${expPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${expPnl >= 0 ? '+' : ''}₹${Math.round(expPnl).toLocaleString('en-IN')}</b> • T+Now: <b class="${tPnl >= 0 ? 'text-cyan-300' : 'text-rose-400'}">${tPnl >= 0 ? '+' : ''}₹${Math.round(tPnl).toLocaleString('en-IN')}</b> • [${sigmas.expiryType}] ${zoneText}`;
         }
       }
 
@@ -10021,11 +10187,12 @@
       const expiryDate = active.expiry || (activeExpiryMode === 'monthly' ? niftyOptionsChainCache?.monthly?.expiry : niftyOptionsChainCache?.weekly?.expiry) || "";
       const expiryType = activeExpiryMode.toUpperCase();
 
+      const isAdjustment = !!activeAdjustmentStrategyId;
       const btn = document.getElementById('btn-deploy-strategy');
       const origHtml = btn ? btn.innerHTML : '';
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Deploying...`;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> ${isAdjustment ? 'Applying Adjustment...' : 'Deploying...'}`;
       }
 
       try {
@@ -10096,22 +10263,38 @@
           notes: `Deployed from Sensibull Builder (${strategyLegs.length} legs)`
         };
 
-        const res = await fetch('/api/options/deploy-strategy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+        let res;
+        if (isAdjustment) {
+          payload.strategy_id = activeAdjustmentStrategyId;
+          payload.notes = `Adjusted via Sensibull Builder (${strategyLegs.length} legs)`;
+          res = await fetch('/api/options/adjust-strategy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          res = await fetch('/api/options/deploy-strategy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        }
 
         const data = await res.json();
         if (res.ok && data.status === 'OK') {
-          showToast(`🚀 Strategy "${stratName}" deployed to Options Portfolio & backed up to Telegram Cloud!`, "success");
-          clearStrategyBuilderLegs();
-          if (nameInput) nameInput.value = '';
+          if (isAdjustment) {
+            showToast(`🛠️ Strategy "${stratName}" adjusted successfully & synced to Telegram Cloud!`, "success");
+            cancelStrategyAdjustment();
+          } else {
+            showToast(`🚀 Strategy "${stratName}" deployed to Options Portfolio & backed up to Telegram Cloud!`, "success");
+            clearStrategyBuilderLegs();
+            if (nameInput) nameInput.value = '';
+          }
           switchOptionsSubTab('portfolio');
           await loadOptionsPortfolioDesk();
           await loadAllEquityCurves();
         } else {
-          showToast(`Failed to deploy: ${data.detail || data.message || 'Server error'}`, "error");
+          showToast(`Failed to ${isAdjustment ? 'adjust' : 'deploy'}: ${data.detail || data.message || 'Server error'}`, "error");
         }
       } catch (err) {
         console.error("Deploy Strategy Error:", err);
@@ -10259,6 +10442,9 @@
                     </div>
                     <button onclick="openStrategyDetailModal('${st.strategy_id}')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-mono font-bold border border-slate-700 transition" title="Inspect Full Analytics">
                       Analytics
+                    </button>
+                    <button onclick="startStrategyAdjustment('${st.strategy_id}')" class="px-2.5 py-1.5 rounded-lg bg-amber-950/70 hover:bg-amber-900 text-amber-300 text-xs font-mono font-bold border border-amber-700/60 transition" title="Adjust / Roll Legs in Strategy Builder">
+                      🛠️ Adjust
                     </button>
                     <button onclick="exitStrategyFromPortfolio('${st.strategy_id}', '${st.strategy_name}')" class="px-2.5 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 text-xs font-mono font-bold border border-rose-800/60 transition" title="Square-Off All Legs">
                       Exit Strategy
@@ -10495,6 +10681,10 @@
         if (s.status === 'ACTIVE') {
           actionFoot.innerHTML = `
             <button onclick="closeStrategyDetailModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs font-bold transition">Close</button>
+            <button onclick="startStrategyAdjustment('${s.strategy_id}')" class="px-4 py-2 rounded-xl bg-amber-600/90 hover:bg-amber-500 text-white font-mono text-xs font-bold shadow-lg transition flex items-center gap-1.5" title="Adjust / Roll Legs in Strategy Builder">
+              <span>🛠️</span>
+              <span>Adjust Strategy in Builder</span>
+            </button>
             <button onclick="exitStrategyFromPortfolio('${s.strategy_id}', '${s.strategy_name}')" class="px-5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white font-mono text-xs font-bold shadow-lg transition">
               Exit Strategy (Square-Off All Legs)
             </button>
@@ -10507,15 +10697,22 @@
         }
       }
 
+      const headAdjustBtn = document.getElementById('modal-btn-adjust-strategy');
+      if (headAdjustBtn) {
+        headAdjustBtn.style.display = s.status === 'ACTIVE' ? 'flex' : 'none';
+      }
+
       if (modal) {
         modal.classList.remove('hidden');
         modal.style.display = 'flex';
+        currentModalStrategyId = s.strategy_id;
+        currentModalExpiryType = s.expiry_type || 'WEEKLY';
         currentModalLegs = s.legs || [];
         currentModalSpot = s.spot_at_entry || (niftyOptionsChainCache?.spot || (optionsPortfolioCache?.spot_price || 0));
         setTimeout(() => {
           setupModalPayoffListeners();
           if (s.legs && s.legs.length > 0) {
-            drawMiniStrategyPayoff(s.legs, currentModalSpot, null);
+            drawMiniStrategyPayoff(s.legs, currentModalSpot, null, currentModalExpiryType);
           }
           renderModalOptionChains(s.legs || []);
         }, 60);
@@ -10530,11 +10727,14 @@
       }
       modalPayoffHoverX = null;
       currentModalLegs = null;
+      currentModalStrategyId = null;
     }
 
     let modalPayoffHoverX = null;
     let currentModalLegs = null;
     let currentModalSpot = 0;
+    let currentModalStrategyId = null;
+    let currentModalExpiryType = 'WEEKLY';
 
     function setupModalPayoffListeners() {
       const canvas = document.getElementById('modal-strat-payoff-canvas');
@@ -10545,13 +10745,13 @@
         if (!currentModalLegs || currentModalLegs.length === 0) return;
         const rect = canvas.getBoundingClientRect();
         modalPayoffHoverX = e.clientX - rect.left;
-        drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, modalPayoffHoverX);
+        drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, modalPayoffHoverX, currentModalExpiryType);
       });
 
       canvas.addEventListener('mouseleave', () => {
         modalPayoffHoverX = null;
         if (currentModalLegs && currentModalLegs.length > 0) {
-          drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, null);
+          drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, null, currentModalExpiryType);
         }
         const hud = document.getElementById('modal-payoff-hud');
         if (hud) hud.innerText = 'Hover payoff curve to inspect P&L at spot';
@@ -10562,19 +10762,19 @@
         if (e.touches && e.touches.length > 0) {
           const rect = canvas.getBoundingClientRect();
           modalPayoffHoverX = e.touches[0].clientX - rect.left;
-          drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, modalPayoffHoverX);
+          drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, modalPayoffHoverX, currentModalExpiryType);
         }
       }, { passive: true });
 
       canvas.addEventListener('touchend', () => {
         modalPayoffHoverX = null;
         if (currentModalLegs && currentModalLegs.length > 0) {
-          drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, null);
+          drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, null, currentModalExpiryType);
         }
       });
     }
 
-    function drawMiniStrategyPayoff(legs, spot, hoverX = null) {
+    function drawMiniStrategyPayoff(legs, spot, hoverX = null, expiryType = 'WEEKLY') {
       const canvas = document.getElementById('modal-strat-payoff-canvas');
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -10588,13 +10788,15 @@
       ctx.clearRect(0, 0, w, h);
 
       if (!legs || legs.length === 0) return;
+      const sigmas = calculateSigmaLevels(spot, expiryType);
+
       const strikes = legs.map(l => l.strike);
-      const minK = Math.min(...strikes, spot);
-      const maxK = Math.max(...strikes, spot);
-      const buf = Math.max(600, (maxK - minK) * 0.6);
+      const minK = Math.min(...strikes, spot, sigmas.twoSigmaDown);
+      const maxK = Math.max(...strikes, spot, sigmas.twoSigmaUp);
+      const buf = Math.max(650, (maxK - minK) * 0.5);
       const sMin = minK - buf;
       const sMax = maxK + buf;
-      const steps = 120;
+      const steps = 140;
       const step = (sMax - sMin) / steps;
 
       const spots = [];
@@ -10615,6 +10817,22 @@
       const yZero = h / 2;
       const xToC = (s) => ((s - sMin) / (sMax - sMin)) * w;
       const yToC = (p) => (h / 2) - (p / maxAbs) * (h * 0.42);
+
+      // Shaded 2-Sigma Corridor (95.4% confidence)
+      const x2D = Math.max(0, Math.min(w, xToC(sigmas.twoSigmaDown)));
+      const x2U = Math.max(0, Math.min(w, xToC(sigmas.twoSigmaUp)));
+      if (x2U > x2D) {
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.04)';
+        ctx.fillRect(x2D, 0, x2U - x2D, h);
+      }
+
+      // Shaded 1-Sigma Corridor (68.2% confidence)
+      const x1D = Math.max(0, Math.min(w, xToC(sigmas.oneSigmaDown)));
+      const x1U = Math.max(0, Math.min(w, xToC(sigmas.oneSigmaUp)));
+      if (x1U > x1D) {
+        ctx.fillStyle = 'rgba(168, 85, 247, 0.08)';
+        ctx.fillRect(x1D, 0, x1U - x1D, h);
+      }
 
       // Zero line
       ctx.strokeStyle = '#334155';
@@ -10649,6 +10867,43 @@
       ctx.strokeStyle = '#10b981';
       ctx.lineWidth = 2;
       ctx.stroke();
+
+      // 2-Sigma vertical lines (Amber)
+      [sigmas.twoSigmaDown, sigmas.twoSigmaUp].forEach((lvl, idx) => {
+        const x = xToC(lvl);
+        if (x >= 0 && x <= w) {
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, h);
+          ctx.stroke();
+          ctx.fillStyle = '#fbbf24';
+          ctx.font = '9px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(idx === 0 ? `-2σ (${lvl})` : `+2σ (${lvl})`, x, 22);
+        }
+      });
+
+      // 1-Sigma vertical lines (Purple)
+      [sigmas.oneSigmaDown, sigmas.oneSigmaUp].forEach((lvl, idx) => {
+        const x = xToC(lvl);
+        if (x >= 0 && x <= w) {
+          ctx.strokeStyle = '#c084fc';
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, h);
+          ctx.stroke();
+          ctx.fillStyle = '#c084fc';
+          ctx.font = '9px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(idx === 0 ? `-1σ (${lvl})` : `+1σ (${lvl})`, x, 11);
+        }
+      });
+      ctx.setLineDash([]);
 
       // Breakevens
       const bes = [];
@@ -10721,9 +10976,18 @@
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
+        let zoneStr = '';
+        if (hoverSpot >= sigmas.oneSigmaDown && hoverSpot <= sigmas.oneSigmaUp) {
+          zoneStr = '<span class="text-purple-300 font-bold">Within 1σ Range (68.2%)</span>';
+        } else if (hoverSpot >= sigmas.twoSigmaDown && hoverSpot <= sigmas.twoSigmaUp) {
+          zoneStr = '<span class="text-amber-300 font-bold">Within 2σ Range (95.4%)</span>';
+        } else {
+          zoneStr = '<span class="text-rose-400 font-bold">Outside 2σ Wing (&gt;95%)</span>';
+        }
+
         const hud = document.getElementById('modal-payoff-hud');
         if (hud) {
-          hud.innerHTML = `Spot: <b class="text-white">₹${Math.round(hoverSpot).toLocaleString('en-IN')}</b> | Payoff P&L: <b class="${hoverPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${hoverPnl >= 0 ? '+' : ''}₹${Math.round(hoverPnl).toLocaleString('en-IN')}</b>`;
+          hud.innerHTML = `Spot: <b class="text-white">₹${Math.round(hoverSpot).toLocaleString('en-IN')}</b> | Payoff: <b class="${hoverPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${hoverPnl >= 0 ? '+' : ''}₹${Math.round(hoverPnl).toLocaleString('en-IN')}</b> | [${sigmas.expiryType}] ${zoneStr}`;
         }
       }
     }
@@ -10743,32 +11007,33 @@
 
       const w = niftyOptionsChainCache.weekly || {};
       const m = niftyOptionsChainCache.monthly || {};
+      const liveSpot = niftyOptionsChainCache.spot_price || w.spot_price || m.spot_price || (optionsPortfolioCache?.spot_price) || 0;
 
       const wExpEl = document.getElementById('modal-weekly-exp-lbl');
       const wSpotEl = document.getElementById('modal-weekly-spot-lbl');
       if (wExpEl) wExpEl.innerText = w.expiry || '--';
-      if (wSpotEl) wSpotEl.innerText = `Spot: ₹${Number(w.spot_price || 0).toLocaleString('en-IN')}`;
+      if (wSpotEl) wSpotEl.innerText = `Spot: ₹${Number(liveSpot).toLocaleString('en-IN')}`;
 
       const mExpEl = document.getElementById('modal-monthly-exp-lbl');
       const mSpotEl = document.getElementById('modal-monthly-spot-lbl');
       if (mExpEl) mExpEl.innerText = m.expiry || '--';
-      if (mSpotEl) mSpotEl.innerText = `Spot: ₹${Number(m.spot_price || 0).toLocaleString('en-IN')}`;
+      if (mSpotEl) mSpotEl.innerText = `Spot: ₹${Number(liveSpot).toLocaleString('en-IN')}`;
 
       const constituentLegs = legs || [];
 
-      const renderChainTable = (tbodyId, strikesData, atmStrike) => {
+      const renderChainTable = (tbodyId, strikesData, atmStrike, containerId, expType) => {
         const tbody = document.getElementById(tbodyId);
         if (!tbody) return;
-        const strikes = strikesData || [];
+        const strikes = [...(strikesData || [])].sort((a, b) => Number(a.strike) - Number(b.strike));
         if (strikes.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-500 font-sans">No strike data available</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-500 font-sans">No strike data available</td></tr>`;
           return;
         }
 
         tbody.innerHTML = strikes.map(s => {
-          const isAtm = s.strike === atmStrike;
-          const matchedCe = constituentLegs.find(l => l.strike === s.strike && l.type === 'CE');
-          const matchedPe = constituentLegs.find(l => l.strike === s.strike && l.type === 'PE');
+          const isAtm = Number(s.strike) === Number(atmStrike);
+          const matchedCe = constituentLegs.find(l => Number(l.strike) === Number(s.strike) && l.type === 'CE');
+          const matchedPe = constituentLegs.find(l => Number(l.strike) === Number(s.strike) && l.type === 'PE');
           const isConstituent = matchedCe || matchedPe;
 
           let rowBg = isConstituent ? 'bg-cyan-950/30 font-bold' : (isAtm ? 'bg-amber-950/20' : 'hover:bg-slate-800/40');
@@ -10782,21 +11047,149 @@
             : `<span class="text-white">₹${Number(s.pe_ltp || 0).toFixed(1)}</span>`;
 
           return `
-            <tr class="transition ${rowBg}">
-              <td class="p-1.5">${ceLtpContent}</td>
+            <tr id="modal-${expType}-row-${s.strike}" class="transition ${rowBg}">
+              <td class="p-1.5 whitespace-nowrap">
+                <button onclick="addLegFromModalChain(${s.strike}, 'CE', 'BUY', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5}, '${expType}')" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-emerald-950/60 text-emerald-400 border border-slate-700 mr-1" title="Buy Call in Builder">+B</button>
+                <button onclick="addLegFromModalChain(${s.strike}, 'CE', 'SELL', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5}, '${expType}')" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-rose-950/60 text-rose-400 border border-slate-700" title="Sell Call in Builder">+S</button>
+              </td>
+              <td class="p-1.5 font-bold">${ceLtpContent}</td>
               <td class="p-1.5 text-slate-400 border-r border-slate-800/80">${formatCompactOi(s.ce_oi)}</td>
               <td class="p-1.5 font-bold ${isConstituent ? 'text-cyan-300' : (isAtm ? 'text-amber-400' : 'text-slate-200')} bg-slate-950/80">
                 ${s.strike}${isAtm ? ' <span class="text-[8px] text-amber-400 block font-normal">ATM</span>' : ''}
               </td>
               <td class="p-1.5 text-slate-400 border-l border-slate-800/80">${formatCompactOi(s.pe_oi)}</td>
-              <td class="p-1.5">${peLtpContent}</td>
+              <td class="p-1.5 font-bold">${peLtpContent}</td>
+              <td class="p-1.5 whitespace-nowrap">
+                <button onclick="addLegFromModalChain(${s.strike}, 'PE', 'BUY', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5}, '${expType}')" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-emerald-950/60 text-emerald-400 border border-slate-700 mr-1" title="Buy Put in Builder">+B</button>
+                <button onclick="addLegFromModalChain(${s.strike}, 'PE', 'SELL', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5}, '${expType}')" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-rose-950/60 text-rose-400 border border-slate-700" title="Sell Put in Builder">+S</button>
+              </td>
             </tr>
           `;
         }).join('');
+
+        setTimeout(() => {
+          const container = document.getElementById(containerId);
+          const targetRow = document.getElementById(`modal-${expType}-row-${atmStrike}`);
+          if (container && targetRow) {
+            const topPos = targetRow.offsetTop - (container.clientHeight / 2) + (targetRow.clientHeight / 2);
+            container.scrollTo({ top: Math.max(0, topPos), behavior: 'smooth' });
+          }
+        }, 120);
       };
 
-      renderChainTable('modal-weekly-chain-tbody', w.strikes || [], w.atm_strike);
-      renderChainTable('modal-monthly-chain-tbody', m.strikes || [], m.atm_strike);
+      const wStrikes = (w.all_strikes && w.all_strikes.length > 0) ? w.all_strikes : (w.strikes || []);
+      const mStrikes = (m.all_strikes && m.all_strikes.length > 0) ? m.all_strikes : (m.strikes || []);
+
+      renderChainTable('modal-weekly-chain-tbody', wStrikes, w.atm_strike, 'modal-weekly-chain-scroll-container', 'weekly');
+      renderChainTable('modal-monthly-chain-tbody', mStrikes, m.atm_strike, 'modal-monthly-chain-scroll-container', 'monthly');
+    }
+
+    function addLegFromModalChain(strike, type, action, price, iv, expType) {
+      if (currentModalStrategyId) {
+        startStrategyAdjustment(currentModalStrategyId);
+        addLegFromCompactChain(strike, type, action, price, iv);
+      }
+    }
+
+    function startStrategyAdjustmentFromModal() {
+      if (currentModalStrategyId) {
+        startStrategyAdjustment(currentModalStrategyId);
+      }
+    }
+
+    let activeAdjustmentStrategyId = null;
+    let activeAdjustmentOriginalStrategy = null;
+
+    function startStrategyAdjustment(strategyId) {
+      if (!optionsPortfolioCache) return;
+      const allStrats = [
+        ...(optionsPortfolioCache.active_strategies || []),
+        ...(optionsPortfolioCache.closed_strategies || [])
+      ];
+      const s = allStrats.find(item => item.strategy_id === strategyId);
+      if (!s) {
+        showToast("Strategy not found in portfolio", "error");
+        return;
+      }
+      if (s.status !== 'ACTIVE') {
+        showToast("Only active strategies can be adjusted", "warning");
+        return;
+      }
+
+      activeAdjustmentStrategyId = s.strategy_id;
+      activeAdjustmentOriginalStrategy = s;
+
+      closeStrategyDetailModal();
+      switchOptionsSubTab('builder');
+
+      const isMonthly = (s.expiry_type === 'MONTHLY');
+      builderCompactChainMode = isMonthly ? 'monthly' : 'weekly';
+      selectedOptionsExpiryType = builderCompactChainMode;
+      if (typeof switchOptionsExpiryView === 'function') {
+        switchOptionsExpiryView(builderCompactChainMode);
+      }
+
+      const nameInput = document.getElementById('strat-name-input');
+      if (nameInput) {
+        nameInput.value = s.strategy_name;
+        nameInput.dataset.userEdited = 'true';
+      }
+
+      strategyLegs = (s.legs || []).map((l, idx) => ({
+        id: idx + 1,
+        strike: Number(l.strike),
+        type: l.type,
+        action: l.action,
+        qty: Number(l.qty || NIFTY_LOT_SIZE),
+        price: Number(l.current_price || l.entry_price || l.price || 0.05),
+        iv: Number(l.iv || 13.5)
+      }));
+
+      updateAdjustmentUI();
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+      if (typeof renderBuilderCompactChain === 'function') {
+        renderBuilderCompactChain();
+      }
+
+      showToast(`🛠️ Adjustment Mode: Loaded "${s.strategy_name}" into Builder. Roll strikes, add legs, and save!`, "info");
+    }
+
+    function cancelStrategyAdjustment() {
+      activeAdjustmentStrategyId = null;
+      activeAdjustmentOriginalStrategy = null;
+      updateAdjustmentUI();
+      clearStrategyBuilderLegs();
+      showToast("Strategy adjustment cancelled.", "info");
+    }
+
+    function updateAdjustmentUI() {
+      const banner = document.getElementById('builder-adjustment-banner');
+      const targetText = document.getElementById('builder-adjustment-target-text');
+      const btn = document.getElementById('btn-deploy-strategy');
+
+      if (activeAdjustmentStrategyId && activeAdjustmentOriginalStrategy) {
+        if (banner) {
+          banner.classList.remove('hidden');
+        }
+        if (targetText) {
+          targetText.innerText = `${activeAdjustmentOriginalStrategy.strategy_name} (${activeAdjustmentStrategyId})`;
+        }
+        if (btn) {
+          btn.className = "w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition cursor-pointer";
+          btn.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i><span>💾 Save & Apply Adjustment to Strategy</span>`;
+        }
+      } else {
+        if (banner) {
+          banner.classList.add('hidden');
+        }
+        if (btn) {
+          btn.className = "w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition cursor-pointer";
+          btn.innerHTML = `<i data-lucide="send" class="w-4 h-4"></i><span>Deploy Strategy to Options Portfolio</span>`;
+        }
+      }
+      if (window.lucide) lucide.createIcons();
     }
 
     async function triggerAutoDeployOptions() {

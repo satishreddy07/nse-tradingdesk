@@ -1008,6 +1008,20 @@ class ExitStrategyRequest(BaseModel):
     exit_reason: str = "MANUAL_EXIT"
 
 
+class AdjustStrategyRequest(BaseModel):
+    strategy_id: str
+    legs: list
+    net_premium: Optional[float] = None
+    max_profit: Optional[float] = None
+    max_loss: Optional[float] = None
+    breakevens: Optional[Any] = None
+    risk_reward: Optional[str] = None
+    est_margin: Optional[float] = None
+    target_pnl: Optional[float] = None
+    stoploss_pnl: Optional[float] = None
+    notes: Optional[str] = None
+
+
 class AutoDeployOptionsRequest(BaseModel):
     modes: Optional[list] = ["WEEKLY", "MONTHLY", "INTRADAY"]
     force_refresh: Optional[bool] = True
@@ -1033,6 +1047,13 @@ def deploy_options_strategy_endpoint(req: DeployStrategyRequest):
     """Deploys a multi-leg options strategy into the Options Trading Portfolio and syncs to Telegram Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     return nifty_analytics_engine.deploy_options_strategy(req.dict())
+
+
+@app.post("/api/options/adjust-strategy")
+def adjust_options_strategy_endpoint(req: AdjustStrategyRequest):
+    """Adjusts an active multi-leg options strategy in the Options Trading Portfolio and syncs to Telegram Cloud Vault."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    return nifty_analytics_engine.adjust_options_strategy(req.dict())
 
 
 @app.post("/api/options/exit-strategy")
