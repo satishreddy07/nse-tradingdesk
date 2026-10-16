@@ -510,3 +510,88 @@ class NSEMarketCalendar:
             f"NSE Regular Trading Hours (09:15 AM – 03:30 PM IST, Mon–Fri)."
         )
         return False, reason
+
+    @classmethod
+    def get_active_options_expiries(cls, dt: Optional[datetime.datetime] = None) -> Dict[str, Any]:
+        """
+        Calculates authentic, legitimate NSE Thursday expiries (Weekly and Monthly),
+        accounting for NSE trading holidays (preponing to Wednesday/Tuesday if Thursday is a holiday).
+        Never returns Monday, Tuesday, or synthetic +5 / +25 day dates.
+        Returns:
+            - current_weekly: str (%d-%b-%Y)
+            - next_weekly: str (%d-%b-%Y)
+            - current_monthly: str (%d-%b-%Y)
+            - next_monthly: str (%d-%b-%Y)
+            - dte_weekly: int (calendar days to weekly expiry)
+            - dte_monthly: int (calendar days to monthly expiry)
+        """
+        cls._load_cached_holidays_from_db()
+        if dt is None:
+            dt = now_ist()
+        elif dt.tzinfo is None:
+            dt = IST.localize(dt)
+
+        today = dt.date()
+        is_past_expiry_cutoff = (dt.hour > 15 or (dt.hour == 15 and dt.minute >= 30))
+
+        def _adjust_for_holiday(thursday_date: datetime.date) -> datetime.date:
+            cand = thursday_date
+            while not cls.is_trading_day(cand):
+                cand -= datetime.timedelta(days=1)
+            return cand
+
+        # Collect upcoming legitimate Thursdays over the next 120 days
+        all_thursdays: List[Tuple[datetime.date, datetime.date]] = []
+        for i in range(120):
+            d = today + datetime.timedelta(days=i)
+            if d.weekday() == 3:  # Thursday
+                legit_d = _adjust_for_holiday(d)
+                if legit_d > today or (legit_d == today and not is_past_expiry_cutoff):
+                    all_thursdays.append((legit_d, d))
+
+        if not all_thursdays:
+            cand = today + datetime.timedelta(days=(3 - today.weekday()) % 7 or 7)
+            all_thursdays = [(cand, cand)]
+
+        curr_weekly_date = all_thursdays[0][0]
+        next_weekly_date = all_thursdays[1][0] if len(all_thursdays) > 1 else curr_weekly_date
+
+        # Monthly expiry: last Thursday of the calendar month
+        same_month_thurs = [
+            item for item in all_thursdays
+            if item[0].year == curr_weekly_date.year and item[0].month == curr_weekly_date.month
+        ]
+        curr_monthly_date = same_month_thurs[-1][0] if same_month_thurs else curr_weekly_date
+
+        # If current weekly IS the last expiry of this month, roll monthly to next month's last Thursday
+        next_month_thurs = [
+            item for item in all_thursdays
+            if (item[0].year, item[0].month) > (curr_weekly_date.year, curr_weekly_date.month)
+        ]
+        if curr_monthly_date == curr_weekly_date and next_month_thurs:
+            nm_year = next_month_thurs[0][0].year
+            nm_month = next_month_thurs[0][0].month
+            nm_all = [it for it in next_month_thurs if it[0].year == nm_year and it[0].month == nm_month]
+            curr_monthly_date = nm_all[-1][0]
+
+        next_monthly_date = curr_monthly_date
+        if next_month_thurs:
+            nm_year = next_month_thurs[0][0].year
+            nm_month = next_month_thurs[0][0].month
+            nm_all = [it for it in next_month_thurs if it[0].year == nm_year and it[0].month == nm_month]
+            next_monthly_date = nm_all[-1][0]
+
+        dte_w = max(0, (curr_weekly_date - today).days)
+        dte_m = max(1, (curr_monthly_date - today).days)
+
+        return {
+            "current_weekly": curr_weekly_date.strftime("%d-%b-%Y"),
+            "next_weekly": next_weekly_date.strftime("%d-%b-%Y"),
+            "current_monthly": curr_monthly_date.strftime("%d-%b-%Y"),
+            "next_monthly": next_monthly_date.strftime("%d-%b-%Y"),
+            "weekly_date": curr_weekly_date,
+            "monthly_date": curr_monthly_date,
+            "dte_weekly": dte_w,
+            "dte_monthly": dte_m
+        }
+

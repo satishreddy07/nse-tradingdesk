@@ -468,7 +468,13 @@ class IntradayOptionsStrategyEngine:
             except Exception:
                 pass
             if spot <= 0:
-                spot = 24700.0
+                with state_engine._lock:
+                    with state_engine._get_connection() as conn:
+                        row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
+                        if row:
+                            spot = float(row[0])
+            if spot <= 0:
+                raise RuntimeError("Live Nifty Spot Price unavailable for intraday strike calculation.")
         if iv_pct <= 0:
             iv_pct = 13.0
 
@@ -687,7 +693,13 @@ class IntradayOptionsStrategyEngine:
         else:
             sessions_data = []
             for r in rows[-lookback_sessions:]:
-                s_spot = float(r["spot_at_prediction"] or 22500.0)
+                s_spot = float(r["spot_at_prediction"] or 0.0)
+                if s_spot <= 0:
+                    try:
+                        from engines.nifty_analytics_engine import nifty_analytics_engine
+                        s_spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+                    except Exception:
+                        s_spot = 24800.0
                 eod_close = float(r["actual_t1_close"] or (s_spot * (1.0 + float(r["t1_actual_return_pct"] or 0.0) / 100.0)))
                 verdict = str(r["t1_verdict"] or "RANGE-BOUND / CONSOLIDATION")
                 ret_pct = float(r["t1_actual_return_pct"] or (((eod_close - s_spot) / s_spot) * 100.0))
@@ -987,9 +999,15 @@ class IntradayOptionsStrategyEngine:
         if spot_price <= 0.0:
             try:
                 from engines.nifty_analytics_engine import nifty_analytics_engine
-                spot_price = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 24700.0)
+                spot_price = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
             except Exception:
-                spot_price = 24700.0
+                spot_price = 0.0
+            if spot_price <= 0.0:
+                with state_engine._lock:
+                    with state_engine._get_connection() as conn:
+                        row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
+                        if row:
+                            spot_price = float(row[0])
 
         # 1. Intraday ML / Writer Dominance Sub-Score (-100 to +100)
         writer_dominance = float(ml_m.get("writer_dominance_score") or 0.0)
@@ -1297,25 +1315,55 @@ class IntradayOptionsStrategyEngine:
 
         deployed_strategies = []
 
-        # Check if already deployed today for this regime
+        # STRICT HARD GATE 1: Max 1 active Intraday strategy in options_strategies
+        today_iso = now_ist().strftime("%Y-%m-%d")
         with state_engine._lock:
             with state_engine._get_connection() as conn:
-                existing = conn.execute("""
-                    SELECT COUNT(*) FROM options_strategies
-                    WHERE status = 'ACTIVE' AND auto_trade_mode = 'INTRADAY_5REGIME'
-                """).fetchone()[0]
+                active_intra = conn.execute("""
+                    SELECT strategy_id, strategy_name, created_at
+                    FROM options_strategies
+                    WHERE status = 'ACTIVE' AND (auto_trade_mode LIKE 'INTRADAY%' OR expiry_type LIKE '%INTRADAY%')
+                """).fetchall()
+                if active_intra:
+                    act_st = active_intra[0]
+                    logger.info(f"🛑 [HARD GATE: INTRADAY] Blocked: Active intraday strategy already open ({act_st['strategy_id']}). Max 1 active intraday strategy enforced.")
+                    return {
+                        "status": "BLOCKED_BY_HARD_GATE",
+                        "reason": f"Active Intraday strategy already open ({act_st['strategy_id']}). Hard gate enforces max 1 active strategy.",
+                        "existing_strategy_id": act_st["strategy_id"],
+                        "regime": regime,
+                        "decision_source": "INTRADAY_ANALYSIS",
+                        "intraday_analysis": intraday_regime_info,
+                        "intraday_confidence_pct": confidence_pct,
+                        "required_confidence_pct": req_threshold,
+                        "confidence_details": daytime_conf,
+                        "expiry_cycle": expiry_cycle,
+                        "timestamp_ist": now_str
+                    }
 
-        if existing >= 2 and not force_refresh:
-            return {
-                "status": "SKIPPED",
-                "reason": f"Maximum active intraday options strategies limit reached ({existing}/2 active).",
-                "regime": regime,
-                "expiry_cycle": expiry_cycle,
-                "intraday_confidence_pct": confidence_pct,
-                "is_confident": is_confident,
-                "decision_source": "INTRADAY_ANALYSIS",
-                "intraday_analysis": intraday_regime_info
-            }
+                # STRICT HARD GATE 2: Daily Idempotency - Max 1 Intraday strategy deployed per day
+                deployed_today = conn.execute("""
+                    SELECT strategy_id, strategy_name, created_at
+                    FROM options_strategies
+                    WHERE (auto_trade_mode LIKE 'INTRADAY%' OR expiry_type LIKE '%INTRADAY%')
+                      AND (created_at LIKE ? OR created_at LIKE ?)
+                """, (f"{today_iso}%", f"{now_ist().strftime('%d-%b-%Y')}%")).fetchall()
+                if deployed_today:
+                    dep = deployed_today[0]
+                    logger.info(f"🛑 [HARD GATE: INTRADAY] Blocked: Intraday strategy already deployed today ({dep['strategy_id']} at {dep['created_at']}). Daily idempotency gate enforced.")
+                    return {
+                        "status": "BLOCKED_BY_HARD_GATE",
+                        "reason": f"An Intraday strategy was already deployed today ({dep['strategy_id']} at {dep['created_at']}). Daily hard gate enforced.",
+                        "existing_strategy_id": dep["strategy_id"],
+                        "regime": regime,
+                        "decision_source": "INTRADAY_ANALYSIS",
+                        "intraday_analysis": intraday_regime_info,
+                        "intraday_confidence_pct": confidence_pct,
+                        "required_confidence_pct": req_threshold,
+                        "confidence_details": daytime_conf,
+                        "expiry_cycle": expiry_cycle,
+                        "timestamp_ist": now_str
+                    }
 
         # Deploy Primary Strategy
         strat_id_prim = f"OPT-INTRADAY-PRIM-{now_ist().strftime('%Y%m%d%H%M%S%f')}"
@@ -1393,7 +1441,10 @@ class IntradayOptionsStrategyEngine:
                     quantity=int(lot_size),
                     capital_at_risk=float(p0 * l["sl_pct"] * lot_size),
                     strike=float(stk),
-                    dte_days=float(dte)
+                    expiry_date=expiry_date,
+                    dte_days=float(dte),
+                    actual_entry=float(p0),
+                    actual_entry_time=now_str
                 )
             except Exception as e_uds:
                 logger.debug(f"Unified ML dataset entry ingest notice: {e_uds}")
@@ -1449,99 +1500,7 @@ class IntradayOptionsStrategyEngine:
             "net_credit": net_credit_prim
         })
 
-        # Also deploy Experimental Asymmetric Strategy if regime is Strong Bullish or Strong Bearish
-        if asym and existing < 1:
-            strat_id_asym = f"OPT-INTRADAY-ASYM-{now_ist().strftime('%Y%m%d%H%M%S%f')}"
-            asym_legs = []
-            for idx, l in enumerate(asym["legs"]):
-                sig = l["sigma"]
-                typ = l["type"]
-                stk = strikes_map[f"strike_{int(sig)}s_{typ.lower()}"]
-                p0 = _black_scholes_price(spot_price, stk, t_years, 0.07, iv_val / 100.0, typ)
-
-                leg_tracker = OptionLegTracker(
-                    leg_id=f"{strat_id_asym}-{typ}-{stk}",
-                    strike=stk,
-                    option_type=typ,
-                    action="SELL",
-                    qty=lot_size,
-                    entry_premium=p0,
-                    sl_pct=l["sl_pct"],
-                    entry_time=now_str,
-                    sigma_level=sig,
-                    strategy_category="ASYMMETRIC"
-                )
-                asym_legs.append(leg_tracker)
-
-                with state_engine._lock:
-                    with state_engine._get_connection() as conn:
-                        conn.execute("""
-                        INSERT INTO intraday_options_trade_log (
-                            strategy_id, session_date, timestamp_ist, regime, strategy_category,
-                            leg_id, strike, option_type, action, original_entry_premium,
-                            entry_time, sl_threshold_pct, initial_sl_trigger, initial_sl_hit,
-                            re_entered, final_sl_hit, sigma_level, spot_at_entry, iv_at_entry,
-                            expected_move, time_to_expiry_years, status,
-                            expiry_cycle, dte, intraday_confidence_pct
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
-                        """, (
-                            strat_id_asym, today_str, now_str, regime, "ASYMMETRIC",
-                            leg_tracker.leg_id, stk, typ, "SELL", p0,
-                            now_str, l["sl_pct"], leg_tracker.initial_sl_trigger,
-                            sig, spot_price, iv_val, sigma_calc["expected_move"], sigma_calc["time_to_expiry_years"],
-                            expiry_cycle, dte, confidence_pct
-                        ))
-                        conn.commit()
-
-            legs_json_asym = [
-                {
-                    "leg_id": l.leg_id,
-                    "action": "SELL",
-                    "type": l.option_type,
-                    "strike": l.strike,
-                    "qty": l.qty,
-                    "lots": max(1, l.qty // 75),
-                    "entry_price": l.original_entry_premium,
-                    "current_price": l.original_entry_premium,
-                    "sl_trigger": l.initial_sl_trigger,
-                    "sl_pct": l.sl_pct,
-                    "state": "ACTIVE"
-                }
-                for l in asym_legs
-            ]
-            net_credit_asym = sum(l.original_entry_premium * l.qty for l in asym_legs)
-
-            with state_engine._lock:
-                with state_engine._get_connection() as conn:
-                    conn.execute("""
-                    INSERT OR REPLACE INTO options_strategies (
-                        strategy_id, strategy_name, symbol, expiry_date, expiry_type,
-                        created_at, spot_at_entry, net_premium, max_profit, max_loss,
-                        breakevens, risk_reward, est_margin, pop_pct, legs_json, status, realized_pnl,
-                        target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
-                        trailing_stop_pnl, highest_pnl_reached, trailing_status, ai_rationale
-                    ) VALUES (?, ?, 'NIFTY', ?, ?, ?, ?, ?, ?, ?, ?, 'Asymmetric Decay', ?, ?, ?, 'ACTIVE', 0.0, ?, ?, 'INTRADAY_5REGIME', ?, ?, 0.0, 'ACTIVE', ?)
-                    """, (
-                        strat_id_asym, f"Experimental: {asym['name']} [{expiry_cycle}]", expiry_date,
-                        f"{expiry_cycle}_INTRADAY",
-                        now_str, spot_price, net_credit_asym, net_credit_asym, round(net_credit_asym * 1.5, 2),
-                        f"{asym_legs[0].strike} / {asym_legs[1].strike}",
-                        round(net_credit_asym + 55000.0, 2), confidence_pct, json.dumps(legs_json_asym),
-                        round(net_credit_asym * 0.70, 2), round(-net_credit_asym * asym["sl_pct"], 2),
-                        regime, round(-net_credit_asym * asym["sl_pct"], 2),
-                        f"Experimental Asymmetric trade deployed for {regime} [{expiry_cycle}] with daytime confidence {confidence_pct:.1f}%. Independent 30% SL and price-triggered re-entry active per leg. Auto-MOC at 15:15 IST."
-                    ))
-                    conn.commit()
-
-            deployed_strategies.append({
-                "strategy_id": strat_id_asym,
-                "name": asym["name"],
-                "category": "ASYMMETRIC",
-                "expiry_cycle": expiry_cycle,
-                "intraday_confidence_pct": confidence_pct,
-                "legs": [l.to_dict() for l in asym_legs],
-                "net_credit": net_credit_asym
-            })
+        logger.info(f"⚡ [Auto Options Engine] Deployed {len(deployed_strategies)} strategy for {regime} via Intraday Analysis (Daytime Confidence: {confidence_pct:.1f}%, Cycle: {expiry_cycle}).")
 
         logger.info(f"⚡ [Auto Options Engine] Deployed {len(deployed_strategies)} strategies for {regime} via Intraday Analysis (Daytime Confidence: {confidence_pct:.1f}%, Cycle: {expiry_cycle}).")
 
@@ -1698,6 +1657,7 @@ class IntradayOptionsStrategyEngine:
                             gross_pnl=pnl_inr,
                             net_pnl=round(pnl_inr - 95.0, 2),
                             total_costs=95.0,
+                            actual_exit_time=now_str,
                             re_entry_count=0
                         )
                     except Exception:
@@ -1767,6 +1727,7 @@ class IntradayOptionsStrategyEngine:
                             gross_pnl=tot_inr,
                             net_pnl=round(tot_inr - 180.0, 2),
                             total_costs=180.0,
+                            actual_exit_time=now_str,
                             re_entry_count=1
                         )
                     except Exception:
@@ -1797,6 +1758,7 @@ class IntradayOptionsStrategyEngine:
                             gross_pnl=tot_inr,
                             net_pnl=round(tot_inr - 180.0, 2),
                             total_costs=180.0,
+                            actual_exit_time=now_str,
                             re_entry_count=1
                         )
                     except Exception:
@@ -1920,7 +1882,22 @@ class IntradayOptionsStrategyEngine:
             ("RANGE_BOUND", 0.05, 11.8),
         ]
         out = []
-        base_spot = 22400.0
+        base_spot = 0.0
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            base_spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+        except Exception:
+            pass
+        if base_spot <= 0.0:
+            try:
+                with state_engine._lock:
+                    with state_engine._get_connection() as conn:
+                        row = conn.execute("SELECT close FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY') AND close > 0 ORDER BY date DESC LIMIT 1").fetchone()
+                        if row: base_spot = float(row[0])
+            except Exception:
+                pass
+        if base_spot <= 0.0:
+            base_spot = 24800.0
         start_date = datetime.date(2026, 8, 1)
 
         for i in range(count):

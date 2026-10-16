@@ -61,7 +61,13 @@ def build_prediction_context(
     if not isinstance(predictions_data, dict) or predictions_data.get("status") != "OK":
         raise ValueError("Invalid predictions data passed to context builder: status is not OK")
 
-    spot = safe_float(predictions_data.get("spot_price"), default=22500.0)
+    spot = safe_float(predictions_data.get("spot_price"), default=0.0)
+    if spot <= 0.0:
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+        except Exception:
+            pass
     composite_score = safe_float(predictions_data.get("composite_score"), default=0.0)
     t1_f = predictions_data.get("t1_forecast") or {}
     t5_f = predictions_data.get("t5_forecast") or {}

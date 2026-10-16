@@ -110,7 +110,13 @@ class IntradayAnalyticsEngine:
             _, df_nifty, meta_nifty = f_nifty.result()
             _, df_bees, _ = f_bees.result()
 
-        spot_fallback = float((meta_nifty or {}).get("regularMarketPrice") or 22700.0)
+        spot_fallback = float((meta_nifty or {}).get("regularMarketPrice") or 0.0)
+        if spot_fallback <= 0:
+            try:
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                spot_fallback = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+            except Exception:
+                pass
 
         if df_nifty is None or df_nifty.empty or len(df_nifty) < 2:
             return {
@@ -264,7 +270,13 @@ class IntradayAnalyticsEngine:
         Computes Black-Scholes strike-by-strike Gamma Exposure (GEX), Total Market Net GEX,
         and the Zero-Gamma Flip Level from live option chain strikes.
         """
-        spot = float(weekly_chain_data.get("spot_price") or 22700.0)
+        spot = float(weekly_chain_data.get("spot_price") or 0.0)
+        if spot <= 0:
+            try:
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+            except Exception:
+                pass
         strikes = weekly_chain_data.get("strikes", [])
         if not strikes:
             return {

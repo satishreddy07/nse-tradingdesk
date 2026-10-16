@@ -207,6 +207,7 @@ class UnifiedMLDataset:
         dte_days: float = 0.0,
         sigma_distance: float = 1.0,
         actual_entry: Optional[float] = None,
+        actual_entry_time: Optional[str] = None,
         model_version: str = "prod_v1.0"
     ) -> int:
         """
@@ -224,6 +225,8 @@ class UnifiedMLDataset:
         feat_clean = {k: float(features.get(k, 0.0)) for k in UNIFIED_FEATURE_COLS}
         feat_json = json.dumps(feat_clean)
         rat_json = json.dumps(rationale or {})
+
+        entry_time_val = actual_entry_time or (now_ts if status == "ACTIVE" else None)
 
         with self._lock:
             with self._get_connection() as conn:
@@ -255,9 +258,9 @@ class UnifiedMLDataset:
                     float(intended_entry), float(intended_target), float(intended_sl),
                     float(sl_threshold_pct), int(quantity), float(capital_at_risk),
                     float(rr), rat_json, actual_entry or intended_entry,
-                    now_ts if status == "ACTIVE" else None,
+                    entry_time_val,
                     "FILLED" if status == "ACTIVE" else "REJECTED",
-                    model_version, now_ts, now_ts
+                    model_version, entry_time_val or now_ts, now_ts
                 ))
                 conn.commit()
                 return cursor.lastrowid

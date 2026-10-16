@@ -513,15 +513,26 @@ class WeeklyMonthlyOptionsStrategyEngine:
             except Exception:
                 pass
             if spot <= 0:
-                spot = 24700.0
+                with state_engine._lock:
+                    with state_engine._get_connection() as conn:
+                        row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
+                        if row:
+                            spot = float(row[0])
+            if spot <= 0:
+                raise RuntimeError("Live Nifty Spot Price unavailable for option strike calculation.")
         if iv_pct <= 0:
             iv_pct = 13.2
 
         horizon = horizon.upper()
         today = now_ist().date()
 
-        # Parse or determine expiry date
-        dte = 5 if horizon == "WEEKLY" else 25
+        # Parse or determine legitimate NSE Thursday expiry date from NSEMarketCalendar
+        from core.market_calendar import NSEMarketCalendar
+        cal_expiries = NSEMarketCalendar.get_active_options_expiries()
+        cal_exp_str = cal_expiries["current_weekly"] if horizon == "WEEKLY" else cal_expiries["current_monthly"]
+        cal_dte = cal_expiries["dte_weekly"] if horizon == "WEEKLY" else cal_expiries["dte_monthly"]
+
+        dte = max(1, cal_dte)
         parsed_exp = None
         if expiry_date:
             for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
@@ -533,10 +544,8 @@ class WeeklyMonthlyOptionsStrategyEngine:
                     pass
 
         if not parsed_exp:
-            # Fallback estimation based on horizon
-            dte = 5 if horizon == "WEEKLY" else 25
-            target_date = today + datetime.timedelta(days=dte)
-            expiry_date = target_date.strftime("%d-%b-%Y")
+            expiry_date = cal_exp_str
+            dte = max(1, cal_dte)
 
         t_years = max(0.0025, float(dte) / 365.0)
         sigma_dec = iv_pct / 100.0
@@ -1203,11 +1212,17 @@ class WeeklyMonthlyOptionsStrategyEngine:
             sessions_data.extend(synth)
         else:
             for r in reversed(rows[:lookback_sessions]):
-                verdict = str(r["t1_prediction_verdict"])
-                s_spot = float(r["spot_at_prediction"] or 22500.0)
+                s_spot = float(r["spot_at_prediction"] or 0.0)
+                if s_spot <= 0:
+                    try:
+                        from engines.nifty_analytics_engine import nifty_analytics_engine
+                        s_spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+                    except Exception:
+                        s_spot = 24800.0
                 # For weekly, use T+5 returns if available; for monthly, extrapolate multi-day trend
                 ret_pct = float((r["t5_actual_return_pct"] if is_weekly and r["t5_actual_return_pct"] is not None else r["t1_actual_return_pct"]) or 0.0)
                 close_spot = round(s_spot * (1.0 + ret_pct / 100.0), 2)
+                verdict = str(r["t1_prediction_verdict"] or "RANGE_BOUND")
                 sessions_data.append({
                     "date": str(r["prediction_date"]),
                     "spot": s_spot,
@@ -1466,9 +1481,18 @@ class WeeklyMonthlyOptionsStrategyEngine:
         spot_price = 0.0
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
-            spot_price = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 24700.0)
+            spot_price = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
         except Exception:
-            spot_price = 24700.0
+            spot_price = 0.0
+        if spot_price <= 0.0:
+            try:
+                with state_engine._lock:
+                    with state_engine._get_connection() as conn:
+                        row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
+                        if row:
+                            spot_price = float(row[0])
+            except Exception:
+                pass
 
         # 1. Inspect Nifty analytics predictions
         try:
@@ -1574,42 +1598,25 @@ class WeeklyMonthlyOptionsStrategyEngine:
             or (weekly_verdict == "RANGE-BOUND")
         )
 
-        # Check existing active trades in this horizon
-        table_name = "weekly_options_trade_log" if horizon == "WEEKLY" else "monthly_options_trade_log"
-        with state_engine._lock:
-            with state_engine._get_connection() as conn:
-                existing = conn.execute(f"""
-                    SELECT COUNT(*) as cnt FROM {table_name}
-                    WHERE status IN ('ACTIVE', 'SL_EXITED', 'RE_ENTERED')
-                """).fetchone()["cnt"]
-
-        if existing >= 2 and not force_refresh:
-            return {
-                "status": "SKIPPED",
-                "reason": f"Active {horizon.capitalize()} positions already open ({existing} active legs).",
-                "horizon": horizon,
-                "regime": weekly_verdict,
-                "confidence_score": composite_score,
-                "is_confident": is_confident,
-                "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
-                "weekly_prediction_model": weekly_model_info,
-                "timestamp_ist": now_str
-            }
-
         # Spot & IV lookups
         iv_val = 13.2
-        expiry_date = None
+        from core.market_calendar import NSEMarketCalendar
+        cal_exp = NSEMarketCalendar.get_active_options_expiries(now_dt)
+        cal_exp_default = cal_exp["current_weekly"] if horizon == "WEEKLY" else cal_exp["current_monthly"]
+        expiry_date = cal_exp_default
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
             deep_chain = nifty_analytics_engine.get_deep_option_chain()
-            spot_chain = float(deep_chain.get("spot", 0.0))
+            spot_chain = float(deep_chain.get("spot", 0.0) or deep_chain.get("spot_price", 0.0))
             if spot_chain > 0:
                 spot_price = spot_chain
             chain_sec = deep_chain.get("weekly" if horizon == "WEEKLY" else "monthly", {})
-            iv_val = float(chain_sec.get("atm_iv", 13.2))
-            expiry_date = chain_sec.get("expiry_date")
-        except Exception:
-            pass
+            iv_val = float(chain_sec.get("atm_iv") or chain_sec.get("volatility_and_gex", {}).get("atm_iv") or 13.2)
+            c_exp = chain_sec.get("expiry_date") or chain_sec.get("expiry")
+            if c_exp:
+                expiry_date = str(c_exp)
+        except Exception as e:
+            logger.debug(f"Deep chain lookup notice: {e}")
 
         # Run Pre-Trade Strategy Tournament to select the architecture with HIGHEST PROBABILITY OF WINNING
         tournament = self.analyze_highest_win_probability_strategy(
@@ -1628,6 +1635,75 @@ class WeeklyMonthlyOptionsStrategyEngine:
         t_years = max(0.0025, float(dte) / 365.0)
         win_prob = float(strat["p_win_pct"])
         default_sl_pct = 0.40 if horizon == "WEEKLY" else 0.50
+
+        # STRICT HARD GATE 1: Max 1 active strategy per horizon in options_strategies
+        today_iso = now_dt.strftime("%Y-%m-%d")
+        table_name = "weekly_options_trade_log" if horizon == "WEEKLY" else "monthly_options_trade_log"
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                active_strats = conn.execute("""
+                    SELECT strategy_id, strategy_name, expiry_date, created_at
+                    FROM options_strategies
+                    WHERE status = 'ACTIVE' AND expiry_type = ?
+                """, (horizon,)).fetchall()
+                if active_strats:
+                    act_st = active_strats[0]
+                    logger.info(f"🛑 [HARD GATE: POSITIONAL {horizon}] Blocked: An active strategy already exists ({act_st['strategy_id']} - {act_st['strategy_name']}). Max 1 active strategy per horizon enforced.")
+                    return {
+                        "status": "BLOCKED_BY_HARD_GATE",
+                        "reason": f"Active {horizon.capitalize()} strategy already open ({act_st['strategy_id']}). Strict hard gate enforces max 1 active strategy.",
+                        "existing_strategy_id": act_st["strategy_id"],
+                        "horizon": horizon,
+                        "regime": regime,
+                        "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
+                        "weekly_prediction_model": weekly_model_info,
+                        "weekly_model_info": weekly_model_info,
+                        "win_probability_pct": win_prob,
+                        "strategy_tournament": tournament,
+                        "timestamp_ist": now_str
+                    }
+
+                # STRICT HARD GATE 2: Daily Idempotency - Max 1 strategy deployment per day
+                deployed_today = conn.execute("""
+                    SELECT strategy_id, strategy_name, created_at
+                    FROM options_strategies
+                    WHERE expiry_type = ? AND (created_at LIKE ? OR created_at LIKE ?)
+                """, (horizon, f"{today_iso}%", f"{now_dt.strftime('%d-%b-%Y')}%")).fetchall()
+                if deployed_today:
+                    dep = deployed_today[0]
+                    logger.info(f"🛑 [HARD GATE: POSITIONAL {horizon}] Blocked: Strategy already deployed today ({dep['strategy_id']} at {dep['created_at']}). Daily idempotency gate enforced.")
+                    return {
+                        "status": "BLOCKED_BY_HARD_GATE",
+                        "reason": f"A {horizon.capitalize()} strategy was already deployed today ({dep['strategy_id']} at {dep['created_at']}). Daily hard gate enforced.",
+                        "existing_strategy_id": dep["strategy_id"],
+                        "horizon": horizon,
+                        "regime": regime,
+                        "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
+                        "weekly_prediction_model": weekly_model_info,
+                        "weekly_model_info": weekly_model_info,
+                        "win_probability_pct": win_prob,
+                        "strategy_tournament": tournament,
+                        "timestamp_ist": now_str
+                    }
+
+                # Check underlying leg table
+                existing_legs = conn.execute(f"""
+                    SELECT COUNT(*) as cnt FROM {table_name}
+                    WHERE status IN ('ACTIVE', 'SL_EXITED', 'RE_ENTERED')
+                """).fetchone()["cnt"]
+                if existing_legs > 0:
+                    return {
+                        "status": "BLOCKED_BY_HARD_GATE",
+                        "reason": f"Active {horizon.capitalize()} legs already open in {table_name} ({existing_legs} active legs).",
+                        "horizon": horizon,
+                        "regime": regime,
+                        "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
+                        "weekly_prediction_model": weekly_model_info,
+                        "weekly_model_info": weekly_model_info,
+                        "win_probability_pct": win_prob,
+                        "strategy_tournament": tournament,
+                        "timestamp_ist": now_str
+                    }
 
         strat_id = f"OPT-{horizon[:4]}-{now_dt.strftime('%Y%m%d%H%M%S%f')}"
         deployed_legs = []
@@ -1716,7 +1792,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                         capital_at_risk=float(l.original_entry_premium * l.sl_pct * l.qty),
                         strike=float(l.strike),
                         expiry_date=l.expiry_date,
-                        dte_days=float(l.dte_at_entry)
+                        dte_days=float(l.dte_at_entry),
+                        actual_entry=float(l.original_entry_premium),
+                        actual_entry_time=now_str
                     )
             except Exception as e_uds:
                 logger.debug(f"Unified ML dataset positional entry ingest notice: {e_uds}")
@@ -1817,9 +1895,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
 
         if spot_price <= 0.0:
             try:
-                spot_price = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 24700.0)
+                spot_price = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
             except Exception:
-                spot_price = 24700.0
+                spot_price = 0.0
 
         quotes_map = {}
         for s in chain_data:
@@ -1945,6 +2023,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 if leg.state in ("CLOSED", "FINAL_SL_EXITED"):
                     try:
                         from core.unified_ml_dataset import unified_ml_dataset
+                        exit_ts = str(leg.final_exit_time or leg.settlement_time or leg.first_exit_time or now_str)
                         unified_ml_dataset.record_trade_outcome(
                             trade_id=leg.leg_id,
                             actual_exit=float(leg.final_exit_price or leg.settlement_price or leg.first_exit_price or 0.0),
@@ -1952,6 +2031,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
                             gross_pnl=float(leg.total_gross_pnl_inr),
                             net_pnl=float(leg.net_pnl_inr),
                             total_costs=float(leg.transaction_costs_inr),
+                            actual_exit_time=exit_ts,
                             re_entry_count=1 if leg.re_entered else 0
                         )
                     except Exception as e_ud_out:
@@ -2093,9 +2173,24 @@ class WeeklyMonthlyOptionsStrategyEngine:
             ("MILD_BEARISH", -0.95, 14.0),
             ("RANGE_BOUND", 0.10, 11.8),
         ]
-        out = []
-        base_spot = 22400.0
+        base_spot = 0.0
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            base_spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+        except Exception:
+            pass
+        if base_spot <= 0.0:
+            try:
+                with state_engine._lock:
+                    with state_engine._get_connection() as conn:
+                        row = conn.execute("SELECT close FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY') AND close > 0 ORDER BY date DESC LIMIT 1").fetchone()
+                        if row: base_spot = float(row[0])
+            except Exception:
+                pass
+        if base_spot <= 0.0:
+            base_spot = 24800.0
         start_date = datetime.date(2026, 7, 1)
+        out: List[Dict[str, Any]] = []
 
         for i in range(count):
             reg, ret_pct, iv = regimes_cycle[i % len(regimes_cycle)]

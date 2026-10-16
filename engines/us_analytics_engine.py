@@ -27,7 +27,7 @@ import pandas as pd
 import requests
 
 from core.market_calendar import IST, now_ist, format_ist
-from engines.state_engine import state_engine
+from execution.state_engine import state_engine
 
 logger = logging.getLogger("USAnalyticsEngine")
 
@@ -532,9 +532,25 @@ class USAnalyticsEngine:
         # Dynamic Rolling Beta of Nifty vs S&P 500 (Historically ~0.48 to 0.58 in Indian market)
         rolling_beta = 0.52
 
-        # Fair Value Gap Points transmission for Nifty 50 (based on 22,500 baseline)
+        # Fair Value Gap Points transmission for Nifty 50 (based on dynamic live spot)
+        dynamic_spot = 0.0
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            dynamic_spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+        except Exception:
+            pass
+        if dynamic_spot <= 0.0:
+            try:
+                with state_engine._lock:
+                    with state_engine._get_connection() as conn:
+                        row = conn.execute("SELECT close FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY') AND close > 0 ORDER BY date DESC LIMIT 1").fetchone()
+                        if row:
+                            dynamic_spot = float(row[0])
+            except Exception:
+                pass
+        ref_spot = dynamic_spot if dynamic_spot > 0 else 24800.0
         expected_fair_gap_pct = round((es_1d * rolling_beta) + ((us_composite_score / 100.0) * 0.06), 2)
-        expected_fair_gap_pts = round(22500.0 * (expected_fair_gap_pct / 100.0), 1)
+        expected_fair_gap_pts = round(ref_spot * (expected_fair_gap_pct / 100.0), 1)
 
         if expected_fair_gap_pct >= 0.35 and us_composite_score >= 15.0:
             gap_verdict = "BULLISH_GAP_CONTINUATION (Healthy US Momentum Tailwinds)"

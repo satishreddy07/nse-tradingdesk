@@ -1420,39 +1420,42 @@ class NiftyAnalyticsEngine:
         if not missing_slots:
             return 0
 
-        # Anchor parameters from existing snapshots or live option chain
-        base_spot = 22700.0
+        # Anchor parameters dynamically from live spot or existing snapshots
+        live_spot_dict = self.get_live_nifty_spot()
+        dynamic_spot = float(live_spot_dict.get("price") or 0.0)
+        dynamic_atm = int(round(dynamic_spot / 50.0) * 50) if dynamic_spot > 0 else 0
+        base_spot = dynamic_spot
         base_strad = 75.0
         base_pcr = 1.05
-        base_atm = 22700
-        call_w = 22800
-        put_w = 22600
-        max_p = 22700
+        base_atm = dynamic_atm
+        call_w = dynamic_atm + 100 if dynamic_atm > 0 else 0
+        put_w = dynamic_atm - 100 if dynamic_atm > 0 else 0
+        max_p = dynamic_atm
         exp_label = "--"
 
         if snaps:
             s_first = snaps[0]
             s_last = snaps[-1]
-            base_spot = float(s_last.get("spot_price") or s_first.get("spot_price") or 22700.0)
+            base_spot = float(s_last.get("spot_price") or s_first.get("spot_price") or dynamic_spot)
             base_strad = float(s_last.get("straddle_premium") or s_first.get("straddle_premium") or 75.0)
             base_pcr = float(s_last.get("near_atm_pcr") or s_first.get("near_atm_pcr") or 1.05)
-            base_atm = int(s_last.get("atm_strike") or s_first.get("atm_strike") or 22700)
-            call_w = int(s_last.get("call_wall") or 22800)
-            put_w = int(s_last.get("put_wall") or 22600)
-            max_p = int(s_last.get("max_pain") or 22700)
+            base_atm = int(s_last.get("atm_strike") or s_first.get("atm_strike") or dynamic_atm)
+            call_w = int(s_last.get("call_wall") or (base_atm + 100))
+            put_w = int(s_last.get("put_wall") or (base_atm - 100))
+            max_p = int(s_last.get("max_pain") or base_atm)
             exp_label = s_last.get("expiry_date") or s_first.get("expiry_date") or "--"
         else:
             oc = self.fetch_and_analyze_option_chain(force_refresh=False)
             if oc.get("status") == "OK" and oc.get("weekly"):
                 w = oc["weekly"]
-                base_spot = float(w.get("spot_price", 22700.0))
-                base_atm = int(w.get("atm_strike", 22700))
+                base_spot = float(w.get("spot_price") or dynamic_spot)
+                base_atm = int(w.get("atm_strike") or (round(base_spot / 50.0) * 50 if base_spot > 0 else dynamic_atm))
                 exp_label = w.get("expiry", "--")
                 base_strad = float(w.get("straddle", {}).get("straddle_premium", 75.0))
                 base_pcr = float(w.get("pcr", {}).get("near_atm_pcr", 1.05))
-                call_w = int(w.get("walls_and_pain", {}).get("call_wall_1", 22800))
-                put_w = int(w.get("walls_and_pain", {}).get("put_wall_1", 22600))
-                max_p = int(w.get("walls_and_pain", {}).get("max_pain", 22700))
+                call_w = int(w.get("walls_and_pain", {}).get("call_wall_1") or (base_atm + 100))
+                put_w = int(w.get("walls_and_pain", {}).get("put_wall_1") or (base_atm - 100))
+                max_p = int(w.get("walls_and_pain", {}).get("max_pain") or base_atm)
 
         existing_sorted = []
         for s in snaps:
@@ -1654,8 +1657,8 @@ class NiftyAnalyticsEngine:
             logger.debug(f"Intraday advanced suite load notice: {aie}")
 
         live_spot = self.get_live_nifty_spot()
-        spot_p = float(live_spot.get("price") or (latest.get("spot_price") if latest else 22700.0))
-        cur_atm = int(round(spot_p / 50.0) * 50)
+        spot_p = float(live_spot.get("price") or (latest.get("spot_price") if latest else 0.0))
+        cur_atm = int(round(spot_p / 50.0) * 50) if spot_p > 0 else 0
         live_spot["atm_strike"] = cur_atm
 
         # Extract live weekly option chain to synchronize all derived options metrics
@@ -3285,7 +3288,9 @@ class NiftyAnalyticsEngine:
 
         # Pillar 1: Nifty 50 Technical Structure (^NSEI)
         n50 = metrics_map.get("^NSEI") or {}
-        spot = float(n50.get("close") or 22500.0)
+        spot = float(n50.get("close") or 0.0)
+        if spot <= 0:
+            spot = float(self.get_live_nifty_spot().get("price") or 0.0)
 
         atr14 = float(n50.get("atr14") or (spot * 0.01))
         ema9 = float(n50.get("ema9") or spot)
@@ -4866,8 +4871,36 @@ class NiftyAnalyticsEngine:
         ts_now = format_ist()
         strat_id = f"OPT-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100, 999)}"
 
+        today_iso = now_ist().strftime("%Y-%m-%d")
         with state_engine._lock:
             with state_engine._get_connection() as conn:
+                if auto_trade_mode != "MANUAL":
+                    # Hard Gate 1: Check if an active strategy for this expiry_type already exists
+                    existing_active = conn.execute("""
+                        SELECT strategy_id, strategy_name FROM options_strategies
+                        WHERE status = 'ACTIVE' AND expiry_type = ?
+                    """, (expiry_type,)).fetchall()
+                    if existing_active:
+                        logger.info(f"🛑 [HARD GATE] Blocked auto deployment: active {expiry_type} strategy already open ({existing_active[0]['strategy_id']})")
+                        return {
+                            "status": "BLOCKED_BY_HARD_GATE",
+                            "reason": f"Active {expiry_type} strategy already open ({existing_active[0]['strategy_id']}). Max 1 active strategy allowed.",
+                            "strategy_id": existing_active[0]["strategy_id"]
+                        }
+
+                    # Hard Gate 2: Check if strategy was already deployed today
+                    deployed_today = conn.execute("""
+                        SELECT strategy_id FROM options_strategies
+                        WHERE expiry_type = ? AND (created_at LIKE ? OR created_at LIKE ?)
+                    """, (expiry_type, f"{today_iso}%", f"{now_ist().strftime('%d-%b-%Y')}%")).fetchall()
+                    if deployed_today:
+                        logger.info(f"🛑 [HARD GATE] Blocked auto deployment: {expiry_type} strategy already deployed today ({deployed_today[0]['strategy_id']})")
+                        return {
+                            "status": "BLOCKED_BY_HARD_GATE",
+                            "reason": f"{expiry_type} strategy already deployed today. Daily idempotency enforced.",
+                            "strategy_id": deployed_today[0]["strategy_id"]
+                        }
+
                 conn.execute("""
                 INSERT INTO options_strategies (
                     strategy_id, strategy_name, symbol, expiry_date, expiry_type,
@@ -6254,7 +6287,19 @@ class NiftyAnalyticsEngine:
                         "is_live": False,
                         "age_seconds": 60.0
                     }
-        return {"price": 22900.0, "timestamp": ts_now, "source": "DEFAULT", "is_live": False, "age_seconds": 0}
+        # 6. Fallback to latest historical close in ohlcv_master_store or nifty_predictions_log
+        try:
+            with state_engine._lock:
+                with state_engine._get_connection() as conn:
+                    p_row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
+                    if p_row and p_row["spot_at_prediction"]:
+                        return {"price": float(p_row["spot_at_prediction"]), "timestamp": ts_now, "source": "PREDICTION_LEDGER_ANCHOR", "is_live": False, "age_seconds": 120.0}
+                    ohlcv_row = conn.execute("SELECT close FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY') AND close > 0 ORDER BY date DESC LIMIT 1").fetchone()
+                    if ohlcv_row and ohlcv_row["close"]:
+                        return {"price": float(ohlcv_row["close"]), "timestamp": ts_now, "source": "OHLCV_MASTER_ANCHOR", "is_live": False, "age_seconds": 300.0}
+        except Exception:
+            pass
+        return {"price": 0.0, "timestamp": ts_now, "source": "UNAVAILABLE", "is_live": False, "age_seconds": 0}
 
     def get_nifty_intraday_minute_chart(self, interval: str = "1m") -> Dict[str, Any]:
         """

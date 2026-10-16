@@ -3395,27 +3395,27 @@
           </div>
           <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5">
             <div class="text-[10px] text-slate-500 uppercase">Expected Move (&plusmn;)</div>
-            <div id="calc-em-val" class="text-sm font-bold text-amber-300 mt-0.5">&plusmn; 156.4 pts</div>
+            <div id="calc-em-val" class="text-sm font-bold text-amber-300 mt-0.5">-- pts</div>
             <div class="text-[9px] text-slate-400">Unrounded 1-Sigma Move</div>
           </div>
           <div class="bg-slate-950/80 border border-emerald-900/40 rounded-xl p-2.5">
             <div class="text-[10px] text-emerald-400 uppercase font-bold">1-Sigma PE Strike</div>
-            <div id="calc-1s-pe" class="text-sm font-bold text-emerald-300 mt-0.5">22450 PE</div>
+            <div id="calc-1s-pe" class="text-sm font-bold text-emerald-300 mt-0.5">-- PE</div>
             <div class="text-[9px] text-slate-400">Put Short @ 1&sigma; Floor</div>
           </div>
           <div class="bg-slate-950/80 border border-rose-900/40 rounded-xl p-2.5">
             <div class="text-[10px] text-rose-400 uppercase font-bold">1-Sigma CE Strike</div>
-            <div id="calc-1s-ce" class="text-sm font-bold text-rose-300 mt-0.5">22750 CE</div>
+            <div id="calc-1s-ce" class="text-sm font-bold text-rose-300 mt-0.5">-- CE</div>
             <div class="text-[9px] text-slate-400">Call Short @ 1&sigma; Ceiling</div>
           </div>
           <div class="bg-slate-950/80 border border-emerald-950/60 rounded-xl p-2.5">
             <div class="text-[10px] text-emerald-500 uppercase font-bold">2-Sigma PE Strike</div>
-            <div id="calc-2s-pe" class="text-sm font-bold text-emerald-400 mt-0.5">22300 PE</div>
+            <div id="calc-2s-pe" class="text-sm font-bold text-emerald-400 mt-0.5">-- PE</div>
             <div class="text-[9px] text-slate-400">Wing Short @ 2&sigma; Move</div>
           </div>
           <div class="bg-slate-950/80 border border-rose-950/60 rounded-xl p-2.5">
             <div class="text-[10px] text-rose-500 uppercase font-bold">2-Sigma CE Strike</div>
-            <div id="calc-2s-ce" class="text-sm font-bold text-rose-400 mt-0.5">22900 CE</div>
+            <div id="calc-2s-ce" class="text-sm font-bold text-rose-400 mt-0.5">-- CE</div>
             <div class="text-[9px] text-slate-400">Wing Short @ 2&sigma; Move</div>
           </div>
         </div>
@@ -8811,7 +8811,8 @@
       const active = (selectedOptionsExpiryType === 'monthly')
         ? (niftyOptionsChainCache?.monthly || {})
         : (niftyOptionsChainCache?.weekly || {});
-      const atm = active.atm_strike || 24700;
+      const atm = active.atm_strike || (spotVal > 0 ? Math.round(spotVal / 50) * 50 : (window.niftyLiveSpotPrice ? Math.round(window.niftyLiveSpotPrice / 50) * 50 : 0));
+      if (!atm) { showToast("Spot price currently loading. Please wait...", "warning"); return; }
       addStrategyLegQuick(atm, 'CE', 'BUY', 120.0, 13.5);
     }
 
@@ -9060,7 +9061,7 @@
       const active = (selectedOptionsExpiryType === 'monthly')
         ? (niftyOptionsChainCache?.monthly || {})
         : (niftyOptionsChainCache?.weekly || {});
-      const spot = active.spot_price || 24700;
+      const spot = active.spot_price || optionsPortfolioCache?.spot_price || niftyOptionsChainCache?.spot_price || 0;
       const atm = active.atm_strike || (Math.round(spot / 50) * 50);
       const strikes = active.strikes || [];
 
@@ -9315,7 +9316,7 @@
       const active = (selectedOptionsExpiryType === 'monthly')
         ? (niftyOptionsChainCache?.monthly || {})
         : (niftyOptionsChainCache?.weekly || {});
-      const spot = active.spot_price || 24700;
+      const spot = active.spot_price || optionsPortfolioCache?.spot_price || niftyOptionsChainCache?.spot_price || 0;
       const baseDte = Math.max(1, selectedOptionsExpiryType === 'monthly' ? 22 : 5);
       const targetDte = Math.max(0.01, baseDte - payoffTargetDteOffset);
 
@@ -9727,7 +9728,7 @@
       const active = (selectedOptionsExpiryType === 'monthly')
         ? (niftyOptionsChainCache?.monthly || {})
         : (niftyOptionsChainCache?.weekly || {});
-      const spot = active.spot_price || 24700;
+      const spot = active.spot_price || optionsPortfolioCache?.spot_price || niftyOptionsChainCache?.spot_price || 0;
       const expiryDate = active.expiry || "";
 
       const btn = document.getElementById('btn-deploy-strategy');
@@ -9925,6 +9926,8 @@
                     <span class="px-2 py-0.5 rounded text-[10px] font-bold ${st.auto_trade_mode === 'INTRADAY' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : (st.auto_trade_mode === 'WEEKLY' || st.auto_trade_mode === 'MONTHLY' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700')}">${st.auto_trade_mode || 'MANUAL'}</span>
                     ${st.market_condition ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">${st.market_condition.replace(/_/g, ' ')}</span>` : ''}
                     <span class="text-[10px] text-slate-400">Expiry: <b class="text-slate-200">${st.expiry_date}</b> (${st.expiry_type})</span>
+                    <span class="text-[10px] text-slate-400 border-l border-slate-700/80 pl-2">📅 Taken: <b class="text-cyan-300 font-mono">${st.created_at || st.entry_time || '--'}</b></span>
+                    ${st.closed_at ? `<span class="text-[10px] text-slate-400 border-l border-slate-700/80 pl-2">🏁 Exited: <b class="text-amber-300 font-mono">${st.closed_at || st.exit_time}</b></span>` : ''}
                   </div>
                   <div class="flex items-center gap-2">
                     <div class="text-right">
@@ -10089,7 +10092,11 @@
       const actionFoot = document.getElementById('modal-strat-action-footer');
 
       if (nameEl) nameEl.innerText = s.strategy_name;
-      if (metaEl) metaEl.innerText = `ID: ${s.strategy_id} • Expiry: ${s.expiry_date} (${s.expiry_type}) • Entry Spot: ${s.spot_at_entry} • Status: ${s.status}`;
+      if (metaEl) {
+        const takenStr = (s.entry_time || s.created_at) ? `📅 Taken: ${(s.entry_time || s.created_at).replace('T', ' ').slice(0, 16)}` : '';
+        const exitStr = (s.exit_time || s.closed_at) ? ` • 🏁 Exited: ${(s.exit_time || s.closed_at).replace('T', ' ').slice(0, 16)}` : '';
+        metaEl.innerText = `ID: ${s.strategy_id} • Expiry: ${s.expiry_date} (${s.expiry_type}) • ${takenStr}${exitStr} • Entry Spot: ${s.spot_at_entry || '--'} • Status: ${s.status}`;
+      }
 
       const pnl = s.status === 'ACTIVE' ? (s.unrealized_pnl || 0) : (s.realized_pnl || 0);
       const isProfit = pnl >= 0;
@@ -10158,7 +10165,7 @@
         modal.classList.remove('hidden');
         modal.style.display = 'flex';
         currentModalLegs = s.legs || [];
-        currentModalSpot = s.spot_at_entry || 24700;
+        currentModalSpot = s.spot_at_entry || (niftyOptionsChainCache?.spot || (optionsPortfolioCache?.spot_price || 0));
         setTimeout(() => {
           setupModalPayoffListeners();
           if (s.legs && s.legs.length > 0) {
@@ -10181,7 +10188,7 @@
 
     let modalPayoffHoverX = null;
     let currentModalLegs = null;
-    let currentModalSpot = 24700;
+    let currentModalSpot = 0;
 
     function setupModalPayoffListeners() {
       const canvas = document.getElementById('modal-strat-payoff-canvas');
@@ -10916,10 +10923,15 @@
           s = Number(niftyOptionsChainCache.spot);
         } else if (window.niftyLiveSpotPrice && window.niftyLiveSpotPrice > 0) {
           s = Number(window.niftyLiveSpotPrice);
+        } else if (window.marketSpotPrices && window.marketSpotPrices['NIFTY'] > 0) {
+          s = Number(window.marketSpotPrices['NIFTY']);
+        } else if (optionsPortfolioCache && optionsPortfolioCache.spot_price > 0) {
+          s = Number(optionsPortfolioCache.spot_price);
         } else {
-          s = 22600.0;
+          s = 0;
         }
       }
+      if (!s || s <= 0) return;
 
       let ivVal = iv;
       if (!ivVal || ivVal <= 0) {

@@ -207,8 +207,15 @@ class SwingQuantMLEngine:
         Extracts current live/cached macro market regime metrics:
         Nifty trend, 5-day return, Nifty RSI(14), India VIX, and FII flows.
         """
+        dynamic_spot = 0.0
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            dynamic_spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+        except Exception:
+            pass
+
         regime = {
-            "nifty_spot": 25000.0,
+            "nifty_spot": dynamic_spot,
             "nifty_trend": "BULLISH",
             "nifty_ret_5d": 0.0,
             "nifty_rsi14": 55.0,
@@ -221,7 +228,7 @@ class SwingQuantMLEngine:
         try:
             p = state_engine.get_kv("latest_nifty_predictions")
             if isinstance(p, dict) and p.get("status") == "OK":
-                regime["nifty_spot"] = float(p.get("spot_price") or 25000.0)
+                regime["nifty_spot"] = float(p.get("spot_price") or dynamic_spot)
                 regime["composite_score"] = float(p.get("composite_score") or 0.0)
 
                 tech = (p.get("pillars") or {}).get("nifty_technicals") or {}
@@ -305,7 +312,7 @@ class SwingQuantMLEngine:
         regime_code = 2 if "BULL" in nifty_trend else (-2 if "BEAR" in nifty_trend else 0)
 
         return {
-            "nifty_spot": float(regime.get("nifty_spot") or 25000.0),
+            "nifty_spot": float(regime.get("nifty_spot") or 0.0),
             "nifty_ret_1d": 0.0,
             "nifty_ret_5d": float(feat_dict.get("nifty_ret_5d") or 0.0),
             "composite_score": float(regime.get("composite_score") or 0.0),

@@ -194,10 +194,20 @@ def scheduled_live_price_stream_job():
             from engines.nifty_analytics_engine import nifty_analytics_engine
             # 1. Update complete option chains along with stock prices every 5 minutes
             nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=True)
-            # 2. Reconcile stops and targets for all active options strategies
+            # 2. Reconcile stops and targets for all active options strategies (Trailing SL, Target, MOC)
             nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
-            # 3. Regenerate complete analysis & evaluate/deploy intraday auto-strategies if active < 2 (uses locked pre-market forecast)
-            nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["INTRADAY"], force_refresh=False)
+            # 3. Background re-entry & stop loss monitors for intraday and positional legs
+            try:
+                from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+                intraday_options_strategy_engine.tick_active_options_reentry_monitor()
+            except Exception as e_im:
+                logger.debug(f"5m Intraday options monitor notice: {e_im}")
+            try:
+                from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+                weekly_monthly_options_strategy_engine.tick_positional_options_monitor("WEEKLY")
+                weekly_monthly_options_strategy_engine.tick_positional_options_monitor("MONTHLY")
+            except Exception as e_pm:
+                logger.debug(f"5m Positional options monitor notice: {e_pm}")
             # 4. Periodically evaluate AI intelligence analysis (respecting cache TTL)
             if config.AI_ENABLED:
                 try:
@@ -246,9 +256,11 @@ def scheduled_intraday_flash_bulletin_job(slot_label: str):
 def scheduled_premarket_nifty_prediction_job():
     """
     08:45 AM IST Weekday Job:
-    Calculates official Nifty 50 6-Pillar T+1 & T+5 Pre-Market Forecast,
-    FREEZES it for today's session, and dispatches the Telegram Pre-Market Bulletin.
-    This prediction will NOT mutate or repaint during live market trading.
+    1. Calculates official Nifty 50 6-Pillar T+1 & T+5 Pre-Market Forecast.
+    2. FREEZES and locks it for today's session in SQLite and ledger.
+    3. Dispatches Telegram Pre-Market Bulletin.
+    4. STRICT HARD GATE: Only after prediction models successfully complete and lock,
+       evaluates and deploys positional (Weekly & Monthly) options strategies with hard-gated idempotency.
     """
     current_dt = now_ist()
     NSEMarketCalendar.sync_holidays_from_nse(force=False)
@@ -261,39 +273,57 @@ def scheduled_premarket_nifty_prediction_job():
         preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
         nifty_analytics_engine.dispatch_premarket_prediction_telegram_alert(preds)
         logger.info("✓ [08:45 AM IST Job] Official Pre-Market Forecast LOCKED & Telegram Bulletin Dispatched.")
+
+        # STRICT HARD GATE PIPELINE: Trigger options strategy evaluation only after prediction lock
+        if preds and preds.get("status") in ("OK", "LOCKED"):
+            try:
+                from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+                logger.info("🎯 [08:45 AM Hard Gate Pipeline] Evaluating Weekly & Monthly Options Strategies from locked prediction...")
+                w_res = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades("WEEKLY", force_refresh=False)
+                m_res = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades("MONTHLY", force_refresh=False)
+                logger.info(
+                    f"🎯 [08:45 AM Strategy Hard Gate] Weekly: {w_res.get('status')} ({w_res.get('reason') or w_res.get('regime')}) | "
+                    f"Monthly: {m_res.get('status')} ({m_res.get('reason') or m_res.get('regime')})"
+                )
+            except Exception as e_opt:
+                logger.warning(f"08:45 AM Options Strategy Deployment notice: {e_opt}")
     except Exception as e:
         logger.warning(f"08:45 AM Pre-Market Prediction Job error: {e}")
+
+
+def scheduled_intraday_options_entry_job():
+    """
+    09:20 AM IST Weekday Job:
+    Evaluates and deploys Intraday 5-Regime options strategy once the 15-minute Opening Range and VWAP are established.
+    Strict hard gate: max 1 active intraday strategy and max 1 deployment per day.
+    """
+    current_dt = now_ist()
+    if not NSEMarketCalendar.is_trading_day(current_dt.date()):
+        return
+    try:
+        from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+        logger.info("⚡ [09:20 AM Intraday Options Pipeline] Evaluating Intraday 5-Regime strategy...")
+        res = intraday_options_strategy_engine.evaluate_and_execute_intraday_trades(force_refresh=False)
+        logger.info(f"⚡ [09:20 AM Intraday Options Result] Status: {res.get('status')} ({res.get('reason') or res.get('regime')})")
+    except Exception as e:
+        logger.warning(f"09:20 AM Intraday Options Entry error: {e}")
 
 
 def scheduled_options_premarket_job():
     """
     09:00 AM IST Weekday Job:
-    Regenerates complete analysis and deploys weekly & monthly automated strategies
-    before market open if new expiry cycle has begun.
+    Reconciles options portfolio state and checks hard gates before market open.
+    Does NOT spawn redundant duplicate strategies.
     """
     current_dt = now_ist()
-    NSEMarketCalendar.sync_holidays_from_nse(force=False)
     if not NSEMarketCalendar.is_trading_day(current_dt.date()):
-        logger.info("⏸️ Today is not an active trading day. 09:00 AM options auto-deploy skipped.")
         return
     try:
         from engines.nifty_analytics_engine import nifty_analytics_engine
-        res = nifty_analytics_engine.evaluate_and_deploy_auto_options_strategies(modes=["WEEKLY", "MONTHLY"], force_refresh=True)
-        logger.info(f"🤖 [09:00 AM Options Pre-Market Job] Deployed: {res.get('deployed_count', 0)} strategies")
+        nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
+        logger.info("✓ [09:00 AM Options Gate Check] Active strategies reconciled before market open.")
     except Exception as e:
-        logger.warning(f"09:00 AM Options Pre-Market Job error: {e}")
-
-    # Autonomous Execution: Weekly & Monthly 5-Regime Positional Auto-Trades
-    try:
-        from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
-        w_res = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades("WEEKLY", force_refresh=True)
-        m_res = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades("MONTHLY", force_refresh=True)
-        logger.info(
-            f"🎯 [09:00 AM 5-Regime Positional Engine] Weekly: {w_res.get('status')} ({w_res.get('regime', 'N/A')}) | "
-            f"Monthly: {m_res.get('status')} ({m_res.get('regime', 'N/A')})"
-        )
-    except Exception as e_pos:
-        logger.warning(f"09:00 AM 5-Regime Positional Auto-Deploy notice: {e_pos}")
+        logger.warning(f"09:00 AM Options Pre-Market Reconciler error: {e}")
 
 
 def scheduled_morning_scan_job():
@@ -749,12 +779,22 @@ def start_scheduler():
             misfire_grace_time=180
         )
 
-        # Job 0C-2: 09:00 AM Pre-Market Options Weekly & Monthly Auto-Deploy (Mon-Fri)
+        # Job 0C-2: 09:00 AM Pre-Market Options State Reconciliation (Mon-Fri)
         _scheduler.add_job(
             scheduled_options_premarket_job,
             trigger=CronTrigger(day_of_week="mon-fri", hour=9, minute=0, timezone=IST),
             id="job_options_premarket_0900",
-            name="09:00 AM Options Pre-Market Auto-Deploy (Weekly & Monthly)",
+            name="09:00 AM Options Pre-Market Gate Check",
+            replace_existing=True,
+            misfire_grace_time=300
+        )
+
+        # Job 0C-3: 09:20 AM Intraday 5-Regime Options Strategy Auto-Deploy (Mon-Fri)
+        _scheduler.add_job(
+            scheduled_intraday_options_entry_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=9, minute=20, timezone=IST),
+            id="job_intraday_options_0920",
+            name="09:20 AM Intraday 5-Regime Options Strategy Auto-Deploy",
             replace_existing=True,
             misfire_grace_time=300
         )
