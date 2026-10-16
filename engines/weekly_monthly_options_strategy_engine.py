@@ -507,7 +507,13 @@ class WeeklyMonthlyOptionsStrategyEngine:
         Records all inputs and calculation timestamp. Zero hardcoded strike distances.
         """
         if spot <= 0:
-            spot = 22600.0
+            try:
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+            except Exception:
+                pass
+            if spot <= 0:
+                spot = 24700.0
         if iv_pct <= 0:
             iv_pct = 13.2
 
@@ -1457,7 +1463,12 @@ class WeeklyMonthlyOptionsStrategyEngine:
         t5_verdict = "RANGE BOUND"
         composite_score_t5 = 0.0
         t5_probs = {"p_up": 0.33, "p_flat": 0.34, "p_down": 0.33}
-        spot_price = 22600.0
+        spot_price = 0.0
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            spot_price = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 24700.0)
+        except Exception:
+            spot_price = 24700.0
 
         # 1. Inspect Nifty analytics predictions
         try:
@@ -1797,23 +1808,43 @@ class WeeklyMonthlyOptionsStrategyEngine:
         from engines.nifty_analytics_engine import nifty_analytics_engine
         try:
             deep_chain = nifty_analytics_engine.get_deep_option_chain()
-            chain_data = deep_chain.get("weekly" if horizon == "WEEKLY" else "monthly", {}).get("strikes", [])
-            spot_price = float(deep_chain.get("spot", 22600.0))
+            chain_sec = deep_chain.get("weekly" if horizon == "WEEKLY" else "monthly", {})
+            chain_data = chain_sec.get("all_strikes") or chain_sec.get("strikes", [])
+            spot_price = float(deep_chain.get("spot") or deep_chain.get("spot_price") or 0.0)
         except Exception:
             chain_data = []
-            spot_price = 22600.0
+            spot_price = 0.0
+
+        if spot_price <= 0.0:
+            try:
+                spot_price = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 24700.0)
+            except Exception:
+                spot_price = 24700.0
 
         quotes_map = {}
         for s in chain_data:
-            stk = s["strike"]
-            quotes_map[(stk, "CE")] = {"bid": s.get("ce_bid", s["ce_ltp"] * 0.99), "ask": s.get("ce_ask", s["ce_ltp"] * 1.01), "ltp": s["ce_ltp"]}
-            quotes_map[(stk, "PE")] = {"bid": s.get("pe_bid", s["pe_ltp"] * 0.99), "ask": s.get("pe_ask", s["pe_ltp"] * 1.01), "ltp": s["pe_ltp"]}
+            stk = s.get("strike")
+            if stk is not None:
+                try:
+                    stk_int = int(round(float(stk)))
+                except (ValueError, TypeError):
+                    stk_int = stk
+                ce_ltp = float(s.get("ce_ltp") or 0.0)
+                pe_ltp = float(s.get("pe_ltp") or 0.0)
+                quotes_map[(stk_int, "CE")] = {"bid": s.get("ce_bid", ce_ltp * 0.99), "ask": s.get("ce_ask", ce_ltp * 1.01), "ltp": ce_ltp}
+                quotes_map[(stk_int, "PE")] = {"bid": s.get("pe_bid", pe_ltp * 0.99), "ask": s.get("pe_ask", pe_ltp * 1.01), "ltp": pe_ltp}
+                quotes_map[(str(stk_int), "CE")] = quotes_map[(stk_int, "CE")]
+                quotes_map[(str(stk_int), "PE")] = quotes_map[(stk_int, "PE")]
 
         updated_count = 0
         for r in active_rows:
             stk = r["strike"]
+            try:
+                stk_int = int(round(float(stk)))
+            except (ValueError, TypeError):
+                stk_int = stk
             typ = r["option_type"]
-            q = quotes_map.get((stk, typ))
+            q = quotes_map.get((stk_int, typ)) or quotes_map.get((stk, typ))
             if not q:
                 continue
 

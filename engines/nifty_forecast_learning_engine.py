@@ -91,10 +91,13 @@ class NiftyForecastLearningEngine:
         # 2. Ingest historical daily feature bars from Yahoo Finance series
         nifty_df = state_engine.get_ohlcv("^NSEI")
         if nifty_df is None or len(nifty_df) < 40:
-            if not ledger_df.empty:
+            if not ledger_df.empty and len(ledger_df) >= 15:
                 return ledger_df
-            # Fallback bootstrap dataset using domain priors
-            return self._generate_domain_prior_dataset(horizon, count=80)
+            # Fallback bootstrap dataset using domain priors combined with available ledger rows
+            prior_df = self._generate_domain_prior_dataset(horizon, count=80)
+            if not ledger_df.empty:
+                return pd.concat([prior_df, ledger_df], ignore_index=True)
+            return prior_df
 
         dates = [str(idx)[:10] for idx in nifty_df.index]
         c_flat = nifty_df["Close"].dropna().to_numpy(dtype=np.float64).flatten()

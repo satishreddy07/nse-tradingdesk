@@ -894,6 +894,7 @@ class NiftyAnalyticsEngine:
                 "total_pe_vol": total_pe_vol,
             },
             "strikes": display_strikes,
+            "all_strikes": strikes_data,
         }
 
     @staticmethod
@@ -1095,6 +1096,24 @@ class NiftyAnalyticsEngine:
             "status": "UNAVAILABLE",
             "message": "NSE Option Chain endpoint temporarily unreachable and no cached chain in Master DB yet."
         }
+
+    def get_deep_option_chain(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Returns full deep Option Chain with all strikes, normalized for positional and intraday strategy engines.
+        Guarantees presence of spot, expiry_date, atm_iv, and all_strikes across weekly and monthly contracts.
+        """
+        data = self.fetch_and_analyze_option_chain(force_refresh=force_refresh)
+        if data and isinstance(data, dict):
+            if "spot_price" in data and "spot" not in data:
+                data["spot"] = data["spot_price"]
+            for exp_key in ("weekly", "monthly"):
+                sec = data.get(exp_key)
+                if isinstance(sec, dict):
+                    if "expiry" in sec and "expiry_date" not in sec:
+                        sec["expiry_date"] = sec["expiry"]
+                    if "volatility_and_gex" in sec and "atm_iv" not in sec:
+                        sec["atm_iv"] = sec["volatility_and_gex"].get("atm_iv", 13.2)
+        return data
 
     # ==========================================================================
     # 2. INTRADAY MULTI-INTERVAL WEEKLY EXPIRY COLLECTOR (15m / 30m / 50m IST)
@@ -4800,8 +4819,38 @@ class NiftyAnalyticsEngine:
         market_condition = str(data.get("market_condition") or "")
         ai_rationale = str(data.get("ai_rationale") or "").strip()
 
+        # Validate and synchronize leg strikes and entry prices with live Option Chain
+        oc_lookup = None
+        for l in legs:
+            try:
+                l["strike"] = int(round(float(l.get("strike", 0))))
+            except Exception:
+                pass
+            px = float(l.get("entry_price") or l.get("price") or 0.0)
+            if px <= 0.0:
+                if oc_lookup is None:
+                    try:
+                        oc_lookup = self.fetch_and_analyze_option_chain(force_refresh=False)
+                    except Exception:
+                        oc_lookup = {}
+                exp_key = "monthly" if expiry_type.upper() == "MONTHLY" else "weekly"
+                all_s = oc_lookup.get(exp_key, {}).get("all_strikes") or oc_lookup.get(exp_key, {}).get("strikes", [])
+                stk_row = next((s for s in all_s if int(round(float(s.get("strike", 0)))) == l["strike"]), None)
+                if stk_row:
+                    ltp_key = "ce_ltp" if l.get("type", "").upper() == "CE" else "pe_ltp"
+                    px = float(stk_row.get(ltp_key) or 0.0)
+            l["entry_price"] = round(px, 2)
+            l["price"] = round(px, 2)
+
+        if spot_at_entry <= 0.0:
+            try:
+                live_spot_res = self.get_live_nifty_spot()
+                spot_at_entry = float(live_spot_res.get("price") or 0.0)
+            except Exception:
+                pass
+
         # Auto-derive calculated metrics if not supplied by caller
-        if net_premium == 0.0 and legs:
+        if (net_premium == 0.0 or abs(net_premium) < 0.01) and legs:
             prem = sum(((-1 if l.get("action") == "BUY" else 1) * float(l.get("entry_price", l.get("price", 0.0)))) * int(l.get("qty", 75)) for l in legs)
             net_premium = round(prem, 2)
 
@@ -5031,9 +5080,22 @@ class NiftyAnalyticsEngine:
         has_active = any(dict(r).get("status") == "ACTIVE" for r in rows)
         if has_active:
             opt_chain_data = self.fetch_and_analyze_option_chain(force_refresh=False)
-            weekly_chain = opt_chain_data.get("weekly", {}).get("strikes", []) or opt_chain_data.get("weekly", {}).get("chain", [])
-            monthly_chain = opt_chain_data.get("monthly", {}).get("strikes", []) or opt_chain_data.get("monthly", {}).get("chain", [])
-            spot_price = opt_chain_data.get("spot_price", 0.0)
+            weekly_chain = (
+                opt_chain_data.get("weekly", {}).get("all_strikes")
+                or opt_chain_data.get("weekly", {}).get("strikes", [])
+                or opt_chain_data.get("weekly", {}).get("chain", [])
+            )
+            monthly_chain = (
+                opt_chain_data.get("monthly", {}).get("all_strikes")
+                or opt_chain_data.get("monthly", {}).get("strikes", [])
+                or opt_chain_data.get("monthly", {}).get("chain", [])
+            )
+            spot_price = float(opt_chain_data.get("spot_price") or 0.0)
+            if spot_price <= 0.0:
+                try:
+                    spot_price = float(self.get_live_nifty_spot().get("price") or 0.0)
+                except Exception:
+                    pass
         else:
             opt_chain_data = {}
             weekly_chain = []
@@ -5044,16 +5106,31 @@ class NiftyAnalyticsEngine:
         monthly_ltp_map = {}
         for row in weekly_chain:
             stk = row.get("strike")
-            if stk:
-                if stk not in weekly_ltp_map: weekly_ltp_map[stk] = {}
-                if "ce_ltp" in row: weekly_ltp_map[stk]["CE"] = float(row["ce_ltp"])
-                if "pe_ltp" in row: weekly_ltp_map[stk]["PE"] = float(row["pe_ltp"])
+            if stk is not None:
+                try:
+                    stk_int = int(round(float(stk)))
+                except (ValueError, TypeError):
+                    stk_int = stk
+                if stk_int not in weekly_ltp_map:
+                    weekly_ltp_map[stk_int] = {}
+                weekly_ltp_map[str(stk_int)] = weekly_ltp_map[stk_int]
+                weekly_ltp_map[float(stk_int)] = weekly_ltp_map[stk_int]
+                if "ce_ltp" in row: weekly_ltp_map[stk_int]["CE"] = float(row["ce_ltp"])
+                if "pe_ltp" in row: weekly_ltp_map[stk_int]["PE"] = float(row["pe_ltp"])
+
         for row in monthly_chain:
             stk = row.get("strike")
-            if stk:
-                if stk not in monthly_ltp_map: monthly_ltp_map[stk] = {}
-                if "ce_ltp" in row: monthly_ltp_map[stk]["CE"] = float(row["ce_ltp"])
-                if "pe_ltp" in row: monthly_ltp_map[stk]["PE"] = float(row["pe_ltp"])
+            if stk is not None:
+                try:
+                    stk_int = int(round(float(stk)))
+                except (ValueError, TypeError):
+                    stk_int = stk
+                if stk_int not in monthly_ltp_map:
+                    monthly_ltp_map[stk_int] = {}
+                monthly_ltp_map[str(stk_int)] = monthly_ltp_map[stk_int]
+                monthly_ltp_map[float(stk_int)] = monthly_ltp_map[stk_int]
+                if "ce_ltp" in row: monthly_ltp_map[stk_int]["CE"] = float(row["ce_ltp"])
+                if "pe_ltp" in row: monthly_ltp_map[stk_int]["PE"] = float(row["pe_ltp"])
 
         active_strategies = []
         closed_strategies = []
@@ -5069,6 +5146,27 @@ class NiftyAnalyticsEngine:
             legs = json.loads(d.get("legs_json") or "[]")
             is_active = (d.get("status") == "ACTIVE")
 
+            # Auto-reconcile intraday strategies whose legs were already closed in intraday_options_trade_log
+            if is_active and d.get("auto_trade_mode") == "INTRADAY_5REGIME":
+                with state_engine._lock:
+                    with state_engine._get_connection() as conn:
+                        l_rows = conn.execute(
+                            "SELECT status, gross_pnl_inr, net_pnl_inr FROM intraday_options_trade_log WHERE strategy_id = ?",
+                            (d.get("strategy_id"),)
+                        ).fetchall()
+                        if l_rows and all(lr["status"] in ("CLOSED", "FINAL_SL_EXITED") for lr in l_rows):
+                            tot_realized = sum(float(lr["net_pnl_inr"] or lr["gross_pnl_inr"] or 0.0) for lr in l_rows)
+                            conn.execute("""
+                                UPDATE options_strategies
+                                SET status = 'CLOSED', realized_pnl = ?, closed_at = datetime('now', '+330 minutes'),
+                                    exit_reason = 'INTRADAY_MOC_OR_SL_EXIT'
+                                WHERE id = ?
+                            """, (tot_realized, d.get("id")))
+                            conn.commit()
+                            is_active = False
+                            d["status"] = "CLOSED"
+                            d["realized_pnl"] = tot_realized
+
             is_monthly = (d.get("expiry_type") == "MONTHLY")
             active_map = monthly_ltp_map if is_monthly else weekly_ltp_map
             fallback_map = weekly_ltp_map if is_monthly else monthly_ltp_map
@@ -5082,16 +5180,32 @@ class NiftyAnalyticsEngine:
                 qty = leg.get("qty", 75)
                 entry_px = float(leg.get("entry_price", leg.get("price", 0.0)))
 
-                val = active_map.get(stk, {}).get(opt_type)
+                try:
+                    stk_int = int(round(float(stk)))
+                except (ValueError, TypeError):
+                    stk_int = stk
+
+                val = active_map.get(stk_int, {}).get(opt_type)
                 if val is None:
-                    val = fallback_map.get(stk, {}).get(opt_type, entry_px)
+                    val = active_map.get(stk, {}).get(opt_type)
+                if val is None:
+                    val = fallback_map.get(stk_int, {}).get(opt_type)
+                if val is None:
+                    val = fallback_map.get(stk, {}).get(opt_type)
+                if val is None:
+                    val = entry_px
                 current_px = float(val)
+
+                # Guard against 0.0 quotes distorting MTM unrealized PnL
+                if current_px <= 0.0 and entry_px > 0.0:
+                    current_px = entry_px
 
                 leg_pnl = ((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty
                 strat_unrealized += leg_pnl
 
                 updated_legs.append({
                     **leg,
+                    "strike": stk_int,
                     "entry_price": entry_px,
                     "current_price": round(current_px, 2),
                     "leg_pnl": round(leg_pnl, 2),

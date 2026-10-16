@@ -8762,9 +8762,24 @@
     }
 
     function addStrategyLegQuick(strike, type, action, ltp, iv) {
-      const defaultIv = (iv && iv > 0) ? Number(iv) : 13.5;
-      const defaultPrice = (ltp && ltp > 0) ? Number(ltp) : 60.0;
       const numStrike = Number(strike);
+      let realPrice = Number(ltp || 0);
+      let realIv = Number(iv || 0);
+
+      if (realPrice <= 0 && window.niftyOptionsChainCache) {
+        const active = (selectedOptionsExpiryType === 'monthly')
+          ? (niftyOptionsChainCache?.monthly || {})
+          : (niftyOptionsChainCache?.weekly || {});
+        const allStrikes = active.all_strikes || active.strikes || [];
+        const stkRow = allStrikes.find(s => Number(s.strike) === numStrike);
+        if (stkRow) {
+          realPrice = type === 'CE' ? Number(stkRow.ce_ltp || 0) : Number(stkRow.pe_ltp || 0);
+          realIv = type === 'CE' ? Number(stkRow.ce_iv || 13.5) : Number(stkRow.pe_iv || 13.5);
+        }
+      }
+
+      const defaultIv = (realIv > 0) ? realIv : 13.5;
+      const defaultPrice = (realPrice > 0) ? realPrice : 0.05;
       
       const existing = strategyLegs.find(l => l.strike === numStrike && l.type === type && l.action === action);
       if (existing) {
@@ -8789,7 +8804,7 @@
       renderStrategyLegs();
       recalculateStrategyMetrics();
       drawPayoffGraph();
-      showToast(`Added ${action} ${numStrike} ${type} (₹${defaultPrice.toFixed(1)}) 1 Lot to Strategy Builder!`, 'info');
+      showToast(`Added ${action} ${numStrike} ${type} (₹${defaultPrice.toFixed(2)}) 1 Lot to Strategy Builder!`, 'info');
     }
 
     function addCustomStrategyLeg() {
@@ -8939,22 +8954,41 @@
     }
 
     function addLegFromCompactChain(strike, type, action, price, iv) {
-      const existing = strategyLegs.find(l => l.strike === strike && l.type === type && l.action === action);
+      const numStrike = Number(strike);
+      let realPrice = Number(price || 0);
+      let realIv = Number(iv || 0);
+
+      if (realPrice <= 0 && window.niftyOptionsChainCache) {
+        const active = (selectedOptionsExpiryType === 'monthly')
+          ? (niftyOptionsChainCache?.monthly || {})
+          : (niftyOptionsChainCache?.weekly || {});
+        const allStrikes = active.all_strikes || active.strikes || [];
+        const stkRow = allStrikes.find(s => Number(s.strike) === numStrike);
+        if (stkRow) {
+          realPrice = type === 'CE' ? Number(stkRow.ce_ltp || 0) : Number(stkRow.pe_ltp || 0);
+          realIv = type === 'CE' ? Number(stkRow.ce_iv || 13.5) : Number(stkRow.pe_iv || 13.5);
+        }
+      }
+
+      const finalPrice = (realPrice > 0) ? realPrice : 0.05;
+      const finalIv = (realIv > 0) ? realIv : 13.5;
+
+      const existing = strategyLegs.find(l => l.strike === numStrike && l.type === type && l.action === action);
       if (existing) {
         existing.qty += 75;
-        showToast(`Increased ${action} ${strike} ${type} to ${Math.round(existing.qty / 75)} Lots`, 'info');
+        showToast(`Increased ${action} ${numStrike} ${type} to ${Math.round(existing.qty / 75)} Lots`, 'info');
       } else {
         const newId = strategyLegs.length > 0 ? Math.max(...strategyLegs.map(l => l.id)) + 1 : 1;
         strategyLegs.push({
           id: newId,
-          strike: Number(strike),
+          strike: numStrike,
           type: type,
           action: action,
           qty: 75,
-          price: Math.max(0.05, Number(price || 50)),
-          iv: Math.max(3, Number(iv || 13.5))
+          price: finalPrice,
+          iv: finalIv
         });
-        showToast(`Added Leg: ${action} ${strike} ${type} @ ₹${Number(price).toFixed(2)}`, 'success');
+        showToast(`Added Leg: ${action} ${numStrike} ${type} @ ₹${finalPrice.toFixed(2)}`, 'success');
       }
       renderStrategyLegs();
       recalculateStrategyMetrics();
@@ -9745,14 +9779,27 @@
           pop_pct: popVal,
           target_pnl: targetPnlVal,
           stoploss_pnl: slPnlVal,
-          legs: strategyLegs.map(l => ({
-            strike: Number(l.strike),
-            type: l.type,
-            action: l.action,
-            qty: Number(l.qty),
-            entry_price: Number(l.price),
-            iv: Number(l.iv || 13.5)
-          })),
+          legs: strategyLegs.map(l => {
+            let px = Number(l.price || 0);
+            if (px <= 0 && window.niftyOptionsChainCache) {
+              const active = (selectedOptionsExpiryType === 'monthly')
+                ? (niftyOptionsChainCache?.monthly || {})
+                : (niftyOptionsChainCache?.weekly || {});
+              const allStrikes = active.all_strikes || active.strikes || [];
+              const stkRow = allStrikes.find(s => Number(s.strike) === Number(l.strike));
+              if (stkRow) {
+                px = l.type === 'CE' ? Number(stkRow.ce_ltp || 0) : Number(stkRow.pe_ltp || 0);
+              }
+            }
+            return {
+              strike: Number(l.strike),
+              type: l.type,
+              action: l.action,
+              qty: Number(l.qty),
+              entry_price: Number(px > 0 ? px : 0.05),
+              iv: Number(l.iv || 13.5)
+            };
+          }),
           notes: `Deployed from Sensibull Builder (${strategyLegs.length} legs)`
         };
 

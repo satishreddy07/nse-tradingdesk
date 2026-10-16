@@ -462,7 +462,13 @@ class IntradayOptionsStrategyEngine:
         Do not hardcode sigma distances.
         """
         if spot <= 0:
-            spot = 22600.0
+            try:
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+            except Exception:
+                pass
+            if spot <= 0:
+                spot = 24700.0
         if iv_pct <= 0:
             iv_pct = 13.0
 
@@ -977,7 +983,13 @@ class IntradayOptionsStrategyEngine:
         sec_m = suite.get("sectoral_divergence") or {}
         ml_m = suite.get("intraday_ml") or {}
 
-        spot_price = float(suite.get("spot_price") or vwap_m.get("spot_price") or 22600.0)
+        spot_price = float(suite.get("spot_price") or vwap_m.get("spot_price") or 0.0)
+        if spot_price <= 0.0:
+            try:
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                spot_price = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 24700.0)
+            except Exception:
+                spot_price = 24700.0
 
         # 1. Intraday ML / Writer Dominance Sub-Score (-100 to +100)
         writer_dominance = float(ml_m.get("writer_dominance_score") or 0.0)
@@ -1578,8 +1590,35 @@ class IntradayOptionsStrategyEngine:
         oc_data = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
         strikes_lookup = {}
         if oc_data.get("status") == "OK":
-            for stk_obj in oc_data.get("weekly", {}).get("strikes", []):
-                strikes_lookup[stk_obj["strike"]] = stk_obj
+            w_strikes = (
+                oc_data.get("weekly", {}).get("all_strikes")
+                or oc_data.get("weekly", {}).get("strikes", [])
+            )
+            for stk_obj in w_strikes:
+                k = stk_obj.get("strike")
+                if k is not None:
+                    try:
+                        k_int = int(round(float(k)))
+                    except (ValueError, TypeError):
+                        k_int = k
+                    strikes_lookup[k_int] = stk_obj
+                    strikes_lookup[str(k_int)] = stk_obj
+
+        def _sync_parent_strategy(conn, s_id: str):
+            if not s_id:
+                return
+            l_rows = conn.execute(
+                "SELECT status, gross_pnl_inr, net_pnl_inr FROM intraday_options_trade_log WHERE strategy_id = ?",
+                (s_id,)
+            ).fetchall()
+            if l_rows and all(lr["status"] in ("CLOSED", "FINAL_SL_EXITED") for lr in l_rows):
+                tot_pnl = sum(float(lr["net_pnl_inr"] or lr["gross_pnl_inr"] or 0.0) for lr in l_rows)
+                conn.execute("""
+                    UPDATE options_strategies
+                    SET status = 'CLOSED', realized_pnl = ?, closed_at = datetime('now', '+330 minutes'),
+                        exit_reason = 'INTRADAY_SETTLEMENT_COMPLETE'
+                    WHERE strategy_id = ? AND status = 'ACTIVE'
+                """, (tot_pnl, s_id))
 
         now_dt = now_ist()
         is_moc_settlement = (now_dt.hour > 15 or (now_dt.hour == 15 and now_dt.minute >= 15))
@@ -1592,6 +1631,7 @@ class IntradayOptionsStrategyEngine:
             strike = int(d["strike"])
             typ = d["option_type"]
             stk_info = strikes_lookup.get(strike)
+            p0 = float(d["original_entry_premium"])
 
             # Get live executable quotes
             if stk_info:
@@ -1603,15 +1643,25 @@ class IntradayOptionsStrategyEngine:
                     bid = float(stk_info.get("pe_bid") or stk_info.get("pe_ltp") or 0.0)
                     ask = float(stk_info.get("pe_ask") or stk_info.get("pe_ltp") or 0.0)
                     ltp = float(stk_info.get("pe_ltp") or 0.0)
+                if ltp <= 0.0 and p0 > 0:
+                    ltp = p0
+                    bid = round(ltp * 0.995, 2)
+                    ask = round(ltp * 1.005, 2)
             else:
-                # Estimate from spot via BSM if tick temporarily unavailable
-                spot_now = float(oc_data.get("spot_price") or 22600.0)
-                ltp = _black_scholes_price(spot_now, strike, 0.5 / 365.0, 0.07, 0.13, typ)
+                spot_now = float(oc_data.get("spot_price") or 0.0)
+                if spot_now <= 0.0:
+                    try:
+                        spot_now = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+                    except Exception:
+                        spot_now = 0.0
+                if spot_now > 0.0:
+                    ltp = _black_scholes_price(spot_now, strike, 0.5 / 365.0, 0.07, 0.13, typ)
+                else:
+                    ltp = p0
                 bid = round(ltp * 0.995, 2)
                 ask = round(ltp * 1.005, 2)
 
             curr_state = d["status"]
-            p0 = float(d["original_entry_premium"])
             sl_pct = float(d["sl_threshold_pct"])
             initial_sl_trigger = float(d["initial_sl_trigger"])
             re_entered_flag = bool(d["re_entered"])
@@ -1637,6 +1687,7 @@ class IntradayOptionsStrategyEngine:
                                 gross_pnl_pts = ?, gross_pnl_inr = ?, net_pnl_inr = ?, win = ?
                             WHERE leg_id = ?
                             """, (close_px, now_str, pnl_pts, pnl_inr, round(pnl_inr - 95.0, 2), 1 if pnl_inr > 95 else 0, leg_id))
+                            _sync_parent_strategy(conn, d.get("strategy_id"))
                             conn.commit()
                     try:
                         from core.unified_ml_dataset import unified_ml_dataset
@@ -1672,6 +1723,7 @@ class IntradayOptionsStrategyEngine:
                     with state_engine._lock:
                         with state_engine._get_connection() as conn:
                             conn.execute("UPDATE intraday_options_trade_log SET status = 'CLOSED' WHERE leg_id = ?", (leg_id,))
+                            _sync_parent_strategy(conn, d.get("strategy_id"))
                             conn.commit()
                 elif exec_sell <= p0:
                     # Re-entry Triggered! Premium fell back to or below P0
@@ -1704,6 +1756,7 @@ class IntradayOptionsStrategyEngine:
                                 gross_pnl_pts = ?, gross_pnl_inr = ?, net_pnl_inr = ?, win = ?
                             WHERE leg_id = ?
                             """, (settle_px, now_str, tot_pts, tot_inr, round(tot_inr - 180.0, 2), 1 if tot_inr > 180 else 0, leg_id))
+                            _sync_parent_strategy(conn, d.get("strategy_id"))
                             conn.commit()
                     try:
                         from core.unified_ml_dataset import unified_ml_dataset
@@ -1733,6 +1786,7 @@ class IntradayOptionsStrategyEngine:
                                 final_sl_time = ?, gross_pnl_pts = ?, gross_pnl_inr = ?, net_pnl_inr = ?, win = ?
                             WHERE leg_id = ?
                             """, (fin_exit, now_str, tot_pts, tot_inr, round(tot_inr - 180.0, 2), 1 if tot_inr > 180 else 0, leg_id))
+                            _sync_parent_strategy(conn, d.get("strategy_id"))
                             conn.commit()
                     try:
                         from core.unified_ml_dataset import unified_ml_dataset

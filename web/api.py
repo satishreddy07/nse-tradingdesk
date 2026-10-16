@@ -1026,6 +1026,7 @@ def get_options_chain_compact_endpoint(expiry_type: str = "WEEKLY"):
         "expiry_type": expiry_type.upper(),
         "atm_strike": sub_data.get("atm_strike"),
         "strikes": sub_data.get("strikes", []),
+        "all_strikes": sub_data.get("all_strikes", sub_data.get("strikes", [])),
         "timestamp": chain.get("nse_timestamp") or chain.get("fetched_at_ist")
     }
 
