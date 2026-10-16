@@ -1588,6 +1588,8 @@ class InstitutionalEngine:
                 )
 
                 ai_req_id = f"ai_req_{ticker}_{int(time.time())}"
+                ds_summary = swing_quant_ml_engine.get_status().get("dataset_summary", {})
+                dataset_count = int(ds_summary.get("total_records") or 1)
                 ai_request = SwingCandidateAIRequest(
                     schema_version="1.0",
                     request_id=ai_req_id,
@@ -1641,7 +1643,7 @@ class InstitutionalEngine:
                         estimated_transaction_costs=round(float(r['entry']) * int(r['shares']) * 0.0012, 2)
                     ),
                     historical_evidence=SwingHistoricalEvidence(
-                        sample_count=160,
+                        sample_count=dataset_count,
                         target_before_stop_frequency=ml_prob,
                         stop_before_target_frequency=round(1.0 - ml_prob, 2),
                         evaluation_type="out_of_sample",

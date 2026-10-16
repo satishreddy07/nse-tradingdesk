@@ -113,6 +113,7 @@ class StateEngine:
                     portfolio_type TEXT NOT NULL DEFAULT 'INSTITUTIONAL_6PILLAR',
                     entry_price REAL NOT NULL,
                     quantity INTEGER NOT NULL,
+                    original_quantity INTEGER,
                     stop_loss REAL NOT NULL,
                     original_stop_loss REAL,
                     target REAL NOT NULL,
@@ -133,6 +134,10 @@ class StateEngine:
                     updated_at TEXT NOT NULL
                 );
                 """)
+                try:
+                    cursor.execute("ALTER TABLE active_positions ADD COLUMN original_quantity INTEGER")
+                except Exception:
+                    pass
 
                 # 2. Closed Trade History Table
                 cursor.execute("""
@@ -993,13 +998,13 @@ class StateEngine:
 
                     conn.execute("""
                     INSERT INTO active_positions (
-                        symbol, portfolio_type, entry_price, quantity, stop_loss, original_stop_loss,
+                        symbol, portfolio_type, entry_price, quantity, original_quantity, stop_loss, original_stop_loss,
                         target, target_2, current_price, highest_price, entry_date, hold_days,
                         t1_hit, t1_pnl, sl_reason, sector, notes, entry_reason, entry_regime,
                         metrics_json, features_json, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        sym_clean, p_type, entry_price, quantity, stop_loss, stop_loss,
+                        sym_clean, p_type, entry_price, quantity, quantity, stop_loss, stop_loss,
                         target, target_2, entry_price, entry_price, now_str,
                         sl_reason, sector, notes, entry_reason, entry_regime,
                         metrics_str, features_str, now_str
@@ -1113,7 +1118,9 @@ class StateEngine:
                     cp = float(item.get("current_price") or ep)
                     sl = float(item.get("stop_loss") or ep * 0.95)
                     qty = int(item.get("quantity") or 0)
+                    orig_qty = int(item.get("original_quantity") or (qty * 2 if (item.get("t1_hit") and float(item.get("t1_pnl") or 0.0) > 0) else qty))
                     item["qty"] = qty
+                    item["original_quantity"] = orig_qty
                     item["unrealized_pnl"] = round((cp - ep) * qty, 2)
                     item["return_pct"] = round(((cp - ep) / max(0.01, ep)) * 100.0, 2)
                     item["stop_distance_pct"] = round(((cp - sl) / max(0.01, cp)) * 100.0, 2)
@@ -1215,9 +1222,11 @@ class StateEngine:
                 rem_pnl = (exit_price - entry_px) * qty
                 total_pnl = float(pos.get("t1_pnl", 0.0)) + rem_pnl
                 orig_sl = float(pos.get("original_stop_loss") or pos["stop_loss"])
+                orig_qty = int(pos.get("original_quantity") or (qty * 2 if (pos.get("t1_hit") and float(pos.get("t1_pnl") or 0.0) > 0) else qty))
                 risk_unit = max(0.01, entry_px - orig_sl)
-                r_multiple = round(total_pnl / ((risk_unit * qty) + 1e-9), 2)
-                return_pct = round(((exit_price - entry_px) / entry_px) * 100.0, 2)
+                initial_total_risk = max(0.01, risk_unit * orig_qty)
+                r_multiple = round(total_pnl / initial_total_risk, 2)
+                return_pct = round((total_pnl / max(0.01, entry_px * orig_qty)) * 100.0, 2)
 
                 # Estimate hold days
                 try:
@@ -1226,7 +1235,7 @@ class StateEngine:
                 except Exception:
                     hold_days = int(pos.get("hold_days", 1) or 1)
 
-                # Insert into trade_history with full timestamps
+                # Insert into trade_history with full timestamps and true initial quantity
                 conn.execute("""
                 INSERT INTO trade_history (
                     symbol, portfolio_type, entry_price, exit_price, quantity, pnl,
@@ -1234,13 +1243,13 @@ class StateEngine:
                     exit_reason, sector, notes, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    sym_clean, p_type, entry_px, exit_price, qty, round(total_pnl, 2),
+                    sym_clean, p_type, entry_px, exit_price, orig_qty, round(total_pnl, 2),
                     r_multiple, return_pct, entry_dt_str, now_str, hold_days,
                     exit_reason, sector, notes or pos.get("notes", ""), now_str
                 ))
 
                 sync_msg = (
-                    f"🏁 TRADE EXIT & CLOUD SYNCED: {sym_clean} ({qty} shs @ ₹{exit_price:,.2f} | "
+                    f"🏁 TRADE EXIT & CLOUD SYNCED: {sym_clean} ({orig_qty} shs @ ₹{exit_price:,.2f} | "
                     f"PnL ₹{total_pnl:+,.2f} / {r_multiple:+.2f}R / {return_pct:+.2f}% | {exit_reason}) • {now_str}"
                 )
                 sync_details = json.dumps({
@@ -1249,7 +1258,8 @@ class StateEngine:
                     "portfolio": p_type,
                     "entry_price": entry_px,
                     "exit_price": exit_price,
-                    "quantity": qty,
+                    "quantity": orig_qty,
+                    "remaining_quantity_closed": qty,
                     "pnl": round(total_pnl, 2),
                     "r_multiple": r_multiple,
                     "return_pct": return_pct,
@@ -1291,7 +1301,8 @@ class StateEngine:
                     "portfolio_type": p_type,
                     "entry_price": entry_px,
                     "exit_price": exit_price,
-                    "quantity": qty,
+                    "quantity": orig_qty,
+                    "remaining_quantity_closed": qty,
                     "pnl": round(total_pnl, 2),
                     "r_multiple": r_multiple,
                     "return_pct": return_pct,
@@ -1387,19 +1398,26 @@ class StateEngine:
         total_invested = 0.0
         active_t1_pnl = 0.0
         t1_booked_count = 0
+        active_t1_r_list = []
 
         for p in active:
             cp = float(p.get("current_price") or p["entry_price"])
             ep = float(p["entry_price"])
             sl = float(p["stop_loss"])
+            orig_sl = float(p.get("original_stop_loss") or sl)
             qty = int(p["quantity"])
             unrealized += (cp - ep) * qty
             open_risk += max(0.0, (ep - sl) * qty)
             total_invested += ep * qty
-            if p.get("t1_hit"):
+            if p.get("t1_hit") and float(p.get("t1_pnl") or 0.0) > 0:
                 t1_pnl_val = float(p.get("t1_pnl") or 0.0)
                 active_t1_pnl += t1_pnl_val
                 t1_booked_count += 1
+                orig_q = int(p.get("original_quantity") or (qty * 2))
+                booked_q = orig_q - qty if orig_q > qty else qty
+                risk_per_share = max(0.01, ep - orig_sl)
+                t1_r = round(t1_pnl_val / max(0.01, risk_per_share * booked_q), 2)
+                active_t1_r_list.append(t1_r)
 
         closed_realized_pnl = sum(float(t["pnl"]) for t in history)
         total_realized_pnl = round(closed_realized_pnl + active_t1_pnl, 2)
@@ -1446,10 +1464,10 @@ class StateEngine:
         else:
             profit_factor = round(gross_profit / 1.0, 2) if gross_profit > 0 else 0.0
 
-        r_list = [float(t["r_multiple"]) for t in history] + ([1.5] * t1_booked_count)
+        r_list = [float(t["r_multiple"]) for t in history] + active_t1_r_list
         expectancy_r = round(float(sum(r_list) / len(r_list)), 3) if r_list else 0.0
 
-        win_r_list = [float(t["r_multiple"]) for t in wins] + ([1.5] * t1_booked_count)
+        win_r_list = [float(t["r_multiple"]) for t in wins] + active_t1_r_list
         avg_win_r = round(float(sum(win_r_list) / len(win_r_list)), 2) if win_r_list else 0.0
         avg_loss_r = round(float(sum(t["r_multiple"] for t in losses) / len(losses)), 2) if losses else 0.0
 
