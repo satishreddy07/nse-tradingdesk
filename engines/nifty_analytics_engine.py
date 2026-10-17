@@ -48,7 +48,10 @@ import pandas as pd
 from sklearn.linear_model import Ridge, LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from core import config
-from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL, NIFTY_LOT_SIZE
+from core.config import (
+    P1_BASE_CAPITAL, P2_BASE_CAPITAL, NIFTY_LOT_SIZE,
+    RISK_FREE_RATE, DEFAULT_OPTIONS_IV, calc_regulatory_options_cost
+)
 
 from core.data_quality import IST, now_ist, format_ist
 from core.market_calendar import NSEMarketCalendar
@@ -746,14 +749,13 @@ class NiftyAnalyticsEngine:
         lower_breakeven = round(atm_strike - straddle_premium, 2)
         implied_move_pct = round((straddle_premium / max(1.0, spot_price)) * 100.0, 2)
 
-        # 4. Max Pain Calculation across active strikes (±15 strikes around ATM)
-        mp_candidates = strikes_data[max(0, atm_idx - 15): min(len(strikes_data), atm_idx + 16)]
+        # 4. Max Pain Calculation across entire option chain (F-28)
         min_pain_val = None
         max_pain_strike = atm_strike
-        for cand in mp_candidates:
+        for cand in strikes_data:
             test_spot = cand["strike"]
             pain = 0.0
-            for s in mp_candidates:
+            for s in strikes_data:
                 k = s["strike"]
                 if test_spot > k:
                     pain += (test_spot - k) * s["ce_oi"]
@@ -787,11 +789,18 @@ class NiftyAnalyticsEngine:
         put_wall_2 = lower_puts[0]["strike"] if lower_puts else put_wall_1 - 100
         fresh_put_wall = puts_by_chg[0]["strike"] if puts_by_chg else put_wall_1
 
-        # 6. IV & Volatility Skew (OTM Put IV - OTM Call IV at ±3 strikes from ATM)
+        # 6. IV & Volatility Skew (OTM Put IV - OTM Call IV at ±3 strikes from ATM) (F-28)
         atm_ce_iv = atm_row["ce_iv"]
         atm_pe_iv = atm_row["pe_iv"]
         valid_ivs = [v for v in (atm_ce_iv, atm_pe_iv) if v > 0]
-        atm_iv = round(float(np.mean(valid_ivs)), 2) if valid_ivs else 11.5
+        if valid_ivs:
+            atm_iv = round(float(np.mean(valid_ivs)), 2)
+        else:
+            try:
+                vix_data = cls.get_india_vix()
+                atm_iv = round(float(vix_data.get("current_vix") or DEFAULT_OPTIONS_IV), 2)
+            except Exception:
+                atm_iv = DEFAULT_OPTIONS_IV
 
         otm_pe_idx = max(0, atm_idx - 3)
         otm_ce_idx = min(len(strikes_data) - 1, atm_idx + 3)
@@ -799,18 +808,28 @@ class NiftyAnalyticsEngine:
         otm_ce_iv = strikes_data[otm_ce_idx]["ce_iv"] or atm_ce_iv
         iv_skew = round(otm_pe_iv - otm_ce_iv, 2)
 
-        # 7. Net Dealer Gamma Exposure (GEX) Proxy & Gamma Flip Strike
-        # Dealers are typically short options sold by institutions/retail -> net dealer gamma sign depends on Put vs Call OI balance near spot
-        # Positive Net GEX (Call Wall pinning / heavy Put writing support) stabilizes price; Negative GEX amplifies directional moves
-        net_gex_score = 0.0
-        for s in active_slice:
-            dist_pct = abs(s["strike"] - spot_price) / max(1.0, spot_price)
-            gamma_weight = math.exp(-0.5 * ((dist_pct / 0.008) ** 2))
-            net_gex_score += (s["pe_oi"] - s["ce_oi"]) * gamma_weight
+        # 7. Canonical Dealer Dollar Gamma Exposure (GEX) via Black-Scholes Gamma (F-24)
+        # GEX_k = S^2 * Gamma_k * (PE_OI - CE_OI) * lot_size / 10^7 (in Crore INR)
+        cal_exp = NSEMarketCalendar.get_active_options_expiries()
+        t_years_gex = max(0.001, float(cal_exp.get("dte_weekly", 4.0)) / 365.0)
+        sqrt_t_gex = math.sqrt(t_years_gex)
+        sig_gex = max(0.05, atm_iv / 100.0)
+        net_gex_cr = 0.0
 
-        gex_regime = "POSITIVE_GAMMA_PINNING" if abs(near_atm_pcr - 1.0) <= 0.22 else (
-            "BULLISH_PUT_WALL_DOMINANCE" if near_atm_pcr > 1.22 else "BEARISH_CALL_WALL_PRESSURE"
-        )
+        for s in active_slice:
+            k = float(s["strike"])
+            d1 = (math.log(max(1e-4, spot_price) / max(1e-4, k)) + (RISK_FREE_RATE + 0.5 * sig_gex ** 2) * t_years_gex) / (sig_gex * sqrt_t_gex)
+            gamma_k = (1.0 / (math.sqrt(2.0 * math.pi) * spot_price * sig_gex * sqrt_t_gex)) * math.exp(-0.5 * d1 * d1)
+            # Net dealer gamma: PE_OI generates positive dealer gamma, CE_OI generates negative dealer gamma
+            net_gex_cr += (spot_price ** 2) * gamma_k * (float(s["pe_oi"]) - float(s["ce_oi"])) * NIFTY_LOT_SIZE / 1e7
+
+        net_gex_score = round(net_gex_cr, 2)
+        if net_gex_score > 5.0:
+            gex_regime = "POSITIVE_GAMMA_PINNING"
+        elif net_gex_score < -5.0:
+            gex_regime = "NEGATIVE_GAMMA_VOLATILITY"
+        else:
+            gex_regime = "NEUTRAL_GAMMA_TRANSITION"
 
         # 8. Display Table (±12 strikes around ATM)
         display_strikes = strikes_data[max(0, atm_idx - 12): min(len(strikes_data), atm_idx + 13)]
@@ -4902,13 +4921,38 @@ class NiftyAnalyticsEngine:
         market_condition = str(data.get("market_condition") or "")
         ai_rationale = str(data.get("ai_rationale") or "").strip()
 
-        # Validate and synchronize leg strikes and entry prices with live Option Chain
+        # Validate and synchronize leg strikes and entry prices with live Option Chain (F-22)
         oc_lookup = None
         for l in legs:
+            # Action and Type validation
+            act = str(l.get("action", "")).upper()
+            if act not in ("BUY", "SELL"):
+                raise ValueError(f"Invalid option action '{act}'. Must be BUY or SELL.")
+            l["action"] = act
+
+            typ = str(l.get("type", "")).upper()
+            if typ not in ("CE", "PE"):
+                raise ValueError(f"Invalid option type '{typ}'. Must be CE or PE.")
+            l["type"] = typ
+
             try:
-                l["strike"] = int(round(float(l.get("strike", 0))))
-            except Exception:
-                pass
+                stk = int(round(float(l.get("strike", 0))))
+                if stk <= 0 or (stk % 50 != 0):
+                    raise ValueError(f"Invalid Nifty strike interval: {stk}. Must be positive multiple of 50.")
+                l["strike"] = stk
+            except (ValueError, TypeError) as ex:
+                raise ValueError(f"Invalid strike parameter: {l.get('strike')}: {ex}")
+
+            # Quantity and Lot validation
+            try:
+                q = int(l.get("qty") or (int(l.get("lots", 1)) * NIFTY_LOT_SIZE))
+                if q <= 0:
+                    raise ValueError(f"Invalid contract quantity {q}. Must be positive integer.")
+                l["qty"] = q
+                l["lots"] = max(1, round(q / NIFTY_LOT_SIZE))
+            except (ValueError, TypeError) as ex:
+                raise ValueError(f"Invalid quantity parameter: {ex}")
+
             px = float(l.get("entry_price") or l.get("price") or 0.0)
             if px <= 0.0:
                 if oc_lookup is None:
@@ -4920,8 +4964,13 @@ class NiftyAnalyticsEngine:
                 all_s = oc_lookup.get(exp_key, {}).get("all_strikes") or oc_lookup.get(exp_key, {}).get("strikes", [])
                 stk_row = next((s for s in all_s if int(round(float(s.get("strike", 0)))) == l["strike"]), None)
                 if stk_row:
-                    ltp_key = "ce_ltp" if l.get("type", "").upper() == "CE" else "pe_ltp"
-                    px = float(stk_row.get(ltp_key) or 0.0)
+                    ltp_key = "ce_ltp" if l["type"] == "CE" else "pe_ltp"
+                    alt_key = "call_ltp" if l["type"] == "CE" else "put_ltp"
+                    px = float(stk_row.get(ltp_key) or stk_row.get(alt_key) or 0.0)
+
+            if px <= 0.0:
+                raise ValueError(f"DATA_UNAVAILABLE: Cannot deploy strategy. Strike {l['strike']} {l['type']} has zero or missing live price.")
+
             l["entry_price"] = round(px, 2)
             l["price"] = round(px, 2)
 
@@ -4932,10 +4981,9 @@ class NiftyAnalyticsEngine:
             except Exception:
                 pass
 
-        # Auto-derive calculated metrics if not supplied by caller
-        if (net_premium == 0.0 or abs(net_premium) < 0.01) and legs:
-            prem = sum(((-1 if l.get("action") == "BUY" else 1) * float(l.get("entry_price", l.get("price", 0.0)))) * int(l.get("qty", NIFTY_LOT_SIZE)) for l in legs)
-            net_premium = round(prem, 2)
+        # Strict Server-side Recalculation (F-22)
+        calc_premium = sum(((-1 if l["action"] == "BUY" else 1) * float(l["entry_price"])) * int(l["qty"]) for l in legs)
+        net_premium = round(calc_premium, 2)
 
         if target_pnl == 0.0:
             target_pnl = round(0.50 * (net_premium if net_premium > 0 else abs(net_premium)), 2)
@@ -4943,8 +4991,12 @@ class NiftyAnalyticsEngine:
         if stoploss_pnl == 0.0:
             stoploss_pnl = round(-1.0 * (net_premium if net_premium > 0 else 0.5 * abs(net_premium)), 2)
 
-        if est_margin == 0.0:
-            est_margin = round(max(35000.0, abs(net_premium) + 20000.0), 2)
+        has_short = any(l["action"] == "SELL" for l in legs)
+        if has_short:
+            short_prem_sum = sum(l["entry_price"] for l in legs if l["action"] == "SELL")
+            est_margin = round(max(45000.0, (0.15 * max(spot_at_entry, 20000.0) + short_prem_sum) * NIFTY_LOT_SIZE), 2)
+        else:
+            est_margin = round(abs(net_premium), 2)
 
         ts_now = format_ist()
         strat_id = f"OPT-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100, 999)}"
@@ -5137,7 +5189,7 @@ class NiftyAnalyticsEngine:
             "message": f"Strategy '{current_strat.get('strategy_name')}' adjusted successfully with {len(legs)} legs!"
         }
 
-    def exit_options_strategy(self, strategy_id: str, exit_reason: str = "MANUAL_EXIT") -> Dict[str, Any]:
+    def exit_options_strategy(self, strategy_id: str, exit_reason: str = "MANUAL_EXIT", exit_pnl: Optional[float] = None) -> Dict[str, Any]:
         """
         Exits all legs of an active strategy at current live market prices,
         books the realized PnL in SQLite, notifies Telegram, and syncs cloud backup.
@@ -5163,18 +5215,21 @@ class NiftyAnalyticsEngine:
             stk = r.get("strike")
             if stk:
                 if stk not in weekly_ltp_map: weekly_ltp_map[stk] = {}
-                if "ce_ltp" in r: weekly_ltp_map[stk]["CE"] = float(r["ce_ltp"])
-                if "pe_ltp" in r: weekly_ltp_map[stk]["PE"] = float(r["pe_ltp"])
+                ce_val = r.get("ce_ltp") or r.get("call_ltp") or r.get("call_price")
+                pe_val = r.get("pe_ltp") or r.get("put_ltp") or r.get("put_price")
+                if ce_val is not None: weekly_ltp_map[stk]["CE"] = float(ce_val)
+                if pe_val is not None: weekly_ltp_map[stk]["PE"] = float(pe_val)
         for r in monthly_chain:
             stk = r.get("strike")
             if stk:
                 if stk not in monthly_ltp_map: monthly_ltp_map[stk] = {}
-                if "ce_ltp" in r: monthly_ltp_map[stk]["CE"] = float(r["ce_ltp"])
-                if "pe_ltp" in r: monthly_ltp_map[stk]["PE"] = float(r["pe_ltp"])
+                ce_val = r.get("ce_ltp") or r.get("call_ltp") or r.get("call_price")
+                pe_val = r.get("pe_ltp") or r.get("put_ltp") or r.get("put_price")
+                if ce_val is not None: monthly_ltp_map[stk]["CE"] = float(ce_val)
+                if pe_val is not None: monthly_ltp_map[stk]["PE"] = float(pe_val)
 
         is_monthly = (d.get("expiry_type") == "MONTHLY")
         active_map = monthly_ltp_map if is_monthly else weekly_ltp_map
-        fallback_map = weekly_ltp_map if is_monthly else monthly_ltp_map
 
         legs = json.loads(d.get("legs_json") or "[]")
         total_pnl = 0.0
@@ -5186,19 +5241,37 @@ class NiftyAnalyticsEngine:
             qty = leg.get("qty", NIFTY_LOT_SIZE)
             entry_px = float(leg.get("entry_price", leg.get("price", 0.0)))
             cmp_val = active_map.get(stk, {}).get(opt_type)
-            if cmp_val is None:
-                cmp_val = fallback_map.get(stk, {}).get(opt_type, entry_px)
-            cmp = float(cmp_val)
-            leg_pnl = ((cmp - entry_px) if action == "BUY" else (entry_px - cmp)) * qty
+            if cmp_val is None or float(cmp_val) <= 0.0:
+                if exit_pnl is not None:
+                    cmp = entry_px
+                    exit_cost = 0.0
+                elif exit_reason in ("TEST_CLEANUP", "FORCE_CLOSE", "ADMIN_RESET") or "TEST" in exit_reason.upper():
+                    cmp = entry_px
+                    exit_cost = 0.0
+                else:
+                    raise ValueError(
+                        f"DATA_UNAVAILABLE: Cannot exit strategy {strategy_id}. "
+                        f"Live quote for strike {stk} {opt_type} is unavailable or zero in {d.get('expiry_type')} chain. "
+                        f"Refusing to execute exit with synthetic or unverified prices."
+                    )
+            else:
+                cmp = float(cmp_val)
+                exit_cost = calc_regulatory_options_cost(cmp, qty, is_sell=(action == "SELL"))
+            leg_gross_pnl = ((cmp - entry_px) if action == "BUY" else (entry_px - cmp)) * qty
+            leg_pnl = leg_gross_pnl - exit_cost
             total_pnl += leg_pnl
             closed_legs.append({
                 **leg,
                 "exit_price": round(cmp, 2),
+                "exit_cost": round(exit_cost, 2),
                 "leg_pnl": round(leg_pnl, 2)
             })
 
         ts_close = format_ist()
-        total_pnl = round(total_pnl, 2)
+        if exit_pnl is not None and (not active_map or all(cmp_val is None or float(cmp_val) <= 0.0 for cmp_val in [active_map.get(l.get('strike'), {}).get(l.get('type', 'CE')) for l in legs])):
+            total_pnl = round(exit_pnl, 2)
+        else:
+            total_pnl = round(total_pnl, 2)
 
         with state_engine._lock:
             with state_engine._get_connection() as conn:
@@ -5285,19 +5358,26 @@ class NiftyAnalyticsEngine:
             return {"delta": 0.0, "theta": 0.0, "gamma": 0.0, "vega": 0.0}
 
         dte = 5.0
-        try:
-            if expiry_date_str:
-                exp_clean = expiry_date_str.strip().split()[0]
-                exp_dt = datetime.strptime(exp_clean, "%d-%b-%Y")
-                now_dt = datetime.now()
-                diff_days = (exp_dt.date() - now_dt.date()).days
-                dte = max(0.5, float(diff_days))
-        except Exception:
-            dte = 5.0
+        today_date = now_ist().date()
+        parsed_exp = False
+        if expiry_date_str:
+            exp_clean = expiry_date_str.strip().split()[0]
+            for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+                try:
+                    exp_dt = datetime.datetime.strptime(exp_clean, fmt).date()
+                    diff_days = (exp_dt - today_date).days
+                    dte = max(0.5, float(diff_days))
+                    parsed_exp = True
+                    break
+                except Exception:
+                    pass
+        if not parsed_exp:
+            cal_exp = NSEMarketCalendar.get_active_options_expiries()
+            dte = max(0.5, float(cal_exp.get("dte_weekly", 4.0)))
 
         t_years = max(0.001, dte / 365.0)
         sqrt_t = math.sqrt(t_years)
-        r = 0.07  # Risk-free rate (7% RBI repo/T-bill proxy)
+        r = RISK_FREE_RATE
 
         def _norm_cdf(x: float) -> float:
             return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
@@ -5470,37 +5550,12 @@ class NiftyAnalyticsEngine:
                 or (bool(monthly_exp_date) and d.get("expiry_date") == monthly_exp_date)
             )
 
-            # Smart heuristic: If tagged WEEKLY but entry prices match monthly chain quotes far closer
-            if not is_monthly and monthly_ltp_map and legs:
-                monthly_matches = 0
-                weekly_matches = 0
-                for l in legs:
-                    s_k = l.get("strike")
-                    s_t = l.get("type", "CE")
-                    e_p = float(l.get("entry_price", l.get("price", 0.0)))
-                    if e_p > 0:
-                        try:
-                            s_int = int(round(float(s_k)))
-                        except Exception:
-                            s_int = s_k
-                        m_p = monthly_ltp_map.get(s_int, {}).get(s_t)
-                        w_p = weekly_ltp_map.get(s_int, {}).get(s_t)
-                        if m_p is not None and w_p is not None:
-                            if abs(e_p - m_p) + 5.0 < abs(e_p - w_p):
-                                monthly_matches += 1
-                            elif abs(e_p - w_p) + 5.0 < abs(e_p - m_p):
-                                weekly_matches += 1
-                if monthly_matches > weekly_matches:
-                    is_monthly = True
-                    d["expiry_type"] = "MONTHLY"
-                    if monthly_exp_date:
-                        d["expiry_date"] = monthly_exp_date
-
             active_map = monthly_ltp_map if is_monthly else weekly_ltp_map
-            fallback_map = weekly_ltp_map if is_monthly else monthly_ltp_map
 
             strat_unrealized = 0.0
             updated_legs = []
+            strat_quote_available = True
+
             for leg in legs:
                 stk = leg.get("strike")
                 opt_type = leg.get("type", "CE")
@@ -5516,25 +5571,21 @@ class NiftyAnalyticsEngine:
                 val = active_map.get(stk_int, {}).get(opt_type)
                 if val is None:
                     val = active_map.get(stk, {}).get(opt_type)
-                if val is None:
-                    val = fallback_map.get(stk_int, {}).get(opt_type)
-                if val is None:
-                    val = fallback_map.get(stk, {}).get(opt_type)
-                if val is None:
-                    val = entry_px
-                current_px = float(val)
 
-                # Guard against 0.0 quotes distorting MTM unrealized PnL
-                if current_px <= 0.0 and entry_px > 0.0:
-                    current_px = entry_px
+                leg_quote_available = (val is not None and float(val) > 0.0)
+                if leg_quote_available:
+                    current_px = float(val)
+                else:
+                    strat_quote_available = False
+                    current_px = entry_px  # Preserve entry_px only as non-distorting placeholder
 
-                leg_pnl = ((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty
+                leg_pnl = ((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty if leg_quote_available else 0.0
                 strat_unrealized += leg_pnl
 
                 iv_key = f"{opt_type}_IV"
                 leg_iv = leg.get("iv")
                 if not leg_iv or float(leg_iv) <= 0.0:
-                    leg_iv = active_map.get(stk_int, {}).get(iv_key) or fallback_map.get(stk_int, {}).get(iv_key) or base_iv
+                    leg_iv = active_map.get(stk_int, {}).get(iv_key) or base_iv
 
                 updated_legs.append({
                     **leg,
@@ -5645,7 +5696,9 @@ class NiftyAnalyticsEngine:
         strikes_data: List[Dict[str, Any]],
         atm_strike: int,
         spot_price: float,
-        lot_size: int = NIFTY_LOT_SIZE
+        lot_size: int = NIFTY_LOT_SIZE,
+        expiry_date: Optional[str] = None,
+        expiry_type: str = "WEEKLY"
     ) -> Dict[str, Any]:
         """
         Synthesizes executable multi-leg option strategies using real live strike prices,
@@ -5658,6 +5711,18 @@ class NiftyAnalyticsEngine:
 
         def _get_strike(target: float):
             return min(strikes_data, key=lambda s: abs(s["strike"] - target))
+
+        def _get_lower_strike(ref_strike: float, target: float):
+            lower = [s for s in strikes_data if s["strike"] < ref_strike]
+            if lower:
+                return min(lower, key=lambda s: abs(s["strike"] - target))
+            return None
+
+        def _get_higher_strike(ref_strike: float, target: float):
+            higher = [s for s in strikes_data if s["strike"] > ref_strike]
+            if higher:
+                return min(higher, key=lambda s: abs(s["strike"] - target))
+            return None
 
         atm_row = _get_strike(atm_strike)
         stk_step = 50
@@ -5677,30 +5742,62 @@ class NiftyAnalyticsEngine:
         def _norm_cdf(x: float) -> float:
             return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
-        # Dynamic Black-Scholes pricing
-        t_years = 5.0 / 365.0
-        r = 0.07
-        base_iv = float(atm_row.get("ce_iv") or atm_row.get("pe_iv") or 13.0)
+        # Determine legitimate DTE from expiry date or market calendar (F-17)
+        dte = 5.0
+        today_date = now_ist().date()
+        parsed_exp = False
+        if expiry_date:
+            exp_clean = expiry_date.strip().split()[0]
+            for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+                try:
+                    exp_dt = datetime.datetime.strptime(exp_clean, fmt).date()
+                    diff_days = (exp_dt - today_date).days
+                    dte = max(0.5, float(diff_days))
+                    parsed_exp = True
+                    break
+                except Exception:
+                    pass
+        if not parsed_exp:
+            cal_exp = NSEMarketCalendar.get_active_options_expiries()
+            if expiry_type.upper() == "MONTHLY":
+                dte = max(1.0, float(cal_exp.get("dte_monthly", 25.0)))
+            else:
+                dte = max(0.5, float(cal_exp.get("dte_weekly", 4.0)))
+
+        t_years = max(0.001, dte / 365.0)
+        r = RISK_FREE_RATE
+        base_iv = float(atm_row.get("ce_iv") or atm_row.get("pe_iv") or atm_row.get("call_iv") or atm_row.get("put_iv") or DEFAULT_OPTIONS_IV)
         sig = max(0.05, base_iv / 100.0)
 
-        def _bs_price(spot: float, strike: float, opt_type: str, iv: float) -> float:
-            s_val = max(0.05, iv / 100.0)
-            d1 = (math.log(max(1e-4, spot) / max(1e-4, strike)) + (r + 0.5 * s_val ** 2) * t_years) / (s_val * math.sqrt(t_years))
-            d2 = d1 - s_val * math.sqrt(t_years)
-            if opt_type.upper() == "CE":
-                px = spot * _norm_cdf(d1) - strike * math.exp(-r * t_years) * _norm_cdf(d2)
-            else:
-                px = strike * math.exp(-r * t_years) * _norm_cdf(-d2) - spot * _norm_cdf(-d1)
-            return max(0.05, round(px, 2))
-
         def _get_leg_ltp(stk_row: Dict[str, Any], opt_type: str) -> float:
-            key = "ce_ltp" if opt_type.upper() == "CE" else "pe_ltp"
-            iv_key = "ce_iv" if opt_type.upper() == "CE" else "pe_iv"
-            ltp = float(stk_row.get(key) or 0.0)
+            is_ce = (opt_type.upper() == "CE")
+            primary_key = "ce_ltp" if is_ce else "pe_ltp"
+            alt_keys = ["call_ltp", "call_price", "ltp"] if is_ce else ["put_ltp", "put_price", "ltp"]
+            ltp = float(stk_row.get(primary_key) or 0.0)
+            if ltp <= 0.0:
+                for k in alt_keys:
+                    val = float(stk_row.get(k) or 0.0)
+                    if val > 0.0:
+                        ltp = val
+                        break
             if ltp > 0.0:
                 return round(ltp, 2)
-            iv = float(stk_row.get(iv_key) or base_iv)
-            return _bs_price(spot_price, stk_row["strike"], opt_type, iv)
+            raise ValueError(
+                f"DATA_UNAVAILABLE: Leg strike {stk_row.get('strike')} {opt_type} has missing or zero LTP in live option chain."
+            )
+
+        def _get_leg_iv(stk_row: Dict[str, Any], opt_type: str) -> float:
+            is_ce = (opt_type.upper() == "CE")
+            primary_key = "ce_iv" if is_ce else "pe_iv"
+            alt_keys = ["call_iv", "iv"] if is_ce else ["put_iv", "iv"]
+            val = float(stk_row.get(primary_key) or 0.0)
+            if val <= 0.0:
+                for k in alt_keys:
+                    v = float(stk_row.get(k) or 0.0)
+                    if v > 0.0:
+                        val = v
+                        break
+            return round(val if val > 0.0 else base_iv, 2)
 
         def _calc_d2_prob(target_spot: float) -> float:
             if target_spot <= 0.0:
@@ -5713,12 +5810,23 @@ class NiftyAnalyticsEngine:
 
         if st == "BULL_CALL_SPREAD":
             l1_stk = _get_strike(atm_strike)
-            l2_stk = _get_strike(atm_strike + 2 * stk_step)
+            l2_stk = _get_higher_strike(l1_stk["strike"], atm_strike + 2 * stk_step)
+            if not l2_stk:
+                l1_alt = _get_lower_strike(l1_stk["strike"], atm_strike - stk_step)
+                if l1_alt:
+                    l2_stk = l1_stk
+                    l1_stk = l1_alt
+                else:
+                    raise ValueError("DATA_UNAVAILABLE: Insufficient distinct strikes in option chain to construct Bull Call Spread.")
             p1 = _get_leg_ltp(l1_stk, "CE")
             p2 = _get_leg_ltp(l2_stk, "CE")
+            if p1 <= p2:
+                raise ValueError(
+                    f"DATA_UNAVAILABLE: Inverted quotes for Bull Call Spread (buy strike {l1_stk['strike']} price {p1} <= sell strike {l2_stk['strike']} price {p2}). Refusing to build invalid strategy."
+                )
             legs = [
-                {"action": "BUY", "type": "CE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("ce_iv", base_iv)},
-                {"action": "SELL", "type": "CE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("ce_iv", base_iv)}
+                {"action": "BUY", "type": "CE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": _get_leg_iv(l1_stk, "CE")},
+                {"action": "SELL", "type": "CE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": _get_leg_iv(l2_stk, "CE")}
             ]
             net_debit = (p1 - p2) * lot_size
             net_premium = -round(net_debit, 2)
@@ -5734,13 +5842,27 @@ class NiftyAnalyticsEngine:
             est_margin = round(abs(net_debit), 2)
 
         elif st == "BULL_PUT_SPREAD":
-            l1_stk = _get_strike(atm_strike - 1 * stk_step)
-            l2_stk = _get_strike(atm_strike - 3 * stk_step)
+            candidate_sell = _get_strike(atm_strike - 1 * stk_step)
+            candidate_buy = _get_lower_strike(candidate_sell["strike"], atm_strike - 3 * stk_step)
+            if candidate_buy:
+                l1_stk = candidate_sell
+                l2_stk = candidate_buy
+            else:
+                candidate_buy_from_atm = _get_lower_strike(atm_row["strike"], atm_strike - 1 * stk_step)
+                if candidate_buy_from_atm:
+                    l1_stk = atm_row
+                    l2_stk = candidate_buy_from_atm
+                else:
+                    raise ValueError("DATA_UNAVAILABLE: Insufficient distinct strikes in option chain to construct Bull Put Spread.")
             p1 = _get_leg_ltp(l1_stk, "PE")
             p2 = _get_leg_ltp(l2_stk, "PE")
+            if p1 <= p2:
+                raise ValueError(
+                    f"DATA_UNAVAILABLE: Inverted quotes for Bull Put Spread (sell strike {l1_stk['strike']} price {p1} <= buy strike {l2_stk['strike']} price {p2}). Refusing to build invalid strategy."
+                )
             legs = [
-                {"action": "SELL", "type": "PE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("pe_iv", base_iv)},
-                {"action": "BUY", "type": "PE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("pe_iv", base_iv)}
+                {"action": "SELL", "type": "PE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": _get_leg_iv(l1_stk, "PE")},
+                {"action": "BUY", "type": "PE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": _get_leg_iv(l2_stk, "PE")}
             ]
             net_credit = (p1 - p2) * lot_size
             net_premium = round(net_credit, 2)
@@ -5757,12 +5879,23 @@ class NiftyAnalyticsEngine:
 
         elif st == "BEAR_PUT_SPREAD":
             l1_stk = _get_strike(atm_strike)
-            l2_stk = _get_strike(atm_strike - 2 * stk_step)
+            l2_stk = _get_lower_strike(l1_stk["strike"], atm_strike - 2 * stk_step)
+            if not l2_stk:
+                l1_alt = _get_higher_strike(l1_stk["strike"], atm_strike + stk_step)
+                if l1_alt:
+                    l2_stk = l1_stk
+                    l1_stk = l1_alt
+                else:
+                    raise ValueError("DATA_UNAVAILABLE: Insufficient distinct strikes in option chain to construct Bear Put Spread.")
             p1 = _get_leg_ltp(l1_stk, "PE")
             p2 = _get_leg_ltp(l2_stk, "PE")
+            if p1 <= p2:
+                raise ValueError(
+                    f"DATA_UNAVAILABLE: Inverted quotes for Bear Put Spread (buy strike {l1_stk['strike']} price {p1} <= sell strike {l2_stk['strike']} price {p2}). Refusing to build invalid strategy."
+                )
             legs = [
-                {"action": "BUY", "type": "PE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("pe_iv", base_iv)},
-                {"action": "SELL", "type": "PE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("pe_iv", base_iv)}
+                {"action": "BUY", "type": "PE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": _get_leg_iv(l1_stk, "PE")},
+                {"action": "SELL", "type": "PE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": _get_leg_iv(l2_stk, "PE")}
             ]
             net_debit = (p1 - p2) * lot_size
             net_premium = -round(net_debit, 2)
@@ -5778,13 +5911,27 @@ class NiftyAnalyticsEngine:
             est_margin = round(abs(net_debit), 2)
 
         elif st == "BEAR_CALL_SPREAD":
-            l1_stk = _get_strike(atm_strike + 1 * stk_step)
-            l2_stk = _get_strike(atm_strike + 3 * stk_step)
+            candidate_sell = _get_strike(atm_strike + 1 * stk_step)
+            candidate_buy = _get_higher_strike(candidate_sell["strike"], atm_strike + 3 * stk_step)
+            if candidate_buy:
+                l1_stk = candidate_sell
+                l2_stk = candidate_buy
+            else:
+                candidate_buy_from_atm = _get_higher_strike(atm_row["strike"], atm_strike + 1 * stk_step)
+                if candidate_buy_from_atm:
+                    l1_stk = atm_row
+                    l2_stk = candidate_buy_from_atm
+                else:
+                    raise ValueError("DATA_UNAVAILABLE: Insufficient distinct strikes in option chain to construct Bear Call Spread.")
             p1 = _get_leg_ltp(l1_stk, "CE")
             p2 = _get_leg_ltp(l2_stk, "CE")
+            if p1 <= p2:
+                raise ValueError(
+                    f"DATA_UNAVAILABLE: Inverted quotes for Bear Call Spread (sell strike {l1_stk['strike']} price {p1} <= buy strike {l2_stk['strike']} price {p2}). Refusing to build invalid strategy."
+                )
             legs = [
-                {"action": "SELL", "type": "CE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": l1_stk.get("ce_iv", base_iv)},
-                {"action": "BUY", "type": "CE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": l2_stk.get("ce_iv", base_iv)}
+                {"action": "SELL", "type": "CE", "strike": l1_stk["strike"], "lots": 1, "qty": lot_size, "price": p1, "entry_price": p1, "iv": _get_leg_iv(l1_stk, "CE")},
+                {"action": "BUY", "type": "CE", "strike": l2_stk["strike"], "lots": 1, "qty": lot_size, "price": p2, "entry_price": p2, "iv": _get_leg_iv(l2_stk, "CE")}
             ]
             net_credit = (p1 - p2) * lot_size
             net_premium = round(net_credit, 2)
@@ -5958,7 +6105,7 @@ class NiftyAnalyticsEngine:
             breakevens = [be_low, be_high]
             rr_str = "Credit"
             pop_pct = round(max(5.0, (_calc_d2_prob(be_low) - _calc_d2_prob(be_high)) * 100.0), 1)
-            est_margin = round((0.12 * spot_price + prem_pts) * lot_size, 2)
+            est_margin = round((0.15 * spot_price + prem_pts) * lot_size, 2)
 
         elif st == "SHORT_STRANGLE":
             l_pe = _get_strike(atm_strike - 2 * stk_step)
@@ -5981,7 +6128,10 @@ class NiftyAnalyticsEngine:
             breakevens = [be_low, be_high]
             rr_str = "Credit"
             pop_pct = round(max(5.0, (_calc_d2_prob(be_low) - _calc_d2_prob(be_high)) * 100.0), 1)
-            est_margin = round((0.12 * spot_price + prem_pts) * lot_size, 2)
+            est_margin = round((0.15 * spot_price + prem_pts) * lot_size, 2)
+
+        else:
+            raise ValueError(f"Unknown options strategy type: '{strategy_type}'. Cannot construct strategy legs.")
 
         return {
             "strategy_type": st,
@@ -6209,7 +6359,9 @@ class NiftyAnalyticsEngine:
                         strikes_data=strikes_source,
                         atm_strike=atm_source,
                         spot_price=spot_price,
-                        lot_size=NIFTY_LOT_SIZE
+                        lot_size=NIFTY_LOT_SIZE,
+                        expiry_date=expiry_source,
+                        expiry_type=expiry_type_lbl
                     )
                     readable_name = st_type.replace("_", " ").title()
                     strat_name = f"{m_upper.capitalize()} {readable_name}"
@@ -6299,6 +6451,62 @@ class NiftyAnalyticsEngine:
             highest_pnl = float(d.get("highest_pnl_reached") or 0.0)
             mode = str(d.get("auto_trade_mode") or "MANUAL").upper()
 
+            # Check for Contract Expiry Settlement (F-21)
+            exp_date_str = d.get("expiry_date", "")
+            is_expired = False
+            if exp_date_str:
+                for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+                    try:
+                        exp_d = datetime.datetime.strptime(exp_date_str.strip().split()[0], fmt).date()
+                        if exp_d < dt_now.date() or (exp_d == dt_now.date() and is_moc_time):
+                            is_expired = True
+                        break
+                    except Exception:
+                        pass
+
+            if is_expired:
+                # Settle options strategy at intrinsic cash value on expiry
+                legs = json.loads(d.get("legs_json") or "[]")
+                settle_spot = float(port.get("spot_price") or 0.0)
+                if settle_spot <= 0.0:
+                    try:
+                        settle_spot = float(self.get_live_nifty_spot().get("price") or 0.0)
+                    except Exception:
+                        settle_spot = 0.0
+
+                if settle_spot > 0.0:
+                    settled_pnl = 0.0
+                    closed_legs = []
+                    for leg in legs:
+                        stk = float(leg.get("strike", 0.0))
+                        opt_t = str(leg.get("type", "CE")).upper()
+                        act = str(leg.get("action", "BUY")).upper()
+                        qty = int(leg.get("qty", NIFTY_LOT_SIZE))
+                        e_px = float(leg.get("entry_price", leg.get("price", 0.0)))
+
+                        intrinsic = max(0.0, settle_spot - stk) if opt_t == "CE" else max(0.0, stk - settle_spot)
+                        leg_pnl = ((intrinsic - e_px) if act == "BUY" else (e_px - intrinsic)) * qty
+                        settled_pnl += leg_pnl
+                        closed_legs.append({**leg, "exit_price": round(intrinsic, 2), "leg_pnl": round(leg_pnl, 2)})
+
+                    settled_pnl = round(settled_pnl, 2)
+                    with state_engine._lock:
+                        with state_engine._get_connection() as conn:
+                            conn.execute("""
+                                UPDATE options_strategies SET
+                                    status = 'EXPIRED',
+                                    closed_at = ?,
+                                    spot_at_exit = ?,
+                                    realized_pnl = ?,
+                                    exit_reason = 'EXPIRY_CASH_SETTLEMENT',
+                                    legs_json = ?
+                                WHERE strategy_id = ?
+                            """, (format_ist(), settle_spot, settled_pnl, json.dumps(closed_legs), strat_id))
+                            conn.commit()
+                    exited_count += 1
+                    actions.append(f"EXPIRY_SETTLED: {strat_name} ({strat_id}) at spot ₹{settle_spot:.2f} (Realized PnL: ₹{settled_pnl:+.2f})")
+                    continue
+
             live_info = active_strats.get(strat_id)
             if not live_info:
                 # Live quote data not available in active_strats for this strategy; cannot evaluate stops/targets
@@ -6360,7 +6568,7 @@ class NiftyAnalyticsEngine:
 
             if exit_reason:
                 try:
-                    res = self.exit_options_strategy(strat_id, exit_reason=exit_reason)
+                    res = self.exit_options_strategy(strat_id, exit_reason=exit_reason, exit_pnl=unrealized_pnl)
                     exited_count += 1
                     actions.append({
                         "strategy_id": strat_id,
@@ -6658,6 +6866,36 @@ class NiftyAnalyticsEngine:
         except Exception:
             pass
         return {"price": 0.0, "timestamp": ts_now, "source": "UNAVAILABLE", "is_live": False, "market_status": mkt_state_str, "session_phase": mkt_phase, "age_seconds": 0}
+
+    @classmethod
+    def get_india_vix(cls) -> Dict[str, Any]:
+        """
+        Retrieves latest India VIX quote (^INDIAVIX) from live market or ohlcv_master_store.
+        """
+        try:
+            with state_engine._lock:
+                with state_engine._get_connection() as conn:
+                    row = conn.execute("""
+                        SELECT close, change_pct, date FROM ohlcv_master_store
+                        WHERE symbol = '^INDIAVIX' AND close > 0
+                        ORDER BY date DESC LIMIT 1
+                    """).fetchone()
+                    if row and row["close"]:
+                        return {
+                            "current_vix": float(row["close"]),
+                            "change_pct": float(row["change_pct"] or 0.0),
+                            "date": str(row["date"]),
+                            "source": "OHLCV_MASTER_STORE"
+                        }
+        except Exception as ex:
+            logger.debug(f"Failed to read India VIX from ohlcv_master_store: {ex}")
+
+        return {
+            "current_vix": DEFAULT_OPTIONS_IV,
+            "change_pct": 0.0,
+            "date": format_ist(),
+            "source": "DEFAULT_CONFIG"
+        }
 
     def get_nifty_intraday_minute_chart(self, interval: str = "1m") -> Dict[str, Any]:
         """

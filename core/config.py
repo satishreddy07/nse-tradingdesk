@@ -89,3 +89,28 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
 # Security & Administration
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
+
+# Quantitative Options Risk & Regulatory Rates
+# Current RBI Repo Rate benchmark proxy (5.50%)
+RISK_FREE_RATE = float(os.environ.get("RISK_FREE_RATE", 0.055))
+DEFAULT_OPTIONS_IV = float(os.environ.get("DEFAULT_OPTIONS_IV", 13.0))
+
+# Options Regulatory Costs (Per NSE Circular NSE/FATAX/73524 - STT on Option Sale = 0.15%)
+OPTIONS_STT_RATE = float(os.environ.get("OPTIONS_STT_RATE", 0.0015))  # 0.15% on sale turnover
+OPTIONS_EXCHANGE_TURNOVER_RATE = float(os.environ.get("OPTIONS_EXCHANGE_TURNOVER_RATE", 0.000505))  # 0.0505%
+OPTIONS_SEBI_TURNOVER_RATE = float(os.environ.get("OPTIONS_SEBI_TURNOVER_RATE", 0.000001))
+OPTIONS_BROKERAGE_PER_ORDER = float(os.environ.get("OPTIONS_BROKERAGE_PER_ORDER", 20.0))
+OPTIONS_GST_RATE = float(os.environ.get("OPTIONS_GST_RATE", 0.18))
+OPTIONS_STAMP_DUTY_BUY = float(os.environ.get("OPTIONS_STAMP_DUTY_BUY", 0.00003))
+
+def calc_regulatory_options_cost(premium: float, qty: int, is_sell: bool = True) -> float:
+    """Calculates canonical Indian regulatory transaction costs for an options trade."""
+    turnover = max(0.0, float(premium) * int(qty))
+    stt = (OPTIONS_STT_RATE * turnover) if is_sell else 0.0
+    ex_fee = OPTIONS_EXCHANGE_TURNOVER_RATE * turnover
+    sebi = OPTIONS_SEBI_TURNOVER_RATE * turnover
+    stamp = (OPTIONS_STAMP_DUTY_BUY * turnover) if not is_sell else 0.0
+    brokerage = OPTIONS_BROKERAGE_PER_ORDER
+    gst = OPTIONS_GST_RATE * (brokerage + ex_fee + sebi)
+    return round(stt + ex_fee + sebi + stamp + brokerage + gst, 2)
+

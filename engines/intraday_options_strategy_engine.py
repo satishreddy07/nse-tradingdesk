@@ -62,7 +62,9 @@ from sklearn.linear_model import Ridge, LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 from core.market_calendar import IST, now_ist, format_ist, NSEMarketCalendar
-from core.config import NIFTY_LOT_SIZE
+from core.config import (
+    NIFTY_LOT_SIZE, RISK_FREE_RATE, DEFAULT_OPTIONS_IV, calc_regulatory_options_cost
+)
 from execution.state_engine import state_engine
 
 logger = logging.getLogger("IntradayOptionsEngine")
@@ -514,9 +516,9 @@ class IntradayOptionsStrategyEngine:
             resolved_dte = 0 if is_zero_dte else int(round(t_years * 365.0))
             expiry_cycle = "0DTE" if is_zero_dte else f"{resolved_dte}DTE_INTRADAY"
         else:
-            # Default to nearest weekly Thursday
-            days_to_thu = (3 - today.weekday()) % 7
-            resolved_dte = days_to_thu
+            # Default to nearest weekly Tuesday per NSE Circular FAOP/68589 (F-27)
+            cal_exp = NSEMarketCalendar.get_active_options_expiries()
+            resolved_dte = int(cal_exp.get("dte_weekly", (1 - today.weekday()) % 7))
             is_zero_dte = (resolved_dte == 0)
             expiry_cycle = "0DTE" if is_zero_dte else f"{resolved_dte}DTE_INTRADAY"
             hours_rem = max(0.5, 15.5 - (now_dt.hour + now_dt.minute / 60.0))
@@ -931,7 +933,7 @@ class IntradayOptionsStrategyEngine:
             "gross_profit_inr": round(gross_profit, 2),
             "gross_loss_inr": round(gross_loss, 2),
             "total_transaction_costs_inr": round(sum(t["costs"] for t in trades), 2),
-            "re_entry_frequency_pct": round((sum(t["re_entered_legs"] for t in trades) / max(1, total_trades * 2)) * 100.0, 1),
+            "re_entry_frequency_pct": round((sum(t["re_entered_legs"] for t in trades) / max(1, sum(len(t.get("legs", [])) for t in trades) if sum(len(t.get("legs", [])) for t in trades) > 0 else total_trades * 2)) * 100.0, 1),
             "trades_sample": trades[-5:]
         }
 
@@ -1648,23 +1650,14 @@ class IntradayOptionsStrategyEngine:
                     bid = float(stk_info.get("pe_bid") or stk_info.get("pe_ltp") or 0.0)
                     ask = float(stk_info.get("pe_ask") or stk_info.get("pe_ltp") or 0.0)
                     ltp = float(stk_info.get("pe_ltp") or 0.0)
-                if ltp <= 0.0 and p0 > 0:
-                    ltp = p0
-                    bid = round(ltp * 0.995, 2)
-                    ask = round(ltp * 1.005, 2)
+                if ltp <= 0.0:
+                    events_fired.append(f"DATA_UNAVAILABLE: Live option chain quote missing for {leg_id} (strike {strike} {typ}). Refusing exit on synthetic quote.")
+                    continue
+                bid = round(float(stk_info.get(f"{typ.lower()}_bid") or ltp), 2)
+                ask = round(float(stk_info.get(f"{typ.lower()}_ask") or ltp), 2)
             else:
-                spot_now = float(oc_data.get("spot_price") or 0.0)
-                if spot_now <= 0.0:
-                    try:
-                        spot_now = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
-                    except Exception:
-                        spot_now = 0.0
-                if spot_now > 0.0:
-                    ltp = _black_scholes_price(spot_now, strike, 0.5 / 365.0, 0.07, 0.13, typ)
-                else:
-                    ltp = p0
-                bid = round(ltp * 0.995, 2)
-                ask = round(ltp * 1.005, 2)
+                events_fired.append(f"DATA_UNAVAILABLE: Strike {strike} missing from live option chain for {leg_id}. Refusing exit on synthetic quote.")
+                continue
 
             curr_state = d["status"]
             sl_pct = float(d["sl_threshold_pct"])
@@ -1685,6 +1678,9 @@ class IntradayOptionsStrategyEngine:
                     pnl_pts = round(p0 - close_px, 2)
                     leg_lot_mult = int(d.get("lot_size") or NIFTY_LOT_SIZE)
                     pnl_inr = round(pnl_pts * leg_lot_mult, 2)
+                    leg_exit_cost = calc_regulatory_options_cost(close_px, leg_lot_mult, is_sell=False)
+                    net_inr = round(pnl_inr - leg_exit_cost, 2)
+                    win_val = 1 if net_inr > 0 else 0
                     with state_engine._lock:
                         with state_engine._get_connection() as conn:
                             conn.execute("""
@@ -1692,7 +1688,7 @@ class IntradayOptionsStrategyEngine:
                             SET status = 'CLOSED', settlement_fill = ?, settlement_time = ?,
                                 gross_pnl_pts = ?, gross_pnl_inr = ?, net_pnl_inr = ?, win = ?
                             WHERE leg_id = ?
-                            """, (close_px, now_str, pnl_pts, pnl_inr, round(pnl_inr - 95.0, 2), 1 if pnl_inr > 95 else 0, leg_id))
+                            """, (close_px, now_str, pnl_pts, pnl_inr, net_inr, win_val, leg_id))
                             _sync_parent_strategy(conn, d.get("strategy_id"))
                             conn.commit()
                     try:
@@ -1702,14 +1698,14 @@ class IntradayOptionsStrategyEngine:
                             actual_exit=close_px,
                             exit_reason="MOC_SETTLEMENT",
                             gross_pnl=pnl_inr,
-                            net_pnl=round(pnl_inr - 95.0, 2),
-                            total_costs=95.0,
+                            net_pnl=net_inr,
+                            total_costs=leg_exit_cost,
                             actual_exit_time=now_str,
                             re_entry_count=0
                         )
                     except Exception:
                         pass
-                    events_fired.append(f"MOC Settlement for {leg_id} @ ₹{close_px:.2f} (Net: ₹{pnl_inr - 95:.0f})")
+                    events_fired.append(f"MOC Settlement for {leg_id} @ ₹{close_px:.2f} (Net: ₹{net_inr:.0f})")
                 elif exec_buy >= initial_sl_trigger:
                     exit_px = round(exec_buy, 2)
                     pnl_pts = round(p0 - exit_px, 2)

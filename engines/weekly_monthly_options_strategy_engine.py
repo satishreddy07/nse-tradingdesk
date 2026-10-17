@@ -70,7 +70,9 @@ from sklearn.linear_model import Ridge, LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 from core.market_calendar import IST, now_ist, format_ist, NSEMarketCalendar
-from core.config import NIFTY_LOT_SIZE
+from core.config import (
+    NIFTY_LOT_SIZE, RISK_FREE_RATE, DEFAULT_OPTIONS_IV, calc_regulatory_options_cost
+)
 from execution.state_engine import state_engine
 
 logger = logging.getLogger("PositionalOptionsEngine")
@@ -168,14 +170,7 @@ class PositionalOptionLegTracker:
 
     def _calc_trade_cost(self, premium: float, is_sell: bool) -> float:
         """Calculates realistic Indian regulatory transaction costs per trade."""
-        turnover = premium * self.qty
-        stt = (0.0010 * turnover) if is_sell else 0.0
-        ex_fee = 0.000505 * turnover
-        sebi = 0.000001 * turnover
-        stamp = (0.00003 * turnover) if not is_sell else 0.0
-        brokerage = 20.0
-        gst = 0.18 * (brokerage + ex_fee + sebi)
-        return round(stt + ex_fee + sebi + stamp + brokerage + gst, 2)
+        return calc_regulatory_options_cost(premium, self.qty, is_sell=is_sell)
 
     def tick(
         self,
@@ -498,7 +493,8 @@ class WeeklyMonthlyOptionsStrategyEngine:
         iv_pct: float,
         horizon: str = "WEEKLY",
         expiry_date: Optional[str] = None,
-        strike_step: int = 50
+        strike_step: int = 50,
+        dte_override: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Calculates 1-sigma strike for Weekly or Monthly expiry:
@@ -529,12 +525,12 @@ class WeeklyMonthlyOptionsStrategyEngine:
             except Exception:
                 pass
         if iv_pct <= 0:
-            iv_pct = 13.2
+            iv_pct = DEFAULT_OPTIONS_IV
 
         horizon = horizon.upper()
         today = now_ist().date()
 
-        # Parse or determine legitimate NSE Thursday expiry date from NSEMarketCalendar
+        # Parse or determine legitimate NSE expiry date from NSEMarketCalendar
         from core.market_calendar import NSEMarketCalendar
         cal_expiries = NSEMarketCalendar.get_active_options_expiries()
         cal_exp_str = cal_expiries["current_weekly"] if horizon == "WEEKLY" else cal_expiries["current_monthly"]
@@ -551,7 +547,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 except Exception:
                     pass
 
-        if not parsed_exp:
+        if dte_override is not None and dte_override > 0:
+            dte = int(dte_override)
+        elif not parsed_exp:
             expiry_date = cal_exp_str
             dte = max(1, cal_dte)
 
@@ -766,7 +764,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
         else:
             regime = "RANGE_BOUND"
 
-        r = 0.07
+        r = RISK_FREE_RATE
         sig = max(0.05, iv_pct / 100.0)
 
         def _calc_pop(strike: int, opt_type: str) -> float:
@@ -1336,7 +1334,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             if not strat_def:
                 continue
 
-            sigma_info = cls.calculate_sigma_strikes(spot0, iv_pct, horizon=horizon)
+            sigma_info = cls.calculate_sigma_strikes(spot0, iv_pct, horizon=horizon, dte_override=dte)
             strikes_map = sigma_info["strikes"]
             t_entry_years = max(0.005, float(dte) / 365.0)
 
@@ -1349,7 +1347,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             for idx, leg_spec in enumerate(strat_def["legs"]):
                 typ = leg_spec["type"]
                 strike = strikes_map[f"strike_1s_{typ.lower()}"]
-                p0 = _black_scholes_price(S=spot0, K=strike, T=t_entry_years, r=0.07, sigma=iv_pct / 100.0, option_type=typ)
+                p0 = _black_scholes_price(S=spot0, K=strike, T=t_entry_years, r=RISK_FREE_RATE, sigma=iv_pct / 100.0, option_type=typ)
 
                 leg_tracker = PositionalOptionLegTracker(
                     leg_id=f"BT-{horizon[:1]}-{sess['date']}-{strike}-{typ}-{idx}",
@@ -1378,7 +1376,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
                         S=spot_t,
                         K=leg.strike,
                         T=t_remaining_years,
-                        r=0.07,
+                        r=RISK_FREE_RATE,
                         sigma=iv_pct / 100.0,
                         option_type=leg.option_type
                     )
@@ -1445,7 +1443,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             "gross_profit_inr": round(gross_profit, 2),
             "gross_loss_inr": round(gross_loss, 2),
             "total_transaction_costs_inr": round(sum(t["costs"] for t in trades), 2),
-            "re_entry_frequency_pct": round((sum(t["re_entered_legs"] for t in trades) / max(1, total_trades * 2)) * 100.0, 1),
+            "re_entry_frequency_pct": round((sum(t["re_entered_legs"] for t in trades) / max(1, sum(len(t.get("legs", [])) for t in trades) if sum(len(t.get("legs", [])) for t in trades) > 0 else total_trades * 2)) * 100.0, 1),
             "trades_sample": trades[-5:]
         }
 
@@ -1766,7 +1764,11 @@ class WeeklyMonthlyOptionsStrategyEngine:
                     ltp_key = "ce_ltp" if typ.upper() == "CE" else "pe_ltp"
                     p0 = float(stk_match.get(ltp_key) or 0.0)
             if p0 <= 0:
-                p0 = _black_scholes_price(spot_price, strike, t_years, 0.07, iv_val / 100.0, typ)
+                raise ValueError(
+                    f"DATA_UNAVAILABLE: Cannot deploy positional strategy {strat_id}. "
+                    f"Live option chain quote for strike {strike} {typ} is unavailable or zero. "
+                    f"Refusing to deploy with synthetic prices."
+                )
 
             leg_tracker = PositionalOptionLegTracker(
                 leg_id=f"{strat_id}-L{idx+1}-{typ}-{strike}",
