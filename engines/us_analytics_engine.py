@@ -163,16 +163,16 @@ class USAnalyticsEngine:
                 r1 = ((p - prev) / max(0.01, prev)) * 100.0 if prev > 0 else 0.0
                 out["close"] = round(p, 2)
                 out["ret_1d"] = round(r1, 2)
-                out["ret_5d"] = 0.0
-                out["ret_20d"] = 0.0
-                out["ema20"] = round(p, 2)
-                out["ema50"] = round(p, 2)
-                out["ema200"] = round(p, 2)
-                out["rsi14"] = 50.0
-                out["macd_hist"] = 0.0
-                out["trend"] = "NEUTRAL"
+                out["ret_5d"] = None
+                out["ret_20d"] = None
+                out["ema20"] = None
+                out["ema50"] = None
+                out["ema200"] = None
+                out["rsi14"] = None
+                out["macd_hist"] = None
+                out["trend"] = "UNKNOWN"
                 out["impulse_score"] = 0.0
-                out["status"] = "AVAILABLE"
+                out["status"] = "PARTIAL_QUOTE_ONLY"
             return out
 
         c = df["Close"].to_numpy(dtype=np.float64)

@@ -750,10 +750,10 @@ class WeeklyMonthlyOptionsStrategyEngine:
         p_flat = 0.34
         p_down = 0.33
         if weekly_model_info and "probabilities" in weekly_model_info:
-            probs = weekly_model_info["probabilities"]
-            p_up = float(probs.get("p_up", 0.33))
-            p_flat = float(probs.get("p_flat", 0.34))
-            p_down = float(probs.get("p_down", 0.33))
+            probs = weekly_model_info.get("probabilities") or {}
+            p_up = float(probs.get("p_up") if probs.get("p_up") is not None else 0.33)
+            p_flat = float(probs.get("p_flat") if probs.get("p_flat") is not None else 0.34)
+            p_down = float(probs.get("p_down") if probs.get("p_down") is not None else 0.33)
 
         if "STRONG" in v_upper and "BULL" in v_upper:
             regime = "STRONG_BULLISH"
@@ -1245,6 +1245,22 @@ class WeeklyMonthlyOptionsStrategyEngine:
                             })
             except Exception:
                 pass
+
+        if not sessions_data:
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": "No historical session data available for positional options backtest.",
+                "decision_source": f"WEEKLY_PREDICTION_MODEL_T5 ({horizon.capitalize()})",
+                "horizon": horizon,
+                "specified_sl_pct": default_sl,
+                "sessions_evaluated": 0,
+                "date_range": "N/A",
+                "lot_size": lot_size,
+                "comparison_matrix": {},
+                "regime_breakdown": {},
+                "summary_insights": ["Data unavailable: No historical session data found in database."],
+                "timestamp_ist": format_ist()
+            }
 
         # Test Configurations Matrix:
         # A. Specified Strategy With 1-Time Re-entry
@@ -2249,17 +2265,22 @@ class WeeklyMonthlyOptionsStrategyEngine:
                                 if not path or len(path) < 2:
                                     path = [round(open_px, 2), round(close_px, 2)]
 
-                                # Derive 5-regime classification based on multi-day move
+                                # Strictly eliminate look-ahead bias: entry regime must use trend prior to entry idx
+                                prior_start = max(0, idx - holding_bars)
+                                prior_close = float(df.iloc[prior_start]["Close"])
+                                prior_trend = round(((open_px - prior_close) / prior_close) * 100.0, 2) if prior_close > 0 else 0.0
+
+                                # Derive 5-regime classification based on prior trend
                                 threshold_strong = 1.50 if is_weekly else 3.00
                                 threshold_mild = 0.50 if is_weekly else 1.00
 
-                                if ret_pct >= threshold_strong:
+                                if prior_trend >= threshold_strong:
                                     verdict = "STRONG BULLISH"
-                                elif ret_pct >= threshold_mild:
+                                elif prior_trend >= threshold_mild:
                                     verdict = "MILD BULLISH"
-                                elif ret_pct <= -threshold_strong:
+                                elif prior_trend <= -threshold_strong:
                                     verdict = "STRONG BEARISH"
-                                elif ret_pct <= -threshold_mild:
+                                elif prior_trend <= -threshold_mild:
                                     verdict = "MILD BEARISH"
                                 else:
                                     verdict = "RANGE BOUND"
@@ -2270,7 +2291,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
                                     "close": round(close_px, 2),
                                     "ret_pct": ret_pct,
                                     "verdict": verdict,
-                                    "composite_score": round(ret_pct * 15.0, 1),
+                                    "composite_score": round(prior_trend * 15.0, 1),
                                     "iv_pct": vol_pct,
                                     "dte": dte_default,
                                     "path": path

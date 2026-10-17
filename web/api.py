@@ -87,9 +87,6 @@ else:
         "http://127.0.0.1:3000",
         "https://nse-tradingdesk.onrender.com",
         "https://nseuniverse.duckdns.org",
-        "http://nseuniverse.duckdns.org",
-        "https://nseuniverse.duckdns.com",
-        "http://nseuniverse.duckdns.com",
     ]
 
 app.add_middleware(
@@ -136,9 +133,7 @@ async def capture_public_host_middleware(request: Request, call_next):
 def health_check():
     return {
         "status": "ok",
-        "timestamp": format_ist(),
-        "host": "RackNerd KVM VPS (104.168.91.147)",
-        "uptime_mode": "24/7 DEDICATED HOST (NO SLEEP TIMEOUT)"
+        "timestamp": format_ist()
     }
 
 
@@ -844,7 +839,7 @@ def get_nifty_predictions(force_refresh: bool = False, force_recalculate: bool =
             scans_tel = state_engine.get_scheduled_scans_telemetry()
             cached["auto_run_telemetry"] = scans_tel.get("premarket_0845", {})
             return _sanitize_for_json(cached)
-        return {"status": "ERROR", "message": f"Prediction service error: {str(e)}"}
+        return {"status": "DATA_UNAVAILABLE", "message": f"Data unavailable: Prediction service error: {str(e)}"}
 
 
 @app.post("/api/nifty/premarket-forecast/lock")

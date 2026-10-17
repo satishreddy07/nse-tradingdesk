@@ -309,18 +309,18 @@ class IntradayMLEngine:
 
     @staticmethod
     def _build_empty_fallback(reason: str) -> Dict[str, Any]:
-        """Graceful fallback if database has zero slots."""
+        """Truthful response when database has zero slots."""
         return {
-            "status": "STANDBY",
+            "status": "DATA_UNAVAILABLE",
             "reason": reason,
             "session_date": now_ist().strftime("%Y-%m-%d"),
             "trained_at_ist": format_ist(),
-            "predicted_regime": "BALANCED_STANDBY",
-            "regime_description": "Awaiting active market slots to initialize ML training pipeline.",
-            "predicted_next_spot_delta_pts": 0.0,
-            "writer_dominance_score": 0.0,
-            "probabilities": {"p_up": 0.33, "p_flat": 0.34, "p_down": 0.33},
-            "model_metrics": {"slots_trained_today": 0, "total_transitions_trained": 0, "latency_ms": 0.1}
+            "predicted_regime": "DATA_UNAVAILABLE",
+            "regime_description": "Data unavailable: Awaiting active market slots to initialize ML training pipeline.",
+            "predicted_next_spot_delta_pts": None,
+            "writer_dominance_score": None,
+            "probabilities": {"p_up": None, "p_flat": None, "p_down": None},
+            "model_metrics": {"slots_trained_today": 0, "total_transitions_trained": 0, "latency_ms": 0.0}
         }
 
 

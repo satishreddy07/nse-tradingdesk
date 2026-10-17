@@ -1,6 +1,13 @@
+import os
 import subprocess
 
-ssh_key = r"C:\Users\Satishreddy Padala\.ssh\github_actions_vps_deploy.key"
+ssh_key = os.environ.get("VPS_SSH_KEY", "")
+vps_host = os.environ.get("VPS_HOST", "")
+
+if not ssh_key or not vps_host:
+    print("Error: Please set VPS_SSH_KEY and VPS_HOST environment variables to execute remote diagnostics.")
+    exit(1)
+
 remote_cmd = """python3 -c "
 import sqlite3
 for path in ['/var/backups/nse-tradingdesk/swing_trades.pre-migration-20261015-180717.db', '/var/backups/nse-tradingdesk/swing_trades.backup-20261015-171058.db']:
@@ -19,7 +26,7 @@ for path in ['/var/backups/nse-tradingdesk/swing_trades.pre-migration-20261015-1
 "
 """
 
-cmd = ["ssh", "-n", "-i", ssh_key, "root@104.168.91.147", remote_cmd]
+cmd = ["ssh", "-n", "-i", ssh_key, f"root@{vps_host}", remote_cmd]
 res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 print("STDOUT:")
 print(res.stdout.encode("ascii", errors="backslashreplace").decode("ascii"))

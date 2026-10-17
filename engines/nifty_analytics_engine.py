@@ -121,7 +121,7 @@ INTRADAY_50M_SLOTS = [
 NIFTY_50_CONSTITUENTS = [
     "RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS", "TCS.NS", "ITC.NS", "LT.NS",
     "KOTAKBANK.NS", "AXISBANK.NS", "SBIN.NS", "BHARTIARTL.NS", "HINDUNILVR.NS", "BAJFINANCE.NS",
-    "MARUTI.NS", "M&M.NS", "HCLTECH.NS", "SUNPHARMA.NS", "TMPV.NS", "NTPC.NS", "ONGC.NS",
+    "MARUTI.NS", "M&M.NS", "HCLTECH.NS", "SUNPHARMA.NS", "TATAMOTORS.NS", "NTPC.NS", "ONGC.NS",
     "POWERGRID.NS", "TITAN.NS", "ADANIENT.NS", "ADANIPORTS.NS", "COALINDIA.NS", "TATASTEEL.NS",
     "BAJAJFINSV.NS", "ASIANPAINT.NS", "JSWSTEEL.NS", "ULTRACEMCO.NS", "GRASIM.NS", "TECHM.NS",
     "BPCL.NS", "HINDALCO.NS", "CIPLA.NS", "DRREDDY.NS", "HEROMOTOCO.NS", "EICHERMOT.NS",
@@ -2366,7 +2366,7 @@ class NiftyAnalyticsEngine:
         neg_words = {
             "crash", "plunge", "plunges", "drop", "drops", "fall", "falls", "bear", "bears", "selloff",
             "rout", "hawkish", "hike", "hikes", "inflation", "war", "tariff", "tariffs", "outflow",
-            "outflows", "weak", "deficit", "downgrade", "fear", "slump", "retreat", "crisis", "highs",
+            "outflows", "weak", "deficit", "downgrade", "fear", "slump", "retreat", "crisis",
             "selling", "pressure", "stagflation", "slowdown", "tightening", "slide", "slides", "tumble"
         }
 
@@ -2653,7 +2653,7 @@ class NiftyAnalyticsEngine:
             return cls._eco_cal_cache
 
         return {
-            "status": "WARNING",
+            "status": "DATA_UNAVAILABLE",
             "source": "Moneycontrol Economic Calendar",
             "url": url,
             "date": now_ist().strftime("%A, %B %d, %Y"),
@@ -2662,7 +2662,7 @@ class NiftyAnalyticsEngine:
             "upcoming_count": 0,
             "updated_at_ist": format_ist(),
             "events": [],
-            "error": "Failed scraping live calendar feed"
+            "error": "Data unavailable: Failed scraping live calendar feed"
         }
 
     @classmethod
@@ -2688,13 +2688,13 @@ class NiftyAnalyticsEngine:
                 "total_samples": 0,
                 "historical_samples": 0,
                 "live_samples": 0,
-                "t1_hit_rate_pct": 72.0,
-                "t5_hit_rate_pct": 75.0,
+                "t1_hit_rate_pct": 0.0,
+                "t5_hit_rate_pct": 0.0,
                 "learned_weights_t1": {"technical": 0.22, "breadth": 0.20, "sectoral": 0.18, "global": 0.14, "macro": 0.10, "news_deriv": 0.08, "institutional": 0.08},
                 "learned_weights_t5": {"technical": 0.28, "breadth": 0.22, "sectoral": 0.18, "global": 0.14, "macro": 0.10, "news_deriv": 0.04, "institutional": 0.04},
                 "r2_score": 0.0,
                 "brier_score": 0.25,
-                "status": "INITIAL_FALLBACK",
+                "status": "INSUFFICIENT_DATA",
             }
 
         dates = [str(idx)[:10] for idx in nifty_df.index]
@@ -2810,7 +2810,9 @@ class NiftyAnalyticsEngine:
                 ret5_fwd = ((closes[i + 5] - s0) / max(1.0, s0)) * 100.0
                 y_ret5.append(ret5_fwd)
             else:
-                y_ret5.append(ret1 * math.sqrt(5.0))
+                # Use actual available realized return to latest known bar
+                ret_avail = ((closes[-1] - s0) / max(1.0, s0)) * 100.0
+                y_ret5.append(ret_avail)
 
             sample_weights.append(1.0)
 
@@ -2841,7 +2843,7 @@ class NiftyAnalyticsEngine:
                         ret1_live = float(r["t1_actual_return_pct"])
                         y_ret1.append(ret1_live)
                         y_reg1.append(1 if ret1_live >= 0.08 else (-1 if ret1_live <= -0.08 else 0))
-                        ret5_live = float(r["t5_actual_return_pct"]) if r["t5_actual_return_pct"] is not None else (ret1_live * 2.2)
+                        ret5_live = float(r["t5_actual_return_pct"]) if r["t5_actual_return_pct"] is not None else ret1_live
                         y_ret5.append(ret5_live)
                         sample_weights.append(2.5)  # Live forward-tested predictions receive 2.5x weight
                         live_samples_count += 1
@@ -3045,7 +3047,7 @@ class NiftyAnalyticsEngine:
 
             if abs(sc) >= 8.0:
                 t1_total += 1
-                if (sc > 0 and fwd1 > -0.10) or (sc < 0 and fwd1 < 0.10):
+                if (sc > 0 and fwd1 > 0) or (sc < 0 and fwd1 < 0):
                     t1_correct += 1
             if sc >= 8.0:
                 t1_cnt_pos += 1
@@ -3060,7 +3062,7 @@ class NiftyAnalyticsEngine:
                 fwd5 = (c[i + 5] - c[i]) / c[i] * 100.0
                 if abs(sc) >= 8.0:
                     t5_total += 1
-                    if (sc > 0 and fwd5 > -0.20) or (sc < 0 and fwd5 < 0.20):
+                    if (sc > 0 and fwd5 > 0) or (sc < 0 and fwd5 < 0):
                         t5_correct += 1
                 if sc >= 8.0:
                     t5_cnt_pos += 1
@@ -6854,8 +6856,9 @@ class NiftyAnalyticsEngine:
         except Exception as e:
             logger.error(f"Error fetching Nifty minute chart ({interval}): {e}", exc_info=True)
             return {
-                "status": "ERROR",
-                "message": f"Failed to fetch {interval} chart for Nifty: {str(e)}"
+                "status": "DATA_UNAVAILABLE",
+                "message": f"Data unavailable: Failed to fetch {interval} chart for Nifty: {str(e)}",
+                "candles": []
             }
 
 

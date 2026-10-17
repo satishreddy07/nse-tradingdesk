@@ -6906,11 +6906,21 @@
           }
         } else {
           console.warn("Prediction returned non-OK status:", data);
-          if (forceRefresh) showToast(data?.detail || data?.message || "Prediction calculation incomplete", 'warning');
+          const updBadge = document.getElementById('pred-updated-badge');
+          if (updBadge) {
+            updBadge.innerText = `⚠️ Data Unavailable: ${data?.message || 'Data fetching failed. No synthetic values used.'}`;
+            updBadge.className = "text-amber-400 font-mono text-xs bg-amber-950/60 border border-amber-600/40 px-2 py-0.5 rounded";
+          }
+          if (forceRefresh) showToast(data?.detail || data?.message || "Data is currently unavailable", 'warning');
         }
       } catch (e) {
         console.error("Failed loading Nifty Predictions Desk:", e);
-        if (forceRefresh) showToast(`Prediction error: ${e.message}`, 'error');
+        const updBadge = document.getElementById('pred-updated-badge');
+        if (updBadge) {
+          updBadge.innerText = `⚠️ Data Unavailable: ${e.message || 'Error connecting to prediction engine'}`;
+          updBadge.className = "text-rose-400 font-mono text-xs bg-rose-950/60 border border-rose-600/40 px-2 py-0.5 rounded";
+        }
+        if (forceRefresh) showToast(`Data unavailable: ${e.message}`, 'error');
       } finally {
         if (forceRefresh && btn) {
           btn.disabled = false;
@@ -7466,15 +7476,15 @@
                 <div class="space-y-1.5 min-w-0">
                   <div class="flex items-center justify-between gap-2 flex-wrap">
                     <div class="text-xs text-purple-300 font-bold font-mono tracking-tight flex items-center gap-1.5 flex-wrap">
-                      <span>📅 ${ev.bank}</span>
-                      <span class="text-slate-400 font-normal">• ${ev.date}</span>
+                      <span>📅 ${escapeHtml(ev.bank)}</span>
+                      <span class="text-slate-400 font-normal">• ${escapeHtml(ev.date)}</span>
                     </div>
                     <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
                       ${impactHtml}
                       ${statusBadge}
                     </div>
                   </div>
-                  <div class="text-xs text-slate-200 font-semibold leading-relaxed">${ev.title} ${consHtml}</div>
+                  <div class="text-xs text-slate-200 font-semibold leading-relaxed">${escapeHtml(ev.title)} ${consHtml}</div>
                 </div>
               </div>
             `;
@@ -7490,13 +7500,14 @@
         } else {
           newsList.innerHTML = headlines.map(h => {
             const sCol = h.sentiment === 'BULLISH' ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : (h.sentiment === 'BEARISH' ? 'text-rose-400 border-rose-500/30 bg-rose-500/10' : 'text-slate-300 border-slate-700 bg-slate-800');
+            const safeLink = (h.link && (h.link.startsWith('http://') || h.link.startsWith('https://'))) ? h.link : '#';
             return `
-              <a href="${h.link || '#'}" target="_blank" rel="noopener" class="block bg-slate-950/70 hover:bg-slate-900 border border-slate-800/90 rounded-xl p-2.5 transition">
+              <a href="${safeLink}" target="_blank" rel="noopener" class="block bg-slate-950/70 hover:bg-slate-900 border border-slate-800/90 rounded-xl p-2.5 transition">
                 <div class="flex items-center justify-between gap-2 mb-1">
-                  <span class="text-[10px] font-mono text-cyan-400">${h.category || 'MARKET'} • ${h.published || ''}</span>
-                  <span class="quant-badge inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono border ${sCol} whitespace-nowrap">${h.sentiment}</span>
+                  <span class="text-[10px] font-mono text-cyan-400">${escapeHtml(h.category || 'MARKET')} • ${escapeHtml(h.published || '')}</span>
+                  <span class="quant-badge inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono border ${sCol} whitespace-nowrap">${escapeHtml(h.sentiment)}</span>
                 </div>
-                <div class="text-xs text-slate-200 font-medium leading-snug">${h.title}</div>
+                <div class="text-xs text-slate-200 font-medium leading-snug">${escapeHtml(h.title)}</div>
               </a>
             `;
           }).join('');

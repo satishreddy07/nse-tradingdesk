@@ -738,6 +738,20 @@ class IntradayOptionsStrategyEngine:
                     "iv_pct": vix_default,
                 })
 
+        if not sessions_data:
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": "No historical session data available for intraday options backtest.",
+                "decision_source": "INTRADAY_ANALYSIS",
+                "sessions_evaluated": 0,
+                "date_range": "N/A",
+                "lot_size": lot_size,
+                "comparison_matrix": {},
+                "regime_breakdown": {},
+                "insights": ["Data unavailable: No historical session data found in database."],
+                "timestamp_ist": format_ist()
+            }
+
         # Test Configurations Matrix:
         # A. Primary Strategy With 1-Time Re-entry
         # B. Primary Strategy Without Re-entry (Vanilla SL)
@@ -1037,9 +1051,9 @@ class IntradayOptionsStrategyEngine:
         # 1. Intraday ML / Writer Dominance Sub-Score (-100 to +100)
         writer_dominance = float(ml_m.get("writer_dominance_score") or 0.0)
         probs = ml_m.get("probabilities") or {}
-        p_up = float(probs.get("p_up", 0.33))
-        p_down = float(probs.get("p_down", 0.33))
-        p_flat = float(probs.get("p_flat", 0.34))
+        p_up = float(probs.get("p_up") if probs.get("p_up") is not None else 0.33)
+        p_down = float(probs.get("p_down") if probs.get("p_down") is not None else 0.33)
+        p_flat = float(probs.get("p_flat") if probs.get("p_flat") is not None else 0.34)
         if writer_dominance == 0.0 and (p_up != 0.33 or p_down != 0.33):
             writer_dominance = (p_up - p_down) * 100.0
         ml_subscore = float(np.clip(writer_dominance, -100.0, 100.0))
@@ -1960,13 +1974,21 @@ class IntradayOptionsStrategyEngine:
                                 vol_pct = round(float(rolling_vol.iloc[idx]), 1)
                                 vol_pct = max(9.5, min(35.0, vol_pct))
 
-                                if ret_pct >= 0.80:
+                                # Strictly eliminate look-ahead bias: verdict at market open must use pre-open info
+                                prev_bar = slice_df.iloc[idx - 1]
+                                prev_close = float(prev_bar["Close"])
+                                gap_pct = ((open_px - prev_close) / prev_close) * 100.0 if prev_close > 0 else 0.0
+                                prior_5_close = float(slice_df.iloc[max(0, idx - 6)]["Close"])
+                                prior_5d_mom = ((prev_close - prior_5_close) / prior_5_close) * 100.0 if prior_5_close > 0 else 0.0
+                                pre_market_signal = round(gap_pct * 0.5 + prior_5d_mom * 0.5, 2)
+
+                                if pre_market_signal >= 0.80:
                                     verdict = "STRONG BULLISH"
-                                elif ret_pct >= 0.20:
+                                elif pre_market_signal >= 0.20:
                                     verdict = "MILD BULLISH"
-                                elif ret_pct <= -0.80:
+                                elif pre_market_signal <= -0.80:
                                     verdict = "STRONG BEARISH"
-                                elif ret_pct <= -0.20:
+                                elif pre_market_signal <= -0.20:
                                     verdict = "MILD BEARISH"
                                 else:
                                     verdict = "RANGE BOUND"
@@ -1979,7 +2001,7 @@ class IntradayOptionsStrategyEngine:
                                     "low": round(low_px, 2),
                                     "ret_pct": ret_pct,
                                     "verdict": verdict,
-                                    "composite_score": round(ret_pct * 25.0, 1),
+                                    "composite_score": round(pre_market_signal * 25.0, 1),
                                     "iv_pct": vol_pct
                                 })
         except Exception as e:

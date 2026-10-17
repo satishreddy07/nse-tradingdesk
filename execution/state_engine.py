@@ -109,7 +109,7 @@ class StateEngine:
                 cursor.execute("""
                 CREATE TABLE IF NOT EXISTS active_positions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL UNIQUE,
+                    symbol TEXT NOT NULL,
                     portfolio_type TEXT NOT NULL DEFAULT 'INSTITUTIONAL_6PILLAR',
                     entry_price REAL NOT NULL,
                     quantity INTEGER NOT NULL,
@@ -131,7 +131,8 @@ class StateEngine:
                     entry_regime TEXT,
                     metrics_json TEXT,
                     features_json TEXT,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(symbol, portfolio_type)
                 );
                 """)
                 try:
@@ -348,14 +349,18 @@ class StateEngine:
         else:
             rsi14 = 50.0
 
-        # Fast NumPy ATR 14 (only needs last 15 bars!)
+        # Fast NumPy Wilder ATR 14
         if n >= 2:
-            win = min(14, n - 1)
-            h_tail = highs_np[-win:]
-            l_tail = lows_np[-win:]
-            c_prev = closes_np[-(win + 1):-1]
-            tr_tail = np.maximum(h_tail - l_tail, np.maximum(np.abs(h_tail - c_prev), np.abs(l_tail - c_prev)))
-            atr14 = round(float(np.mean(tr_tail)), 2)
+            tr = np.empty(n, dtype=np.float64)
+            tr[0] = highs_np[0] - lows_np[0]
+            tr[1:] = np.maximum(
+                highs_np[1:] - lows_np[1:],
+                np.maximum(
+                    np.abs(highs_np[1:] - closes_np[:-1]),
+                    np.abs(lows_np[1:] - closes_np[:-1])
+                )
+            )
+            atr14 = round(float(_fast_ewm_last(tr, 1.0 / 14.0)), 2)
         else:
             atr14 = round(float(highs_np[-1] - lows_np[-1]), 2)
 
@@ -773,8 +778,8 @@ class StateEngine:
             t2 = round(float(active_pos.get("target_2") or (ep + 2.0 * max(1.0, t1 - ep))), 2)
             direction = "BULLISH_LONG"
             level_source = f"ACTIVE POSITION ({active_pos['portfolio_type']})"
-            entry_ts = active_pos.get("entry_date", "")
-            risk_per_share = max(0.01, round(ep - sl, 2))
+            orig_sl = float(active_pos.get("original_stop_loss") or sl)
+            risk_per_share = max(0.5, round(ep - orig_sl, 2)) if orig_sl < ep else max(0.5, round(ep * 0.02, 2))
             rr_t1 = round((t1 - ep) / risk_per_share, 2)
             rr_t2 = round((t2 - ep) / risk_per_share, 2)
             show_trade_lines = True
@@ -952,6 +957,19 @@ class StateEngine:
             logger.warning(f"🔒 [Strict Trading Gate] Blocked BUY order for {symbol}: {gate_reason}")
             return False
 
+        if quantity <= 0:
+            logger.warning(f"⚠️ [Order Gate] Blocked {symbol}: Invalid quantity {quantity} (must be > 0).")
+            return False
+        if entry_price <= 0 or stop_loss <= 0 or target <= 0:
+            logger.warning(f"⚠️ [Order Gate] Blocked {symbol}: Prices must be strictly positive non-zero.")
+            return False
+        if stop_loss >= entry_price:
+            logger.warning(f"⚠️ [Order Gate] Blocked {symbol}: Stop loss (₹{stop_loss:.2f}) must be strictly below entry price (₹{entry_price:.2f}) for long positions.")
+            return False
+        if target <= entry_price:
+            logger.warning(f"⚠️ [Order Gate] Blocked {symbol}: Target (₹{target:.2f}) must be strictly above entry price (₹{entry_price:.2f}).")
+            return False
+
         sym_clean = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
         p_type = self._normalize_portfolio_type(portfolio_type)
         now_str = format_ist()  # Full timestamp: YYYY-MM-DD HH:MM:SS IST
@@ -979,8 +997,8 @@ class StateEngine:
                     features_str = json.dumps(trade_features or (json.loads(entry_metrics.get("features_json")) if isinstance(entry_metrics, dict) and isinstance(entry_metrics.get("features_json"), str) else {}))
 
                     existing = conn.execute(
-                        "SELECT id, quantity, entry_price FROM active_positions WHERE symbol = ?",
-                        (sym_clean,)
+                        "SELECT id, quantity, entry_price FROM active_positions WHERE symbol = ? AND portfolio_type = ?",
+                        (sym_clean, p_type)
                     ).fetchone()
                     if existing:
                         logger.info(
@@ -1488,7 +1506,7 @@ class StateEngine:
         if gross_loss > 0:
             profit_factor = round(gross_profit / gross_loss, 2)
         else:
-            profit_factor = round(gross_profit / 1.0, 2) if gross_profit > 0 else 0.0
+            profit_factor = 999.0 if gross_profit > 0 else 0.0
 
         r_list = [float(t["r_multiple"]) for t in history] + active_t1_r_list
         expectancy_r = round(float(sum(r_list) / len(r_list)), 3) if r_list else 0.0

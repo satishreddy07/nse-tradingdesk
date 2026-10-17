@@ -58,17 +58,15 @@ _keepalive_telemetry: Dict[str, Any] = {
 
 def register_external_request_origin(scheme: str, host: str):
     """
-    Dynamically records the public external URL (e.g. https://quant-trading-desk.onrender.com)
-    from incoming HTTP requests when RENDER_EXTERNAL_URL is not explicitly set.
-    Persists to SQLite state_engine so it survives reboots and container idling.
-    Strictly ignores test runners (testserver), loopbacks (localhost/127.0.0.1), and dot-less hosts.
+    Records the public external URL from incoming HTTP requests when RENDER_EXTERNAL_URL is not set.
+    Strictly validates against authorized domain suffixes to prevent SSRF / Host Header Poisoning.
     """
     global _detected_external_url
     if not host:
         return
-    host_clean = host.strip().lower()
-    invalid_hosts = ("localhost", "127.0.0.1", "0.0.0.0", "testserver", "test", "example.com")
-    if any(local_h in host_clean for local_h in invalid_hosts) or "." not in host_clean:
+    host_clean = host.strip().lower().split(":")[0]
+    allowed_suffixes = (".onrender.com", "duckdns.org", "onrender.com")
+    if not any(host_clean == sfx or host_clean.endswith(sfx) for sfx in allowed_suffixes):
         return
     candidate = f"{scheme or 'https'}://{host.strip()}"
     if _detected_external_url != candidate:
@@ -77,7 +75,7 @@ def register_external_request_origin(scheme: str, host: str):
             state_engine.set_kv("RENDER_PUBLIC_URL", candidate)
         except Exception:
             pass
-        logger.info(f"🌐 Auto-detected public service URL for Render Anti-Sleep Guard: {_detected_external_url}")
+        logger.info(f"🌐 Validated public service URL for Render Anti-Sleep Guard: {_detected_external_url}")
 
 
 def get_keepalive_target_url() -> str:
