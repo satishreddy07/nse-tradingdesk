@@ -522,7 +522,9 @@ class UnifiedMLDataset:
             if col not in feat_df.columns:
                 feat_df[col] = 0.0
 
-        combined = pd.concat([df.drop(columns=["features_json"]), feat_df[UNIFIED_FEATURE_COLS]], axis=1)
+        drop_cols = ["features_json"] + [c for c in UNIFIED_FEATURE_COLS if c in df.columns]
+        combined = pd.concat([df.drop(columns=drop_cols, errors="ignore"), feat_df[UNIFIED_FEATURE_COLS]], axis=1)
+        combined = combined.loc[:, ~combined.columns.duplicated()]
         return combined
 
     # =========================================================================

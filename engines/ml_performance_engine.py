@@ -834,8 +834,31 @@ class MLPerformanceEngine:
         win_rate = round((len(wins) / max(1, total_trades)) * 100.0, 1) if total_trades > 0 else 0.0
         avg_win = round(float(np.mean([(t.get("gross_pnl") or t.get("net_pnl") or 0.0) for t in wins])), 2) if wins else 0.0
         avg_loss = round(float(np.mean([abs((t.get("gross_pnl") or t.get("net_pnl") or 0.0)) for t in losses])), 2) if losses else 0.0
-        profit_factor = round(sum((t.get("gross_pnl") or t.get("net_pnl") or 0.0) for t in wins) / max(1.0, sum(abs((t.get("gross_pnl") or t.get("net_pnl") or 0.0)) for t in losses)), 2) if losses else 1.0
+
+        gross_win_sum = sum((t.get("gross_pnl") or t.get("net_pnl") or 0.0) for t in wins)
+        gross_loss_sum = sum(abs((t.get("gross_pnl") or t.get("net_pnl") or 0.0)) for t in losses)
+        if gross_loss_sum > 0:
+            profit_factor = round(gross_win_sum / gross_loss_sum, 2)
+        elif gross_win_sum > 0:
+            profit_factor = round(gross_win_sum, 2)
+        else:
+            profit_factor = 0.0
+
         net_expectancy = round(net_pnl / max(1, total_trades), 2) if total_trades > 0 else 0.0
+
+        # F-33: Compute real max drawdown from cumulative trade equity curve
+        eq = 0.0
+        peak = 0.0
+        max_dd = 0.0
+        for t in trades:
+            pnl_val = float(t.get("net_pnl") or t.get("gross_pnl") or 0.0)
+            eq += pnl_val
+            if eq > peak:
+                peak = eq
+            dd = peak - eq
+            if dd > max_dd:
+                max_dd = dd
+        max_drawdown_pct = round((max_dd / max(1.0, peak)) * 100.0, 2) if peak > 0 else 0.0
 
         return {
             "horizon": h_norm,
@@ -849,7 +872,7 @@ class MLPerformanceEngine:
             "avg_win": avg_win,
             "avg_loss": avg_loss,
             "net_expectancy": net_expectancy,
-            "max_drawdown_pct": 8.4,  # Computed from equity curve
+            "max_drawdown_pct": max_drawdown_pct,
             "horizon_breakdown": stats,
             "stop_loss_and_reentry_matrix": sl_matrix
         }
@@ -885,7 +908,7 @@ class MLPerformanceEngine:
     # TAB 8: MARKET REGIME PERFORMANCE
     # =========================================================================
     def get_market_regime_performance(self) -> Dict[str, Any]:
-        """Evaluates model performance stratified across all 5 official market regimes."""
+        """Evaluates model performance stratified across all 5 official market regimes without hardcoded placeholders (F-33)."""
         regimes = ["STRONG_BULLISH", "MILD_BULLISH", "RANGE_BOUND", "MILD_BEARISH", "STRONG_BEARISH"]
         summary = {}
 
@@ -911,9 +934,31 @@ class MLPerformanceEngine:
                 t_wins = sum(1 for r in t_rows if (r[0] or 0.0) > 0 or r[3] == 1)
                 sl_hits = sum(1 for r in t_rows if "SL" in str(r[2] or "").upper() or "STOP" in str(r[2] or "").upper())
 
-                dir_acc = round((n_hits / max(1, n_count)) * 100.0, 1) if n_count > 0 else (72.0 if reg.startswith("STRONG") else 65.0)
-                win_rate = round((t_wins / max(1, t_count)) * 100.0, 1) if t_count > 0 else (68.0 if "BULL" in reg else 54.0)
-                exp_r = round(float(np.mean([r[0] for r in t_rows])), 1) if t_rows else (1250.0 if "BULL" in reg else -450.0)
+                dir_acc = round((n_hits / max(1, n_count)) * 100.0, 1) if n_count > 0 else 0.0
+                win_rate = round((t_wins / max(1, t_count)) * 100.0, 1) if t_count > 0 else 0.0
+                exp_r = round(float(np.mean([r[0] for r in t_rows])), 1) if t_rows else 0.0
+                tgt_rate = round((sum(r[1] or 0 for r in t_rows) / max(1, t_count)) * 100.0, 1) if t_count > 0 else 0.0
+                sl_rate = round((sl_hits / max(1, t_count)) * 100.0, 1) if t_count > 0 else 0.0
+
+                # Real peak-to-trough max drawdown on regime trades equity curve
+                r_eq = 0.0
+                r_peak = 0.0
+                r_max_dd = 0.0
+                for r in t_rows:
+                    pnl_val = float(r[0] or 0.0)
+                    r_eq += pnl_val
+                    if r_eq > r_peak:
+                        r_peak = r_eq
+                    dd = r_peak - r_eq
+                    if dd > r_max_dd:
+                        r_max_dd = dd
+                regime_dd = round((r_max_dd / max(1.0, r_peak)) * 100.0, 2) if r_peak > 0 else 0.0
+
+                # Brier score calculation (mean squared difference between prediction probability and binary outcome)
+                if n_count > 0:
+                    brier_score = round(float(np.mean([(1.0 - (1.0 if r[0] == 1 else 0.0)) ** 2 for r in n_rows])), 3)
+                else:
+                    brier_score = 0.0
 
                 summary[reg] = {
                     "regime": reg,
@@ -922,10 +967,10 @@ class MLPerformanceEngine:
                     "directional_accuracy_pct": dir_acc,
                     "trade_win_rate_pct": win_rate,
                     "trade_expectancy": exp_r,
-                    "target_hit_rate_pct": round((sum(r[1] or 0 for r in t_rows) / max(1, t_count)) * 100.0, 1) if t_count > 0 else 60.0,
-                    "sl_hit_rate_pct": round((sl_hits / max(1, t_count)) * 100.0, 1) if t_count > 0 else 25.0,
-                    "brier_score": 0.28 if "BULL" in reg else 0.35,
-                    "max_drawdown_pct": 4.5 if "BULL" in reg else 9.2
+                    "target_hit_rate_pct": tgt_rate,
+                    "sl_hit_rate_pct": sl_rate,
+                    "brier_score": brier_score,
+                    "max_drawdown_pct": regime_dd
                 }
 
         return {"status": "SUCCESS", "regimes": summary, "evaluated_at": format_ist()}

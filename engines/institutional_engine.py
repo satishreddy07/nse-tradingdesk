@@ -1120,12 +1120,13 @@ class MLReRanker:
 class ExecutionEngine:
     @staticmethod
     def classify(row: pd.Series) -> str:
-        score = row['score']
-        dist_pivot = row['dist_to_pivot']
-        dist_ema20 = row['dist_to_ema20']
-        vol_ratio = row.get('vol_ratio', 1.0)
-        ml_verdict = str(row.get('ml_verdict', 'APPROVED')).upper()
-        ml_dec = str(row.get('ml_decision', 'PASS_TO_AI')).upper()
+        score = float(row.get('score', 0.0) or 0.0)
+        dist_pivot = float(row.get('dist_to_pivot', 0.0) or 0.0)
+        dist_ema20 = float(row.get('dist_to_ema20', 0.0) or 0.0)
+        vol_ratio = float(row.get('vol_ratio', 1.0) or 1.0)
+        # F-35: Fail-closed default (PENDING / HOLD) rather than fail-open APPROVED
+        ml_verdict = str(row.get('ml_verdict', 'PENDING')).upper()
+        ml_dec = str(row.get('ml_decision', 'HOLD')).upper()
 
         # Closed-Loop Pre-Trade ML Gatekeeper: Block setups classified as REJECTED
         if ml_verdict == "REJECTED" or ml_dec == "REJECT":
@@ -1133,15 +1134,20 @@ class ExecutionEngine:
 
         if score < 40.0:
             return "AVOID"
-        elif score >= 80.0 and dist_pivot <= 2.0:
+        # F-35: Test both sides of pivot & EMA20 proximity (abs(dist_pivot) <= 2.0 and abs(dist_ema20) <= 5.0)
+        elif score >= 80.0 and abs(dist_pivot) <= 2.0 and abs(dist_ema20) <= 5.0:
             if vol_ratio >= 1.15 and (ml_verdict == "APPROVED" or ml_dec == "PASS_TO_AI"):
                 return "BUY_NOW"
             else:
                 return "PRE_BREAKOUT"
-        elif score >= 70.0 and dist_pivot <= 5.0:
+        elif score >= 70.0 and abs(dist_pivot) <= 5.0:
             return "PRE_BREAKOUT"
-        elif score >= 60.0 and (dist_pivot > 5.0 or dist_ema20 > 5.0 or vol_ratio < 1.15):
-            return "WAIT_PULLBACK"
+        # F-35: Route coherent mid-score setups to PRE_BREAKOUT or WAIT_PULLBACK rather than dropping to AVOID
+        elif score >= 60.0:
+            if abs(dist_pivot) <= 5.0 and abs(dist_ema20) <= 5.0:
+                return "PRE_BREAKOUT"
+            else:
+                return "WAIT_PULLBACK"
         else:
             return "AVOID"
 
@@ -1151,12 +1157,25 @@ class ExecutionEngine:
         capital: float = P1_BASE_CAPITAL,
         base_risk_pct: float = P1_BASE_RISK_PCT
     ) -> Dict[str, Any]:
-        entry = row['close']
-        atr14 = row['atr14']
-        low_20d = row['low']
-        score = row['score']
-        conf = row['confidence']
-        ml_verdict = str(row.get('ml_verdict', 'APPROVED')).upper()
+        entry = float(row.get('close', 0.0) or 0.0)
+        if pd.isna(entry) or entry <= 0:
+            return {
+                "entry": 0.0, "sl": 0.0, "t1": 0.0, "t2": 0.0, "rr": 0.0,
+                "shares": 0, "capital_at_risk": 0.0, "risk_pct": 0.0,
+                "atr_pct": 0.0, "tier": "REJECT"
+            }
+
+        atr14 = float(row.get('atr14', 0.0) or 0.0)
+        if pd.isna(atr14) or atr14 <= 0:
+            atr14 = entry * 0.03
+
+        low_20d = float(row.get('low', 0.0) or 0.0)
+        if pd.isna(low_20d) or low_20d <= 0:
+            low_20d = entry - 1.5 * atr14
+
+        score = float(row.get('score', 0.0) or 0.0)
+        conf = int(row.get('confidence', 3) or 3)
+        ml_verdict = str(row.get('ml_verdict', 'PENDING')).upper()
 
         if score >= 90.0 and conf >= 5 and ml_verdict == "APPROVED":
             risk_pct = 1.00
@@ -1180,10 +1199,11 @@ class ExecutionEngine:
         r = risk_per_share
         t1 = round(entry + 1.5 * r, 2)
         t2 = round(entry + 3.0 * r, 2)
-        rr = round(3.0, 2)
+        # F-35: Dynamic RR calculation
+        rr = round((t2 - entry) / max(0.01, risk_per_share), 2)
 
         risk_amt = capital * (risk_pct / 100.0)
-        shares = int(risk_amt / risk_per_share)
+        shares = int(risk_amt / risk_per_share) if risk_per_share > 0 else 0
 
         max_pos_val = capital * 0.20
         min_pos_val = capital * 0.03
@@ -1264,25 +1284,27 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
                 state_engine.update_position_price(
                     sym,
                     current_price=c,
-                    highest_price=max(float(pos.get("highest_price") or entry_px), c)
+                    highest_price=max(float(pos.get("highest_price") or entry_px), c),
+                    portfolio_type=PORTFOLIO_TYPE
                 )
                 continue
 
             is_same_entry_day = (bar_date_str == entry_date_str)
 
-            # During live trading hours (09:15 - 15:30 IST), stop-loss evaluation strictly monitors
-            # the live current market price `c` (LTP). Daily candle Low `l` from delayed external
-            # feeds contains pre-entry wicks, auction match prints, or yesterday's artifacts and must
-            # never be used to falsely stop out active positions trading well in profit.
+            # F-36: During live trading hours (09:15 - 15:30 IST), stop-loss evaluation strictly monitors
+            # the live current market price `c` (LTP). Daily candle Low `l` from delayed external feeds
+            # contains pre-entry wicks, auction prints, etc. Similarly, on same entry day, `check_high` must be `c`
+            # so pre-entry morning highs do not falsely trigger immediate target hits.
             check_low = c
-            check_high = max(h, c)
+            check_high = c if is_same_entry_day else max(h, c)
 
             # Always update MTM price so dashboard reflects latest price
             if not can_trade:
                 state_engine.update_position_price(
                     sym,
                     current_price=c,
-                    highest_price=max(float(pos.get("highest_price") or entry_px), check_high)
+                    highest_price=max(float(pos.get("highest_price") or entry_px), check_high),
+                    portfolio_type=PORTFOLIO_TYPE
                 )
                 continue
 
@@ -1291,7 +1313,8 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
             if check_low <= sl:
                 closed = state_engine.close_position(
                     sym, exit_price=c,
-                    exit_reason="STOP_LOSS" if not t1_hit else "TRAILING_BE_STOP"
+                    exit_reason="STOP_LOSS" if not t1_hit else "TRAILING_BE_STOP",
+                    portfolio_type=PORTFOLIO_TYPE
                 )
                 if closed:
                     closed_events.append(closed)
@@ -1307,8 +1330,8 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
                         conn.execute("""
                         UPDATE active_positions
                         SET quantity = ?, stop_loss = ?, t1_hit = 1, t1_pnl = ?, sl_reason = 'BREAKEVEN_TRAILING', updated_at = ?
-                        WHERE symbol = ?
-                        """, (rem_qty, entry_px, pnl_t1, format_ist(), sym))
+                        WHERE symbol = ? AND portfolio_type = ?
+                        """, (rem_qty, entry_px, pnl_t1, format_ist(), sym, PORTFOLIO_TYPE))
                 logger.info(f"🎯 [P1 T1 Hit] {sym} booked 50% ({booked_qty} shs) @ ₹{t1:.2f}. SL moved to BE ₹{entry_px:.2f}.")
                 telegram_vault.send_alert_and_sync(
                     title=f"🎯 P1 TARGET 1 HIT (+1.5R): {sym}",
@@ -1318,7 +1341,7 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
 
             # Check T2 Target
             if t1_hit and check_high >= t2:
-                closed = state_engine.close_position(sym, exit_price=t2, exit_reason="T2_FULL_TARGET")
+                closed = state_engine.close_position(sym, exit_price=max(t2, c), exit_reason="T2_FULL_TARGET", portfolio_type=PORTFOLIO_TYPE)
                 if closed:
                     closed_events.append(closed)
                 continue
@@ -1335,16 +1358,16 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
                     atr14 = entry_px * 0.02
                 trail_sl = round(max(entry_px, highest_seen - 1.5 * atr14), 2)
                 if trail_sl > sl:
-                    state_engine.update_position_price(sym, current_price=c, stop_loss=trail_sl, highest_price=highest_seen)
+                    state_engine.update_position_price(sym, current_price=c, stop_loss=trail_sl, highest_price=highest_seen, portfolio_type=PORTFOLIO_TYPE)
                     telegram_vault.send_alert_and_sync(
                         title=f"📈 P1 TRAILING STOP RATCHETED: {sym}",
                         message=f"Stop-Loss raised from ₹{sl:,.2f} to <b>₹{trail_sl:,.2f}</b> (LTP: ₹{c:,.2f}).",
                         sync_db=True
                     )
                 else:
-                    state_engine.update_position_price(sym, current_price=c, highest_price=highest_seen)
+                    state_engine.update_position_price(sym, current_price=c, highest_price=highest_seen, portfolio_type=PORTFOLIO_TYPE)
             else:
-                state_engine.update_position_price(sym, current_price=c, highest_price=max(float(pos.get("highest_price") or entry_px), check_high))
+                state_engine.update_position_price(sym, current_price=c, highest_price=max(float(pos.get("highest_price") or entry_px), check_high), portfolio_type=PORTFOLIO_TYPE)
         except Exception as pos_err:
             logger.error(f"Error reconciling position {pos.get('symbol')}: {pos_err}")
 
@@ -1655,6 +1678,35 @@ class InstitutionalEngine:
                     SwingInstructions
                 )
 
+                # F-34: Measure real data quality & verify watchdog status
+                from core.data_watchdog import data_watchdog
+                from core.data_quality import validate_ohlcv_dataframe
+                feed_allowed, feed_reason = data_watchdog.is_trading_allowed("swing_trading")
+
+                cand_df = dl_stats.get("dataframes", {}).get(ticker) if isinstance(dl_stats, dict) else None
+                if cand_df is None:
+                    try:
+                        cand_df, _ = state_engine.get_ohlcv_df(ticker)
+                    except Exception:
+                        cand_df = None
+
+                if cand_df is not None:
+                    dq_valid, _, dq_warnings = validate_ohlcv_dataframe(cand_df, symbol=ticker)
+                else:
+                    dq_valid, dq_warnings = True, []
+                is_stale = (not feed_allowed)
+                dq_status = "valid" if (feed_allowed and dq_valid and not is_stale) else ("stale" if is_stale else "invalid")
+                real_data_quality = {
+                    "status": dq_status,
+                    "is_stale": is_stale,
+                    "missing_fields": [],
+                    "warnings": dq_warnings + ([feed_reason] if not feed_allowed else [])
+                }
+
+                if not feed_allowed or dq_status == "invalid":
+                    logger.warning(f"🚨 [Data Quality Gate Blocked] {ticker}: {real_data_quality}")
+                    continue
+
                 ai_req_id = f"ai_req_{ticker}_{int(time.time())}"
                 ds_summary = swing_quant_ml_engine.get_status().get("dataset_summary", {})
                 dataset_count = int(ds_summary.get("total_records") or 1)
@@ -1673,8 +1725,8 @@ class InstitutionalEngine:
                     context=SwingCandidateContext(
                         as_of=now_iso,
                         timezone="Asia/Kolkata",
-                        data_mode="live",
-                        data_quality={"status": "valid", "is_stale": False, "missing_fields": [], "warnings": []}
+                        data_mode="live" if feed_allowed else "degraded",
+                        data_quality=real_data_quality
                     ),
                     technical_analysis=SwingTechnicalAnalysis(
                         classification="BUY NOW",
@@ -1925,15 +1977,6 @@ class InstitutionalEngine:
                     orders_placed += 1
                     available_cash = max(0.0, available_cash - req_val)
                     active_syms.append(ticker)
-                    swing_quant_ml_engine.record_real_trade_entry(
-                        symbol=ticker,
-                        portfolio_type=PORTFOLIO_TYPE,
-                        entry_price=float(r['entry']),
-                        stop_loss=float(r['sl']),
-                        target=float(r['t1']),
-                        target_2=float(r['t2']),
-                        candidate_meta=real_meta
-                    )
                     swing_quant_ml_engine.record_decision_audit(
                         candidate_id=cand_id, symbol=ticker, scanner_source="Chartink 6-Pillar Screener",
                         scanner_run_id=scan_run_id, technical_classification="BUY NOW", technical_snapshot=tech_snapshot,
@@ -1942,7 +1985,7 @@ class InstitutionalEngine:
                         ai_decision=ai_res.final_decision, ai_reason_code=ai_res.reason_code, ai_summary=ai_res.summary,
                         ai_factors={"supporting": ai_res.supporting_factors, "contradicting": ai_res.contradicting_factors, "risk": ai_res.risk_factors},
                         risk_check_status="PASSED", final_status="ORDER_FILLED",
-                        trade_id=str(opened.get("id", ""))
+                        trade_id=f"P1_{ticker}_{int(start_time)}"
                     )
                     state_engine.update_scan_progress(
                         stage=f"✅ ML+AI Approved BUY_NOW #{orders_placed}: {ticker} ({r['shares']} shs @ ₹{r['entry']:.2f}) [Prob: {ml_prob*100:.0f}%]",
@@ -2226,7 +2269,7 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
 
 class InstitutionalPortfolioBacktester:
     """
-    Event-driven historical backtester for Institutional 6-Pillar strategy.
+    Event-driven historical backtester for Institutional 6-Pillar strategy (F-31).
     Simulates portfolio allocations, trailing ATR exits, and statutory transaction costs.
     """
     def __init__(self, capital: float = 1000000.0, risk_per_trade_pct: float = 0.75):
@@ -2235,17 +2278,236 @@ class InstitutionalPortfolioBacktester:
 
     def run(self, ohlcv_data: Any, lookback_days: int = 250) -> Dict[str, Any]:
         logger.info(f"[*] Running Institutional Portfolio Backtest (Capital: ₹{self.capital:,.0f}, Lookback: {lookback_days} days)...")
+        from core.config import EQUITY_ROUND_TRIP_COST_RATE
+
         ohlcv_dict = ohlcv_data[0] if isinstance(ohlcv_data, tuple) else (ohlcv_data or {})
-        valid_symbols = [s for s, df in ohlcv_dict.items() if df is not None and len(df) >= min(60, lookback_days)]
+        valid_symbols = {s: df for s, df in ohlcv_dict.items() if df is not None and len(df) >= min(60, lookback_days)}
+
+        if not valid_symbols:
+            logger.warning("No valid symbols with sufficient history for backtest.")
+            return {
+                "initial_capital": self.capital,
+                "final_equity": self.capital,
+                "total_net_pnl": 0.0,
+                "return_pct": 0.0,
+                "symbols_evaluated": 0,
+                "total_trades": 0,
+                "win_rate_pct": 0.0,
+                "profit_factor": 0.0,
+                "max_drawdown_pct": 0.0,
+                "expectancy_r": 0.0,
+                "status": "COMPLETED",
+                "message": "No valid symbols with sufficient history."
+            }
+
         print(f"Loaded {len(valid_symbols)} universe symbols with sufficient history for {lookback_days}-day backtest.")
+
+        # Collect unique trading dates across all valid symbols
+        all_dates = set()
+        for df in valid_symbols.values():
+            if isinstance(df.index, pd.DatetimeIndex):
+                all_dates.update(df.index[-lookback_days:])
+            elif "date" in df.columns:
+                all_dates.update(pd.to_datetime(df["date"]).iloc[-lookback_days:])
+
+        sorted_dates = sorted(list(all_dates))
+        if not sorted_dates:
+            sorted_dates = list(range(lookback_days))
+
+        current_cash = float(self.capital)
+        max_slots = 10
+        active_positions = {}  # symbol -> dict
+        closed_trades = []
+        equity_curve = [self.capital]
+
+        for dt in sorted_dates:
+            # 1. Reconcile existing active positions for exits on date dt
+            syms_to_close = []
+            for sym, pos in list(active_positions.items()):
+                df = valid_symbols[sym]
+                if dt not in df.index:
+                    continue
+                bar = df.loc[dt]
+                c = float(bar["Close"])
+                h = float(bar["High"])
+                l = float(bar["Low"])
+
+                entry_px = pos["entry_price"]
+                sl = pos["stop_loss"]
+                t1 = pos["target"]
+                t2 = pos["target_2"]
+                qty = pos["quantity"]
+                t1_hit = pos["t1_hit"]
+
+                # Exit checks
+                if l <= sl:
+                    # Stop loss hit
+                    exit_px = min(c, sl)
+                    gross_pnl = (exit_px - entry_px) * qty + pos["t1_pnl"]
+                    turnover = (entry_px * pos["orig_qty"]) + (exit_px * qty) + (t1 * (pos["orig_qty"] - qty) if t1_hit else 0.0)
+                    costs = round(turnover * EQUITY_ROUND_TRIP_COST_RATE, 2)
+                    net_pnl = round(gross_pnl - costs, 2)
+                    current_cash += (exit_px * qty) - costs
+                    risk_unit = max(0.01, entry_px - pos["orig_sl"])
+                    r_mult = round(net_pnl / max(0.01, risk_unit * pos["orig_qty"]), 2)
+                    closed_trades.append({
+                        "symbol": sym, "entry_price": entry_px, "exit_price": exit_px,
+                        "pnl": net_pnl, "r_multiple": r_mult, "exit_reason": "STOP_LOSS"
+                    })
+                    syms_to_close.append(sym)
+                    continue
+
+                if not t1_hit and h >= t1:
+                    # Book 50% at T1
+                    booked_qty = qty // 2
+                    pnl_t1 = (t1 - entry_px) * booked_qty
+                    rem_qty = qty - booked_qty
+                    current_cash += (t1 * booked_qty)
+                    pos["quantity"] = rem_qty
+                    pos["stop_loss"] = entry_px  # Breakeven
+                    pos["t1_hit"] = True
+                    pos["t1_pnl"] = pnl_t1
+                    pos["highest_price"] = max(pos["highest_price"], h)
+
+                if pos.get("t1_hit") and h >= t2:
+                    # Target 2 hit
+                    exit_px = max(t2, c)
+                    gross_pnl = (exit_px - entry_px) * pos["quantity"] + pos["t1_pnl"]
+                    turnover = (entry_px * pos["orig_qty"]) + (exit_px * pos["quantity"]) + (t1 * (pos["orig_qty"] - pos["quantity"]))
+                    costs = round(turnover * EQUITY_ROUND_TRIP_COST_RATE, 2)
+                    net_pnl = round(gross_pnl - costs, 2)
+                    current_cash += (exit_px * pos["quantity"]) - costs
+                    risk_unit = max(0.01, entry_px - pos["orig_sl"])
+                    r_mult = round(net_pnl / max(0.01, risk_unit * pos["orig_qty"]), 2)
+                    closed_trades.append({
+                        "symbol": sym, "entry_price": entry_px, "exit_price": exit_px,
+                        "pnl": net_pnl, "r_multiple": r_mult, "exit_reason": "T2_TARGET"
+                    })
+                    syms_to_close.append(sym)
+                    continue
+
+                # Trailing ATR ratchet
+                if pos.get("t1_hit"):
+                    pos["highest_price"] = max(pos["highest_price"], h)
+                    atr = pos.get("atr", entry_px * 0.02)
+                    trail_sl = round(max(entry_px, pos["highest_price"] - 1.5 * atr), 2)
+                    if trail_sl > pos["stop_loss"]:
+                        pos["stop_loss"] = trail_sl
+
+            for s in syms_to_close:
+                active_positions.pop(s, None)
+
+            # 2. Evaluate candidate entries if slots are available
+            available_slots = max_slots - len(active_positions)
+            if available_slots > 0 and current_cash > (self.capital * 0.05):
+                for sym, df in valid_symbols.items():
+                    if sym in active_positions:
+                        continue
+                    if dt not in df.index:
+                        continue
+                    idx_loc = df.index.get_loc(dt)
+                    if idx_loc < 30:
+                        continue
+                    sub_df = df.iloc[max(0, idx_loc - 30):idx_loc + 1]
+                    c = float(sub_df["Close"].iloc[-1])
+                    ema20 = float(sub_df["Close"].ewm(span=20).mean().iloc[-1])
+                    high20 = float(sub_df["High"].iloc[-21:-1].max()) if len(sub_df) > 20 else c
+
+                    # Simple 6-pillar setup check
+                    if c > ema20 and c >= (high20 * 0.98):
+                        atr14 = float(np.mean(sub_df["High"].iloc[-14:] - sub_df["Low"].iloc[-14:]))
+                        risk_per_share = max(c * 0.03, 1.5 * atr14)
+                        risk_amt = self.capital * (self.risk_per_trade_pct / 100.0)
+                        shares = int(risk_amt / risk_per_share)
+                        pos_val = shares * c
+                        if pos_val > (self.capital * 0.20):
+                            shares = int((self.capital * 0.20) / c)
+                        if shares > 5 and (shares * c) <= current_cash:
+                            entry_costs = round(shares * c * (EQUITY_ROUND_TRIP_COST_RATE / 2.0), 2)
+                            current_cash -= (shares * c + entry_costs)
+                            active_positions[sym] = {
+                                "entry_price": c,
+                                "orig_sl": c - risk_per_share,
+                                "stop_loss": c - risk_per_share,
+                                "target": round(c + 1.5 * risk_per_share, 2),
+                                "target_2": round(c + 3.0 * risk_per_share, 2),
+                                "quantity": shares,
+                                "orig_qty": shares,
+                                "t1_hit": False,
+                                "t1_pnl": 0.0,
+                                "highest_price": c,
+                                "atr": atr14
+                            }
+                            available_slots -= 1
+                            if available_slots <= 0:
+                                break
+
+            # Track end-of-day equity
+            mtm_active = sum(pos["quantity"] * float(valid_symbols[sym].loc[dt]["Close"]) for sym, pos in active_positions.items() if dt in valid_symbols[sym].index)
+            day_equity = current_cash + mtm_active
+            equity_curve.append(day_equity)
+
+        # Close any remaining active positions at last available price
+        for sym, pos in list(active_positions.items()):
+            df = valid_symbols[sym]
+            last_c = float(df["Close"].iloc[-1])
+            gross_pnl = (last_c - pos["entry_price"]) * pos["quantity"] + pos["t1_pnl"]
+            turnover = (pos["entry_price"] * pos["orig_qty"]) + (last_c * pos["quantity"])
+            costs = round(turnover * EQUITY_ROUND_TRIP_COST_RATE, 2)
+            net_pnl = round(gross_pnl - costs, 2)
+            current_cash += (last_c * pos["quantity"]) - costs
+            risk_unit = max(0.01, pos["entry_price"] - pos["orig_sl"])
+            r_mult = round(net_pnl / max(0.01, risk_unit * pos["orig_qty"]), 2)
+            closed_trades.append({
+                "symbol": sym, "entry_price": pos["entry_price"], "exit_price": last_c,
+                "pnl": net_pnl, "r_multiple": r_mult, "exit_reason": "END_OF_BACKTEST"
+            })
+
+        # Calculate authentic quantitative metrics
+        total_trades = len(closed_trades)
+        wins = [t for t in closed_trades if t["pnl"] > 0]
+        losses = [t for t in closed_trades if t["pnl"] < 0]
+        win_rate = round((len(wins) / max(1, total_trades)) * 100.0, 1) if total_trades > 0 else 0.0
+
+        gross_profit = sum(t["pnl"] for t in wins)
+        gross_loss = abs(sum(t["pnl"] for t in losses))
+        profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (round(gross_profit, 2) if gross_profit > 0 else 0.0)
+
+        total_net_pnl = round(sum(t["pnl"] for t in closed_trades), 2)
+        final_equity = round(self.capital + total_net_pnl, 2)
+        return_pct = round(((final_equity - self.capital) / self.capital) * 100.0, 2)
+
+        # Max Drawdown from equity curve
+        peak = self.capital
+        max_dd_pct = 0.0
+        for eq in equity_curve:
+            if eq > peak:
+                peak = eq
+            dd = peak - eq
+            if peak > 0:
+                dd_pct = (dd / peak) * 100.0
+                if dd_pct > max_dd_pct:
+                    max_dd_pct = dd_pct
+        max_drawdown_pct = round(max_dd_pct, 2)
+
+        r_list = [t["r_multiple"] for t in closed_trades]
+        expectancy_r = round(float(sum(r_list) / len(r_list)), 3) if r_list else 0.0
+
         results = {
             "initial_capital": self.capital,
-            "lookback_days": lookback_days,
+            "final_equity": final_equity,
+            "total_net_pnl": total_net_pnl,
+            "return_pct": return_pct,
             "symbols_evaluated": len(valid_symbols),
+            "total_trades": total_trades,
+            "win_rate_pct": win_rate,
+            "profit_factor": profit_factor,
+            "max_drawdown_pct": max_drawdown_pct,
+            "expectancy_r": expectancy_r,
             "status": "COMPLETED",
-            "message": f"Evaluated {len(valid_symbols)} stocks across {lookback_days} sessions."
+            "message": f"Simulated {total_trades} trades across {len(valid_symbols)} stocks ({win_rate}% win rate, {profit_factor} PF, {max_drawdown_pct}% max DD)."
         }
-        print(f"[OK] Backtest completed successfully for {len(valid_symbols)} symbols.")
+        print(f"[OK] Backtest completed: Return: {return_pct:+.2f}%, Win Rate: {win_rate}%, PF: {profit_factor}, Max DD: {max_drawdown_pct}%")
         return results
 
 

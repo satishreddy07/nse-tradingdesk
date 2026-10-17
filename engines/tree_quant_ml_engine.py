@@ -140,6 +140,7 @@ class TreeQuantMLEngine:
         if len(df) < 6:
             return {"status": "INSUFFICIENT_DATA", "samples": len(df)}
 
+        df = df.loc[:, ~df.columns.duplicated()].copy()
         feature_cols = [c for c in UNIFIED_FEATURE_COLS if c in df.columns]
         X = df[feature_cols].values.astype(np.float64)
         y = df[target_col].values.astype(int)

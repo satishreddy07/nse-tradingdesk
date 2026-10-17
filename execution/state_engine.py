@@ -161,6 +161,30 @@ class StateEngine:
                     created_at TEXT NOT NULL
                 );
                 """)
+                try:
+                    cursor.execute("ALTER TABLE trade_history ADD COLUMN gross_pnl REAL;")
+                except Exception:
+                    pass
+                try:
+                    cursor.execute("ALTER TABLE trade_history ADD COLUMN charges REAL DEFAULT 0.0;")
+                except Exception:
+                    pass
+                try:
+                    cursor.execute("ALTER TABLE trade_history ADD COLUMN net_pnl REAL;")
+                except Exception:
+                    pass
+                try:
+                    cursor.execute("ALTER TABLE trade_history ADD COLUMN t1_pnl REAL DEFAULT 0.0;")
+                except Exception:
+                    pass
+                try:
+                    cursor.execute("ALTER TABLE trade_history ADD COLUMN t1_price REAL DEFAULT 0.0;")
+                except Exception:
+                    pass
+                try:
+                    cursor.execute("ALTER TABLE trade_history ADD COLUMN remaining_quantity INTEGER;")
+                except Exception:
+                    pass
 
                 # 3. Latest Signals Snapshot Table
                 cursor.execute("""
@@ -942,20 +966,23 @@ class StateEngine:
         entry_reason: str = "",
         entry_regime: str = "",
         entry_metrics: Optional[Dict[str, Any]] = None,
-        trade_features: Optional[Dict[str, Any]] = None
+        trade_features: Optional[Dict[str, Any]] = None,
+        bypass_gate: bool = False
     ) -> bool:
         """
         Opens a new position in the Single Master File with full YYYY-MM-DD HH:MM:SS IST timestamp
         and immediately syncs the Master File to Telegram Cloud.
-        STRICT TRADING GATE: Blocks order execution outside NSE trading hours (09:15–15:30 IST, Mon–Fri).
+        STRICT TRADING GATE: Blocks order execution outside NSE trading hours (09:15–15:30 IST, Mon–Fri),
+        unless bypass_gate is explicitly set (e.g., in automated testing or offline reconciliation).
         """
         from core.market_calendar import NSEMarketCalendar
         from core.telegram_vault import telegram_vault
 
-        can_trade, gate_reason = NSEMarketCalendar.can_execute_trades()
-        if not can_trade:
-            logger.warning(f"🔒 [Strict Trading Gate] Blocked BUY order for {symbol}: {gate_reason}")
-            return False
+        if not bypass_gate:
+            can_trade, gate_reason = NSEMarketCalendar.can_execute_trades()
+            if not can_trade:
+                logger.warning(f"🔒 [Strict Trading Gate] Blocked BUY order for {symbol}: {gate_reason}")
+                return False
 
         if quantity <= 0:
             logger.warning(f"⚠️ [Order Gate] Blocked {symbol}: Invalid quantity {quantity} (must be > 0).")
@@ -986,12 +1013,15 @@ class StateEngine:
                         if sig_row:
                             entry_metrics = dict(sig_row)
                         else:
-                            shadow_row = conn.execute(
-                                "SELECT * FROM quant_trade_dataset WHERE symbol = ? AND trade_type = 'SHADOW' ORDER BY id DESC LIMIT 1",
-                                (sym_clean,)
-                            ).fetchone()
-                            if shadow_row:
-                                entry_metrics = dict(shadow_row)
+                            try:
+                                shadow_row = conn.execute(
+                                    "SELECT * FROM quant_trade_dataset WHERE symbol = ? AND trade_type = 'SHADOW' ORDER BY id DESC LIMIT 1",
+                                    (sym_clean,)
+                                ).fetchone()
+                                if shadow_row:
+                                    entry_metrics = dict(shadow_row)
+                            except Exception:
+                                pass
 
                     metrics_str = json.dumps(entry_metrics or {})
                     features_str = json.dumps(trade_features or (json.loads(entry_metrics.get("features_json")) if isinstance(entry_metrics, dict) and isinstance(entry_metrics.get("features_json"), str) else {}))
@@ -1007,8 +1037,15 @@ class StateEngine:
                         )
                         return True
 
-                    # Slot capacity and cash risk validation
-                    max_slots = 15 if "NIFTY" in p_type else 10
+                    # Slot capacity and cash risk validation (F-38)
+                    from core.config import (
+                        P1_BASE_CAPITAL, P2_BASE_CAPITAL, P1_MAX_SLOTS, P2_MAX_SLOTS,
+                        MAX_POSITION_CAP_PCT, MAX_SECTOR_POSITIONS, DAILY_LOSS_LIMIT_PCT
+                    )
+                    is_p2 = "NIFTY" in p_type
+                    max_slots = P2_MAX_SLOTS if is_p2 else P1_MAX_SLOTS
+                    base_cap = P2_BASE_CAPITAL if is_p2 else P1_BASE_CAPITAL
+
                     cur_cnt = conn.execute(
                         "SELECT COUNT(*) FROM active_positions WHERE portfolio_type = ?",
                         (p_type,)
@@ -1017,7 +1054,43 @@ class StateEngine:
                         logger.warning(f"⚠️ [Slot Limit] Cannot open {sym_clean}: {p_type} already at {cur_cnt}/{max_slots} slots.")
                         return False
 
-                    base_cap = 100000.0 if "NIFTY" in p_type else 500000.0
+                    # Position Capital Cap Gate (F-38: max 20% capital per position)
+                    max_pos_val = base_cap * MAX_POSITION_CAP_PCT
+                    required_cash = entry_price * quantity
+                    if required_cash > max_pos_val:
+                        logger.warning(
+                            f"⚠️ [Risk Gate] Blocked {sym_clean}: Position value ₹{required_cash:,.2f} "
+                            f"exceeds {MAX_POSITION_CAP_PCT*100:.0f}% capital cap (₹{max_pos_val:,.2f})."
+                        )
+                        return False
+
+                    # Sector Concentration Gate (F-38: max 3 positions per sector)
+                    if sector and sector.upper() not in ("DIVERSIFIED", "INDEX", "NIFTY500"):
+                        sec_count = conn.execute(
+                            "SELECT COUNT(*) FROM active_positions WHERE portfolio_type = ? AND UPPER(sector) = ?",
+                            (p_type, sector.upper())
+                        ).fetchone()[0]
+                        if sec_count >= MAX_SECTOR_POSITIONS:
+                            logger.warning(
+                                f"⚠️ [Sector Gate] Blocked {sym_clean}: Sector '{sector}' already has {sec_count} active positions "
+                                f"(max allowed: {MAX_SECTOR_POSITIONS})."
+                            )
+                            return False
+
+                    # Daily Loss Circuit Breaker Gate (F-38: max 3% daily loss kill switch)
+                    today_prefix = now_str[:10]
+                    today_realized_loss = conn.execute(
+                        "SELECT SUM(pnl) FROM trade_history WHERE portfolio_type = ? AND exit_date LIKE ? AND pnl < 0",
+                        (p_type, f"{today_prefix}%")
+                    ).fetchone()[0] or 0.0
+                    daily_loss_limit = base_cap * DAILY_LOSS_LIMIT_PCT
+                    if abs(today_realized_loss) >= daily_loss_limit:
+                        logger.warning(
+                            f"🚨 [Circuit Breaker] Blocked {sym_clean}: Today's realized loss (-₹{abs(today_realized_loss):,.2f}) "
+                            f"has breached the {DAILY_LOSS_LIMIT_PCT*100:.0f}% daily limit (₹{daily_loss_limit:,.2f}). Trading halted."
+                        )
+                        return False
+
                     total_inv = conn.execute(
                         "SELECT SUM(entry_price * quantity) FROM active_positions WHERE portfolio_type = ?",
                         (p_type,)
@@ -1031,7 +1104,6 @@ class StateEngine:
                         (p_type,)
                     ).fetchone()[0] or 0.0
                     free_cash = max(0.0, base_cap + hist_pnl + t1_pnl_sum - total_inv)
-                    required_cash = entry_price * quantity
 
                     if required_cash > free_cash:
                         logger.warning(
@@ -1182,16 +1254,22 @@ class StateEngine:
         symbol: str,
         current_price: float,
         stop_loss: Optional[float] = None,
-        highest_price: Optional[float] = None
+        highest_price: Optional[float] = None,
+        portfolio_type: Optional[str] = None
     ) -> bool:
-        """Updates MTM price and optionally stops/highs for an active position."""
+        """Updates MTM price and optionally stops/highs for an active position, keyed by portfolio_type if specified (F-30)."""
         sym_clean = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+        p_type = self._normalize_portfolio_type(portfolio_type) if portfolio_type else None
         now_str = format_ist()
 
         with self._lock:
             with self._get_connection() as conn:
                 try:
-                    cur = conn.execute("SELECT stop_loss FROM active_positions WHERE symbol = ?", (sym_clean,)).fetchone()
+                    if p_type:
+                        cur = conn.execute("SELECT stop_loss FROM active_positions WHERE symbol = ? AND portfolio_type = ?", (sym_clean, p_type)).fetchone()
+                    else:
+                        cur = conn.execute("SELECT stop_loss FROM active_positions WHERE symbol = ?", (sym_clean,)).fetchone()
+
                     effective_sl = stop_loss
                     if cur and stop_loss is not None:
                         current_sl = float(cur["stop_loss"] or 0.0)
@@ -1199,28 +1277,32 @@ class StateEngine:
                         if current_sl > 0:
                             effective_sl = max(current_sl, stop_loss)
 
+                    # Build targeted update statement
+                    where_clause = "WHERE symbol = ? AND portfolio_type = ?" if p_type else "WHERE symbol = ?"
+                    where_params = (sym_clean, p_type) if p_type else (sym_clean,)
+
                     if effective_sl is not None and highest_price is not None:
-                        conn.execute("""
+                        conn.execute(f"""
                         UPDATE active_positions
                         SET current_price = ?, stop_loss = ?, highest_price = ?, updated_at = ?
-                        WHERE symbol = ?
-                        """, (current_price, effective_sl, highest_price, now_str, sym_clean))
+                        {where_clause}
+                        """, (current_price, effective_sl, highest_price, now_str) + where_params)
                     elif effective_sl is not None:
-                        conn.execute("""
+                        conn.execute(f"""
                         UPDATE active_positions
                         SET current_price = ?, stop_loss = ?, updated_at = ?
-                        WHERE symbol = ?
-                        """, (current_price, effective_sl, now_str, sym_clean))
+                        {where_clause}
+                        """, (current_price, effective_sl, now_str) + where_params)
                     else:
-                        conn.execute("""
+                        conn.execute(f"""
                         UPDATE active_positions
                         SET current_price = ?, updated_at = ?
-                        WHERE symbol = ?
-                        """, (current_price, now_str, sym_clean))
+                        {where_clause}
+                        """, (current_price, now_str) + where_params)
                     conn.commit()
                     return True
                 except Exception as e:
-                    logger.error(f"Failed to update price for {sym_clean}: {e}")
+                    logger.error(f"Failed to update price for {sym_clean} ({p_type or 'ALL'}): {e}")
                     return False
 
     def close_position(
@@ -1229,15 +1311,19 @@ class StateEngine:
         exit_price: float,
         exit_reason: str,
         notes: str = "",
-        bypass_gate: bool = False
+        bypass_gate: bool = False,
+        portfolio_type: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Closes an active position, logs it to trade_history with full IST timestamps,
         and immediately syncs the Single Master File to Telegram Cloud.
         STRICT TRADING GATE: Blocks exit execution outside NSE trading hours unless bypass_gate=True.
+        F-30: Strictly isolates queries and deletions by portfolio_type.
+        F-37: Deducts statutory transaction costs (0.12% round trip) and stores full trade audit details.
         """
         from core.market_calendar import NSEMarketCalendar
         from core.telegram_vault import telegram_vault
+        from core.config import EQUITY_ROUND_TRIP_COST_RATE
 
         if not bypass_gate:
             can_trade, gate_reason = NSEMarketCalendar.can_execute_trades()
@@ -1247,12 +1333,20 @@ class StateEngine:
 
         sym_clean = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
         now_str = format_ist()  # Full timestamp: YYYY-MM-DD HH:MM:SS IST
+        p_target = self._normalize_portfolio_type(portfolio_type) if portfolio_type else None
 
         with self._lock:
             with self._get_connection() as conn:
-                row = conn.execute("SELECT * FROM active_positions WHERE symbol = ?", (sym_clean,)).fetchone()
+                if p_target:
+                    row = conn.execute(
+                        "SELECT * FROM active_positions WHERE symbol = ? AND portfolio_type = ?",
+                        (sym_clean, p_target)
+                    ).fetchone()
+                else:
+                    row = conn.execute("SELECT * FROM active_positions WHERE symbol = ?", (sym_clean,)).fetchone()
+
                 if not row:
-                    logger.warning(f"Position {sym_clean} not found to close.")
+                    logger.warning(f"Position {sym_clean} ({p_target or 'ALL'}) not found to close.")
                     return None
 
                 pos = dict(row)
@@ -1262,11 +1356,23 @@ class StateEngine:
                 sector = pos.get("sector", "DIVERSIFIED")
                 entry_dt_str = pos["entry_date"]
 
-                # PnL math
-                rem_pnl = (exit_price - entry_px) * qty
-                total_pnl = float(pos.get("t1_pnl", 0.0)) + rem_pnl
+                # PnL math with statutory transaction costs (F-37)
+                t1_pnl_booked = float(pos.get("t1_pnl", 0.0) or 0.0)
+                rem_gross_pnl = (exit_price - entry_px) * qty
+                gross_pnl = t1_pnl_booked + rem_gross_pnl
+
                 orig_sl = float(pos.get("original_stop_loss") or pos["stop_loss"])
-                orig_qty = int(pos.get("original_quantity") or (qty * 2 if (pos.get("t1_hit") and float(pos.get("t1_pnl") or 0.0) > 0) else qty))
+                orig_qty = int(pos.get("original_quantity") or (qty * 2 if (pos.get("t1_hit") and t1_pnl_booked > 0) else qty))
+
+                # Statutory transaction costs: round trip (turnover * EQUITY_ROUND_TRIP_COST_RATE)
+                t1_hit = bool(pos.get("t1_hit", 0))
+                t1_qty = max(0, orig_qty - qty) if t1_hit else 0
+                t1_target = float(pos.get("target") or entry_px)
+                total_turnover = (entry_px * orig_qty) + (exit_price * qty) + (t1_target * t1_qty)
+                charges = round(total_turnover * EQUITY_ROUND_TRIP_COST_RATE, 2)
+                net_pnl = round(gross_pnl - charges, 2)
+                total_pnl = round(gross_pnl, 2)
+
                 risk_unit = max(0.01, entry_px - orig_sl)
                 initial_total_risk = max(0.01, risk_unit * orig_qty)
                 r_multiple = round(total_pnl / initial_total_risk, 2)
@@ -1279,22 +1385,25 @@ class StateEngine:
                 except Exception:
                     hold_days = int(pos.get("hold_days", 1) or 1)
 
-                # Insert into trade_history with full timestamps and true initial quantity
+                # Insert into trade_history with full timestamps, audit details, and true initial quantity (F-37)
                 conn.execute("""
                 INSERT INTO trade_history (
                     symbol, portfolio_type, entry_price, exit_price, quantity, pnl,
                     r_multiple, return_pct, entry_date, exit_date, hold_days,
-                    exit_reason, sector, notes, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    exit_reason, sector, notes, created_at,
+                    gross_pnl, charges, net_pnl, t1_pnl, t1_price, remaining_quantity
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    sym_clean, p_type, entry_px, exit_price, orig_qty, round(total_pnl, 2),
+                    sym_clean, p_type, entry_px, exit_price, orig_qty, total_pnl,
                     r_multiple, return_pct, entry_dt_str, now_str, hold_days,
-                    exit_reason, sector, notes or pos.get("notes", ""), now_str
+                    exit_reason, sector, notes or pos.get("notes", ""), now_str,
+                    round(gross_pnl, 2), charges, round(net_pnl, 2), round(t1_pnl_booked, 2), t1_target if t1_hit else 0.0, qty
                 ))
 
                 sync_msg = (
                     f"🏁 TRADE EXIT & CLOUD SYNCED: {sym_clean} ({orig_qty} shs @ ₹{exit_price:,.2f} | "
-                    f"PnL ₹{total_pnl:+,.2f} / {r_multiple:+.2f}R / {return_pct:+.2f}% | {exit_reason}) • {now_str}"
+                    f"PnL ₹{total_pnl:+,.2f} [Net ₹{net_pnl:+,.2f} after ₹{charges:.2f} costs] / "
+                    f"{r_multiple:+.2f}R / {return_pct:+.2f}% | {exit_reason}) • {now_str}"
                 )
                 sync_details = json.dumps({
                     "event": "TRADE_CLOSE",
@@ -1304,7 +1413,10 @@ class StateEngine:
                     "exit_price": exit_price,
                     "quantity": orig_qty,
                     "remaining_quantity_closed": qty,
-                    "pnl": round(total_pnl, 2),
+                    "gross_pnl": round(gross_pnl, 2),
+                    "charges": charges,
+                    "net_pnl": round(net_pnl, 2),
+                    "pnl": total_pnl,
                     "r_multiple": r_multiple,
                     "return_pct": return_pct,
                     "exit_reason": exit_reason,
@@ -1319,10 +1431,18 @@ class StateEngine:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (now_str, f"TRADE_EXIT_SYNC ({exit_reason})", p_type, "CLOUD_SYNCED", 0.25, 1, 1, 1, sync_msg, sync_details))
 
-                # Delete from active_positions
-                conn.execute("DELETE FROM active_positions WHERE symbol = ?", (sym_clean,))
-                # Clear any stale signal for this symbol so chart and screener reset
-                conn.execute("DELETE FROM latest_signals WHERE symbol = ?", (sym_clean,))
+                # Delete from active_positions strictly matching (symbol, portfolio_type) (F-30)
+                conn.execute("DELETE FROM active_positions WHERE symbol = ? AND portfolio_type = ?", (sym_clean, p_type))
+
+                # Clear signal only if no other portfolio has an active position for this symbol
+                remaining_active_any = conn.execute(
+                    "SELECT COUNT(*) FROM active_positions WHERE symbol = ?",
+                    (sym_clean,)
+                ).fetchone()[0]
+                if remaining_active_any == 0:
+                    conn.execute("DELETE FROM latest_signals WHERE symbol = ?", (sym_clean,))
+                else:
+                    conn.execute("DELETE FROM latest_signals WHERE symbol = ? AND portfolio_type = ?", (sym_clean, p_type))
                 conn.commit()
 
                 # Record Closed-Loop Real Trade Exit into quant_trade_dataset
@@ -1347,6 +1467,9 @@ class StateEngine:
                     "exit_price": exit_price,
                     "quantity": orig_qty,
                     "remaining_quantity_closed": qty,
+                    "gross_pnl": round(gross_pnl, 2),
+                    "charges": charges,
+                    "net_pnl": round(net_pnl, 2),
                     "pnl": round(total_pnl, 2),
                     "r_multiple": r_multiple,
                     "return_pct": return_pct,
@@ -1355,7 +1478,7 @@ class StateEngine:
                     "exit_reason": exit_reason,
                     "hold_days": hold_days
                 }
-                logger.info(f"Closed {sym_clean} in {p_type} at {now_str}: PnL ₹{total_pnl:+.2f} ({r_multiple:+.2f}R) Reason: {exit_reason}")
+                logger.info(f"Closed {sym_clean} in {p_type} at {now_str}: Net PnL ₹{total_pnl:+.2f} ({r_multiple:+.2f}R) Reason: {exit_reason}")
 
                 # Immediately sync Single Master File to Telegram Cloud Vault
                 telegram_vault.send_alert_and_sync(
@@ -1364,7 +1487,7 @@ class StateEngine:
                         f"<b>Symbol:</b> <code>{sym_clean}</code> ({p_type})\n"
                         f"<b>Entry:</b> ₹{entry_px:,.2f} ({entry_dt_str})\n"
                         f"<b>Exit:</b> ₹{exit_price:,.2f} ({now_str})\n"
-                        f"<b>Realized PnL:</b> ₹{total_pnl:+,.2f} ({r_multiple:+.2f}R | {return_pct:+.2f}%)\n"
+                        f"<b>Realized PnL:</b> ₹{total_pnl:+,.2f} (Net after ₹{charges:.2f} costs | {r_multiple:+.2f}R | {return_pct:+.2f}%)\n"
                         f"<b>Reason:</b> {exit_reason}"
                     ),
                     sync_db=True
@@ -1425,15 +1548,23 @@ class StateEngine:
                 return [dict(r) for r in rows]
 
     def get_portfolio_stats(self, base_capital: float = 500000.0, portfolio_type: Optional[str] = None) -> Dict[str, Any]:
-        """Calculates comprehensive quantitative performance metrics including realized partial T1 targets."""
+        """
+        Calculates comprehensive quantitative performance metrics.
+        F-39: Separates closed trade stats from active positions (no double-counting booked T1 as closed wins),
+        computes real peak-to-trough max drawdown, avoids 999.0 sentinels, and queries full history.
+        """
+        from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL, P1_MAX_SLOTS, P2_MAX_SLOTS
+
         if isinstance(base_capital, str):
             portfolio_type = base_capital
-            base_capital = 100000.0 if portfolio_type and "NIFTY" in str(portfolio_type).upper() else 500000.0
+            p_check = self._normalize_portfolio_type(portfolio_type)
+            base_capital = P2_BASE_CAPITAL if "NIFTY" in p_check else P1_BASE_CAPITAL
         elif portfolio_type and "NIFTY" in str(portfolio_type).upper() and base_capital == 500000.0:
-            base_capital = 100000.0
+            base_capital = P2_BASE_CAPITAL
 
         p_type = self._normalize_portfolio_type(portfolio_type) if portfolio_type else None
-        history = self.get_trade_history(portfolio_type=p_type, limit=1000)
+        # F-39: Fetch full trade history without artificial 1000 limit
+        history = self.get_trade_history(portfolio_type=p_type, limit=100000)
         active = self.get_active_positions(portfolio_type=p_type)
 
         # MTM Unrealized PnL, Open Risk, Invested Capital, and Booked T1 PnL
@@ -1442,8 +1573,8 @@ class StateEngine:
         total_invested = 0.0
         active_t1_pnl = 0.0
         t1_booked_count = 0
-        active_t1_r_list = []
 
+        active_t1_r_list = []
         for p in active:
             cp = float(p.get("current_price") or p["entry_price"])
             ep = float(p["entry_price"])
@@ -1463,40 +1594,60 @@ class StateEngine:
                 t1_r = round(t1_pnl_val / max(0.01, risk_per_share * booked_q), 2)
                 active_t1_r_list.append(t1_r)
 
-        closed_realized_pnl = sum(float(t["pnl"]) for t in history)
+        closed_realized_pnl = sum(float(t.get("pnl") or 0.0) for t in history)
         total_realized_pnl = round(closed_realized_pnl + active_t1_pnl, 2)
 
-        max_slots = 15 if (p_type and "NIFTY" in p_type) else 10
+        is_p2 = p_type and "NIFTY" in p_type
+        max_slots = P2_MAX_SLOTS if is_p2 else P1_MAX_SLOTS
         slots_used = len(active)
         slots_available = max(0, max_slots - slots_used)
         available_cash = round(max(0.0, base_capital + total_realized_pnl - total_invested), 2)
 
-        wins = [t for t in history if t["pnl"] > 0]
-        losses = [t for t in history if t["pnl"] <= 0]
+        # F-39: Closed trades stats only (do NOT count open T1 positions as closed trades or completed wins)
+        wins = [t for t in history if float(t.get("pnl") or 0.0) > 0]
+        losses = [t for t in history if float(t.get("pnl") or 0.0) < 0]
+        total_trades = len(history)
+        total_wins_count = len(wins)
 
-        total_wins_count = len(wins) + t1_booked_count
-        total_trades = len(history) + t1_booked_count
+        gross_profit = sum(float(t.get("pnl") or 0.0) for t in wins)
+        gross_loss = abs(sum(float(t.get("pnl") or 0.0) for t in losses))
 
-        gross_profit = sum(float(t["pnl"]) for t in wins) + active_t1_pnl
-        gross_loss = abs(sum(float(t["pnl"]) for t in losses))
+        # Real Peak-to-Trough Max Drawdown on Closed Trades Equity Curve (F-33, F-39)
+        equity = base_capital
+        peak = equity
+        max_dd_pct = 0.0
+        for t in reversed(history):
+            pnl_val = float(t.get("pnl") or 0.0)
+            equity += pnl_val
+            if equity > peak:
+                peak = equity
+            dd = peak - equity
+            if peak > 0:
+                dd_pct = (dd / peak) * 100.0
+                if dd_pct > max_dd_pct:
+                    max_dd_pct = dd_pct
+        max_drawdown_pct = round(max_dd_pct, 2)
 
         if total_trades == 0:
+            avg_t1_r = round(float(sum(active_t1_r_list) / len(active_t1_r_list)), 2) if active_t1_r_list else 0.0
+            exp_t1_r = round(float(sum(active_t1_r_list) / len(active_t1_r_list)), 3) if active_t1_r_list else 0.0
             return {
                 "total_trades": 0,
                 "win_rate": 0.0,
                 "profit_factor": 0.0,
-                "expectancy_r": 0.0,
-                "total_realized_pnl": 0.0,
+                "expectancy_r": exp_t1_r,
+                "max_drawdown_pct": 0.0,
+                "total_realized_pnl": total_realized_pnl,
                 "closed_realized_pnl": 0.0,
-                "t1_realized_pnl": 0.0,
-                "t1_booked_count": 0,
+                "t1_realized_pnl": round(active_t1_pnl, 2),
+                "t1_booked_count": t1_booked_count,
                 "unrealized_pnl": round(unrealized, 2),
                 "total_invested": round(total_invested, 2),
                 "available_cash": available_cash,
                 "max_slots": max_slots,
                 "slots_used": slots_used,
                 "slots_available": slots_available,
-                "avg_win_r": 0.0,
+                "avg_win_r": avg_t1_r,
                 "avg_loss_r": 0.0,
                 "active_count": slots_used,
                 "open_risk": round(open_risk, 2)
@@ -1505,21 +1656,24 @@ class StateEngine:
         win_rate = round((total_wins_count / total_trades) * 100.0, 1)
         if gross_loss > 0:
             profit_factor = round(gross_profit / gross_loss, 2)
+        elif gross_profit > 0:
+            profit_factor = round(gross_profit, 2)
         else:
-            profit_factor = 999.0 if gross_profit > 0 else 0.0
+            profit_factor = 0.0
 
-        r_list = [float(t["r_multiple"]) for t in history] + active_t1_r_list
+        r_list = [float(t["r_multiple"]) for t in history if "r_multiple" in t and t["r_multiple"] is not None]
         expectancy_r = round(float(sum(r_list) / len(r_list)), 3) if r_list else 0.0
 
-        win_r_list = [float(t["r_multiple"]) for t in wins] + active_t1_r_list
+        win_r_list = [float(t["r_multiple"]) for t in wins if "r_multiple" in t and t["r_multiple"] is not None]
         avg_win_r = round(float(sum(win_r_list) / len(win_r_list)), 2) if win_r_list else 0.0
-        avg_loss_r = round(float(sum(t["r_multiple"] for t in losses) / len(losses)), 2) if losses else 0.0
+        avg_loss_r = round(float(sum(float(t["r_multiple"]) for t in losses if "r_multiple" in t and t["r_multiple"] is not None) / len(losses)), 2) if losses else 0.0
 
         return {
             "total_trades": total_trades,
             "win_rate": win_rate,
             "profit_factor": profit_factor,
             "expectancy_r": expectancy_r,
+            "max_drawdown_pct": max_drawdown_pct,
             "total_realized_pnl": total_realized_pnl,
             "closed_realized_pnl": round(closed_realized_pnl, 2),
             "t1_realized_pnl": round(active_t1_pnl, 2),

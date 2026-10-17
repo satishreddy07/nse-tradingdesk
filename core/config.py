@@ -40,6 +40,7 @@ HOST = os.environ.get("HOST", "0.0.0.0")
 # Portfolio 1: Institutional 6-Pillar Engine
 P1_BASE_CAPITAL = float(os.environ.get("P1_BASE_CAPITAL", 500000.0))  # ₹5,00,000
 P1_BASE_RISK_PCT = float(os.environ.get("P1_BASE_RISK_PCT", 0.75))   # 0.75% base risk
+P1_MAX_SLOTS = int(os.environ.get("P1_MAX_SLOTS", 10))               # 10 maximum concurrent slots
 CHARTINK_URL = os.environ.get("CHARTINK_URL", "https://chartink.com/screener/testtttt-157")
 
 # Portfolio 2: Nifty 500 Momentum Compounded Engine
@@ -47,6 +48,13 @@ P2_BASE_CAPITAL = float(os.environ.get("P2_BASE_CAPITAL", 100000.0))  # ₹1,00,
 P2_RISK_PER_TRADE = float(os.environ.get("P2_RISK_PER_TRADE", 0.015)) # 1.5% dynamic compounded risk
 P2_MAX_SLOTS = int(os.environ.get("P2_MAX_SLOTS", 10))                # 10 maximum concurrent slots
 P2_STOP_ATR_MULT = float(os.environ.get("P2_STOP_ATR_MULT", 2.0))     # 2.0x ATR Wilder stop
+
+# Risk Controls & Capital Allocation Gates (F-38)
+MAX_POSITION_CAP_PCT = float(os.environ.get("MAX_POSITION_CAP_PCT", 0.20)) # 20% max capital per position
+MAX_SECTOR_POSITIONS = int(os.environ.get("MAX_SECTOR_POSITIONS", 3))       # Max 3 positions in single sector
+DAILY_LOSS_LIMIT_PCT = float(os.environ.get("DAILY_LOSS_LIMIT_PCT", 0.03)) # 3% daily loss kill switch
+EQUITY_ROUND_TRIP_COST_RATE = float(os.environ.get("EQUITY_ROUND_TRIP_COST_RATE", 0.0012)) # 0.12% round trip
+
 
 # Options Quant Desk Defaults (Nifty 50 Lot Size = 65)
 NIFTY_LOT_SIZE = int(os.environ.get("NIFTY_LOT_SIZE", 65))

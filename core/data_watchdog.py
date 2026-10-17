@@ -20,7 +20,7 @@ Dispatches high-priority Telegram alerts if any feed drops during trading hours.
 import time
 import logging
 import threading
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 from core.data_quality import now_ist, format_ist
 from core.market_calendar import NSEMarketCalendar
@@ -497,6 +497,38 @@ class DataWatchdog:
                         logger.warning(f"🚨 Dispatched Watchdog Telegram Alert for degraded feed: {ep_id}")
                     except Exception as e:
                         logger.error(f"Failed to dispatch Watchdog alert: {e}")
+
+    def is_trading_allowed(self, domain: str = "swing_trading") -> Tuple[bool, str]:
+        """
+        Enforces quantitative data watchdog gate (F-34).
+        Blocks automated trading if market data feeds are in OFFLINE_ALERT or severely stale (> 30m).
+        """
+        from typing import Tuple
+        is_market_open, gate_msg = NSEMarketCalendar.can_execute_trades()
+        if not is_market_open:
+            return True, f"Market is currently closed ({gate_msg})"
+
+        with self._lock:
+            endpoint_keys = [domain]
+            if domain in ("swing_trading", "p1_swing"):
+                endpoint_keys = ["swing_trading", "yahoo_finance"]
+            elif domain in ("nifty500", "p2_compounding"):
+                endpoint_keys = ["yahoo_finance", "chartink_scanner"]
+            elif domain in ("options", "intraday"):
+                endpoint_keys = ["intraday_desk", "options_desk"]
+
+            for k in endpoint_keys:
+                ep = self._endpoints.get(k)
+                if not ep:
+                    continue
+                status = ep.get("status", "")
+                age_sec = ep.get("age_seconds")
+                if status == "OFFLINE_ALERT":
+                    return False, f"DATA_WATCHDOG_ALERT: Data feed '{ep['name']}' is OFFLINE_ALERT. Auto-execution blocked."
+                if age_sec is not None and age_sec > 1800:
+                    return False, f"DATA_STALE: Data feed '{ep['name']}' has packet age {age_sec}s (> 1800s limit). Auto-execution blocked."
+
+        return True, "Data feeds healthy and within SLA."
 
 
 # Singleton instance exported across QuantDesk

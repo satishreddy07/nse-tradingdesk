@@ -502,6 +502,7 @@ class ClosePositionRequest(BaseModel):
     exit_price: Optional[float] = None
     exit_reason: str = "MANUAL_DISCRETIONARY"
     notes: str = ""
+    portfolio_type: Optional[str] = None
 
 
 class OpenPositionRequest(BaseModel):
@@ -585,20 +586,22 @@ def close_active_position(req: ClosePositionRequest):
         )
 
     sym = req.symbol.strip().upper()
-    active_rows = state_engine.get_active_positions()
+    active_rows = state_engine.get_active_positions(portfolio_type=req.portfolio_type)
     matched = [p for p in active_rows if p["symbol"] == sym]
 
     if not matched:
-        raise HTTPException(status_code=404, detail=f"Active position for {sym} not found.")
+        raise HTTPException(status_code=404, detail=f"Active position for {sym} ({req.portfolio_type or 'ALL'}) not found.")
 
     pos = matched[0]
+    p_type = req.portfolio_type or pos.get("portfolio_type")
     exit_px = req.exit_price or float(pos.get("current_price") or pos["entry_price"])
 
     res = state_engine.close_position(
         symbol=sym,
         exit_price=exit_px,
         exit_reason=req.exit_reason,
-        notes=req.notes
+        notes=req.notes,
+        portfolio_type=p_type
     )
     if not res:
         raise HTTPException(status_code=403, detail="Trade closure blocked by Strict Market-Hours Trading Gate.")
