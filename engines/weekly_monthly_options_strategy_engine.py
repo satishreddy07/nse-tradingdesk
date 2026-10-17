@@ -1169,7 +1169,15 @@ class WeeklyMonthlyOptionsStrategyEngine:
         except Exception:
             pass
         if iv_val <= 0.0:
-            iv_val = 13.2
+            try:
+                with state_engine._get_connection() as conn:
+                    r = conn.execute("SELECT close FROM ohlcv_master_store WHERE symbol IN ('^INDIAVIX', 'INDIAVIX') AND close > 0 ORDER BY date DESC LIMIT 1").fetchone()
+                    if r and r[0]:
+                        iv_val = float(r[0])
+            except Exception:
+                pass
+        if iv_val <= 0.0:
+            iv_val = 13.0
 
         return cls.analyze_highest_win_probability_strategy(
             verdict=weekly_verdict,
@@ -1628,7 +1636,14 @@ class WeeklyMonthlyOptionsStrategyEngine:
         )
 
         # Spot & IV lookups
-        iv_val = 13.2
+        iv_val = 13.0
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            v_data = nifty_analytics_engine.get_india_vix()
+            if v_data and v_data.get("current_vix", 0) > 0:
+                iv_val = float(v_data["current_vix"])
+        except Exception:
+            pass
         from core.market_calendar import NSEMarketCalendar
         cal_exp = NSEMarketCalendar.get_active_options_expiries(now_dt)
         cal_exp_default = cal_exp["current_weekly"] if horizon == "WEEKLY" else cal_exp["current_monthly"]

@@ -581,13 +581,16 @@ def _fast_ewm_array(arr: np.ndarray, span: float) -> np.ndarray:
 class FeatureEngine:
     @staticmethod
     def calc_adx_np(high_np: np.ndarray, low_np: np.ndarray, close_np: np.ndarray, period: int = 14) -> float:
-        """Fast pure-NumPy ADX(14) last-value calculation (only needs last ~45 bars)."""
-        m = min(len(close_np), period * 3 + 5)
-        if m < period * 2 + 2:
-            return 20.0
-        h = high_np[-m:]
-        l = low_np[-m:]
-        c = close_np[-m:]
+        """
+        Canonical Welles Wilder ADX(14) calculation with true Wilder exponential smoothing.
+        Matches TA-Lib and standard quantitative reference benchmarks (Zero inflation).
+        """
+        if len(close_np) < period * 2 + 1:
+            return 20.0  # Insufficient warmup period
+
+        h = np.asarray(high_np, dtype=np.float64)
+        l = np.asarray(low_np, dtype=np.float64)
+        c = np.asarray(close_np, dtype=np.float64)
 
         up_move = h[1:] - h[:-1]
         down_move = l[:-1] - l[1:]
@@ -595,18 +598,42 @@ class FeatureEngine:
         minus_dm = np.where((down_move > up_move) & (down_move > 0.0), down_move, 0.0)
         tr = np.maximum(h[1:] - l[1:], np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])))
 
-        # Rolling period sum via sliding_window_view
-        tr_sum = np.sum(sliding_window_view(tr, period), axis=-1)
-        pdm_sum = np.sum(sliding_window_view(plus_dm, period), axis=-1)
-        mdm_sum = np.sum(sliding_window_view(minus_dm, period), axis=-1)
+        n = len(tr)
+        if n < period * 2:
+            return 20.0
 
-        plus_di = 100.0 * (pdm_sum / (tr_sum + 1e-9))
-        minus_di = 100.0 * (mdm_sum / (tr_sum + 1e-9))
-        dx = 100.0 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-9)
+        # Wilder's smoothing for TR, +DM, -DM
+        smoothed_tr = np.zeros(n)
+        smoothed_pdm = np.zeros(n)
+        smoothed_mdm = np.zeros(n)
+
+        smoothed_tr[period - 1] = np.sum(tr[:period])
+        smoothed_pdm[period - 1] = np.sum(plus_dm[:period])
+        smoothed_mdm[period - 1] = np.sum(minus_dm[:period])
+
+        inv_p = 1.0 / period
+        for i in range(period, n):
+            smoothed_tr[i] = smoothed_tr[i - 1] - (smoothed_tr[i - 1] * inv_p) + tr[i]
+            smoothed_pdm[i] = smoothed_pdm[i - 1] - (smoothed_pdm[i - 1] * inv_p) + plus_dm[i]
+            smoothed_mdm[i] = smoothed_mdm[i - 1] - (smoothed_mdm[i - 1] * inv_p) + minus_dm[i]
+
+        valid_idx = np.arange(period - 1, n)
+        tr_valid = smoothed_tr[valid_idx]
+        plus_di = 100.0 * (smoothed_pdm[valid_idx] / np.maximum(tr_valid, 1e-9))
+        minus_di = 100.0 * (smoothed_mdm[valid_idx] / np.maximum(tr_valid, 1e-9))
+        di_sum = plus_di + minus_di
+        dx = 100.0 * np.abs(plus_di - minus_di) / np.maximum(di_sum, 1e-9)
+
         if len(dx) < period:
-            return float(np.mean(dx)) if len(dx) > 0 else 20.0
-        val = float(np.mean(dx[-period:]))
-        return val if not math.isnan(val) else 20.0
+            return 20.0
+
+        # Wilder's smoothing on DX to produce ADX
+        adx_val = np.mean(dx[:period])
+        for j in range(period, len(dx)):
+            adx_val = (adx_val * (period - 1) + dx[j]) * inv_p
+
+        val = float(adx_val)
+        return round(val, 2) if not (math.isnan(val) or math.isinf(val)) else 20.0
 
     @staticmethod
     def calc_rsi_np(close_np: np.ndarray, period: int = 14) -> float:

@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 
 import numpy as np
 
-from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -22,12 +22,28 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+def verify_admin_key(request: Request):
+    """
+    Security Gate for Mutating Endpoints (F-03 remediation):
+    If ADMIN_API_KEY is configured in the environment, requests must provide
+    either header 'X-API-Key: <key>' or 'Authorization: Bearer <key>'.
+    """
+    expected = os.environ.get("ADMIN_API_KEY", "").strip()
+    if not expected:
+        return True  # Dev mode: open if not configured
+    auth_header = request.headers.get("Authorization", "")
+    api_key_header = request.headers.get("X-API-Key", "")
+    token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else api_key_header
+    if token != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing administrative API key.")
+    return True
+
 from contextlib import asynccontextmanager
 
 from core.data_quality import now_ist, format_ist
 from core.market_calendar import NSEMarketCalendar
 from core.telegram_vault import telegram_vault
-from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL, P2_MAX_SLOTS, NIFTY_LOT_SIZE
+from core.config import P1_BASE_CAPITAL, P1_BASE_RISK_PCT, P2_BASE_CAPITAL, P2_MAX_SLOTS, NIFTY_LOT_SIZE
 from engines.institutional_engine import (
     InstitutionalEngine, get_institutional_status, refresh_live_market_prices,
     PORTFOLIO_TYPE as P1_TYPE
@@ -411,7 +427,7 @@ def get_scan_progress():
     return prog
 
 
-@app.post("/api/scan/trigger")
+@app.post("/api/scan/trigger", dependencies=[Depends(verify_admin_key)])
 def trigger_scan(req: TriggerScanRequest):
     s_type = req.scan_type.upper()
     curr_prog = state_engine.get_scan_progress()
@@ -500,7 +516,7 @@ class OpenPositionRequest(BaseModel):
     notes: str = "UI Manual Execution"
 
 
-@app.post("/api/position/open")
+@app.post("/api/position/open", dependencies=[Depends(verify_admin_key)])
 def open_new_position(req: OpenPositionRequest):
     can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
     if not can_trade:
@@ -559,7 +575,7 @@ def open_new_position(req: OpenPositionRequest):
     }
 
 
-@app.post("/api/position/close")
+@app.post("/api/position/close", dependencies=[Depends(verify_admin_key)])
 def close_active_position(req: ClosePositionRequest):
     can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
     if not can_trade:
@@ -650,7 +666,7 @@ class ResetPortfolioRequest(BaseModel):
     confirm_token: Optional[str] = None   # Must equal 'CONFIRM_USER_AUTHORIZED_RESET'
 
 
-@app.post("/api/portfolio/reset")
+@app.post("/api/portfolio/reset", dependencies=[Depends(verify_admin_key)])
 def reset_portfolio(req: ResetPortfolioRequest):
     return state_engine.reset_portfolio_trades(
         portfolio_type=req.portfolio_type,
@@ -663,7 +679,7 @@ def get_vault_status():
     return telegram_vault.get_status()
 
 
-@app.post("/api/vault/sync")
+@app.post("/api/vault/sync", dependencies=[Depends(verify_admin_key)])
 def sync_vault_to_cloud():
     """Manually triggers background backup of the Single Master File (`data/swing_trades.db`) to Telegram Cloud."""
     cnt = state_engine.get_ohlcv_stats().get("stocks_count", 0)
@@ -674,7 +690,7 @@ def sync_vault_to_cloud():
     }
 
 
-@app.post("/api/vault/restore")
+@app.post("/api/vault/restore", dependencies=[Depends(verify_admin_key)])
 def restore_vault_from_cloud():
     """Restores the Single Master File (`data/swing_trades.db`) from Telegram Cloud Vault."""
     res = telegram_vault.restore_master_file_from_cloud()
@@ -1780,16 +1796,49 @@ def evaluate_candidate_endpoint(symbol: str):
 
     sym_clean = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
     df, _ = state_engine.get_ohlcv_df(sym_clean)
-    if df is None or df.empty or len(df) < 10:
-        return {"status": "ERROR", "message": f"Insufficient OHLCV data for {sym_clean}"}
+    if df is None or df.empty or len(df) < 25:
+        return {"status": "DATA_UNAVAILABLE", "message": f"Data unavailable: Insufficient OHLCV history ({len(df) if df is not None else 0} bars) for {sym_clean}. Minimum 25 bars required."}
 
     c = float(df["Close"].iloc[-1])
     h = float(df["High"].iloc[-1]) if "High" in df.columns else c
     l = float(df["Low"].iloc[-1]) if "Low" in df.columns else c
-    atr = max(1.0, float(df["High"].tail(14).max() - df["Low"].tail(14).min()) / 5.0) if "High" in df.columns else max(1.0, c * 0.02)
+
+    # Canonical Wilder ATR14
+    atr = state_engine._calculate_atr(df, period=14)
+    if atr <= 0.0:
+        atr = max(1.0, c * 0.02)
     sl = round(c - 1.5 * atr, 2)
     t1 = round(c + 3.0 * atr, 2)
-    rr = 2.0
+    rr = round((t1 - c) / max(0.01, c - sl), 2)
+
+    # Real RSI(14)
+    from engines.institutional_engine import FeatureEngine
+    rsi14 = FeatureEngine.calc_rsi_np(df["Close"].values, period=14)
+
+    # Real ADX(14)
+    if "High" in df.columns and "Low" in df.columns:
+        adx14 = FeatureEngine.calc_adx_np(df["High"].values, df["Low"].values, df["Close"].values, period=14)
+    else:
+        adx14 = 25.0
+
+    # Real EMA20 distance
+    ema20 = float(df["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
+    dist_to_ema20 = round(((c - ema20) / max(1.0, ema20)) * 100.0, 2)
+
+    # Real Volume ratio (current / 20-day average)
+    if "Volume" in df.columns and len(df) >= 20:
+        vol_mean = float(df["Volume"].tail(20).mean())
+        vol_ratio = round(float(df["Volume"].iloc[-1]) / max(1.0, vol_mean), 2)
+    else:
+        vol_ratio = 1.0
+
+    # Real 20-day Pivot High distance
+    pivot20 = float(df["High"].tail(20).max()) if "High" in df.columns else c
+    dist_to_pivot = round(((c - pivot20) / max(1.0, pivot20)) * 100.0, 2)
+
+    # Realistic position sizing based on risk per trade
+    risk_per_share = max(0.5, c - sl)
+    shares = max(1, int(P1_BASE_CAPITAL * (P1_BASE_RISK_PCT / 100.0) / risk_per_share))
 
     cand_dict = {
         "symbol": sym_clean,
@@ -1798,24 +1847,29 @@ def evaluate_candidate_endpoint(symbol: str):
         "entry": c,
         "sl": sl,
         "t1": t1,
-        "score": 85.0,
-        "confidence": 5,
-        "rsi14": 58.0,
-        "atr_pct": round((atr / c) * 100.0, 2),
-        "dist_to_pivot": 1.2,
-        "dist_to_ema20": 1.8,
-        "vol_ratio": 1.4,
-        "inst_score": 75.0,
-        "week_confluence": 1,
-        "is_vcp": 1,
+        "score": round(min(100.0, max(20.0, (rsi14 * 0.5 + min(vol_ratio, 2.0) * 20.0))), 1),
+        "confidence": 4 if rsi14 > 50 and vol_ratio > 1.0 else 3,
+        "rsi14": rsi14,
+        "atr_pct": round((atr / max(1.0, c)) * 100.0, 2),
+        "dist_to_pivot": dist_to_pivot,
+        "dist_to_ema20": dist_to_ema20,
+        "vol_ratio": vol_ratio,
+        "inst_score": round(min(100.0, max(10.0, 50.0 + dist_to_ema20 * 2.0)), 1),
+        "week_confluence": 1 if dist_to_ema20 > 0 else 0,
+        "is_vcp": 1 if vol_ratio > 1.2 and abs(dist_to_pivot) < 2.0 else 0,
         "bb_sq_ratio": 0.8,
-        "adx14": 30.0,
-        "shares": 50,
+        "adx14": adx14,
+        "shares": shares,
         "sector": "DIVERSIFIED"
     }
 
     regime = swing_quant_ml_engine.capture_market_regime()
     ml_res = swing_quant_ml_engine.evaluate_candidate(cand_dict, market_regime=regime)
+
+    # Real portfolio state
+    active_pos = state_engine.get_active_positions(portfolio_type="P1_SWING")
+    already_held = any(p.get("symbol") == sym_clean for p in active_pos)
+    slots_used = len(active_pos)
 
     now_iso = datetime.now(timezone.utc).isoformat()
     ai_req = SwingCandidateAIRequest(
@@ -1827,7 +1881,7 @@ def evaluate_candidate_endpoint(symbol: str):
             candidate_id=f"cand_{sym_clean}",
             exchange="NSE",
             symbol=sym_clean,
-            scanner_classification="BUY NOW",
+            scanner_classification="BUY NOW" if cand_dict["score"] >= 75 else "WATCHLIST",
             scanner_run_id="on_demand_eval"
         ),
         context=SwingCandidateContext(
@@ -1837,10 +1891,10 @@ def evaluate_candidate_endpoint(symbol: str):
             data_quality={"status": "valid", "is_stale": False, "missing_fields": [], "warnings": []}
         ),
         technical_analysis=SwingTechnicalAnalysis(
-            classification="BUY NOW",
-            entry_conditions=["6-Pillars >= 80", "Pivot proximity <= 2%", "Volume ratio >= 1.15x"],
-            satisfied_conditions=["6-Pillar institutional structure valid", "Volume expansion confirmed"],
-            unsatisfied_conditions=[],
+            classification="BUY NOW" if cand_dict["score"] >= 75 else "WATCHLIST",
+            entry_conditions=["6-Pillars >= 75", "Pivot proximity <= 2%", "Volume ratio >= 1.0x"],
+            satisfied_conditions=["6-Pillar institutional structure valid"] if cand_dict["score"] >= 75 else [],
+            unsatisfied_conditions=[] if cand_dict["score"] >= 75 else ["Score below buy threshold"],
             features=ml_res["features"],
             engine_version="6-Pillar-v2.4"
         ),
@@ -1864,25 +1918,25 @@ def evaluate_candidate_endpoint(symbol: str):
             target=t1,
             holding_period="5-15 sessions",
             reward_risk_ratio=rr,
-            position_size=50,
+            position_size=shares,
             risk_per_share=round(c - sl, 2),
-            capital_at_risk=round(50 * (c - sl), 2),
-            estimated_transaction_costs=round(50 * c * 0.0012, 2)
+            capital_at_risk=round(shares * (c - sl), 2),
+            estimated_transaction_costs=round(shares * c * 0.0012, 2)
         ),
         historical_evidence=SwingHistoricalEvidence(
-            sample_count=160,
+            sample_count=int(ml_res.get("model_metadata", {}).get("total_samples") or 0),
             target_before_stop_frequency=ml_res["ml_win_prob"],
             stop_before_target_frequency=round(1.0 - ml_res["ml_win_prob"], 2),
-            evaluation_type="out_of_sample",
+            evaluation_type="model_prediction",
             period="NSE 500 Historical Validation",
-            historical_win_rate=ml_res["ml_win_prob"]
+            historical_win_rate=float(ml_res.get("model_metadata", {}).get("win_rate") or ml_res["ml_win_prob"])
         ),
         portfolio_context=SwingPortfolioContext(
-            already_held=False,
+            already_held=already_held,
             duplicate_pending_order=False,
-            available_capital=250000.0,
+            available_capital=P1_BASE_CAPITAL,
             risk_limits_available=True,
-            active_slots_used=3,
+            active_slots_used=slots_used,
             max_slots=10
         ),
         instructions=SwingInstructions(

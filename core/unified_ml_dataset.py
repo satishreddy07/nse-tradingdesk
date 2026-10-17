@@ -401,56 +401,52 @@ class UnifiedMLDataset:
 
         # 2. Simulate realistic trajectory if bars are provided
         if bars_df is None or bars_df.empty or len(bars_df) < 2:
-            # Synthetic conservative default: assumes mild slippage/loss on rejected trades
-            sim_pnl = -round(capital_at_risk * 0.4, 2)
-            sim_exit = intended_sl
-            exit_reason = "COUNTERFACTUAL_SIM_SL"
-            is_win = 0
-            mae = 3.5
-            mfe = 1.0
-        else:
-            # Realistic bar-by-bar progression
-            is_long = intended_target > intended_entry
-            sim_exit = intended_entry
-            exit_reason = "COUNTERFACTUAL_TIME_EXIT"
-            is_win = 0
-            mae = 0.0
-            mfe = 0.0
+            # Data unavailable: Do NOT fabricate synthetic loss outcomes. Outcome remains unrecorded until real bars exist.
+            logger.debug(f"Counterfactual trajectory simulation skipped for {trade_id}: Insufficient empirical bars.")
+            return trade_id
 
-            for _, bar in bars_df.iterrows():
-                h = float(bar.get("high") or bar.get("High") or bar.get("close"))
-                l = float(bar.get("low") or bar.get("Low") or bar.get("close"))
-                c = float(bar.get("close") or bar.get("Close"))
+        # Realistic bar-by-bar progression
+        is_long = intended_target > intended_entry
+        sim_exit = intended_entry
+        exit_reason = "COUNTERFACTUAL_TIME_EXIT"
+        is_win = 0
+        mae = 0.0
+        mfe = 0.0
 
-                if is_long:
-                    mae = max(mae, ((intended_entry - l) / intended_entry) * 100.0)
-                    mfe = max(mfe, ((h - intended_entry) / intended_entry) * 100.0)
-                    if l <= intended_sl:
-                        sim_exit = intended_sl * 0.998  # Add realistic slippage
-                        exit_reason = "COUNTERFACTUAL_STOP_LOSS"
-                        break
-                    elif h >= intended_target:
-                        sim_exit = intended_target * 0.998
-                        exit_reason = "COUNTERFACTUAL_TARGET"
-                        break
-                else:
-                    mae = max(mae, ((h - intended_entry) / intended_entry) * 100.0)
-                    mfe = max(mfe, ((intended_entry - l) / intended_entry) * 100.0)
-                    if h >= intended_sl:
-                        sim_exit = intended_sl * 1.002
-                        exit_reason = "COUNTERFACTUAL_STOP_LOSS"
-                        break
-                    elif l <= intended_target:
-                        sim_exit = intended_target * 1.002
-                        exit_reason = "COUNTERFACTUAL_TARGET"
-                        break
+        for _, bar in bars_df.iterrows():
+            h = float(bar.get("high") or bar.get("High") or bar.get("close"))
+            l = float(bar.get("low") or bar.get("Low") or bar.get("close"))
+            c = float(bar.get("close") or bar.get("Close"))
 
-            gross_pts = (sim_exit - intended_entry) if is_long else (intended_entry - sim_exit)
-            gross_pnl = round(gross_pts * quantity, 2)
-            # Realistic statutory friction: 0.12% roundtrip on notional
-            costs = round(intended_entry * quantity * 0.0012, 2)
-            sim_pnl = round(gross_pnl - costs, 2)
-            is_win = 1 if sim_pnl > 0 else 0
+            if is_long:
+                mae = max(mae, ((intended_entry - l) / intended_entry) * 100.0)
+                mfe = max(mfe, ((h - intended_entry) / intended_entry) * 100.0)
+                if l <= intended_sl:
+                    sim_exit = intended_sl * 0.998  # Add realistic slippage
+                    exit_reason = "COUNTERFACTUAL_STOP_LOSS"
+                    break
+                elif h >= intended_target:
+                    sim_exit = intended_target * 0.998
+                    exit_reason = "COUNTERFACTUAL_TARGET"
+                    break
+            else:
+                mae = max(mae, ((h - intended_entry) / intended_entry) * 100.0)
+                mfe = max(mfe, ((intended_entry - l) / intended_entry) * 100.0)
+                if h >= intended_sl:
+                    sim_exit = intended_sl * 1.002
+                    exit_reason = "COUNTERFACTUAL_STOP_LOSS"
+                    break
+                elif l <= intended_target:
+                    sim_exit = intended_target * 1.002
+                    exit_reason = "COUNTERFACTUAL_TARGET"
+                    break
+
+        gross_pts = (sim_exit - intended_entry) if is_long else (intended_entry - sim_exit)
+        gross_pnl = round(gross_pts * quantity, 2)
+        # Realistic statutory friction: 0.12% roundtrip on notional
+        costs = round(intended_entry * quantity * 0.0012, 2)
+        sim_pnl = round(gross_pnl - costs, 2)
+        is_win = 1 if sim_pnl > 0 else 0
 
         self.record_trade_outcome(
             trade_id=trade_id,

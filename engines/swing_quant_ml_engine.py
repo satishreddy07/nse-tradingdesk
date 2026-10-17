@@ -1515,25 +1515,25 @@ class SwingQuantMLEngine:
             rr = round((t1 - ep) / risk_unit, 2)
 
             empirical_rows.append({
-                "score": float(r["score"] or 70.0),
-                "confidence": float(r["confidence"] or 4),
-                "rsi14": float(r["rsi14"] or 55.0),
-                "atr_pct": float(r["atr_pct"] or 2.5),
-                "dist_to_pivot": float(r["dist_to_pivot"] or 1.5),
-                "dist_to_ema20": float(r["dist_to_ema20"] or 2.0),
-                "vol_ratio": float(r["vol_ratio"] or 1.2),
-                "inst_score": float(r["inst_score"] or 60.0),
-                "week_confluence": float(r["week_confluence"] or 1.0),
-                "is_vcp": float(r["is_vcp"] or 0.0),
-                "bb_sq_ratio": float(r["bb_sq_ratio"] or 0.8),
-                "adx14": float(r["adx14"] or 28.0),
-                "nifty_ret_5d": float(r["nifty_ret_5d"] or 0.0),
-                "nifty_rsi14": float(r["nifty_rsi14"] or 55.0),
-                "vix_val": float(r["vix_val"] or 14.0),
-                "sector_excess_6m": float(r["sector_excess_6m"] or 0.0),
+                "score": float(r["score"]) if r["score"] is not None else 70.0,
+                "confidence": float(r["confidence"]) if r["confidence"] is not None else 4.0,
+                "rsi14": float(r["rsi14"]) if r["rsi14"] is not None else 55.0,
+                "atr_pct": float(r["atr_pct"]) if r["atr_pct"] is not None else 2.5,
+                "dist_to_pivot": float(r["dist_to_pivot"]) if r["dist_to_pivot"] is not None else 1.5,
+                "dist_to_ema20": float(r["dist_to_ema20"]) if r["dist_to_ema20"] is not None else 2.0,
+                "vol_ratio": float(r["vol_ratio"]) if r["vol_ratio"] is not None else 1.2,
+                "inst_score": float(r["inst_score"]) if r["inst_score"] is not None else 60.0,
+                "week_confluence": float(r["week_confluence"]) if r["week_confluence"] is not None else 0.0,
+                "is_vcp": float(r["is_vcp"]) if r["is_vcp"] is not None else 0.0,
+                "bb_sq_ratio": float(r["bb_sq_ratio"]) if r["bb_sq_ratio"] is not None else 0.8,
+                "adx14": float(r["adx14"]) if r["adx14"] is not None else 28.0,
+                "nifty_ret_5d": float(r["nifty_ret_5d"]) if r["nifty_ret_5d"] is not None else 0.0,
+                "nifty_rsi14": float(r["nifty_rsi14"]) if r["nifty_rsi14"] is not None else 55.0,
+                "vix_val": float(r["vix_val"]) if r["vix_val"] is not None else 14.0,
+                "sector_excess_6m": float(r["sector_excess_6m"]) if r["sector_excess_6m"] is not None else 0.0,
                 "rr_ratio": float(rr),
                 "is_winner": int(r["is_winner"]),
-                "r_multiple": float(r["r_multiple"] or 0.0)
+                "r_multiple": float(r["r_multiple"]) if r["r_multiple"] is not None else 0.0
             })
 
         # Determine dataset source:

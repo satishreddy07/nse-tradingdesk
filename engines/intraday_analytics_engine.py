@@ -288,10 +288,13 @@ class IntradayAnalyticsEngine:
                 "max_gamma_strike": int(round(spot / 50.0) * 50),
             }
 
-        # Estimate days to expiry T in years
-        # If expiry string is available (e.g., '16-Oct-2026') calculate days, default 3 days
+        # Estimate days to expiry T in years using NSE market calendar
         expiry_str = weekly_chain_data.get("expiry", "")
-        days_to_exp = 3.0
+        try:
+            from core.market_calendar import NSEMarketCalendar
+            days_to_exp = max(0.5, float(NSEMarketCalendar.get_active_options_expiries()["dte_weekly"]))
+        except Exception:
+            days_to_exp = 2.0
         try:
             if expiry_str:
                 exp_dt = datetime.datetime.strptime(expiry_str, "%d-%b-%Y").date()
@@ -299,7 +302,7 @@ class IntradayAnalyticsEngine:
                 diff_d = (exp_dt - curr_dt).days
                 days_to_exp = max(0.5, float(diff_d))
         except Exception:
-            days_to_exp = 3.0
+            pass
 
         T = max(1.0 / 365.0, days_to_exp / 365.0)
 
@@ -309,22 +312,32 @@ class IntradayAnalyticsEngine:
         total_call_gex_cr = 0.0
         total_put_gex_cr = 0.0
 
+        # Baseline IV lookup from India VIX
+        base_iv = 13.0
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            v_info = nifty_analytics_engine.get_india_vix()
+            if v_info and v_info.get("current_vix", 0) > 0:
+                base_iv = float(v_info["current_vix"])
+        except Exception:
+            pass
+
         for s in strikes:
             k = float(s["strike"])
             ce_oi = float(s.get("ce_oi") or 0.0)
             pe_oi = float(s.get("pe_oi") or 0.0)
-            iv = float(s.get("ce_iv") or s.get("pe_iv") or 14.0) / 100.0
+            iv = float(s.get("ce_iv") or s.get("pe_iv") or base_iv) / 100.0
             iv = max(0.06, min(0.85, iv))
 
             d1 = (math.log(spot / k) + 0.5 * (iv ** 2) * T) / (iv * math.sqrt(T))
             pdf_d1 = (1.0 / math.sqrt(2.0 * math.pi)) * math.exp(-0.5 * (d1 ** 2))
             gamma = pdf_d1 / (spot * iv * math.sqrt(T))
 
-            # Standard dealer GEX convention (in Crores INR = 1e7):
+            # Canonical dealer Dollar GEX convention (in Crores INR = 1e7):
             # Dealers short calls -> + Call GEX (dealers buy as spot drops, sell as spot rises: stabilizing)
             # Dealers short puts  -> - Put GEX (dealers sell as spot drops, buy as spot rises: destabilizing)
-            call_gex_cr = round((0.5 * (spot ** 2) * gamma * ce_oi * lot_size) / 1e7, 2)
-            put_gex_cr = round((-0.5 * (spot ** 2) * gamma * pe_oi * lot_size) / 1e7, 2)
+            call_gex_cr = round(((spot ** 2) * gamma * ce_oi * lot_size) / 1e7, 2)
+            put_gex_cr = round((-(spot ** 2) * gamma * pe_oi * lot_size) / 1e7, 2)
             net_gex_cr = round(call_gex_cr + put_gex_cr, 2)
 
             total_call_gex_cr += call_gex_cr
