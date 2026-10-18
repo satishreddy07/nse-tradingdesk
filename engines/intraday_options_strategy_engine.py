@@ -1369,9 +1369,16 @@ class IntradayOptionsStrategyEngine:
                 "status": "DATA_UNAVAILABLE",
                 "reason": f"Intraday auto-trade blocked: {data_block_reason}",
                 "decision_source": "INTRADAY_ANALYSIS",
+                "regime": intraday_regime_info.get("regime"),
                 "intraday_analysis": intraday_regime_info,
                 "intraday_confidence_pct": confidence_pct,
                 "confidence_details": daytime_conf,
+                "expiry_cycle": "DATA_UNAVAILABLE",
+                "dte": None,
+                "is_zero_dte": None,
+                "spot_price": intraday_regime_info.get("spot_price"),
+                "sigma_calculation": None,
+                "deployed_strategies": [],
                 "option_chain_data_quality": oc_data.get("data_quality"),
                 "weekly_chain_data_quality": w_oc.get("data_quality"),
                 "timestamp_ist": format_ist()
@@ -1390,6 +1397,15 @@ class IntradayOptionsStrategyEngine:
                 "status": "DATA_UNAVAILABLE",
                 "reason": "The active expiry produced an invalid time-to-expiry value; trade creation blocked.",
                 "decision_source": "INTRADAY_ANALYSIS",
+                "regime": intraday_regime_info.get("regime"),
+                "intraday_confidence_pct": confidence_pct,
+                "confidence_details": daytime_conf,
+                "expiry_cycle": "DATA_UNAVAILABLE",
+                "dte": None,
+                "is_zero_dte": None,
+                "spot_price": spot_price,
+                "sigma_calculation": None,
+                "deployed_strategies": [],
                 "timestamp_ist": format_ist()
             }
 

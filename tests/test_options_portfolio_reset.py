@@ -2,7 +2,28 @@ import pytest
 from engines.nifty_analytics_engine import nifty_analytics_engine
 from execution.state_engine import state_engine
 
+
+def _seed_active_options_strategy():
+    """Seed the exact active row this test owns; never depend on a previous test's side effects."""
+    with state_engine._lock:
+        with state_engine._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO options_strategies (
+                    strategy_id, strategy_name, symbol, expiry_date, expiry_type,
+                    created_at, spot_at_entry, net_premium, legs_json, status, auto_trade_mode
+                ) VALUES (
+                    'AUDIT_TEST_ACTIVE_RESET', 'Audit reset fixture', 'NIFTY',
+                    '2099-01-01', 'WEEKLY', '2026-10-18 09:00:00 IST',
+                    25000.0, 0.0, '[]', 'ACTIVE', 'MANUAL'
+                )
+                """
+            )
+            conn.commit()
+
+
 def test_options_portfolio_clean_state():
+    _seed_active_options_strategy()
     """Verify that only active strategies remain, realized PnL is 0, and equity curve starts at Base 200,000."""
     nifty_analytics_engine.reset_options_portfolio(keep_active=True)
     port = nifty_analytics_engine.get_options_portfolio()
@@ -25,6 +46,7 @@ def test_options_portfolio_clean_state():
 
 def test_reset_options_portfolio_keeps_active():
     """Verify reset_options_portfolio(keep_active=True) retains active strategies and clears closed."""
+    _seed_active_options_strategy()
     res = nifty_analytics_engine.reset_options_portfolio(keep_active=True)
     assert res["status"] == "OK"
     

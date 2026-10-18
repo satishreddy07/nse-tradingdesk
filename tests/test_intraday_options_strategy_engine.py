@@ -314,4 +314,9 @@ def test_intraday_everyday_0dte_and_non_0dte_confidence():
     deploy_res = intraday_options_strategy_engine.evaluate_and_execute_auto_trades(force_refresh=True)
     assert "intraday_confidence_pct" in deploy_res
     assert "expiry_cycle" in deploy_res
+    if deploy_res.get("status") == "DATA_UNAVAILABLE":
+        assert deploy_res.get("reason")
+        assert deploy_res["deployed_strategies"] == []
+    else:
+        assert deploy_res["status"] in ("DEPLOYED", "SKIPPED")
 
