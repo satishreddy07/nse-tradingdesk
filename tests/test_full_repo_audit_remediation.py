@@ -581,3 +581,18 @@ def test_data_quality_rejects_unexplained_extreme_price_jump():
     assert not valid
     assert cleaned.empty
     assert any("greater than 50%" in warning for warning in warnings)
+
+
+def test_data_quality_rejects_duplicate_timestamps():
+    dates = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-02", "2026-01-04", "2026-01-05"])
+    df = pd.DataFrame({
+        "Open": [100, 101, 102, 103, 104],
+        "High": [105, 106, 107, 108, 109],
+        "Low": [99, 100, 101, 102, 103],
+        "Close": [104, 105, 106, 107, 108],
+        "Volume": [1000, 1100, 1200, 1300, 1400],
+    }, index=dates)
+    valid, cleaned, warnings = validate_ohlcv_dataframe(df, symbol="DUPLICATE_TS", min_bars=5)
+    assert not valid
+    assert cleaned.empty
+    assert any("duplicate timestamp" in warning for warning in warnings)
