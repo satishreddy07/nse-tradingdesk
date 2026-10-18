@@ -88,110 +88,34 @@ class NiftyForecastLearningEngine:
         # 1. Fetch resolved records from ledger
         ledger_df = nifty_prediction_ledger.get_training_records(horizon=horizon, min_samples=1)
 
-        # 2. Ingest historical daily feature bars from Yahoo Finance series
-        nifty_df = state_engine.get_ohlcv("^NSEI")
-        if nifty_df is None or len(nifty_df) < 40:
-            if not ledger_df.empty and len(ledger_df) >= 15:
-                return ledger_df
-            # C-04: Exclude synthetic priors from production training; fail closed on insufficient empirical coverage
-            logger.warning(f"Insufficient empirical bars ({0 if nifty_df is None else len(nifty_df)}) and ledger rows ({len(ledger_df)}) for horizon {horizon}. Returning empirical dataset only.")
-            return ledger_df if not ledger_df.empty else pd.DataFrame()
+        # Historical OHLCV alone cannot truthfully supply breadth, sector, global, news,
+        # institutional positioning, India VIX, or options PCR. Do not synthesize those
+        # fields from Nifty returns. Train only on matured empirical ledger snapshots that
+        # recorded the actual features available at prediction time.
+        if ledger_df is None or ledger_df.empty:
+            logger.warning(
+                "No empirical resolved prediction-ledger rows for %s; refusing to manufacture "
+                "historical macro/options/news features.",
+                horizon
+            )
+            return pd.DataFrame()
 
-        dates = [str(idx)[:10] for idx in nifty_df.index]
-        c_flat = nifty_df["Close"].dropna().to_numpy(dtype=np.float64).flatten()
-        closes = [float(v) for v in c_flat]
-        n_bars = len(closes)
+        required = [c for c in NIFTY_FEATURE_COLS if c not in ledger_df.columns]
+        if required:
+            logger.warning("Prediction ledger missing required empirical features for %s: %s", horizon, required)
+            return pd.DataFrame()
 
-        # Forward shift: 1 bar for T+1, 5 bars for T+5
-        fwd_shift = 1 if horizon == "T+1" else 5
-        dir_threshold = 0.08 if horizon == "T+1" else 0.25
+        usable = ledger_df.copy()
+        numeric = usable[NIFTY_FEATURE_COLS].apply(pd.to_numeric, errors="coerce")
+        valid = np.isfinite(numeric.to_numpy(dtype=np.float64)).all(axis=1)
+        usable = usable.loc[valid].copy()
+        if usable.empty:
+            logger.warning("No ledger rows have complete finite empirical features for %s.", horizon)
+            return pd.DataFrame()
 
-        rows: List[Dict[str, Any]] = []
-        for i in range(30, n_bars - fwd_shift):
-            s0 = closes[i]
-            s_fwd = closes[i + fwd_shift]
-            ret_fwd = ((s_fwd - s0) / max(1.0, s0)) * 100.0
-
-            # Historical feature calculations (Strictly using data up to bar i)
-            c_win = closes[:i + 1]
-            e20 = float(pd.Series(c_win).ewm(span=20).mean().iloc[-1])
-            e50 = float(pd.Series(c_win).ewm(span=50).mean().iloc[-1])
-            ret5 = ((s0 - closes[max(0, i - 5)]) / max(1.0, closes[max(0, i - 5)])) * 100.0
-            dist_e20 = ((s0 - e20) / e20) * 100.0
-            dist_e50 = ((s0 - e50) / e50) * 100.0
-
-            s_tech = (15.0 if s0 > e20 else -15.0) + (10.0 if e20 > e50 else -10.0) + np.clip(ret5 * 4.0, -15.0, 15.0)
-            s_breadth = s_tech * 0.85
-            s_sec = s_tech * 0.75
-            s_glob = ret5 * 2.5
-            s_macro = -ret5 * 1.5
-            s_news = 10.0 if ret5 > 0 else -10.0
-            s_inst = 15.0 if ret5 > 0 else -15.0
-
-            comp_score = 0.25 * s_tech + 0.20 * s_breadth + 0.18 * s_sec + 0.15 * s_glob + 0.12 * s_macro + 0.10 * s_inst
-            comp_score_t5 = 0.30 * s_tech + 0.25 * s_breadth + 0.20 * s_sec + 0.15 * s_glob + 0.10 * s_macro
-
-            if ret_fwd >= dir_threshold:
-                target_class = 1  # BULLISH
-                direction_label = "BULLISH"
-            elif ret_fwd <= -dir_threshold:
-                target_class = -1  # BEARISH
-                direction_label = "BEARISH"
-            else:
-                target_class = 0  # FLAT
-                direction_label = "FLAT"
-            if len(c_win) >= 21:
-                c_arr21 = np.array(c_win[-21:], dtype=np.float64)
-                vix_spot_val = round(float(np.clip(np.std(np.diff(c_arr21) / (c_arr21[:-1] + 1e-9)) * math.sqrt(252) * 100.0, 9.0, 45.0)), 1)
-            else:
-                vix_spot_val = 14.0
-
-            rows.append({
-                "prediction_date": dates[i],
-                "spot_price": s0,
-                "composite_score": round(float(comp_score), 1),
-                "composite_score_t5": round(float(comp_score_t5), 1),
-                "technical_score": round(float(s_tech), 1),
-                "breadth_score": round(float(s_breadth), 1),
-                "sectoral_score": round(float(s_sec), 1),
-                "global_score": round(float(s_glob), 1),
-                "macro_score": round(float(s_macro), 1),
-                "news_and_deriv_score": round(float(s_news), 1),
-                "institutional_score": round(float(s_inst), 1),
-                "vix_spot": vix_spot_val,
-                "near_atm_pcr": round(float(np.clip(1.0 + (ret5 * 0.05), 0.70, 1.45)), 2),
-                "chg_oi_pcr": round(float(np.clip(1.0 + (ret5 * 0.03), 0.75, 1.35)), 2),
-                "dist_to_ema20_pct": round(dist_e20, 2),
-                "dist_to_ema50_pct": round(dist_e50, 2),
-                "crude_oil_ret_1d": round(float(np.clip(-ret5 * 0.1, -3.0, 3.0)), 2),
-                "crude_oil_ret_5d": round(float(np.clip(-ret5 * 0.25, -6.0, 6.0)), 2),
-                "fii_fut_long_pct": round(float(np.clip(50.0 + (ret5 * 1.5), 20.0, 80.0)), 1),
-                "sp500_ret_1d": round(float(np.clip(ret5 * 0.15, -2.5, 2.5)), 2),
-                "nifty_ret_5d": round(ret5, 2),
-                "actual_return_pct": round(ret_fwd, 2),
-                "target_class": target_class,
-                "realized_direction": direction_label,
-                "weight": 1.0
-            })
-
-        hist_df = pd.DataFrame(rows)
-
-        # Merge with live resolved ledger rows (with higher weighting)
-        if not ledger_df.empty:
-            ledger_rows = []
-            for _, r in ledger_df.iterrows():
-                row_dict = {col: r[col] for col in NIFTY_FEATURE_COLS if col in r}
-                row_dict["prediction_date"] = r["prediction_date"]
-                row_dict["actual_return_pct"] = float(r["actual_return_pct"])
-                row_dict["target_class"] = int(r["target_class"])
-                row_dict["realized_direction"] = r["realized_direction"]
-                row_dict["weight"] = 2.5  # Higher weighting for live forward-tested predictions
-                ledger_rows.append(row_dict)
-            ledger_sub = pd.DataFrame(ledger_rows)
-            combined_df = pd.concat([hist_df, ledger_sub], ignore_index=True)
-            return combined_df
-
-        return hist_df
+        if "weight" not in usable.columns:
+            usable["weight"] = 2.5
+        return usable
 
     def _generate_domain_prior_dataset(self, horizon: str, count: int = 80) -> pd.DataFrame:
         """Generates deterministic prior domain dataset for cold-start bootstrapping."""
