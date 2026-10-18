@@ -651,6 +651,16 @@ class NiftyAnalyticsEngine:
                 return None
             return parsed if np.isfinite(parsed) and parsed > 0 else None
 
+        def _positive_finite_price(*values: Any) -> Optional[float]:
+            for value in values:
+                try:
+                    parsed = float(value)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if np.isfinite(parsed) and parsed > 0:
+                    return parsed
+            return None
+
         strikes_data: List[Dict[str, Any]] = []
         for item in raw_rows:
             k = int(round(float(item.get("strikePrice") or 0)))
@@ -663,7 +673,9 @@ class NiftyAnalyticsEngine:
             ce_chg_oi = int(ce.get("changeinOpenInterest") or 0)
             ce_vol = int(ce.get("totalTradedVolume") or 0)
             ce_iv = _positive_finite_iv(ce.get("impliedVolatility"))
-            ce_ltp = float(ce.get("lastPrice") or 0.0)
+            ce_ltp = _positive_finite_price(ce.get("lastPrice")) or 0.0
+            ce_bid = _positive_finite_price(ce.get("bidprice"), ce.get("bidPrice"), ce.get("bid"))
+            ce_ask = _positive_finite_price(ce.get("askPrice"), ce.get("askprice"), ce.get("ask"))
             ce_chg = float(ce.get("change") or 0.0)
             ce_pchg = float(ce.get("pChange") or 0.0)
             ce_buy_q = int(ce.get("totalBuyQuantity") or 0)
@@ -673,7 +685,9 @@ class NiftyAnalyticsEngine:
             pe_chg_oi = int(pe.get("changeinOpenInterest") or 0)
             pe_vol = int(pe.get("totalTradedVolume") or 0)
             pe_iv = _positive_finite_iv(pe.get("impliedVolatility"))
-            pe_ltp = float(pe.get("lastPrice") or 0.0)
+            pe_ltp = _positive_finite_price(pe.get("lastPrice")) or 0.0
+            pe_bid = _positive_finite_price(pe.get("bidprice"), pe.get("bidPrice"), pe.get("bid"))
+            pe_ask = _positive_finite_price(pe.get("askPrice"), pe.get("askprice"), pe.get("ask"))
             pe_chg = float(pe.get("change") or 0.0)
             pe_pchg = float(pe.get("pChange") or 0.0)
             pe_buy_q = int(pe.get("totalBuyQuantity") or 0)
@@ -690,6 +704,8 @@ class NiftyAnalyticsEngine:
                 "ce_vol": ce_vol,
                 "ce_iv": round(ce_iv, 2) if ce_iv is not None else None,
                 "ce_ltp": round(ce_ltp, 2),
+                "ce_bid": round(ce_bid, 2) if ce_bid is not None else None,
+                "ce_ask": round(ce_ask, 2) if ce_ask is not None else None,
                 "ce_chg": round(ce_chg, 2),
                 "ce_pchg": round(ce_pchg, 1),
                 "ce_buildup": cls._classify_oi_buildup(ce_chg, ce_chg_oi),
@@ -699,6 +715,8 @@ class NiftyAnalyticsEngine:
                 "pe_vol": pe_vol,
                 "pe_iv": round(pe_iv, 2) if pe_iv is not None else None,
                 "pe_ltp": round(pe_ltp, 2),
+                "pe_bid": round(pe_bid, 2) if pe_bid is not None else None,
+                "pe_ask": round(pe_ask, 2) if pe_ask is not None else None,
                 "pe_chg": round(pe_chg, 2),
                 "pe_pchg": round(pe_pchg, 1),
                 "pe_buildup": cls._classify_oi_buildup(pe_chg, pe_chg_oi),
