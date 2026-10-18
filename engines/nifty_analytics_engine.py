@@ -1143,7 +1143,7 @@ class NiftyAnalyticsEngine:
                     if "expiry" in sec and "expiry_date" not in sec:
                         sec["expiry_date"] = sec["expiry"]
                     if "volatility_and_gex" in sec and "atm_iv" not in sec:
-                        sec["atm_iv"] = sec["volatility_and_gex"].get("atm_iv", 13.2)
+                        sec["atm_iv"] = sec["volatility_and_gex"].get("atm_iv")
         return data
 
     # ==========================================================================
@@ -5778,7 +5778,10 @@ class NiftyAnalyticsEngine:
 
         t_years = max(0.001, dte / 365.0)
         r = RISK_FREE_RATE
-        base_iv = float(atm_row.get("ce_iv") or atm_row.get("pe_iv") or atm_row.get("call_iv") or atm_row.get("put_iv") or DEFAULT_OPTIONS_IV)
+        base_iv_raw = atm_row.get("ce_iv") or atm_row.get("pe_iv") or atm_row.get("call_iv") or atm_row.get("put_iv")
+        if base_iv_raw is None or float(base_iv_raw) <= 0:
+            raise ValueError("Observed option IV is unavailable; theoretical pricing cannot substitute a fixed volatility.")
+        base_iv = float(base_iv_raw)
         sig = max(0.05, base_iv / 100.0)
 
         def _get_leg_ltp(stk_row: Dict[str, Any], opt_type: str) -> float:
@@ -6209,8 +6212,10 @@ class NiftyAnalyticsEngine:
         composite_score_t5 = float(preds.get("composite_score_t5") or composite_score)
         t1_verdict = str(preds.get("t1_forecast", {}).get("verdict") or "").upper()
         t5_verdict = str(preds.get("t5_forecast", {}).get("verdict") or "").upper()
-        w_iv = float(weekly_chain.get("volatility_and_gex", {}).get("atm_iv") or 12.0)
-        m_iv = float(monthly_chain.get("volatility_and_gex", {}).get("atm_iv") or 13.0)
+        w_iv_raw = weekly_chain.get("volatility_and_gex", {}).get("atm_iv")
+        m_iv_raw = monthly_chain.get("volatility_and_gex", {}).get("atm_iv")
+        w_iv = float(w_iv_raw) if w_iv_raw is not None else None
+        m_iv = float(m_iv_raw) if m_iv_raw is not None else None
 
         # Smart AI Analysis Synthesis from Predictions
         ai_data = preds.get("ai_analysis") or {}
