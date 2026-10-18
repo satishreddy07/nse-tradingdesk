@@ -798,25 +798,28 @@ class NiftyAnalyticsEngine:
         else:
             try:
                 vix_data = cls.get_india_vix()
-                atm_iv = round(float(vix_data.get("current_vix") or DEFAULT_OPTIONS_IV), 2)
+                vix_value = float(vix_data.get("current_vix") or 0.0) if isinstance(vix_data, dict) else 0.0
+                atm_iv = round(vix_value, 2) if np.isfinite(vix_value) and vix_value > 0 else None
             except Exception:
-                atm_iv = DEFAULT_OPTIONS_IV
+                atm_iv = None
 
         otm_pe_idx = max(0, atm_idx - 3)
         otm_ce_idx = min(len(strikes_data) - 1, atm_idx + 3)
         otm_pe_iv = strikes_data[otm_pe_idx]["pe_iv"] or atm_pe_iv
         otm_ce_iv = strikes_data[otm_ce_idx]["ce_iv"] or atm_ce_iv
-        iv_skew = round(otm_pe_iv - otm_ce_iv, 2)
+        iv_skew = round(otm_pe_iv - otm_ce_iv, 2) if otm_pe_iv > 0 and otm_ce_iv > 0 else None
 
         # 7. Canonical Dealer Dollar Gamma Exposure (GEX) via Black-Scholes Gamma (F-24)
         # GEX_k = S^2 * Gamma_k * (PE_OI - CE_OI) * lot_size / 10^7 (in Crore INR)
         cal_exp = NSEMarketCalendar.get_active_options_expiries()
         t_years_gex = max(0.001, float(cal_exp.get("dte_weekly", 4.0)) / 365.0)
         sqrt_t_gex = math.sqrt(t_years_gex)
-        sig_gex = max(0.05, atm_iv / 100.0)
+        sig_gex = max(0.05, atm_iv / 100.0) if atm_iv is not None and atm_iv > 0 else None
         net_gex_cr = 0.0
 
         for s in active_slice:
+            if sig_gex is None:
+                break
             k = float(s["strike"])
             d1 = (math.log(max(1e-4, spot_price) / max(1e-4, k)) + (RISK_FREE_RATE + 0.5 * sig_gex ** 2) * t_years_gex) / (sig_gex * sqrt_t_gex)
             gamma_k = (1.0 / (math.sqrt(2.0 * math.pi) * spot_price * sig_gex * sqrt_t_gex)) * math.exp(-0.5 * d1 * d1)
@@ -895,9 +898,12 @@ class NiftyAnalyticsEngine:
                 "otm_ce_iv": round(otm_ce_iv, 2),
                 "iv_skew": iv_skew,
                 "iv_skew_interpretation": (
-                    "Downside Put Protection Demand (Positive Skew)" if iv_skew > 1.2
-                    else ("Upside Call Chasing (Negative Skew)" if iv_skew < -1.2 else "Balanced Volatility Smile")
+                    "DATA_UNAVAILABLE" if iv_skew is None else
+                    ("Downside Put Protection Demand (Positive Skew)" if iv_skew > 1.2
+                    else ("Upside Call Chasing (Negative Skew)" if iv_skew < -1.2 else "Balanced Volatility Smile"))
                 ),
+                "iv_data_quality": "VALID_CHAIN_IV" if valid_ivs else ("VALID_VIX_FALLBACK" if atm_iv is not None else "DATA_UNAVAILABLE"),
+                "gex_data_quality": "MODELLED_WITH_OBSERVED_IV" if sig_gex is not None else "DATA_UNAVAILABLE",
                 "gex_regime": gex_regime,
                 "net_near_oi_diff": near_pe_oi - near_ce_oi,
                 "net_near_chg_oi_diff": near_pe_chg - near_ce_chg,
@@ -970,8 +976,8 @@ class NiftyAnalyticsEngine:
             })
 
         # 2. Weekly vs Monthly Term Structure & Positioning Comparison
-        w_iv = w_vol.get("atm_iv", 0.0)
-        m_iv = m_vol.get("atm_iv", 0.0)
+        w_iv = w_vol.get("atm_iv") or 0.0
+        m_iv = m_vol.get("atm_iv") or 0.0
         iv_term_spread = round(m_iv - w_iv, 2)
         m_overall_pcr = m_pcr.get("overall_oi_pcr", 1.0)
         suggestions.append({
