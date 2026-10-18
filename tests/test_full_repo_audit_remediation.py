@@ -118,6 +118,11 @@ def test_future_and_missing_timestamps_flagged():
     assert res_missing["status"] == "DATA_UNAVAILABLE"
     assert res_missing["age_seconds"] is None
 
+    fresh_nse_ts = (now_ist() - datetime.timedelta(seconds=30)).strftime("%d-%b-%Y %H:%M:%S")
+    assert check_data_freshness(fresh_nse_ts, max_age_seconds=180)["status"] == "VALID"
+    future_nse_ts = (now_ist() + datetime.timedelta(minutes=5)).strftime("%d-%b-%Y %H:%M:%S")
+    assert check_data_freshness(future_nse_ts, max_age_seconds=180)["status"] == "FUTURE_TIMESTAMP_ERROR"
+
 
 def test_vix_data_unavailable_when_missing():
     """Verify get_india_vix returns DATA_UNAVAILABLE instead of default IV constant (Finding 5.4)."""
@@ -422,6 +427,103 @@ def test_c03_nse_quote_freshness_without_provider_time():
             assert res["provider_timestamp"] is None
             assert res["data_quality"] == "UNVERIFIED_SOURCE_TIMESTAMP"
             assert res["is_stale"] is True
+
+
+def test_option_chain_missing_provider_timestamp_is_not_marked_live():
+    """Receipt time must not substitute for the exchange timestamp."""
+    eng = NiftyAnalyticsEngine()
+
+    def response(body, status=200):
+        resp = MagicMock()
+        resp.status_code = status
+        resp.json.return_value = body
+        return resp
+
+    expiries_body = {"expiryDates": ["22-Oct-2026", "29-Oct-2026"]}
+    raw_rows = [{
+        "strikePrice": strike,
+        "CE": {"openInterest": 100, "changeinOpenInterest": 1, "totalTradedVolume": 10,
+               "impliedVolatility": 14.0, "lastPrice": 100, "change": 0, "pChange": 0,
+               "totalBuyQuantity": 20, "totalSellQuantity": 20},
+        "PE": {"openInterest": 120, "changeinOpenInterest": 1, "totalTradedVolume": 10,
+               "impliedVolatility": 15.0, "lastPrice": 100, "change": 0, "pChange": 0,
+               "totalBuyQuantity": 20, "totalSellQuantity": 20}
+    } for strike in (24900, 24950, 25000, 25050, 25100)]
+    missing_time_body = {"records": {"underlyingValue": 25000.0, "data": raw_rows}}
+    session = MagicMock()
+    session.get.side_effect = [
+        response(expiries_body),
+        response(missing_time_body),
+        response(missing_time_body),
+    ]
+
+    with patch.object(eng, "start_live_options_streamer"):
+        with patch.object(eng, "_get_nse_session", return_value=session):
+            with patch.object(eng, "_select_weekly_and_monthly_expiries", return_value={
+                "current_weekly": "22-Oct-2026", "current_monthly": "29-Oct-2026"
+            }):
+                with patch.object(eng, "_build_options_quant_suggestions", return_value=[]):
+                    from engines.nifty_analytics_engine import nifty_analytics_engine
+                    with patch.object(nifty_analytics_engine, "get_india_vix", return_value={"current_vix": None}):
+                        with patch("engines.nifty_analytics_engine.NSEMarketCalendar.can_execute_trades", return_value=(True, "OPEN")):
+                            with patch("execution.state_engine.state_engine.set_kv") as persist:
+                                result = eng.fetch_and_analyze_option_chain(force_refresh=True)
+
+    assert result["source"] == "NSE_LIVE_OPTION_CHAIN_V3"
+    assert result["provider_timestamp"] is None
+    assert result["data_quality"] == "UNVERIFIED_SOURCE_TIMESTAMP"
+    assert result["is_live"] is False
+    assert result["trading_allowed"] is False
+    assert result["status"] == "UNVERIFIED"
+    persist.assert_not_called()
+
+
+def test_option_chain_does_not_relabel_weekly_quotes_as_monthly():
+    """Failed monthly quote requests must not borrow weekly prices or expiry labels."""
+    eng = NiftyAnalyticsEngine()
+
+    def response(body, status=200):
+        resp = MagicMock()
+        resp.status_code = status
+        resp.json.return_value = body
+        return resp
+
+    fresh_ts = now_ist().strftime("%d-%b-%Y %H:%M:%S")
+    expiries_body = {"expiryDates": ["22-Oct-2026", "29-Oct-2026"]}
+    raw_rows = [{
+        "strikePrice": strike,
+        "CE": {"openInterest": 100, "changeinOpenInterest": 1, "totalTradedVolume": 10,
+               "impliedVolatility": 14.0, "lastPrice": 100, "change": 0, "pChange": 0,
+               "totalBuyQuantity": 20, "totalSellQuantity": 20},
+        "PE": {"openInterest": 120, "changeinOpenInterest": 1, "totalTradedVolume": 10,
+               "impliedVolatility": 15.0, "lastPrice": 100, "change": 0, "pChange": 0,
+               "totalBuyQuantity": 20, "totalSellQuantity": 20}
+    } for strike in (24900, 24950, 25000, 25050, 25100)]
+    weekly_body = {"records": {"underlyingValue": 25000.0, "timestamp": fresh_ts, "data": raw_rows}}
+    session = MagicMock()
+    session.get.side_effect = [
+        response(expiries_body),
+        response(weekly_body),
+        response({}, status=503),
+    ]
+
+    with patch.object(eng, "start_live_options_streamer"):
+        with patch.object(eng, "_get_nse_session", return_value=session):
+            with patch.object(eng, "_select_weekly_and_monthly_expiries", return_value={
+                "current_weekly": "22-Oct-2026", "current_monthly": "29-Oct-2026"
+            }):
+                with patch.object(eng, "_build_options_quant_suggestions", return_value=[]):
+                    from engines.nifty_analytics_engine import nifty_analytics_engine
+                    with patch.object(nifty_analytics_engine, "get_india_vix", return_value={"current_vix": None}):
+                        with patch("engines.nifty_analytics_engine.NSEMarketCalendar.can_execute_trades", return_value=(True, "OPEN")):
+                            with patch("execution.state_engine.state_engine.set_kv"):
+                                result = eng.fetch_and_analyze_option_chain(force_refresh=True)
+
+    assert result["status"] == "OK"
+    assert result["weekly"]["nse_timestamp"] == fresh_ts
+    assert result["weekly"]["trading_allowed"] is True
+    assert result["monthly"]["status"] == "UNAVAILABLE"
+    assert result["monthly"]["trading_allowed"] is False
 
 
 def test_c04_forecast_and_tree_synthetic_prior_excluded():

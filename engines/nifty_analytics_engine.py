@@ -53,7 +53,7 @@ from core.config import (
     RISK_FREE_RATE, DEFAULT_OPTIONS_IV, calc_regulatory_options_cost
 )
 
-from core.data_quality import IST, now_ist, format_ist
+from core.data_quality import IST, now_ist, format_ist, check_data_freshness
 from core.market_calendar import NSEMarketCalendar
 from core.stock_registry import get_stock_sector
 from core.telegram_vault import telegram_vault
@@ -1027,6 +1027,72 @@ class NiftyAnalyticsEngine:
 
         return suggestions
 
+    @staticmethod
+    def _annotate_option_chain_freshness(
+        payload: Dict[str, Any],
+        market_open: bool,
+        max_age_seconds: int = 180
+    ) -> Dict[str, Any]:
+        """Annotate source-time provenance without substituting local receipt time."""
+        result = dict(payload)
+        raw_provider_ts = result.get("provider_timestamp")
+        freshness = check_data_freshness(raw_provider_ts, max_age_seconds=max_age_seconds)
+        freshness_status = freshness.get("status")
+        invalid = freshness_status not in ("VALID", "STALE")
+        stale = bool(freshness.get("is_stale", True))
+
+        if result.get("status") not in ("UNAVAILABLE", "EMPTY"):
+            if invalid:
+                result["status"] = "UNVERIFIED"
+            elif market_open and stale:
+                result["status"] = "STALE"
+
+        if invalid:
+            result["data_quality"] = "UNVERIFIED_SOURCE_TIMESTAMP"
+            result["timestamp_provenance"] = "UNVERIFIED"
+        elif stale:
+            result["data_quality"] = "STALE_PROVIDER_TIMESTAMP"
+            result["timestamp_provenance"] = "NSE_PROVIDER"
+        else:
+            result["data_quality"] = "VALID_PROVIDER_TIMESTAMP"
+            result["timestamp_provenance"] = "NSE_PROVIDER"
+
+        result["is_stale"] = stale or invalid
+        result["age_seconds"] = freshness.get("age_seconds")
+        result["is_live"] = bool(market_open and not stale and not invalid)
+        result["trading_allowed"] = bool(market_open and not stale and not invalid)
+        result["freshness_error"] = freshness.get("error")
+        return result
+
+    @staticmethod
+    def _annotate_expiry_chain_freshness(
+        expiry_payload: Dict[str, Any],
+        market_open: bool,
+        max_age_seconds: int = 180
+    ) -> Dict[str, Any]:
+        """Check weekly and monthly provider times independently."""
+        result = dict(expiry_payload)
+        raw_provider_ts = result.get("nse_timestamp")
+        freshness = check_data_freshness(raw_provider_ts, max_age_seconds=max_age_seconds)
+        status = freshness.get("status")
+        invalid = status not in ("VALID", "STALE")
+        stale = bool(freshness.get("is_stale", True))
+        result["provider_timestamp"] = raw_provider_ts if not invalid else None
+        result["data_quality"] = (
+            "UNVERIFIED_SOURCE_TIMESTAMP" if invalid
+            else ("STALE_PROVIDER_TIMESTAMP" if stale else "VALID_PROVIDER_TIMESTAMP")
+        )
+        result["is_stale"] = stale or invalid
+        result["age_seconds"] = freshness.get("age_seconds")
+        result["is_live"] = bool(market_open and not stale and not invalid)
+        result["trading_allowed"] = bool(market_open and not stale and not invalid)
+        result["freshness_error"] = freshness.get("error")
+        if result.get("status") not in ("UNAVAILABLE", "EMPTY") and invalid:
+            result["status"] = "UNVERIFIED"
+        elif result.get("status") not in ("UNAVAILABLE", "EMPTY") and market_open and stale:
+            result["status"] = "STALE"
+        return result
+
     def fetch_and_analyze_option_chain(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Fetches live NSE Nifty 50 Option Chain for both Current Weekly and Current Monthly Expiries,
@@ -1043,14 +1109,16 @@ class NiftyAnalyticsEngine:
         market_open, _ = NSEMarketCalendar.can_execute_trades()
         cache_ttl = 12 if market_open else 900
         if not force_refresh and self._option_chain_mem_cache and (now_ts - self._option_chain_cache_ts) < cache_ttl:
-            return self._option_chain_mem_cache
+            return self._annotate_option_chain_freshness(self._option_chain_mem_cache, market_open)
 
         # If market is closed and we don't have fresh in-memory data, fall back to master DB persisted snapshot first
         if not force_refresh and not market_open:
             persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
+                persisted = dict(persisted)
                 persisted["source"] = "MASTER_DB_PERSISTED_NSE_CHAIN"
                 persisted["is_persisted_snapshot"] = True
+                persisted = self._annotate_option_chain_freshness(persisted, market_open)
                 orig_ts = persisted.get("fetched_at_epoch")
                 with self._lock:
                     self._option_chain_mem_cache = persisted
@@ -1084,38 +1152,56 @@ class NiftyAnalyticsEngine:
 
                     if rw.status_code == 200:
                         w_json = rw.json().get("records", {})
-                        m_json = rm.json().get("records", {}) if rm.status_code == 200 else w_json
+                        m_json = rm.json().get("records", {}) if rm.status_code == 200 else {}
 
                         spot = float(w_json.get("underlyingValue") or m_json.get("underlyingValue") or 0.0)
-                        nse_ts = w_json.get("timestamp") or format_ist()
+                        nse_ts = w_json.get("timestamp")
 
                         weekly_analysis = self._analyze_single_expiry_chain(
                             w_json.get("data") or [], spot, weekly_exp, nse_ts
                         )
-                        monthly_analysis = self._analyze_single_expiry_chain(
-                            m_json.get("data") or [], spot, monthly_exp, m_json.get("timestamp") or nse_ts
-                        )
+                        if m_json and (m_json.get("data") or []):
+                            monthly_analysis = self._analyze_single_expiry_chain(
+                                m_json.get("data") or [], spot, monthly_exp, m_json.get("timestamp")
+                            )
+                        elif monthly_exp == weekly_exp:
+                            monthly_analysis = dict(weekly_analysis)
+                        else:
+                            monthly_analysis = {
+                                "status": "UNAVAILABLE",
+                                "expiry": monthly_exp,
+                                "nse_timestamp": None,
+                                "message": "Monthly expiry request failed; weekly quotes are not substituted for monthly contracts."
+                            }
 
                         if weekly_analysis.get("status") == "OK":
                             suggestions = self._build_options_quant_suggestions(weekly_analysis, monthly_analysis)
+                            weekly_analysis = self._annotate_expiry_chain_freshness(weekly_analysis, market_open)
+                            monthly_analysis = self._annotate_expiry_chain_freshness(monthly_analysis, market_open)
                             payload = {
                                 "status": "OK",
                                 "source": "NSE_LIVE_OPTION_CHAIN_V3",
                                 "symbol": "NIFTY 50",
                                 "spot_price": round(spot, 2),
                                 "nse_timestamp": nse_ts,
+                                "provider_timestamp": nse_ts,
                                 "fetched_at_ist": format_ist(),
+                                "fetched_at_epoch": now_ts,
                                 "available_expiries": expiry_dates[:8],
                                 "selected_expiries": sel,
                                 "weekly": weekly_analysis,
                                 "monthly": monthly_analysis,
                                 "quant_suggestions": suggestions,
                             }
+                            payload = self._annotate_option_chain_freshness(payload, market_open)
                             with self._lock:
                                 self._option_chain_mem_cache = payload
                                 self._option_chain_cache = payload
                                 self._option_chain_cache_ts = now_ts
-                            state_engine.set_kv("latest_nifty_option_chain_deep", payload)
+                            if payload.get("data_quality") == "VALID_PROVIDER_TIMESTAMP" or (
+                                not market_open and payload.get("data_quality") == "STALE_PROVIDER_TIMESTAMP"
+                            ):
+                                state_engine.set_kv("latest_nifty_option_chain_deep", payload)
                             try:
                                 from core.data_watchdog import data_watchdog
                                 fetch_lat = round((time.time() - now_ts) * 1000.0, 1)
@@ -1136,8 +1222,10 @@ class NiftyAnalyticsEngine:
         # Fallback to latest real persisted NSE Option Chain in Single Master File (`data/swing_trades.db`)
         persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
         if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
+            persisted = dict(persisted)
             persisted["source"] = "MASTER_DB_PERSISTED_NSE_CHAIN"
-            return persisted
+            persisted["is_persisted_snapshot"] = True
+            return self._annotate_option_chain_freshness(persisted, market_open)
 
         return {
             "status": "UNAVAILABLE",
@@ -6926,7 +7014,7 @@ class NiftyAnalyticsEngine:
                 cache_age = time.time() - getattr(self, "_option_chain_cache_ts", 0.0)
                 if w and w.get("spot_price"):
                     spot = float(w["spot_price"])
-                    opt_ts = w.get("provider_timestamp") or w.get("timestamp")
+                    opt_ts = w.get("provider_timestamp")
                     provider_age = None
                     try:
                         opt_dt = pd.to_datetime(opt_ts, errors="raise", dayfirst=True)

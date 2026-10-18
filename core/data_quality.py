@@ -183,18 +183,17 @@ def check_data_freshness(timestamp_str: Optional[str], max_age_seconds: int = 90
         return {"status": "DATA_UNAVAILABLE", "is_stale": True, "age_seconds": None, "error": "Missing timestamp"}
 
     try:
-        clean_ts = timestamp_str.replace(" IST", "").strip()
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
-            try:
-                dt = datetime.datetime.strptime(clean_ts, fmt)
-                break
-            except Exception:
-                pass
-        else:
+        clean_ts = str(timestamp_str).replace(" IST", "").strip()
+        parsed = pd.to_datetime(clean_ts, errors="coerce", dayfirst=True)
+        if pd.isna(parsed):
             return {"status": "INVALID_FORMAT", "is_stale": True, "age_seconds": None}
 
-        dt_now = now_ist().replace(tzinfo=None)
-        diff_sec = (dt_now - dt).total_seconds()
+        dt = parsed.to_pydatetime() if hasattr(parsed, "to_pydatetime") else parsed
+        if dt.tzinfo is None:
+            dt = IST.localize(dt) if hasattr(IST, "localize") else dt.replace(tzinfo=now_ist().tzinfo)
+        else:
+            dt = dt.astimezone(now_ist().tzinfo)
+        diff_sec = (now_ist() - dt).total_seconds()
 
         # Reject timestamps in the future (> 60s clock skew)
         if diff_sec < -60:
