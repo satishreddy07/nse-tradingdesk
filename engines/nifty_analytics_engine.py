@@ -976,15 +976,17 @@ class NiftyAnalyticsEngine:
             })
 
         # 2. Weekly vs Monthly Term Structure & Positioning Comparison
-        w_iv = w_vol.get("atm_iv") or 0.0
-        m_iv = m_vol.get("atm_iv") or 0.0
-        iv_term_spread = round(m_iv - w_iv, 2)
+        w_iv_raw = w_vol.get("atm_iv")
+        m_iv_raw = m_vol.get("atm_iv")
+        w_iv = float(w_iv_raw) if w_iv_raw is not None else 0.0
+        m_iv = float(m_iv_raw) if m_iv_raw is not None else 0.0
+        iv_term_spread = round(m_iv - w_iv, 2) if w_iv_raw is not None and m_iv_raw is not None else None
         m_overall_pcr = m_pcr.get("overall_oi_pcr", 1.0)
         suggestions.append({
             "category": "TERM STRUCTURE • WEEKLY VS MONTHLY EXPIRY",
-            "title": f"Weekly IV {w_iv:.2f}% vs Monthly IV {m_iv:.2f}% (Spread: {iv_term_spread:+.2f}%) | Monthly PCR {m_overall_pcr:.2f}",
+            "title": (f"Weekly IV {w_iv:.2f}% vs Monthly IV {m_iv:.2f}% (Spread: {iv_term_spread:+.2f}%) | Monthly PCR {m_overall_pcr:.2f}" if iv_term_spread is not None else f"Weekly IV {'DATA_UNAVAILABLE' if w_iv_raw is None else f'{w_iv:.2f}%'} vs Monthly IV {'DATA_UNAVAILABLE' if m_iv_raw is None else f'{m_iv:.2f}%'} | Monthly PCR {m_overall_pcr:.2f}"),
             "detail": (
-                f"Current Weekly Expiry ({weekly.get('expiry')}) carries ATM IV of {w_iv:.2f}% vs Current Monthly Expiry ({monthly.get('expiry')}) at {m_iv:.2f}%. "
+                (f"Current Weekly Expiry ({weekly.get('expiry')}) carries ATM IV of {w_iv:.2f}% vs Current Monthly Expiry ({monthly.get('expiry')}) at {m_iv:.2f}%. " if iv_term_spread is not None else "Verified ATM IV is unavailable for one or both expiries; do not infer the term structure. ")
                 + (
                     f"Normal contango IV structure ({iv_term_spread:+.2f}%): favors selling front-week theta while holding monthly directional hedges (Calendar/Diagonal spreads)."
                     if iv_term_spread >= -0.5 else
@@ -994,10 +996,10 @@ class NiftyAnalyticsEngine:
         })
 
         # 3. Volatility Skew & Tail Risk Advisory
-        skew = w_vol.get("iv_skew", 0.0)
+        skew = w_vol.get("iv_skew")
         suggestions.append({
             "category": "VOLATILITY SKEW & DEALER GAMMA",
-            "title": f"25-Delta IV Skew: {skew:+.2f}% ({w_vol.get('iv_skew_interpretation')})",
+            "title": (f"25-Delta IV Skew: {skew:+.2f}% ({w_vol.get('iv_skew_interpretation')})" if skew is not None else "25-Delta IV Skew: DATA_UNAVAILABLE"),
             "detail": (
                 f"OTM Put IV is {w_vol.get('otm_pe_iv', 0):.2f}% vs OTM Call IV at {w_vol.get('otm_ce_iv', 0):.2f}%. "
                 f"Max Pain gravitates at {mp} ({w_walls.get('spot_vs_max_pain', 0):+.1f} pts from Spot). "
