@@ -365,9 +365,15 @@ def test_pre_trade_strategy_tournament_highest_win_probability():
     assert tourn_range["status"] == "OK"
     assert tourn_range["tournament_winner"]["tournament_rank"] == 1
 
-    # 3. Test execution deploys tournament winner
+    # 3. Deployment is permitted only when current NSE timestamp and chain IV are verified.
     deploy = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades(horizon="WEEKLY", force_refresh=True)
-    assert "win_probability_pct" in deploy
-    assert "strategy_tournament" in deploy
-    assert deploy["win_probability_pct"] == deploy["strategy_tournament"]["tournament_winner"]["p_win_pct"]
+    assert deploy["decision_source"] == "WEEKLY_PREDICTION_MODEL_T5"
+    assert "weekly_prediction_model" in deploy
+    if deploy.get("status") == "DATA_UNAVAILABLE":
+        assert deploy.get("reason")
+        assert deploy.get("candidates") == []
+    else:
+        assert "win_probability_pct" in deploy
+        assert "strategy_tournament" in deploy
+        assert deploy["win_probability_pct"] == deploy["strategy_tournament"]["tournament_winner"]["p_win_pct"]
 

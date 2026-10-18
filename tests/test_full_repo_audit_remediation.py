@@ -429,6 +429,45 @@ def test_c03_nse_quote_freshness_without_provider_time():
             assert res["is_stale"] is True
 
 
+def test_intraday_auto_trade_refuses_unverified_chain_or_missing_chain_iv():
+    """Auto-entry cannot write strategies if source time or observed option-chain IV is missing."""
+    from engines.intraday_options_strategy_engine import IntradayOptionsStrategyEngine
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+
+    engine = IntradayOptionsStrategyEngine()
+    with patch.object(engine, "get_intraday_market_regime", return_value={
+        "intraday_composite_score": 30.0,
+        "regime": "STRONG BULLISH",
+        "spot_price": 25000.0,
+        "dist_vwap_pts": 10.0,
+        "writer_dominance_score": 20.0,
+    }):
+        with patch.object(engine, "calculate_daytime_confidence", return_value={
+            "intraday_confidence_pct": 80.0, "confidence_grade": "HIGH"
+        }):
+            payloads = (
+                {
+                    "status": "UNVERIFIED", "trading_allowed": False,
+                    "data_quality": "UNVERIFIED_SOURCE_TIMESTAMP",
+                    "weekly": {"status": "UNVERIFIED", "trading_allowed": False},
+                },
+                {
+                    "status": "OK", "trading_allowed": True,
+                    "data_quality": "VALID_PROVIDER_TIMESTAMP", "spot_price": 25000.0,
+                    "weekly": {
+                        "status": "OK", "trading_allowed": True, "expiry": "22-Oct-2026",
+                        "volatility_and_gex": {"atm_iv": None, "iv_data_quality": "DATA_UNAVAILABLE"},
+                    },
+                },
+            )
+            for chain_payload in payloads:
+                with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=chain_payload):
+                    with patch("execution.state_engine.state_engine._get_connection", side_effect=AssertionError("Entry gate must run before database writes")):
+                        result = engine.evaluate_and_execute_auto_trades(force_refresh=True)
+                assert result["status"] == "DATA_UNAVAILABLE"
+                assert "blocked" in result["reason"].lower()
+
+
 def test_option_chain_missing_provider_timestamp_is_not_marked_live():
     """Receipt time must not substitute for the exchange timestamp."""
     eng = NiftyAnalyticsEngine()

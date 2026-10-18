@@ -1762,6 +1762,17 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 expiry_date = str(c_exp)
         except Exception as e:
             logger.debug(f"Deep chain lookup notice: {e}")
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "reason": "Automatic deployment blocked because the live option-chain request failed.",
+                "horizon": horizon,
+                "spot_price": spot_price,
+                "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
+                "weekly_prediction_model": weekly_model_info,
+                "weekly_model_info": weekly_model_info,
+                "candidates": [],
+                "timestamp_ist": now_str
+            }
 
         if not np.isfinite(iv_val) or iv_val <= 0.0:
             return {
@@ -2054,8 +2065,10 @@ class WeeklyMonthlyOptionsStrategyEngine:
             if (
                 deep_chain.get("data_quality") != "VALID_PROVIDER_TIMESTAMP"
                 or deep_chain.get("is_stale") is not False
+                or deep_chain.get("trading_allowed") is not True
                 or chain_sec.get("data_quality") != "VALID_PROVIDER_TIMESTAMP"
                 or chain_sec.get("is_stale") is not False
+                or chain_sec.get("trading_allowed") is not True
             ):
                 return {
                     "status": "DATA_UNAVAILABLE",
@@ -2068,9 +2081,15 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 }
             chain_data = chain_sec.get("all_strikes") or chain_sec.get("strikes", [])
             spot_price = float(deep_chain.get("spot") or deep_chain.get("spot_price") or 0.0)
-        except Exception:
-            chain_data = []
-            spot_price = 0.0
+        except Exception as exc:
+            logger.warning("Positional option monitor could not load verified quotes: %s", exc)
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "reason": "Position monitoring left unchanged because verified option-chain quotes could not be loaded.",
+                "horizon": horizon,
+                "active_count": len(active_rows),
+                "timestamp_ist": now_str
+            }
 
         if spot_price <= 0.0:
             try:
@@ -2088,10 +2107,24 @@ class WeeklyMonthlyOptionsStrategyEngine:
                     stk_int = stk
                 ce_ltp = float(s.get("ce_ltp") or 0.0)
                 pe_ltp = float(s.get("pe_ltp") or 0.0)
-                quotes_map[(stk_int, "CE")] = {"bid": s.get("ce_bid", ce_ltp * 0.99), "ask": s.get("ce_ask", ce_ltp * 1.01), "ltp": ce_ltp}
-                quotes_map[(stk_int, "PE")] = {"bid": s.get("pe_bid", pe_ltp * 0.99), "ask": s.get("pe_ask", pe_ltp * 1.01), "ltp": pe_ltp}
-                quotes_map[(str(stk_int), "CE")] = quotes_map[(stk_int, "CE")]
-                quotes_map[(str(stk_int), "PE")] = quotes_map[(stk_int, "PE")]
+                ce_bid, ce_ask = s.get("ce_bid"), s.get("ce_ask")
+                pe_bid, pe_ask = s.get("pe_bid"), s.get("pe_ask")
+                if ce_ltp > 0:
+                    quotes_map[(stk_int, "CE")] = {
+                        "bid": float(ce_bid) if ce_bid is not None and float(ce_bid) > 0 else ce_ltp,
+                        "ask": float(ce_ask) if ce_ask is not None and float(ce_ask) > 0 else ce_ltp,
+                        "ltp": ce_ltp,
+                        "quote_source": "BEST_BID_ASK" if ce_bid is not None and ce_ask is not None else "LAST_TRADE_PROXY"
+                    }
+                    quotes_map[(str(stk_int), "CE")] = quotes_map[(stk_int, "CE")]
+                if pe_ltp > 0:
+                    quotes_map[(stk_int, "PE")] = {
+                        "bid": float(pe_bid) if pe_bid is not None and float(pe_bid) > 0 else pe_ltp,
+                        "ask": float(pe_ask) if pe_ask is not None and float(pe_ask) > 0 else pe_ltp,
+                        "ltp": pe_ltp,
+                        "quote_source": "BEST_BID_ASK" if pe_bid is not None and pe_ask is not None else "LAST_TRADE_PROXY"
+                    }
+                    quotes_map[(str(stk_int), "PE")] = quotes_map[(stk_int, "PE")]
 
         updated_count = 0
         for r in active_rows:
