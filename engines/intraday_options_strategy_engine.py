@@ -1960,9 +1960,9 @@ class IntradayOptionsStrategyEngine:
                 req_bars = min(len(df), max(count + 20, 50))
                 slice_df = df.iloc[-req_bars:]
                 ret_series = slice_df["Close"].pct_change()
-                rolling_vol = (ret_series.rolling(20).std() * math.sqrt(252) * 100.0).fillna(13.0)
+                rolling_vol = ret_series.rolling(20, min_periods=20).std() * math.sqrt(252) * 100.0
 
-                start_idx = 20 if len(slice_df) > 25 else 1
+                start_idx = 21
                 for idx in range(start_idx, len(slice_df)):
                     bar = slice_df.iloc[idx]
                     dt_val = slice_df.index[idx]
@@ -1974,8 +1974,11 @@ class IntradayOptionsStrategyEngine:
                     if open_px <= 0:
                         continue
                     ret_pct = round(((close_px - open_px) / open_px) * 100.0, 2)
-                    vol_pct = round(float(rolling_vol.iloc[idx]), 1)
-                    vol_pct = max(9.5, min(35.0, vol_pct))
+                    vol_pct_raw = float(rolling_vol.iloc[idx])
+                    if not np.isfinite(vol_pct_raw) or vol_pct_raw <= 0:
+                        continue
+                    # Realized volatility is a scenario proxy, not observed option IV.
+                    vol_pct = round(vol_pct_raw, 2)
 
                     # Strictly eliminate look-ahead bias: verdict at market open must use pre-open info
                     prev_bar = slice_df.iloc[idx - 1]
