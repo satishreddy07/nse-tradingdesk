@@ -322,7 +322,7 @@ class NiftyForecastLearningEngine:
                 "status": status_label,
                 "artifact_path": str(bundle_path),
                 "metrics": bundle["metrics"],
-                "sample_counts": {"total": len(df), "train": len(X_train), "validation": len(val_accs), "test": len(y_test)},
+                "sample_counts": {"total": len(df), "train": len(X_train), "test": len(y_test)},
                 "evaluated_at": format_ist(),
                 "promoted_at": format_ist()
             }
