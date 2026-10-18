@@ -6734,7 +6734,13 @@ class NiftyAnalyticsEngine:
             cache_ttl = 1.5 if is_market_open else 15.0
             if not force_refresh and self._live_spot_cache and (now_ts - self._live_spot_cache_ts) < cache_ttl:
                 cached = dict(self._live_spot_cache)
-                cached["is_live"] = is_market_open
+                cached["is_live"] = bool(
+                    is_market_open
+                    and not cached.get("is_stale", True)
+                    and cached.get("provider_timestamp")
+                    and cached.get("age_seconds") is not None
+                    and float(cached.get("age_seconds")) <= 180.0
+                )
                 cached["market_status"] = mkt_state_str
                 cached["session_phase"] = mkt_phase
                 return cached
@@ -6886,18 +6892,34 @@ class NiftyAnalyticsEngine:
                 if w and w.get("spot_price"):
                     spot = float(w["spot_price"])
                     opt_ts = w.get("provider_timestamp") or w.get("timestamp")
+                    provider_age = None
+                    try:
+                        opt_dt = pd.to_datetime(opt_ts, errors="raise", dayfirst=True)
+                        if pd.isna(opt_dt):
+                            raise ValueError("Missing option-chain provider timestamp")
+                        if getattr(opt_dt, "tzinfo", None) is None:
+                            opt_dt = IST.localize(opt_dt) if hasattr(IST, "localize") else opt_dt.replace(tzinfo=now_ist().tzinfo)
+                        else:
+                            opt_dt = opt_dt.astimezone(now_ist().tzinfo)
+                        provider_age = (now_ist() - opt_dt).total_seconds()
+                    except Exception:
+                        provider_age = None
+                    provider_time_valid = provider_age is not None and provider_age >= -60.0
+                    provider_stale = not provider_time_valid or (provider_age is not None and provider_age > 180.0)
+                    cache_stale = cache_age > 60.0
                     return {
                         "price": round(spot, 2),
                         "provider_timestamp": opt_ts,
                         "timestamp": opt_ts or ts_now,
                         "received_at": ts_now,
                         "source": "NSE_OPTION_CHAIN_LIVE",
-                        "is_live": is_market_open and cache_age <= 60.0,
-                        "is_stale": cache_age > 60.0 or not opt_ts,
-                        "data_quality": "VALID" if (cache_age <= 60.0 and opt_ts) else "STALE_CACHE",
+                        "is_live": bool(is_market_open and not cache_stale and not provider_stale),
+                        "is_stale": bool(cache_stale or provider_stale),
+                        "data_quality": "VALID" if (not cache_stale and not provider_stale) else "STALE_OR_UNVERIFIED_PROVIDER_TIMESTAMP",
                         "market_status": mkt_state_str,
                         "session_phase": mkt_phase,
-                        "age_seconds": round(cache_age, 1)
+                        "age_seconds": round(provider_age, 1) if provider_age is not None else None,
+                        "cache_age_seconds": round(cache_age, 1)
                     }
 
         # 5. Fallback to latest snapshot in DB
