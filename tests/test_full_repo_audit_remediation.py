@@ -466,10 +466,10 @@ def test_h05_options_simulation_risk_free_rate_and_disclaimer():
     assert res["model_assumptions"]["risk_free_rate"] == RISK_FREE_RATE
 
 
-def test_h06_unified_ml_dataset_cohort_separation():
+def test_h06_unified_ml_dataset_cohort_separation(tmp_path):
     """H-06: Unified ML dataset excludes counterfactuals by default and does not infer fills on signal entry."""
     from core.unified_ml_dataset import UNIFIED_DATASET_TABLE
-    ds = UnifiedMLDataset()
+    ds = UnifiedMLDataset(db_path=str(tmp_path / "unified_ml_test.db"))
     # Ingestion without actual fill must be PENDING_FILL, not FILLED
     sig_id = f"SIG_TEST_{int(datetime.datetime.now().timestamp())}"
     trade_id = f"TRD_TEST_{int(datetime.datetime.now().timestamp())}"
@@ -534,3 +534,46 @@ def test_h08_state_engine_rejects_pickle_and_future_timestamp(tmp_path):
 
 
 
+
+
+def test_data_quality_rejects_missing_volume():
+    dates = pd.date_range("2026-01-01", periods=5, freq="D")
+    df = pd.DataFrame({
+        "Open": [100, 101, 102, 103, 104],
+        "High": [105, 106, 107, 108, 109],
+        "Low": [99, 100, 101, 102, 103],
+        "Close": [104, 105, 106, 107, 108],
+    }, index=dates)
+    valid, cleaned, warnings = validate_ohlcv_dataframe(df, symbol="NO_VOLUME", min_bars=5)
+    assert not valid
+    assert cleaned.empty
+    assert any("Missing required Volume" in warning for warning in warnings)
+
+
+def test_data_quality_rejects_non_finite_ohlcv():
+    dates = pd.date_range("2026-01-01", periods=5, freq="D")
+    df = pd.DataFrame({
+        "Open": [100, 101, 102, 103, 104],
+        "High": [105, 106, 107, 108, 109],
+        "Low": [99, 100, 101, 102, 103],
+        "Close": [104, 105, np.inf, 107, 108],
+        "Volume": [1000, 1100, 1200, 1300, 1400],
+    }, index=dates)
+    valid, cleaned, warnings = validate_ohlcv_dataframe(df, symbol="NON_FINITE", min_bars=5)
+    assert not valid
+    assert cleaned.empty
+
+
+def test_data_quality_rejects_unexplained_extreme_price_jump():
+    dates = pd.date_range("2026-01-01", periods=5, freq="D")
+    df = pd.DataFrame({
+        "Open": [100, 101, 102, 103, 160],
+        "High": [105, 106, 107, 108, 165],
+        "Low": [99, 100, 101, 102, 159],
+        "Close": [104, 105, 106, 107, 164],
+        "Volume": [1000, 1100, 1200, 1300, 1400],
+    }, index=dates)
+    valid, cleaned, warnings = validate_ohlcv_dataframe(df, symbol="EXTREME_JUMP", min_bars=5)
+    assert not valid
+    assert cleaned.empty
+    assert any("greater than 50%" in warning for warning in warnings)
