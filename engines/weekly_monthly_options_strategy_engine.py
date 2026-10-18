@@ -736,7 +736,11 @@ class WeeklyMonthlyOptionsStrategyEngine:
         horizon: str = "WEEKLY",
         expiry_date: Optional[str] = None,
         weekly_model_info: Optional[Dict[str, Any]] = None,
-        lot_size: int = NIFTY_LOT_SIZE
+        lot_size: int = NIFTY_LOT_SIZE,
+        option_chain_rows: Optional[List[Dict[str, Any]]] = None,
+        option_chain_timestamp: Optional[str] = None,
+        option_chain_data_quality: Optional[str] = None,
+        volatility_source: str = "CALLER_PROVIDED_IV"
     ) -> Dict[str, Any]:
         """
         Pre-Trade Probability Tournament:
@@ -746,9 +750,10 @@ class WeeklyMonthlyOptionsStrategyEngine:
         3. CANDIDATE_3_ASYMMETRIC_STRANGLE: Directional ratio strangle capturing extra decay.
         4. CANDIDATE_4_CONSERVATIVE_OTM: Conservative 1.25-sigma OTM leg with wider safety margin.
 
-        Calculates Black-Scholes d2 OTM probability, stop-loss touch & re-entry recovery probability,
-        weekly prediction model directional alignment, economics (net credit, max loss, expectancy, profit factor),
-        and ranks candidates to find the strategy with the HIGHEST PROBABILITY OF WINNING (P_win) before initiation.
+        Estimates risk-neutral probability of positive terminal P&L at expiry from the candidate payoff,
+        option premiums, volatility, and time to expiry. It is NOT a calibrated real-world win rate:
+        path-dependent stop-loss/re-entry behavior and transaction costs are not simulated.
+        Live callers should pass option_chain_rows so actual market prices replace theoretical premiums.
         """
         sigma_calc = cls.calculate_sigma_strikes(spot, iv_pct, horizon=horizon, expiry_date=expiry_date)
         actual_expiry = sigma_calc["expiry_date"]
@@ -811,7 +816,31 @@ class WeeklyMonthlyOptionsStrategyEngine:
             regime = "RANGE_BOUND"
 
         r = RISK_FREE_RATE
-        sig = max(0.05, iv_pct / 100.0)
+        try:
+            sig = float(iv_pct) / 100.0
+            spot_value = float(spot)
+            lot_size_value = float(lot_size)
+            expiry_time = float(t_years)
+        except (TypeError, ValueError, OverflowError):
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "reason": "Invalid spot, IV, expiry, or lot-size input for probability calculation.",
+                "horizon": horizon,
+                "candidates": []
+            }
+        if (
+            not math.isfinite(sig) or sig <= 0.0
+            or not math.isfinite(spot_value) or spot_value <= 0.0
+            or not math.isfinite(expiry_time) or expiry_time <= 0.0
+            or not math.isfinite(lot_size_value) or lot_size_value <= 0.0
+        ):
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "reason": "Spot, IV, time to expiry, and lot size must all be finite and positive.",
+                "horizon": horizon,
+                "candidates": []
+            }
+        sqrt_expiry = math.sqrt(expiry_time)
 
         def _calc_pop(strike: int, opt_type: str) -> float:
             """Black-Scholes analytical probability of expiring Out-Of-The-Money (POP)."""
@@ -1194,16 +1223,296 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "pop_bsm": round(pop_raw_125 * 100.0, 1)
             })
 
-        # Sort candidates to find the highest probability of winning strategy
-        candidates.sort(key=lambda c: (c["p_win_pct"], c["expectancy_inr"], c["profit_factor"]), reverse=True)
-        for rank, c in enumerate(candidates, 1):
-            c["tournament_rank"] = rank
+        # Replace legacy fixed-percentage win-rate blends with one auditable measure:
+        # risk-neutral probability that terminal P&L is positive at expiry under a lognormal
+        # Black-Scholes distribution. This does not simulate the strategy's SL/re-entry path.
+        price_rows = option_chain_rows
+        chain_by_strike: Dict[int, Dict[str, Any]] = {}
+        if price_rows is not None:
+            for row in price_rows:
+                try:
+                    strike_key = int(round(float(row.get("strike"))))
+                except (TypeError, ValueError, OverflowError, AttributeError):
+                    continue
+                chain_by_strike[strike_key] = row
+
+        def _finite_positive_price(raw: Any) -> Optional[float]:
+            try:
+                value = float(raw)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            return value if math.isfinite(value) and value > 0.0 else None
+
+        def _normal_cdf(z: float) -> float:
+            return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
+        def _terminal_cdf(underlying: Optional[float]) -> float:
+            if underlying is None:
+                return 1.0
+            if underlying <= 0.0:
+                return 0.0
+            z = (math.log(underlying / spot_value) - (r - 0.5 * sig * sig) * expiry_time) / (sig * sqrt_expiry)
+            return _normal_cdf(z)
+
+        def _terminal_first_moment_cdf(underlying: Optional[float]) -> float:
+            if underlying is None:
+                return spot_value * math.exp(r * expiry_time)
+            if underlying <= 0.0:
+                return 0.0
+            z = (math.log(underlying / spot_value) - (r + 0.5 * sig * sig) * expiry_time) / (sig * sqrt_expiry)
+            return spot_value * math.exp(r * expiry_time) * _normal_cdf(z)
+
+        missing_quotes: List[str] = []
+        repriced_candidates: List[Dict[str, Any]] = []
+        rejected_candidates: List[Dict[str, str]] = []
+
+        for candidate in candidates:
+            candidate_sources = []
+            if price_rows is not None:
+                candidate_missing = []
+                for leg in candidate.get("legs", []):
+                    try:
+                        strike_key = int(round(float(leg.get("strike"))))
+                    except (TypeError, ValueError, OverflowError):
+                        candidate_missing.append(f"{leg.get('type')}:{leg.get('strike')}")
+                        continue
+                    row = chain_by_strike.get(strike_key)
+                    if row is None:
+                        candidate_missing.append(f"{leg.get('type')}:{strike_key}")
+                        continue
+
+                    option_type = str(leg.get("type", "")).upper()
+                    action = str(leg.get("action", "")).upper()
+                    prefix = "ce" if option_type == "CE" else "pe"
+                    side_key = f"{prefix}_{'bid' if action == 'SELL' else 'ask'}"
+                    selected_price = _finite_positive_price(row.get(side_key))
+                    if selected_price is not None:
+                        candidate_sources.append("LIVE_CHAIN_BID_ASK")
+                    else:
+                        selected_price = _finite_positive_price(row.get(f"{prefix}_ltp"))
+                        if selected_price is not None:
+                            candidate_sources.append("LIVE_CHAIN_LAST_PRICE_PROXY")
+                    if selected_price is None:
+                        candidate_missing.append(f"{option_type}:{strike_key} (no valid side quote or LTP)")
+                        continue
+                    leg["premium"] = selected_price
+
+                if candidate_missing:
+                    missing_quotes.extend(candidate_missing)
+                    rejected_candidates.append({
+                        "candidate_id": candidate.get("candidate_id", "UNKNOWN"),
+                        "reason": "Missing finite option-chain prices for: " + ", ".join(candidate_missing)
+                    })
+                    continue
+
+            entry_cashflow = 0.0
+            normalized_legs = []
+            bad_candidate = False
+            for leg in candidate.get("legs", []):
+                try:
+                    premium = float(leg.get("premium"))
+                    strike_value = float(leg.get("strike"))
+                    qty_lots = float(leg.get("qty_lots", 1.0))
+                except (TypeError, ValueError, OverflowError):
+                    bad_candidate = True
+                    break
+                if (
+                    not math.isfinite(premium) or premium <= 0.0
+                    or not math.isfinite(strike_value) or strike_value <= 0.0
+                    or not math.isfinite(qty_lots) or qty_lots <= 0.0
+                ):
+                    bad_candidate = True
+                    break
+                action = str(leg.get("action", "")).upper()
+                option_type = str(leg.get("type", "")).upper()
+                if action not in ("BUY", "SELL") or option_type not in ("CE", "PE"):
+                    bad_candidate = True
+                    break
+                entry_cashflow += (1.0 if action == "SELL" else -1.0) * premium * qty_lots * lot_size_value
+                normalized_legs.append({
+                    "strike": strike_value,
+                    "premium": premium,
+                    "qty_lots": qty_lots,
+                    "action": action,
+                    "type": option_type
+                })
+            if bad_candidate or not normalized_legs or not math.isfinite(entry_cashflow):
+                rejected_candidates.append({
+                    "candidate_id": candidate.get("candidate_id", "UNKNOWN"),
+                    "reason": "Candidate contains invalid leg pricing or quantities."
+                })
+                continue
+            if entry_cashflow <= 0.0:
+                rejected_candidates.append({
+                    "candidate_id": candidate.get("candidate_id", "UNKNOWN"),
+                    "reason": "Current premiums do not produce a positive entry credit for this short-premium strategy."
+                })
+                continue
+
+            candidate["net_credit_inr"] = round(entry_cashflow, 2)
+            candidate["planned_stop_loss_inr"] = round(entry_cashflow * (_finite_positive_price(candidate.get("sl_pct")) or default_sl_pct), 2)
+
+            strikes = sorted({0.0, *(leg["strike"] for leg in normalized_legs)})
+            boundaries: List[Optional[float]] = list(strikes) + [None]
+
+            def _payoff_line(sample_price: float) -> Tuple[float, float]:
+                slope = 0.0
+                intercept = entry_cashflow
+                for leg in normalized_legs:
+                    position_sign = 1.0 if leg["action"] == "BUY" else -1.0
+                    multiplier = position_sign * leg["qty_lots"] * lot_size_value
+                    strike_value = leg["strike"]
+                    if leg["type"] == "CE" and sample_price > strike_value:
+                        slope += multiplier
+                        intercept -= multiplier * strike_value
+                    elif leg["type"] == "PE" and sample_price < strike_value:
+                        slope -= multiplier
+                        intercept += multiplier * strike_value
+                return slope, intercept
+
+            def _terminal_pnl(underlying: float) -> float:
+                pnl = entry_cashflow
+                for leg in normalized_legs:
+                    intrinsic = (
+                        max(underlying - leg["strike"], 0.0)
+                        if leg["type"] == "CE"
+                        else max(leg["strike"] - underlying, 0.0)
+                    )
+                    position_sign = 1.0 if leg["action"] == "BUY" else -1.0
+                    pnl += position_sign * intrinsic * leg["qty_lots"] * lot_size_value
+                return pnl
+
+            probability_profit = 0.0
+            expected_pnl = 0.0
+            expected_profit = 0.0
+            expected_loss = 0.0
+            payoff_points = [_terminal_pnl(point) for point in strikes]
+
+            for idx in range(len(boundaries) - 1):
+                low = boundaries[idx]
+                high = boundaries[idx + 1]
+                low_value = 0.0 if low is None else float(low)
+                representative = (
+                    low_value + max(spot_value, abs(low_value), 1.0) * 2.0
+                    if high is None
+                    else (low_value + float(high)) / 2.0
+                )
+                slope, intercept = _payoff_line(representative)
+                segment_points: List[Optional[float]] = [low, high]
+                if abs(slope) > 1e-12:
+                    root = -intercept / slope
+                    if root > low_value and (high is None or root < float(high)):
+                        segment_points = [low, root, high]
+
+                for part in range(len(segment_points) - 1):
+                    part_low = segment_points[part]
+                    part_high = segment_points[part + 1]
+                    low_num = 0.0 if part_low is None else float(part_low)
+                    high_num = None if part_high is None else float(part_high)
+                    sample = (
+                        low_num + max(spot_value, abs(low_num), 1.0)
+                        if high_num is None
+                        else (low_num + high_num) / 2.0
+                    )
+                    pnl_sample = slope * sample + intercept
+                    probability_mass = max(0.0, _terminal_cdf(high_num) - _terminal_cdf(low_num))
+                    first_moment = _terminal_first_moment_cdf(high_num) - _terminal_first_moment_cdf(low_num)
+                    partial_expectancy = slope * first_moment + intercept * probability_mass
+                    expected_pnl += partial_expectancy
+                    if pnl_sample > 1e-8:
+                        probability_profit += probability_mass
+                        expected_profit += partial_expectancy
+                    elif pnl_sample < -1e-8:
+                        expected_loss += -partial_expectancy
+
+            top_sample = float(strikes[-1]) + max(spot_value, 1.0) * 2.0
+            tail_slope, _ = _payoff_line(top_sample)
+            max_terminal_profit = max(payoff_points)
+            max_terminal_loss = min(payoff_points)
+            if tail_slope < -1e-9:
+                contractual_max_loss: Any = "UNLIMITED"
+                contractual_max_profit: Any = round(max_terminal_profit, 2)
+                candidate["risk_profile"] = "UNDEFINED_UNLIMITED"
+                candidate["max_loss_inr"] = None
+            elif tail_slope > 1e-9:
+                contractual_max_profit = "UNLIMITED"
+                contractual_max_loss = round(max(0.0, -max_terminal_loss), 2)
+                candidate["max_profit_inr"] = None
+                candidate["max_loss_inr"] = round(max(0.0, -max_terminal_loss), 2)
+            else:
+                contractual_max_profit = round(max_terminal_profit, 2)
+                contractual_max_loss = round(max(0.0, -max_terminal_loss), 2)
+                candidate["max_profit_inr"] = contractual_max_profit
+                candidate["max_loss_inr"] = contractual_max_loss
+
+            candidate["contractual_max_profit"] = contractual_max_profit
+            candidate["contractual_max_loss"] = contractual_max_loss
+            candidate["p_win_pct"] = round(min(1.0, max(0.0, probability_profit)) * 100.0, 2)
+            candidate["risk_neutral_expiry_pop_pct"] = candidate["p_win_pct"]
+            candidate["pop_bsm"] = candidate["p_win_pct"]
+            candidate["probability_method"] = "BLACK_SCHOLES_TERMINAL_PAYOFF"
+            candidate["probability_is_calibrated"] = False
+            candidate["probability_scope"] = (
+                "Risk-neutral probability of positive P&L at expiry; excludes stop-loss/re-entry path effects and transaction costs."
+            )
+            candidate["expectancy_inr"] = round(expected_pnl, 2)
+            candidate["expectancy_method"] = "RISK_NEUTRAL_EXPIRY_PNL_IGNORING_TRANSACTION_COSTS"
+            candidate["expected_profit_inr"] = round(expected_profit, 2)
+            candidate["expected_loss_inr"] = round(expected_loss, 2)
+            candidate["profit_factor"] = (
+                round(expected_profit / expected_loss, 4) if expected_loss > 1e-9 else None
+            )
+            candidate["entry_price_source"] = (
+                "BLACK_SCHOLES_THEORETICAL" if price_rows is None
+                else (
+                    "LIVE_CHAIN_BID_ASK" if candidate_sources and all(x == "LIVE_CHAIN_BID_ASK" for x in candidate_sources)
+                    else "LIVE_CHAIN_LAST_PRICE_PROXY"
+                )
+            )
+            candidate["volatility_source"] = volatility_source
+            candidate["market_data_timestamp"] = option_chain_timestamp
+            candidate["market_data_quality"] = option_chain_data_quality
+            candidate["probability_assumption"] = "FLAT_VOLATILITY_LOGNORMAL_TERMINAL_DISTRIBUTION"
+            repriced_candidates.append(candidate)
+
+        if not repriced_candidates:
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "reason": (
+                    "No candidate has complete finite option-chain prices and a positive entry credit."
+                    if price_rows is not None else "No candidate has valid finite theoretical premiums."
+                ),
+                "horizon": horizon,
+                "regime": regime,
+                "spot_price": spot_value,
+                "iv_pct": iv_pct,
+                "expiry_date": actual_expiry,
+                "candidates": [],
+                "rejected_candidates": rejected_candidates,
+                "missing_quotes": sorted(set(missing_quotes)),
+                "probability_method": "BLACK_SCHOLES_TERMINAL_PAYOFF",
+                "probability_is_calibrated": False,
+                "evaluated_at": format_ist()
+            }
+
+        candidates = repriced_candidates
+        candidates.sort(
+            key=lambda c: (
+                float(c.get("p_win_pct") or 0.0),
+                float(c.get("expectancy_inr") or 0.0),
+                float(c.get("profit_factor")) if c.get("profit_factor") is not None else -math.inf
+            ),
+            reverse=True
+        )
+        for rank, candidate in enumerate(candidates, 1):
+            candidate["tournament_rank"] = rank
 
         winner = candidates[0]
         analysis_summary = (
             f"Pre-Trade Strategy Tournament for {horizon} {regime}: "
-            f"Winner #{1} '{winner['name']}' achieved the highest win probability ({winner['p_win_pct']}%) "
-            f"with positive expectancy (Rs.{winner['expectancy_inr']:+.1f}/lot) and PF {winner['profit_factor']:.2f}."
+            f"Winner #{1} '{winner['name']}' has a modelled risk-neutral expiry POP of "
+            f"{winner['p_win_pct']:.2f}%. It is not a calibrated real-world win rate and "
+            "does not simulate stop-loss/re-entry paths or transaction costs."
         )
 
         return {
@@ -1214,8 +1523,17 @@ class WeeklyMonthlyOptionsStrategyEngine:
             "iv_pct": iv_pct,
             "dte": dte,
             "expiry_date": actual_expiry,
+            "time_to_expiry_years": expiry_time,
+            "probability_method": "BLACK_SCHOLES_TERMINAL_PAYOFF",
+            "probability_is_calibrated": False,
+            "probability_scope": "Risk-neutral expiry payoff probability; excludes stop-loss/re-entry paths and transaction costs.",
+            "volatility_source": volatility_source,
+            "entry_price_source": winner["entry_price_source"],
+            "market_data_timestamp": option_chain_timestamp,
+            "market_data_quality": option_chain_data_quality,
             "tournament_winner": winner,
             "candidates_ranked": candidates,
+            "rejected_candidates": rejected_candidates,
             "analysis_summary": analysis_summary,
             "evaluated_at": format_ist()
         }
@@ -1232,7 +1550,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
         spot_price = float(weekly_model_info["spot_price"])
         weekly_verdict = weekly_model_info["regime"]
         iv_val = 0.0
+        iv_source = "UNAVAILABLE"
         expiry_date = None
+        chain_sec: Dict[str, Any] = {}
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
             deep_chain = nifty_analytics_engine.get_deep_option_chain()
@@ -1240,22 +1560,17 @@ class WeeklyMonthlyOptionsStrategyEngine:
             if spot_chain > 0:
                 spot_price = spot_chain
             chain_sec = deep_chain.get("weekly" if horizon == "WEEKLY" else "monthly", {})
-            iv_val = float(chain_sec.get("atm_iv") or chain_sec.get("volatility_and_gex", {}).get("atm_iv") or 0.0)
-            expiry_date = chain_sec.get("expiry_date")
+            iv_quality = (chain_sec.get("volatility_and_gex") or {}).get("iv_data_quality")
+            raw_iv = chain_sec.get("atm_iv") or (chain_sec.get("volatility_and_gex") or {}).get("atm_iv")
+            iv_val = float(raw_iv or 0.0)
+            iv_source = "NSE_OPTION_CHAIN_IV" if iv_quality == "VALID_CHAIN_IV" else "CHAIN_OR_PROXY_IV"
+            expiry_date = chain_sec.get("expiry_date") or chain_sec.get("expiry")
             if iv_val <= 0.0:
                 vix_data = nifty_analytics_engine.get_india_vix()
                 if vix_data and vix_data.get("current_vix", 0) > 0:
                     iv_val = float(vix_data["current_vix"])
         except Exception:
             pass
-        if iv_val <= 0.0:
-            try:
-                with state_engine._get_connection() as conn:
-                    r = conn.execute("SELECT close FROM ohlcv_master_store WHERE symbol IN ('^INDIAVIX', 'INDIAVIX') AND close > 0 ORDER BY date DESC LIMIT 1").fetchone()
-                    if r and r[0]:
-                        iv_val = float(r[0])
-            except Exception:
-                pass
         if iv_val <= 0.0:
             logger.warning("Options strategy tournament blocked: verified option-chain IV and VIX are unavailable.")
             return {
@@ -1273,7 +1588,11 @@ class WeeklyMonthlyOptionsStrategyEngine:
             horizon=horizon,
             expiry_date=expiry_date,
             weekly_model_info=weekly_model_info,
-            lot_size=NIFTY_LOT_SIZE
+            lot_size=NIFTY_LOT_SIZE,
+            option_chain_rows=(chain_sec.get("all_strikes") or chain_sec.get("strikes") or []),
+            option_chain_timestamp=chain_sec.get("nse_timestamp"),
+            option_chain_data_quality=chain_sec.get("data_quality"),
+            volatility_source=iv_source
         )
 
     # =========================================================================
@@ -1791,13 +2110,29 @@ class WeeklyMonthlyOptionsStrategyEngine:
             horizon=horizon,
             expiry_date=expiry_date,
             weekly_model_info=weekly_model_info,
-            lot_size=lot_size
+            lot_size=lot_size,
+            option_chain_rows=(chain_sec.get("all_strikes") or chain_sec.get("strikes") or []),
+            option_chain_timestamp=chain_sec.get("nse_timestamp"),
+            option_chain_data_quality=chain_sec.get("data_quality"),
+            volatility_source="NSE_OPTION_CHAIN_IV"
         )
+        if tournament.get("status") != "OK":
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "reason": tournament.get("reason", "No viable candidate could be priced from the current option chain."),
+                "horizon": horizon,
+                "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
+                "weekly_prediction_model": weekly_model_info,
+                "weekly_model_info": weekly_model_info,
+                "candidates": [],
+                "rejected_candidates": tournament.get("rejected_candidates", []),
+                "timestamp_ist": now_str
+            }
         regime = tournament["regime"]
         strat = tournament["tournament_winner"]
         actual_expiry = tournament["expiry_date"]
         dte = tournament["dte"]
-        t_years = max(0.0025, float(dte) / 365.0)
+        t_years = float(tournament["time_to_expiry_years"])
         win_prob = float(strat["p_win_pct"])
         default_sl_pct = 0.40 if horizon == "WEEKLY" else 0.50
 

@@ -334,6 +334,41 @@ def test_weekly_monthly_trades_based_on_weekly_prediction_model():
     assert "weekly_prediction_model" in m_deploy
 
 
+def test_tournament_uses_observed_chain_prices_and_labels_expiry_pop():
+    """Current option-chain side quotes replace theoretical premiums in the tournament."""
+    rows = []
+    for strike in range(15000, 35001, 50):
+        ce_ltp = max(1.0, 1000.0 - max(0.0, strike - 20000.0) * 0.06 + max(0.0, 20000.0 - strike) * 0.03)
+        pe_ltp = max(1.0, 20.0 + max(0.0, strike - 20000.0) * 0.06 - max(0.0, 20000.0 - strike) * 0.02)
+        rows.append({
+            "strike": strike,
+            "ce_ltp": ce_ltp, "ce_bid": max(0.5, ce_ltp - 0.5), "ce_ask": ce_ltp + 0.5,
+            "pe_ltp": pe_ltp, "pe_bid": max(0.5, pe_ltp - 0.5), "pe_ask": pe_ltp + 0.5,
+        })
+
+    result = WeeklyMonthlyOptionsStrategyEngine.analyze_highest_win_probability_strategy(
+        verdict="STRONG BULLISH",
+        spot=22600.0,
+        iv_pct=13.5,
+        horizon="WEEKLY",
+        weekly_model_info={"probabilities": {"p_up": 0.65, "p_flat": 0.25, "p_down": 0.10}},
+        option_chain_rows=rows,
+        option_chain_timestamp="18-Oct-2026 10:00:00",
+        option_chain_data_quality="VALID_PROVIDER_TIMESTAMP",
+        volatility_source="NSE_OPTION_CHAIN_IV",
+    )
+    assert result["status"] == "OK"
+    assert result["entry_price_source"] == "LIVE_CHAIN_BID_ASK"
+    assert result["probability_is_calibrated"] is False
+    assert result["market_data_quality"] == "VALID_PROVIDER_TIMESTAMP"
+    for candidate in result["candidates_ranked"]:
+        assert candidate["entry_price_source"] == "LIVE_CHAIN_BID_ASK"
+        assert candidate["probability_method"] == "BLACK_SCHOLES_TERMINAL_PAYOFF"
+        assert all(leg["premium"] > 0 for leg in candidate["legs"])
+        assert 0.0 <= candidate["risk_neutral_expiry_pop_pct"] <= 100.0
+        assert np.isfinite(candidate["expectancy_inr"])
+
+
 def test_pre_trade_strategy_tournament_highest_win_probability():
     """Verify that the system analyzes candidate strategies and initiates the one with highest win probability."""
     # 1. Test tournament on Strong Bullish
@@ -351,8 +386,11 @@ def test_pre_trade_strategy_tournament_highest_win_probability():
     max_p_win = max(c["p_win_pct"] for c in tourn_bull["candidates_ranked"])
     assert winner["p_win_pct"] == max_p_win
     assert winner["tournament_rank"] == 1
-    assert winner["expectancy_inr"] > 0
-    assert "analysis_summary" in tourn_bull
+    assert np.isfinite(winner["expectancy_inr"])
+    assert winner["probability_method"] == "BLACK_SCHOLES_TERMINAL_PAYOFF"
+    assert winner["probability_is_calibrated"] is False
+    assert 0.0 <= winner["p_win_pct"] <= 100.0
+    assert "risk-neutral expiry POP" in tourn_bull["analysis_summary"]
 
     # 2. Test tournament on Range-Bound
     tourn_range = WeeklyMonthlyOptionsStrategyEngine.analyze_highest_win_probability_strategy(
