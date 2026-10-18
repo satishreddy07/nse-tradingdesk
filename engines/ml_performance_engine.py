@@ -1106,7 +1106,10 @@ class MLPerformanceEngine:
             nifty_reg = state_engine.get_kv("nifty_forecast_model_registry", {})
             meta = nifty_reg.get(f"{h_norm}_metadata", {})
             mets = meta.get("metrics", {})
-            sample_count = int(mets.get("sample_count", meta.get("sample_counts", {}).get("total", 0)))
+            sample_count_raw = mets.get("sample_count")
+            if sample_count_raw is None:
+                sample_count_raw = meta.get("sample_counts", {}).get("total")
+            sample_count = int(sample_count_raw) if sample_count_raw is not None else 0
             eval_window = f"Walk-Forward Purged Time-Series Test ({sample_count} sessions)" if sample_count > 0 else "Dynamic Out-Of-Sample Evaluation"
 
             # Production model dynamic metrics
