@@ -531,6 +531,8 @@ def test_h08_state_engine_rejects_pickle_and_future_timestamp(tmp_path):
     df, age = eng.get_ohlcv_df("H08_SYM")
     assert df is None
     assert age == 9999.0
+    # Convenience API must not discard the invalid-age sentinel and expose unusable data.
+    assert eng.get_ohlcv("H08_SYM") is None
 
 
 
