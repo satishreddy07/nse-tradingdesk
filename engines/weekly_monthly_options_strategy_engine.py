@@ -1281,46 +1281,20 @@ class WeeklyMonthlyOptionsStrategyEngine:
         # Retrieve real historical sessions from ohlcv_master_store / verified prediction logs
         sessions_data = cls._load_real_positional_sessions(count=lookback_sessions, horizon=horizon)
         if len(sessions_data) < 5:
-            # Fallback to nifty_predictions_log if needed
-            try:
-                with state_engine._lock:
-                    with state_engine._get_connection() as conn:
-                        rows = conn.execute("""
-                            SELECT prediction_date, spot_at_prediction, composite_score,
-                                   t1_verdict, t1_actual_return_pct, actual_t1_close,
-                                   t5_verdict, t5_actual_return_pct, actual_t5_close
-                            FROM nifty_predictions_log
-                            WHERE spot_at_prediction > 0
-                            ORDER BY id DESC LIMIT ?
-                        """, (lookback_sessions * 2,)).fetchall()
-                        for r in reversed(rows[:lookback_sessions]):
-                            s_spot = float(r["spot_at_prediction"] or 0.0)
-                            if s_spot <= 0:
-                                try:
-                                    from engines.nifty_analytics_engine import nifty_analytics_engine
-                                    s_spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
-                                except Exception:
-                                    s_spot = 0.0
-                            ret_pct = float((r["t5_actual_return_pct"] if is_weekly and r["t5_actual_return_pct"] is not None else r["t1_actual_return_pct"]) or 0.0)
-                            close_spot = float((r["actual_t5_close"] if is_weekly and r["actual_t5_close"] is not None else r["actual_t1_close"]) or (s_spot * (1.0 + ret_pct / 100.0)))
-                            verdict = str((r["t5_verdict"] if is_weekly and r["t5_verdict"] else r["t1_verdict"]) or "RANGE BOUND")
-                            steps = 15 if is_weekly else 25
-                            path = cls._synthesize_multi_day_path(s_spot, close_spot, ret_pct, steps=steps)
-                            # Prediction rows do not contain historical option IV; do not simulate option premiums from a fixed IV.
-                            continue
-                            sessions_data.append({
-                                "date": str(r["prediction_date"]),
-                                "spot": s_spot,
-                                "close": close_spot,
-                                "ret_pct": ret_pct,
-                                "verdict": verdict,
-                                "composite_score": float(r["composite_score"] or 0.0),
-                                "iv_pct": 13.0,
-                                "dte": 5 if is_weekly else 25,
-                                "path": path
-                            })
-            except Exception:
-                pass
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": "Fewer than five empirical historical sessions with defensible volatility inputs; no fixed-IV fallback is used.",
+                "decision_source": f"WEEKLY_PREDICTION_MODEL_T5 ({horizon.capitalize()})",
+                "horizon": horizon,
+                "specified_sl_pct": default_sl,
+                "sessions_evaluated": len(sessions_data),
+                "date_range": "N/A",
+                "lot_size": lot_size,
+                "comparison_matrix": {},
+                "regime_breakdown": {},
+                "summary_insights": ["Insufficient empirical historical sessions with valid volatility inputs."],
+                "timestamp_ist": format_ist()
+            }
 
         if not sessions_data:
             return {
@@ -2392,62 +2366,8 @@ class WeeklyMonthlyOptionsStrategyEngine:
         except Exception as e:
             logger.warning(f"Positional real historical sessions load notice: {e}")
 
-        # 2. Secondary Source: Real verified logs in nifty_predictions_log
-        if not sessions:
-            try:
-                with state_engine._lock:
-                    with state_engine._get_connection() as conn:
-                        rows = conn.execute("""
-                            SELECT prediction_date, spot_at_prediction, composite_score,
-                                   t1_verdict, t1_actual_return_pct, actual_t1_close,
-                                   t5_verdict, t5_actual_return_pct, actual_t5_close
-                            FROM nifty_predictions_log
-                            WHERE spot_at_prediction > 0
-                            ORDER BY id DESC LIMIT ?
-                        """, (count * 2,)).fetchall()
-                        for r in reversed(rows):
-                            s_spot = float(r["spot_at_prediction"])
-                            if is_weekly:
-                                ret_p = float(r["t5_actual_return_pct"] if r["t5_actual_return_pct"] is not None else r["t1_actual_return_pct"] or 0.0)
-                                close_p = float(r["actual_t5_close"] if r["actual_t5_close"] is not None else (s_spot * (1.0 + ret_p / 100.0)))
-                                v_raw = str(r["t5_verdict"] or r["t1_verdict"] or "RANGE BOUND")
-                            else:
-                                ret_p = float(r["t5_actual_return_pct"] or 0.0) * 1.5
-                                close_p = float(s_spot * (1.0 + ret_p / 100.0))
-                                v_raw = str(r["t5_verdict"] or "RANGE BOUND")
-
-                            # Map raw prediction verdict to 5 standard regimes
-                            v_clean = v_raw.upper().replace("-", " ")
-                            if "STRONG" in v_clean and "BULL" in v_clean:
-                                verdict = "STRONG BULLISH"
-                            elif "BULL" in v_clean:
-                                verdict = "MILD BULLISH"
-                            elif "STRONG" in v_clean and "BEAR" in v_clean:
-                                verdict = "STRONG BEARISH"
-                            elif "BEAR" in v_clean:
-                                verdict = "MILD BEARISH"
-                            else:
-                                verdict = "RANGE BOUND"
-
-                            steps = 15 if is_weekly else 25
-                            path = cls._synthesize_multi_day_path(s_spot, close_p, ret_p, steps=steps)
-
-                            # Prediction rows do not contain historical option IV; do not simulate option premiums from a fixed IV.
-                            continue
-                            sessions.append({
-                                "date": str(r["prediction_date"]),
-                                "spot": round(s_spot, 2),
-                                "close": round(close_p, 2),
-                                "ret_pct": round(ret_p, 2),
-                                "verdict": verdict,
-                                "composite_score": float(r["composite_score"] or 0.0),
-                                "iv_pct": 13.0,
-                                "dte": dte_default,
-                                "path": path
-                            })
-            except Exception as e:
-                logger.warning(f"Positional nifty_predictions_log secondary load notice: {e}")
-
+        # Prediction-ledger rows do not contain historical option IV or executable option quotes.
+        # They are deliberately not converted into simulated option trades with a fixed volatility.
         # Maintain exact backward compatibility for callers
         return sessions[-count:] if len(sessions) > count else sessions
 
