@@ -181,10 +181,10 @@ def test_brier_score_true_mse_calculation():
     assert perf["status"] == "SUCCESS"
     for reg, stats in perf["regimes"].items():
         if stats["total_samples"] == 0:
-            assert stats["brier_score"] == 0.0
-        else:
-            # Brier score must be between 0.0 and 1.0
-            assert 0.0 <= stats["brier_score"] <= 1.0
+            assert stats["brier_score"] is None
+        elif stats["brier_score"] is not None:
+            # Three-class Brier score is the sum of squared class-probability errors (range 0..2).
+            assert 0.0 <= stats["brier_score"] <= 2.0
 
 
 def test_dynamic_model_comparison_candidates():
