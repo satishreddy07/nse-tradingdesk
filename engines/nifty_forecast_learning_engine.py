@@ -296,6 +296,18 @@ class NiftyForecastLearningEngine:
             }
         }
 
+        # Persist provenance derived from the exact empirical rows used for this candidate.
+        target_distribution = {
+            "BEARISH": round(float((df["target_class"] == -1).mean()) * 100.0, 2),
+            "FLAT": round(float((df["target_class"] == 0).mean()) * 100.0, 2),
+            "BULLISH": round(float((df["target_class"] == 1).mean()) * 100.0, 2)
+        }
+        training_date_range = None
+        if "created_at" in df.columns:
+            observed_dates = pd.to_datetime(df["created_at"], errors="coerce").dropna()
+            if not observed_dates.empty:
+                training_date_range = f"{observed_dates.min()} to {observed_dates.max()}"
+
         # 3. Controlled Promotion Gatekeeper. Never invent a prior-model score.
         active_ver = self._active_metadata.get(f"{horizon}_active_version")
         prod_brier = None
@@ -328,6 +340,8 @@ class NiftyForecastLearningEngine:
                 "evaluation_method": "PURGED_EMBARGOED_TIME_SERIES_CV",
                 "dataset_version": "NIFTY_PREDICTION_LEDGER_EMPIRICAL_V1",
                 "feature_provenance": "EMPIRICAL_PREDICTION_LEDGER_SNAPSHOTS",
+                "target_distribution": target_distribution,
+                "training_date_range": training_date_range,
                 "evaluated_at": format_ist(),
                 "promoted_at": format_ist()
             }
