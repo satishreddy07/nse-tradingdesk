@@ -167,11 +167,26 @@ class TreeQuantMLEngine:
 
         df = df.loc[:, ~df.columns.duplicated()].copy()
         feature_cols = [c for c in UNIFIED_FEATURE_COLS if c in df.columns]
-        X = df[feature_cols].values.astype(np.float64)
+        if not feature_cols:
+            return {
+                "status": "INSUFFICIENT_DATA",
+                "is_promoted": False,
+                "samples": len(df),
+                "reason": "No recognized empirical feature columns are available.",
+                "metrics": {"ensemble_brier": None, "baseline_brier": None, "ensemble_auc": None, "lgb_brier": None, "xgb_brier": None},
+                "metric_provenance": "DATA_UNAVAILABLE"
+            }
+        X = df[feature_cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float64)
         y = df[target_col].values.astype(int)
-
-        # Handle NaNs
-        X = np.nan_to_num(X, nan=0.0, posinf=1.0, neginf=-1.0)
+        if not np.isfinite(X).all():
+            return {
+                "status": "INSUFFICIENT_DATA",
+                "is_promoted": False,
+                "samples": len(df),
+                "reason": "Missing or non-finite empirical features; no zero-fill or synthetic imputation is permitted.",
+                "metrics": {"ensemble_brier": None, "baseline_brier": None, "ensemble_auc": None, "lgb_brier": None, "xgb_brier": None},
+                "metric_provenance": "DATA_UNAVAILABLE"
+            }
 
         # Chronological Split (70% Train, 30% Test with Purged Embargo buffer)
         n_samples = len(X)
@@ -340,8 +355,11 @@ class TreeQuantMLEngine:
             is_promoted = True
             status_label = "PROMOTED_INITIAL_BASELINE"
         else:
-            prev_brier = self._active_models[horizon]["metrics"].get("ensemble_brier", 0.25)
-            is_promoted = (ensemble_brier <= prev_brier or ensemble_brier <= baseline_brier) and (ensemble_auc >= 0.50)
+            prev_brier = self._active_models[horizon]["metrics"].get("ensemble_brier")
+            is_promoted = (
+                prev_brier is None
+                or (ensemble_brier <= float(prev_brier) or ensemble_brier <= baseline_brier)
+            ) and ensemble_auc >= 0.50
             status_label = "PROMOTED_PRODUCTION" if is_promoted else "CANDIDATE_REJECTED"
 
         metadata = {
