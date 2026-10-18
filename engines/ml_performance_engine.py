@@ -861,38 +861,88 @@ class MLPerformanceEngine:
 
         trades = [dict(r) for r in rows]
         total_trades = len(trades)
-        wins = [t for t in trades if (t.get("gross_pnl") or t.get("net_pnl") or 0.0) > 0 or t.get("is_winner") == 1]
-        losses = [t for t in trades if (t.get("gross_pnl") or t.get("net_pnl") or 0.0) <= 0 and t.get("is_winner") != 1]
 
-        gross_pnl = sum(float(t.get("gross_pnl") or t.get("net_pnl") or 0.0) for t in trades)
-        # Factor brokerage (₹20 per order * 2 = ₹40/trade) and 0.05% slippage
-        turnover = sum(float(t.get("intended_entry", 0.0)) * float(t.get("quantity", 50)) for t in trades)
-        slippage_cost = turnover * 0.0005
-        brokerage_cost = total_trades * 40.0
-        net_pnl = round(gross_pnl - slippage_cost - brokerage_cost, 2)
+        def _recorded_number(trade: Dict[str, Any], key: str) -> Optional[float]:
+            raw = trade.get(key)
+            if raw is None:
+                return None
+            try:
+                value = float(raw)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            return value if math.isfinite(value) else None
 
-        win_rate = round((len(wins) / total_trades) * 100.0, 1) if total_trades > 0 else None
-        avg_win = round(float(np.mean([(t.get("gross_pnl") or t.get("net_pnl") or 0.0) for t in wins])), 2) if wins else None
-        avg_loss = round(float(np.mean([abs((t.get("gross_pnl") or t.get("net_pnl") or 0.0) for t in losses])), 2) if losses else None
+        def _net_value(trade: Dict[str, Any]) -> Optional[float]:
+            # Prefer the persisted net P&L. Only derive it where both recorded gross P&L
+            # and recorded total costs exist; never add assumed fees/slippage on top.
+            net_value = _recorded_number(trade, "net_pnl")
+            if net_value is not None:
+                return net_value
+            gross_value = _recorded_number(trade, "gross_pnl")
+            costs_value = _recorded_number(trade, "total_costs")
+            return gross_value - costs_value if gross_value is not None and costs_value is not None else None
 
-        gross_win_sum = sum((t.get("gross_pnl") or t.get("net_pnl") or 0.0) for t in wins)
-        gross_loss_sum = sum(abs((t.get("gross_pnl") or t.get("net_pnl") or 0.0)) for t in losses)
-        profit_factor = round(gross_win_sum / gross_loss_sum, 2) if gross_loss_sum > 0 else None
-        net_expectancy = round(net_pnl / total_trades, 2) if total_trades > 0 else None
+        gross_values = [
+            value for t in trades
+            if (value := _recorded_number(t, "gross_pnl")) is not None
+        ]
+        net_values_by_trade = {id(t): _net_value(t) for t in trades}
+        measured_net_values = [v for v in net_values_by_trade.values() if v is not None]
+        measured_costs = [
+            value for t in trades
+            if (value := _recorded_number(t, "total_costs")) is not None
+        ]
 
-        # F-33: Compute real max drawdown from cumulative trade equity curve
+        def _is_win(trade: Dict[str, Any]) -> Optional[bool]:
+            winner = trade.get("is_winner")
+            if winner is not None:
+                try:
+                    return bool(int(winner) == 1)
+                except (TypeError, ValueError, OverflowError):
+                    return None
+            net_value = _net_value(trade)
+            return net_value > 0 if net_value is not None else None
+
+        labeled_outcomes = [(t, _is_win(t)) for t in trades]
+        labeled_outcomes = [(t, won) for t, won in labeled_outcomes if won is not None]
+        wins = [t for t, won in labeled_outcomes if won]
+        losses = [t for t, won in labeled_outcomes if not won]
+        win_rate = (
+            round(len(wins) / len(labeled_outcomes) * 100.0, 1)
+            if labeled_outcomes else None
+        )
+
+        gross_pnl = round(sum(gross_values), 2) if gross_values else (0.0 if not trades else None)
+        net_pnl = round(sum(measured_net_values), 2) if measured_net_values else (0.0 if not trades else None)
+        total_costs = round(sum(measured_costs), 2) if measured_costs else (0.0 if not trades else None)
+
+        winning_net = [v for t in wins if (v := _net_value(t)) is not None and v > 0]
+        losing_net = [v for t in losses if (v := _net_value(t)) is not None and v < 0]
+        avg_win = round(float(np.mean(winning_net)), 2) if winning_net else None
+        avg_loss = round(float(np.mean([abs(v) for v in losing_net])), 2) if losing_net else None
+        net_wins_total = sum(winning_net)
+        net_losses_total = sum(abs(v) for v in losing_net)
+        profit_factor = round(net_wins_total / net_losses_total, 2) if net_losses_total > 0 else None
+        net_expectancy = round(net_pnl / len(measured_net_values), 2) if measured_net_values else None
+
+        # F-33: Compute drawdown only from recorded net-P&L observations, in persisted trade order.
         eq = 0.0
         peak = 0.0
         max_dd = 0.0
-        for t in trades:
-            pnl_val = float(t.get("net_pnl") or t.get("gross_pnl") or 0.0)
+        drawdown_observations = 0
+        for trade in trades:
+            pnl_val = _net_value(trade)
+            if pnl_val is None:
+                continue
+            drawdown_observations += 1
             eq += pnl_val
-            if eq > peak:
-                peak = eq
-            dd = peak - eq
-            if dd > max_dd:
-                max_dd = dd
-        max_drawdown_pct = round((max_dd / max(1.0, peak)) * 100.0, 2) if peak > 0 else None
+            peak = max(peak, eq)
+            max_dd = max(max_dd, peak - eq)
+        max_drawdown_pct = (
+            round((max_dd / peak) * 100.0, 2)
+            if drawdown_observations and peak > 0
+            else (0.0 if not trades else None)
+        )
 
         return {
             "horizon": h_norm,
@@ -900,8 +950,11 @@ class MLPerformanceEngine:
             "win_rate_pct": win_rate,
             "gross_pnl": round(gross_pnl, 2),
             "net_pnl": net_pnl,
-            "slippage_cost": round(slippage_cost, 2),
-            "brokerage_cost": round(brokerage_cost, 2),
+            # Fees are stored as one total_costs field today; the schema has no measured
+            # brokerage/slippage split. Do not invent component allocations.
+            "total_costs": total_costs,
+            "slippage_cost": None,
+            "brokerage_cost": None,
             "profit_factor": profit_factor,
             "avg_win": avg_win,
             "avg_loss": avg_loss,

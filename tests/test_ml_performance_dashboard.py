@@ -25,7 +25,8 @@ from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
-from engines.ml_performance_engine import ml_performance_engine
+from engines.ml_performance_engine import MLPerformanceEngine, ml_performance_engine
+from core.unified_ml_dataset import UnifiedMLDataset, UNIFIED_FEATURE_COLS
 from web.api import app
 
 
@@ -135,9 +136,59 @@ class TestTradeOutcomeLearning:
         assert "brokerage_cost" in trades
         assert "stop_loss_and_reentry_matrix" in trades
 
-        # Invariant: Net PnL must be strictly less than Gross PnL due to slippage and brokerage
-        if trades["total_trades"] > 0:
-            assert trades["net_pnl"] < trades["gross_pnl"]
+        # No assumed fixed brokerage/slippage is layered over the already stored net PnL.
+        # This legacy schema doesn't separately persist fee component breakdowns.
+        assert "total_costs" in trades
+        assert trades["slippage_cost"] is None
+        assert trades["brokerage_cost"] is None
+
+
+def test_trade_outcome_dashboard_uses_persisted_net_pnl_without_double_charging(tmp_path):
+    """The dashboard must reuse recorded net P&L/costs and not guess brokerage or slippage."""
+    db_path = tmp_path / "learning_metrics.db"
+    dataset = UnifiedMLDataset(db_path=str(db_path))
+    engine = MLPerformanceEngine(db_path=str(db_path), models_dir=tmp_path / "model_registry")
+
+    features = {col: 1.0 for col in UNIFIED_FEATURE_COLS}
+    row_id = dataset.record_signal_and_trade(
+        signal_id="SIG_RECORDED_PNL",
+        trade_id="TRADE_RECORDED_PNL",
+        instrument="NIFTY",
+        trading_horizon="WEEKLY",
+        strategy_name="TEST",
+        record_type="LIVE",
+        market_session="MORNING",
+        accept_reject_verdict="ACCEPTED",
+        decision_source="RULE_BASED",
+        features=features,
+        regime="MILD_BULLISH",
+        spot_at_entry=25000.0,
+        intended_entry=100.0,
+        intended_target=80.0,
+        intended_sl=140.0,
+        sl_threshold_pct=40.0,
+        quantity=1,
+        capital_at_risk=40.0,
+        actual_entry=100.0,
+    )
+    assert row_id > 0
+    assert dataset.record_trade_outcome(
+        trade_id="TRADE_RECORDED_PNL",
+        actual_exit=80.0,
+        exit_reason="PROFIT_TARGET",
+        gross_pnl=20.0,
+        net_pnl=18.0,
+        total_costs=2.0,
+    )
+
+    metrics = engine.get_trade_outcome_learning(horizon="WEEKLY")
+    assert metrics["total_trades"] == 1
+    assert metrics["gross_pnl"] == 20.0
+    assert metrics["net_pnl"] == 18.0
+    assert metrics["total_costs"] == 2.0
+    assert metrics["net_expectancy"] == 18.0
+    assert metrics["slippage_cost"] is None
+    assert metrics["brokerage_cost"] is None
 
 
 class TestDecisionTreeAndExplainability:
