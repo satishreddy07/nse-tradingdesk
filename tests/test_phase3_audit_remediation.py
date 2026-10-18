@@ -294,10 +294,10 @@ def test_f33_no_ml_performance_placeholders():
     assert reg_stats["status"] == "SUCCESS"
     for reg, r_data in reg_stats["regimes"].items():
         if r_data["total_samples"] == 0:
-            # Must NOT be fabricated defaults (72.0, 68.0, 60.0, 25.0)
-            assert r_data["directional_accuracy_pct"] == 0.0
-            assert r_data["trade_win_rate_pct"] == 0.0
-            assert r_data["target_hit_rate_pct"] == 0.0
-            assert r_data["sl_hit_rate_pct"] == 0.0
-            assert r_data["brier_score"] == 0.0
-            assert r_data["max_drawdown_pct"] == 0.0
+            # Missing samples are unavailable, not measured zeros.
+            assert r_data["directional_accuracy_pct"] is None
+            assert r_data["trade_win_rate_pct"] is None
+            assert r_data["target_hit_rate_pct"] is None
+            assert r_data["sl_hit_rate_pct"] is None
+            assert r_data["brier_score"] is None
+            assert r_data["max_drawdown_pct"] is None
