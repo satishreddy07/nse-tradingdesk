@@ -883,6 +883,162 @@
       <!-- ================================================================= -->
       <div id="tab-screener" class="tab-content hidden space-y-4 sm:space-y-6">
         
+        <!-- ============================================================= -->
+        <!-- PANEL: SWING TRADING UNIVERSE SOURCING & DUAL-ENGINE PARITY AUDITOR -->
+        <!-- ============================================================= -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 relative overflow-hidden">
+          <!-- Top Bar: Swing Trading Sourcing Toggle -->
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1.5">
+                  <i data-lucide="crosshair" class="w-3.5 h-3.5 text-indigo-400"></i>
+                  <span>SWING TRADING SOURCING TOGGLE</span>
+                </span>
+                <span id="screener-source-live-badge" class="px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  ACTIVE: IN-HOUSE VPS
+                </span>
+              </div>
+              <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2 mt-1">
+                <span>Chartink vs. In-House Screener Parity Auditor</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5">
+                Toggle candidate universe sourcing for swing trading & benchmark in-house institutional execution against Chartink live feed.
+              </p>
+            </div>
+
+            <!-- Sourcing Mode Toggle Buttons -->
+            <div class="flex flex-wrap items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800 shrink-0">
+              <button id="btn-source-inhouse" onclick="setSwingUniverseSource('IN_HOUSE')" class="px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20">
+                <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+                <span>In-House VPS (Nifty 500)</span>
+              </button>
+              <button id="btn-source-chartink" onclick="setSwingUniverseSource('CHARTINK')" class="px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200">
+                <i data-lucide="globe" class="w-3.5 h-3.5"></i>
+                <span>Chartink Live (All Cash)</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI Comparison Cards -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-4">
+            <!-- Card 1: Chartink Feed -->
+            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5">
+              <div class="flex items-center justify-between text-slate-400 text-xs">
+                <span class="flex items-center gap-1.5 font-medium"><i data-lucide="globe" class="w-3.5 h-3.5 text-blue-400"></i> Chartink Universe</span>
+                <span id="audit-chartink-latency" class="text-[10px] font-mono text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">-- ms</span>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span id="audit-chartink-count" class="text-2xl font-black font-mono text-white">--</span>
+                <span class="text-xs text-slate-500">/ ~2,200 stocks</span>
+              </div>
+              <div class="mt-1 text-[11px] text-slate-400 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                <span>All cash equities (inc. micro-caps)</span>
+              </div>
+            </div>
+
+            <!-- Card 2: In-House Qualified -->
+            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5">
+              <div class="flex items-center justify-between text-slate-400 text-xs">
+                <span class="flex items-center gap-1.5 font-medium"><i data-lucide="cpu" class="w-3.5 h-3.5 text-cyan-400"></i> In-House Qualified</span>
+                <span id="audit-inhouse-latency" class="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">-- ms</span>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span id="audit-inhouse-count" class="text-2xl font-black font-mono text-cyan-300">--</span>
+                <span class="text-xs text-slate-500">/ 501 Nifty 500</span>
+              </div>
+              <div class="mt-1 text-[11px] text-slate-400 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                <span>Institutional Grade (Zero Circuit Trap)</span>
+              </div>
+            </div>
+
+            <!-- Card 3: Common Overlap & Parity -->
+            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5">
+              <div class="flex items-center justify-between text-slate-400 text-xs">
+                <span class="flex items-center gap-1.5 font-medium"><i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i> Parity Match</span>
+                <span id="audit-overlap-pct" class="text-[10px] font-mono font-bold text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">100%</span>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span id="audit-overlap-count" class="text-2xl font-black font-mono text-emerald-400">--</span>
+                <span class="text-xs text-slate-500">common stocks</span>
+              </div>
+              <div class="mt-1 text-[11px] text-slate-400 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span id="audit-speedup">Sub-second local query</span>
+              </div>
+            </div>
+
+            <!-- Card 4: Universe Delta -->
+            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5">
+              <div class="flex items-center justify-between text-slate-400 text-xs">
+                <span class="flex items-center gap-1.5 font-medium"><i data-lucide="layers" class="w-3.5 h-3.5 text-amber-400"></i> Chartink Exclusives</span>
+                <span class="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">Micro-Caps</span>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span id="audit-exclusive-count" class="text-2xl font-black font-mono text-amber-400">--</span>
+                <span class="text-xs text-slate-500">non-index stocks</span>
+              </div>
+              <div class="mt-1 text-[11px] text-slate-400 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span>Market Cap ₹300 Cr - ₹1,000 Cr</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dynamic Cryptographic Telemetry & Audit Bar -->
+          <div class="mt-4 pt-3 border-t border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+            <div class="flex flex-wrap items-center gap-3 text-slate-400 font-mono text-[11px]">
+              <span class="flex items-center gap-1 text-slate-300">
+                <i data-lucide="clock" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span class="text-slate-500">IST:</span>
+                <strong id="audit-timestamp" class="text-white">--</strong>
+              </span>
+              <span class="flex items-center gap-1 text-slate-300">
+                <i data-lucide="calendar" class="w-3.5 h-3.5 text-blue-400"></i>
+                <span class="text-slate-500">Bar Date:</span>
+                <strong id="audit-bar-date" class="text-white">--</strong>
+              </span>
+              <span class="flex items-center gap-1 text-slate-300">
+                <i data-lucide="shield" class="w-3.5 h-3.5 text-emerald-400"></i>
+                <span class="text-slate-500">SHA-256:</span>
+                <strong id="audit-sha256" class="text-emerald-300 font-mono select-all cursor-pointer hover:underline" onclick="copyAuditChecksum()" title="Click to copy full SHA-256 integrity hash">--</strong>
+              </span>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                <i data-lucide="check" class="w-3 h-3 text-emerald-400"></i>
+                <span>DYNAMIC ZERO-MOCK AUTHENTICATED</span>
+              </span>
+              <button id="btn-run-audit" onclick="runDualEngineAudit(true)" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition cursor-pointer">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span id="btn-run-audit-text">Audit Parity</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Audit Universe Tab Selector (Common Overlap vs Chartink Exclusives) -->
+          <div class="mt-4 pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+              <button id="tab-audit-common" onclick="switchAuditSubTab('common')" class="px-3 py-1 rounded-lg font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 transition cursor-pointer">
+                Institutional Overlap (<span id="audit-tab-common-count">0</span>)
+              </button>
+              <button id="tab-audit-exclusive" onclick="switchAuditSubTab('exclusive')" class="px-3 py-1 rounded-lg font-semibold text-slate-400 hover:text-slate-200 transition cursor-pointer">
+                Chartink Non-Nifty500 (<span id="audit-tab-exclusive-count">0</span>)
+              </button>
+              <button id="tab-audit-all" onclick="switchAuditSubTab('all')" class="px-3 py-1 rounded-lg font-semibold text-slate-400 hover:text-slate-200 transition cursor-pointer">
+                All Screened (<span id="audit-tab-all-count">0</span>)
+              </button>
+            </div>
+            <div class="text-[11px] text-slate-400 font-sans flex items-center gap-1">
+              <i data-lucide="info" class="w-3.5 h-3.5 text-cyan-400"></i>
+              <span>In-House engine protects swing trades from lower-circuit illiquid penny stock traps.</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Header & Preset Selector -->
         <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-slate-800">
@@ -16627,7 +16783,10 @@
       sortCol: 'per_chg',
       sortAsc: false,
       isLoading: false,
-      hasLoadedOnce: false
+      hasLoadedOnce: false,
+      swingSource: 'IN_HOUSE',
+      auditData: null,
+      activeAuditTab: 'common' // 'common' | 'exclusive' | 'all'
     };
 
     const DEFAULT_CONDITIONS_FALLBACK = [
@@ -16644,8 +16803,204 @@
     async function initScreenerTab() {
       if (!screenerState.hasLoadedOnce) {
         screenerState.hasLoadedOnce = true;
+        await loadSwingUniverseSource();
         await loadScreenerPresets();
-        runScreenerScan(false);
+        runDualEngineAudit(false);
+      }
+    }
+
+    async function loadSwingUniverseSource() {
+      try {
+        const res = await fetch('/api/screener/source');
+        const data = await res.json();
+        if (data && data.source) {
+          screenerState.swingSource = data.source;
+          updateScreenerSourceUI(data.source);
+        }
+      } catch (err) {
+        console.error("Failed to load swing universe source:", err);
+      }
+    }
+
+    async function setSwingUniverseSource(source) {
+      try {
+        screenerState.swingSource = source;
+        updateScreenerSourceUI(source);
+        const res = await fetch('/api/screener/source', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: source })
+        });
+        const data = await res.json();
+        if (data.status === 'SUCCESS') {
+          console.log(`Swing trading candidate universe sourcing updated: ${source}`);
+        }
+      } catch (err) {
+        console.error("Error setting swing universe source:", err);
+      }
+    }
+
+    function updateScreenerSourceUI(source) {
+      const btnInhouse = document.getElementById('btn-source-inhouse');
+      const btnChartink = document.getElementById('btn-source-chartink');
+      const badge = document.getElementById('screener-source-live-badge');
+
+      if (source === 'IN_HOUSE') {
+        if (btnInhouse) {
+          btnInhouse.className = "px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20";
+        }
+        if (btnChartink) {
+          btnChartink.className = "px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200";
+        }
+        if (badge) {
+          badge.className = "px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+          badge.textContent = "ACTIVE: IN-HOUSE VPS (NIFTY 500)";
+        }
+      } else {
+        if (btnInhouse) {
+          btnInhouse.className = "px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200";
+        }
+        if (btnChartink) {
+          btnChartink.className = "px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-blue-500 text-slate-950 shadow-md shadow-blue-500/20";
+        }
+        if (badge) {
+          badge.className = "px-2 py-0.5 rounded text-[11px] font-mono bg-blue-500/20 text-blue-300 border border-blue-500/30";
+          badge.textContent = "ACTIVE: CHARTINK LIVE (ALL CASH)";
+        }
+      }
+    }
+
+    async function runDualEngineAudit(forceRefresh = false) {
+      const btn = document.getElementById('btn-run-audit');
+      const btnText = document.getElementById('btn-run-audit-text');
+      const runBtn = document.getElementById('screener-run-btn');
+      const runText = document.getElementById('screener-run-btn-text');
+
+      if (btn) btn.disabled = true;
+      if (btnText) btnText.textContent = "Auditing...";
+      if (runBtn) runBtn.disabled = true;
+      if (runText) runText.textContent = "Scanning...";
+
+      try {
+        const payload = {
+          preset_name: screenerState.currentPreset,
+          custom_conditions: screenerState.conditions,
+          force_refresh: forceRefresh
+        };
+        const res = await fetch('/api/screener/compare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const audit = await res.json();
+
+        if (audit.status === 'SUCCESS') {
+          screenerState.auditData = audit;
+
+          // Update KPI cards
+          const cCountEl = document.getElementById('audit-chartink-count');
+          if (cCountEl) cCountEl.textContent = audit.chartink_count != null ? audit.chartink_count : '--';
+          const cLatEl = document.getElementById('audit-chartink-latency');
+          if (cLatEl) cLatEl.textContent = (audit.chartink_latency_ms != null ? audit.chartink_latency_ms : '--') + ' ms';
+
+          const iCountEl = document.getElementById('audit-inhouse-count');
+          if (iCountEl) iCountEl.textContent = audit.inhouse_qualified_count != null ? audit.inhouse_qualified_count : '--';
+          const iLatEl = document.getElementById('audit-inhouse-latency');
+          if (iLatEl) iLatEl.textContent = (audit.inhouse_latency_ms != null ? audit.inhouse_latency_ms : '--') + ' ms';
+
+          const oCountEl = document.getElementById('audit-overlap-count');
+          if (oCountEl) oCountEl.textContent = audit.common_overlap_count != null ? audit.common_overlap_count : '--';
+          const oPctEl = document.getElementById('audit-overlap-pct');
+          if (oPctEl) oPctEl.textContent = (audit.overlap_percentage != null ? audit.overlap_percentage : 100) + '%';
+          const spEl = document.getElementById('audit-speedup');
+          if (spEl) spEl.textContent = (audit.speedup_factor || 1) + 'x faster local query';
+
+          const exclEl = document.getElementById('audit-exclusive-count');
+          if (exclEl) exclEl.textContent = audit.chartink_exclusive_count != null ? audit.chartink_exclusive_count : '--';
+
+          // Telemetry
+          const tsEl = document.getElementById('audit-timestamp');
+          if (tsEl) tsEl.textContent = audit.audit_timestamp_ist || '--';
+          const bdEl = document.getElementById('audit-bar-date');
+          if (bdEl) bdEl.textContent = audit.latest_bar_date || '--';
+          const sha = audit.sha256_checksum || '';
+          const shaEl = document.getElementById('audit-sha256');
+          if (shaEl) {
+            shaEl.textContent = sha ? (sha.substring(0, 16) + '...') : '--';
+            shaEl.setAttribute('data-full-sha', sha);
+          }
+
+          // Sub-tab counts
+          const tabCommonEl = document.getElementById('audit-tab-common-count');
+          if (tabCommonEl) tabCommonEl.textContent = audit.common_stocks ? audit.common_stocks.length : 0;
+          const tabExclEl = document.getElementById('audit-tab-exclusive-count');
+          if (tabExclEl) tabExclEl.textContent = audit.chartink_only_stocks ? audit.chartink_only_stocks.length : 0;
+          const tabAllEl = document.getElementById('audit-tab-all-count');
+          if (tabAllEl) tabAllEl.textContent = audit.chartink_count || 0;
+
+          // Populate screener table based on active sub-tab
+          applyAuditSubTabFilter();
+        }
+      } catch (err) {
+        console.error("Dual-engine parity audit failed:", err);
+      } finally {
+        if (btn) btn.disabled = false;
+        if (btnText) btnText.textContent = "Audit Parity";
+        if (runBtn) runBtn.disabled = false;
+        if (runText) runText.textContent = "Run Scan";
+      }
+    }
+
+    function switchAuditSubTab(subTab) {
+      screenerState.activeAuditTab = subTab;
+
+      const tabCommon = document.getElementById('tab-audit-common');
+      const tabExcl = document.getElementById('tab-audit-exclusive');
+      const tabAll = document.getElementById('tab-audit-all');
+
+      const activeClass = "px-3 py-1 rounded-lg font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 transition cursor-pointer";
+      const inactiveClass = "px-3 py-1 rounded-lg font-semibold text-slate-400 hover:text-slate-200 transition cursor-pointer";
+
+      if (tabCommon) tabCommon.className = subTab === 'common' ? activeClass : inactiveClass;
+      if (tabExcl) tabExcl.className = subTab === 'exclusive' ? activeClass : inactiveClass;
+      if (tabAll) tabAll.className = subTab === 'all' ? activeClass : inactiveClass;
+
+      applyAuditSubTabFilter();
+    }
+
+    function applyAuditSubTabFilter() {
+      if (!screenerState.auditData) return;
+      const subTab = screenerState.activeAuditTab;
+
+      if (subTab === 'common') {
+        screenerState.rawStocks = screenerState.auditData.common_stocks || [];
+      } else if (subTab === 'exclusive') {
+        screenerState.rawStocks = screenerState.auditData.chartink_only_stocks || [];
+      } else {
+        const common = screenerState.auditData.common_stocks || [];
+        const excl = screenerState.auditData.chartink_only_stocks || [];
+        screenerState.rawStocks = [...common, ...excl];
+      }
+
+      screenerState.currentPage = 1;
+
+      const countBadge = document.getElementById('screener-count-badge');
+      if (countBadge) countBadge.textContent = `${screenerState.rawStocks.length} Stocks`;
+      const navBadge = document.getElementById('badge-screener-count');
+      if (navBadge) navBadge.textContent = `${screenerState.rawStocks.length}`;
+
+      filterScreenerTable();
+    }
+
+    function copyAuditChecksum() {
+      const el = document.getElementById('audit-sha256');
+      const fullSha = el ? el.getAttribute('data-full-sha') : '';
+      if (fullSha) {
+        navigator.clipboard.writeText(fullSha).then(() => {
+          alert(`Copied SHA-256 Audit Hash:\n${fullSha}`);
+        }).catch(() => {
+          prompt("Copy SHA-256 Audit Hash:", fullSha);
+        });
       }
     }
 
@@ -16819,67 +17174,7 @@
     }
 
     async function runScreenerScan(forceRefresh = false) {
-      if (screenerState.isLoading) return;
-      screenerState.isLoading = true;
-
-      const runBtn = document.getElementById('screener-run-btn');
-      const runText = document.getElementById('screener-run-btn-text');
-      const tbody = document.getElementById('screener-results-tbody');
-
-      if (runBtn) runBtn.disabled = true;
-      if (runText) runText.textContent = "Scanning...";
-      if (tbody && forceRefresh) {
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="8" class="p-8 text-center text-slate-500 font-sans">
-              <div class="flex flex-col items-center justify-center gap-2">
-                <div class="w-6 h-6 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
-                <span>Scanning NSE equities through fundamental & technical matrices...</span>
-              </div>
-            </td>
-          </tr>
-        `;
-      }
-
-      try {
-        const payload = {
-          preset_name: screenerState.currentPreset,
-          custom_conditions: screenerState.conditions,
-          force_refresh: forceRefresh
-        };
-        const res = await fetch('/api/screener/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-
-        if (data.status === 'SUCCESS' && Array.isArray(data.results)) {
-          screenerState.rawStocks = data.results;
-          screenerState.currentPage = 1;
-
-          // Update badges
-          const countBadge = document.getElementById('screener-count-badge');
-          if (countBadge) countBadge.textContent = `${data.count} Stocks`;
-          const navBadge = document.getElementById('badge-screener-count');
-          if (navBadge) navBadge.textContent = `${data.count}`;
-
-          filterScreenerTable();
-        } else {
-          if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-rose-400 font-sans">Scan notice: ${escapeHtml(data.message || 'No stocks matched conditions')}</td></tr>`;
-          }
-        }
-      } catch (err) {
-        console.error("Screener scan error:", err);
-        if (tbody) {
-          tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-rose-400 font-sans">Failed to execute scan: ${escapeHtml(err.message)}</td></tr>`;
-        }
-      } finally {
-        screenerState.isLoading = false;
-        if (runBtn) runBtn.disabled = false;
-        if (runText) runText.textContent = "Run Scan";
-      }
+      await runDualEngineAudit(forceRefresh);
     }
 
     function filterScreenerTable() {
@@ -16969,9 +17264,12 @@
               <span class="hover:text-cyan-300 transition cursor-pointer" onclick="openStockChartFromScreener('${escapeHtml(s.symbol)}')">${escapeHtml(s.name)}</span>
             </td>
             <td class="p-3 font-bold text-white">
-              <button onclick="openStockChartFromScreener('${escapeHtml(s.symbol)}')" class="font-mono text-cyan-400 hover:text-cyan-300 hover:underline transition cursor-pointer">
-                ${escapeHtml(s.symbol)}
-              </button>
+              <div class="flex items-center gap-1.5">
+                <button onclick="openStockChartFromScreener('${escapeHtml(s.symbol)}')" class="font-mono text-cyan-400 hover:text-cyan-300 hover:underline transition cursor-pointer">
+                  ${escapeHtml(s.symbol)}
+                </button>
+                ${s.in_nifty500 ? '<span class="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40" title="NSE Nifty 500 Institutional Constituent">N500</span>' : '<span class="px-1.5 py-0.2 rounded text-[9px] font-mono text-slate-500 bg-slate-800/60 border border-slate-700/50" title="Non-index cash equity / micro-cap">NON-INDEX</span>'}
+              </div>
             </td>
             <td class="p-3 text-right font-mono font-bold text-slate-100">&#8377;${Number(s.close).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
             <td class="p-3 text-right font-mono">

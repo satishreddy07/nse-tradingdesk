@@ -334,6 +334,21 @@ class StateEngine:
                         return default
         return default
 
+    def get_swing_universe_source(self) -> str:
+        """Returns active Swing Trading candidate universe source ('IN_HOUSE' or 'CHARTINK'). Defaults to 'IN_HOUSE'."""
+        val = self.get_kv("swing_universe_source", "IN_HOUSE")
+        if isinstance(val, str) and val.upper() in ("CHARTINK", "IN_HOUSE"):
+            return val.upper()
+        return "IN_HOUSE"
+
+    def set_swing_universe_source(self, source: str) -> str:
+        """Persists Swing Trading candidate universe sourcing preference in SQLite system_kv_store."""
+        src = str(source).strip().upper()
+        if src not in ("CHARTINK", "IN_HOUSE"):
+            src = "IN_HOUSE"
+        self.set_kv("swing_universe_source", src)
+        return src
+
     # --------------------------------------------------------------------------
     # MASTER OHLCV STORAGE (ALL STOCKS IN SINGLE MASTER FILE)
     # --------------------------------------------------------------------------

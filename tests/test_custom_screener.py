@@ -94,3 +94,75 @@ def test_screener_api_endpoints(client):
         assert "per_chg" in top
         assert "volume" in top
         assert "ema20" in top
+
+
+def test_swing_universe_source_toggle(client):
+    """Verifies candidate universe sourcing toggle persistence."""
+    from execution.state_engine import state_engine
+
+    # 1. Set to IN_HOUSE
+    res1 = client.post("/api/screener/source", json={"source": "IN_HOUSE"})
+    assert res1.status_code == 200
+    assert res1.json()["source"] == "IN_HOUSE"
+    assert state_engine.get_swing_universe_source() == "IN_HOUSE"
+
+    # 2. Query GET /api/screener/source
+    res_get = client.get("/api/screener/source")
+    assert res_get.status_code == 200
+    get_data = res_get.json()
+    assert get_data["status"] == "SUCCESS"
+    assert get_data["source"] == "IN_HOUSE"
+    assert len(get_data["available_sources"]) == 2
+
+    # 3. Set to CHARTINK
+    res2 = client.post("/api/screener/source", json={"source": "CHARTINK"})
+    assert res2.status_code == 200
+    assert res2.json()["source"] == "CHARTINK"
+    assert state_engine.get_swing_universe_source() == "CHARTINK"
+
+    # Reset back to IN_HOUSE
+    state_engine.set_swing_universe_source("IN_HOUSE")
+
+
+def test_screener_comparison_engine_and_audit(client):
+    """Verifies dual-engine comparison auditor, latency metrics, and cryptographic checksums."""
+    from engines.screener_comparison_engine import screener_comparison_engine
+
+    # 1. Run comparison audit directly on engine
+    audit = screener_comparison_engine.run_comparison_audit(preset_name="EQ-FINAL", force_refresh=False)
+    assert audit["status"] == "SUCCESS"
+    assert audit["is_authenticated"] is True
+    assert audit["verification_status"] == "VERIFIED_GENUINE_DYNAMIC"
+    assert audit["chartink_count"] > 100
+    assert audit["inhouse_qualified_count"] > 50
+    assert audit["common_overlap_count"] == audit["inhouse_qualified_count"]
+    assert audit["chartink_exclusive_count"] > 100
+    assert len(audit["sha256_checksum"]) == 64
+    assert audit["chartink_latency_ms"] >= 0
+    assert audit["inhouse_latency_ms"] >= 0
+
+    # 2. Test POST /api/screener/compare
+    api_res = client.post("/api/screener/compare", json={"preset_name": "EQ-FINAL", "force_refresh": False})
+    assert api_res.status_code == 200
+    api_data = api_res.json()
+    assert api_data["status"] == "SUCCESS"
+    assert api_data["chartink_count"] == audit["chartink_count"]
+    assert api_data["sha256_checksum"] == audit["sha256_checksum"]
+
+    # 3. Test GET /api/screener/compare/summary
+    sum_res = client.get("/api/screener/compare/summary")
+    assert sum_res.status_code == 200
+    sum_data = sum_res.json()
+    assert sum_data["status"] == "SUCCESS"
+    assert "common_overlap_count" in sum_data
+    assert "sha256_checksum" in sum_data
+
+
+def test_inhouse_universe_tickers_formatting():
+    """Verifies get_inhouse_universe_tickers returns valid .NS symbols."""
+    from engines.screener_comparison_engine import screener_comparison_engine
+
+    tickers = screener_comparison_engine.get_inhouse_universe_tickers()
+    assert len(tickers) >= 50
+    assert all(t.endswith(".NS") for t in tickers)
+    assert all(not t.startswith("^") for t in tickers)

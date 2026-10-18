@@ -54,6 +54,7 @@ from engines.nifty500_engine import (
     PORTFOLIO_TYPE as P2_TYPE
 )
 from engines.custom_screener_engine import custom_screener_engine
+from engines.screener_comparison_engine import screener_comparison_engine
 from execution.state_engine import state_engine
 from core.execution_queue import execution_queue
 from core.data_watchdog import data_watchdog
@@ -2057,6 +2058,81 @@ def delete_screener_preset_endpoint(name: str, _auth=Depends(verify_admin_key)):
     if not ok:
         raise HTTPException(status_code=400, detail="Cannot delete default preset 'EQ-FINAL' or preset not found.")
     return {"status": "SUCCESS", "message": f"Preset '{name}' deleted successfully."}
+
+
+class ScreenerSourceUpdateRequest(BaseModel):
+    source: str
+
+
+class CompareScreenerRequest(BaseModel):
+    preset_name: Optional[str] = "EQ-FINAL"
+    custom_conditions: Optional[List[Dict[str, Any]]] = None
+    force_refresh: Optional[bool] = False
+
+
+@app.get("/api/screener/source")
+def get_screener_source_endpoint():
+    """Returns active candidate universe sourcing preference for swing trading."""
+    current = state_engine.get_swing_universe_source()
+    return {
+        "status": "SUCCESS",
+        "source": current,
+        "available_sources": [
+            {
+                "id": "IN_HOUSE",
+                "label": "In-House VPS Engine (Nifty 500 Institutional)",
+                "desc": "Official NSE Nifty 500 constituents filtered locally; eliminates micro-caps, penny stocks, and lower-circuit traps.",
+                "is_active": (current == "IN_HOUSE")
+            },
+            {
+                "id": "CHARTINK",
+                "label": "Chartink Live Feed (All Cash Equities)",
+                "desc": "Scans all ~2,200 listed NSE cash equities including non-index micro-caps (Market Cap >= ₹300 Cr).",
+                "is_active": (current == "CHARTINK")
+            }
+        ],
+        "updated_at": format_ist()
+    }
+
+
+@app.post("/api/screener/source")
+def set_screener_source_endpoint(req: ScreenerSourceUpdateRequest, _auth=Depends(verify_admin_key)):
+    """Sets candidate universe sourcing preference for swing trading."""
+    new_src = state_engine.set_swing_universe_source(req.source)
+    logger.info(f"Swing trading candidate universe sourcing updated to: {new_src}")
+    return {
+        "status": "SUCCESS",
+        "source": new_src,
+        "message": f"Swing Trading candidate universe sourcing updated to '{new_src}' successfully."
+    }
+
+
+@app.post("/api/screener/compare")
+def compare_screener_endpoint(req: CompareScreenerRequest):
+    """Executes dual-engine comparison audit: Chartink Live vs In-House VPS Institutional Screener."""
+    try:
+        audit = screener_comparison_engine.run_comparison_audit(
+            preset_name=req.preset_name or "EQ-FINAL",
+            custom_conditions=req.custom_conditions,
+            force_refresh=bool(req.force_refresh)
+        )
+        return audit
+    except Exception as e:
+        logger.error(f"Error executing screener comparison audit: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+@app.get("/api/screener/compare/summary")
+def compare_screener_summary_endpoint():
+    """Returns instant summary telemetry of latest dual-engine audit."""
+    try:
+        audit = screener_comparison_engine.run_comparison_audit(force_refresh=False)
+        # Strip heavy arrays for high-speed lightweight summary
+        summary = {k: v for k, v in audit.items() if k not in ("common_stocks", "chartink_only_stocks", "inhouse_filtered_out_symbols")}
+        return summary
+    except Exception as e:
+        logger.error(f"Error fetching comparison summary: {e}")
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
 
 
 

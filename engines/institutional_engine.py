@@ -1421,17 +1421,31 @@ class InstitutionalEngine:
                     stocks_done=0
                 )
             else:
-                tickers = self.chartink.fetch_tickers()
-                from_live_chartink = bool(tickers)
-                if not tickers:
-                    meta_rows = state_engine.get_all_ohlcv_metadata(limit=2000)
-                    tickers = [f"{r['symbol']}.NS" for r in meta_rows if r.get("symbol") and not str(r["symbol"]).startswith("^")]
-                _institutional_engine_state["chartink_fetched_count"] = len(tickers)
-                stage_msg = (
-                    f"Step 1/6: Connected to Chartink! Fetched {len(tickers)} live NSE stocks."
-                    if from_live_chartink else
-                    f"Step 1/6: Chartink unavailable; loaded {len(tickers)} cached universe stocks from Master DB."
-                )
+                source = state_engine.get_swing_universe_source()
+                from_live_chartink = False
+                if source == "IN_HOUSE":
+                    logger.info("Swing candidate universe sourcing: IN_HOUSE (Nifty 500 Institutional).")
+                    from engines.screener_comparison_engine import screener_comparison_engine
+                    tickers = screener_comparison_engine.get_inhouse_universe_tickers()
+                    if not tickers:
+                        from engines.nifty500_engine import get_nifty500_symbols
+                        n500 = get_nifty500_symbols()
+                        tickers = [f"{s}.NS" for s in n500] if n500 else []
+                    _institutional_engine_state["chartink_fetched_count"] = len(tickers)
+                    stage_msg = f"Step 1/6: Sourced {len(tickers)} institutional stocks from In-House Nifty 500 Engine."
+                else:
+                    logger.info("Swing candidate universe sourcing: CHARTINK (All Cash Equities).")
+                    tickers = self.chartink.fetch_tickers()
+                    from_live_chartink = bool(tickers)
+                    if not tickers:
+                        meta_rows = state_engine.get_all_ohlcv_metadata(limit=2000)
+                        tickers = [f"{r['symbol']}.NS" for r in meta_rows if r.get("symbol") and not str(r["symbol"]).startswith("^")]
+                    _institutional_engine_state["chartink_fetched_count"] = len(tickers)
+                    stage_msg = (
+                        f"Step 1/6: Connected to Chartink! Fetched {len(tickers)} live NSE stocks."
+                        if from_live_chartink else
+                        f"Step 1/6: Chartink unavailable; loaded {len(tickers)} cached universe stocks from Master DB."
+                    )
                 state_engine.update_scan_progress(
                     stage=stage_msg,
                     percent=12,
