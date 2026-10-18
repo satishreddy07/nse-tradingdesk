@@ -257,26 +257,20 @@ class AccumulationResearchEngine:
         chg_pct = float(screener_info.get("per_chg", 0.0) or 0.0)
         name = screener_info.get("name", symbol)
 
-        # Fallback if no full OHLCV available
+        # Strict Zero-Mock Rule: If no full OHLCV available in cache, attempt individual download or exclude
         if df is None or len(df) < 15:
-            return {
-                "symbol": symbol,
-                "name": name,
-                "close": close_px,
-                "chg_pct": round(chg_pct, 2),
-                "breakout_vol_ratio": 1.5,
-                "dist_ema20_now": float(screener_info.get("ema20", 0.0) or 0.0),
-                "pre_range_t1": 3.0,
-                "pre_vdu_t1": 0.8,
-                "dist_ema20_t1": 1.0,
-                "is_vdu": False,
-                "is_tight": False,
-                "is_near_ema20": True,
-                "archetype": "Loose / Consolidating",
-                "engine_bucket": sig_info.get("bucket", "NOT_IN_DB") if sig_info else "NOT_IN_DB",
-                "engine_score": sig_info.get("score", 0.0) if sig_info else 0.0,
-                "engine_ml_verdict": sig_info.get("ml_verdict", "NONE") if sig_info else "NONE"
-            }
+            try:
+                single_df = yf.download(f"{symbol}.NS", period="2mo", interval="1d", progress=False)
+                if isinstance(single_df.columns, pd.MultiIndex):
+                    single_df.columns = single_df.columns.get_level_values(0)
+                if single_df is not None and len(single_df) >= 15:
+                    df = single_df
+            except Exception:
+                df = None
+
+        if df is None or len(df) < 15:
+            logger.debug(f"Insufficient OHLCV data for {symbol}; excluding from accumulation study.")
+            return None
 
         c = df["Close"]
         h = df["High"]
