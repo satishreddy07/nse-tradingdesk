@@ -1275,7 +1275,7 @@ class MLPerformanceEngine:
                     "model_variant": "Non-ML Static Prior",
                     "architecture": "Historical Mode Prior",
                     "directional_accuracy_pct": None,
-                    "brier_score": t_base_brier if t_base_brier > 0 else None,
+                    "brier_score": t_base_brier if t_base_brier is not None and t_base_brier > 0 else None,
                     "return_mae_pct": None,
                     "inference_latency_ms": None,
                     "net_pnl_after_costs": "DATA_UNAVAILABLE (HOLD_OUT_SIMULATION_REQUIRED)",
@@ -1298,18 +1298,23 @@ class MLPerformanceEngine:
         for m in reg:
             m_id = m["model_id"]
             total_samples = m.get("sample_counts", {}).get("total") or 0
-            if total_samples >= 30:
-                psi = 0.042 if "t1" in m_id else (0.078 if "t5" in m_id else 0.035)
-                status_tag = "HEALTHY" if psi < 0.1 else ("DRIFT_WARNING" if psi < 0.25 else "CRITICAL_DRIFT")
-                ks_val = round(psi * 1.8, 3)
-                drift_delta = +0.012
-                dist_shift = 2.8
-            else:
-                psi = 0.0
+            metrics = m.get("metrics") or {}
+            psi_raw = metrics.get("population_stability_index")
+            ks_raw = metrics.get("ks_statistic")
+            drift_raw = metrics.get("calibration_drift_brier_delta")
+            shift_raw = metrics.get("prediction_distribution_shift_pct")
+            if total_samples < 30:
                 status_tag = "INSUFFICIENT_DATA"
-                ks_val = 0.0
-                drift_delta = 0.0
-                dist_shift = 0.0
+            elif any(v is None for v in (psi_raw, ks_raw, drift_raw, shift_raw)):
+                status_tag = "DATA_UNAVAILABLE"
+            else:
+                status_tag = "HEALTHY" if float(psi_raw) < 0.1 else (
+                    "DRIFT_WARNING" if float(psi_raw) < 0.25 else "CRITICAL_DRIFT"
+                )
+            psi = float(psi_raw) if psi_raw is not None else None
+            ks_val = float(ks_raw) if ks_raw is not None else None
+            drift_delta = float(drift_raw) if drift_raw is not None else None
+            dist_shift = float(shift_raw) if shift_raw is not None else None
 
             drift_records.append({
                 "model_id": m_id,
