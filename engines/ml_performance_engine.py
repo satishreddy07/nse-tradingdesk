@@ -159,8 +159,26 @@ class MLPerformanceEngine:
                         model_name = self._infer_model_name(ver_name, horizon)
                         metrics = bundle.get("metrics", {})
                         feat_cols = bundle.get("feature_cols", [])
-                        trained_at = str(bundle.get("trained_at", format_ist()))
-                        sample_count = int(metrics.get("sample_count", 60))
+                        trained_at = bundle.get("trained_at")
+                        required_meta = (
+                            "sample_count", "train_samples", "validation_samples", "test_samples",
+                            "duration_sec", "dataset_version", "target_distribution",
+                            "excluded_records", "exclusion_reasons", "promotion_decision"
+                        )
+                        missing_meta = [key for key in required_meta if key not in bundle]
+                        if (
+                            not isinstance(metrics, dict)
+                            or metrics.get("sample_count") is None
+                            or not trained_at
+                            or missing_meta
+                            or not isinstance(bundle.get("target_distribution"), dict)
+                        ):
+                            logger.info(
+                                "Skipping legacy model artifact %s in training history: empirical run metadata incomplete (%s).",
+                                b_path.name, missing_meta
+                            )
+                            continue
+                        sample_count = int(metrics["sample_count"])
 
                         # Extract hyperparameters if available from lgb_model
                         hp = {}
@@ -182,12 +200,12 @@ class MLPerformanceEngine:
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (
                                 run_id, model_name, ver_name, horizon,
-                                trained_at, trained_at, 1.25, "PROMOTED_PRODUCTION",
-                                "V1.0_AUTHENTIC", int(sample_count * 0.7), int(sample_count * 0.15), int(sample_count * 0.15),
-                                0, "None (Clean chronological window)", len(feat_cols),
-                                json.dumps({"BULLISH": int(sample_count * 0.4), "FLAT": int(sample_count * 0.2), "BEARISH": int(sample_count * 0.4)}),
+                                trained_at, trained_at, float(bundle["duration_sec"]), str(bundle.get("status", "RECORDED")),
+                                str(bundle["dataset_version"]), int(bundle["train_samples"]), int(bundle["validation_samples"]), int(bundle["test_samples"]),
+                                int(bundle["excluded_records"]), str(bundle["exclusion_reasons"]), len(feat_cols),
+                                json.dumps(bundle["target_distribution"]),
                                 json.dumps(hp),
-                                json.dumps({"brier_score": float(metrics.get("brier_score", metrics.get("ensemble_brier", 0.32)))}),
+                                json.dumps({"brier_score": metrics.get("brier_score", metrics.get("ensemble_brier"))}),
                                 json.dumps(metrics),
                                 json.dumps(metrics),
                                 str(b_path), "PROMOTED", json.dumps([]), format_ist()
