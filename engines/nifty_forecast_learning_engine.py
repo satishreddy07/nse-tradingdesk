@@ -182,8 +182,10 @@ class NiftyForecastLearningEngine:
         val_maes: List[float] = []
         base_briers: List[float] = []
         base_accs: List[float] = []
+        validation_sample_count = 0
 
         for train_idx, val_idx in cv.split(X):
+            validation_sample_count += len(val_idx)
             # F-6.1: fit scaler on training fold only; transform validation fold to eliminate data leakage
             fold_scaler = StandardScaler()
             X_tr = fold_scaler.fit_transform(X[train_idx])
@@ -322,7 +324,9 @@ class NiftyForecastLearningEngine:
                 "status": status_label,
                 "artifact_path": str(bundle_path),
                 "metrics": bundle["metrics"],
-                "sample_counts": {"total": len(df), "train": len(X_train), "test": len(y_test)},
+                "sample_counts": {"total": len(df), "train": len(X_train), "validation_evaluations": validation_sample_count, "test": len(y_test)},
+                "dataset_version": "NIFTY_PREDICTION_LEDGER_EMPIRICAL_V1",
+                "feature_provenance": "EMPIRICAL_PREDICTION_LEDGER_SNAPSHOTS",
                 "evaluated_at": format_ist(),
                 "promoted_at": format_ist()
             }
@@ -348,10 +352,10 @@ class NiftyForecastLearningEngine:
                 horizon=horizon,
                 duration_sec=duration,
                 status=status_label,
-                dataset_version="NSE_DAILY_OHLCV_V1",
-                train_records=int(len(df) * 0.7),
-                val_records=int(len(df) * 0.15),
-                test_records=int(len(df) * 0.15),
+                dataset_version="NIFTY_PREDICTION_LEDGER_EMPIRICAL_V1",
+                train_records=len(X_train),
+                val_records=validation_sample_count,
+                test_records=len(y_test),
                 feature_count=len(NIFTY_FEATURE_COLS),
                 metrics=bundle["metrics"],
                 artifact_path=str(bundle_path),
