@@ -546,6 +546,36 @@ def test_h08_state_engine_rejects_pickle_and_future_timestamp(tmp_path):
 
 
 
+def test_data_quality_rejects_numeric_index():
+    """Numeric row numbers must never be accepted as market-bar timestamps."""
+    df = pd.DataFrame({
+        "Open": [100, 101, 102, 103, 104],
+        "High": [105, 106, 107, 108, 109],
+        "Low": [99, 100, 101, 102, 103],
+        "Close": [104, 105, 106, 107, 108],
+        "Volume": [1000, 1100, 1200, 1300, 1400],
+    })
+    valid, cleaned, warnings = validate_ohlcv_dataframe(df, symbol="NUMERIC_INDEX", min_bars=5)
+    assert not valid
+    assert cleaned.empty
+    assert any("numeric OHLCV index" in warning for warning in warnings)
+
+
+def test_data_quality_normalizes_string_timestamp_index():
+    """Parse valid string timestamps into a DatetimeIndex before time-series validation."""
+    dates = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05"]
+    df = pd.DataFrame({
+        "Open": [100, 101, 102, 103, 104],
+        "High": [105, 106, 107, 108, 109],
+        "Low": [99, 100, 101, 102, 103],
+        "Close": [104, 105, 106, 107, 108],
+        "Volume": [1000, 1100, 1200, 1300, 1400],
+    }, index=dates)
+    valid, cleaned, warnings = validate_ohlcv_dataframe(df, symbol="STRING_INDEX", min_bars=5)
+    assert valid
+    assert isinstance(cleaned.index, pd.DatetimeIndex)
+
+
 def test_data_quality_rejects_missing_volume():
     dates = pd.date_range("2026-01-01", periods=5, freq="D")
     df = pd.DataFrame({

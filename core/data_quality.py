@@ -47,8 +47,27 @@ def validate_ohlcv_dataframe(
     if len(df) < min_bars:
         return False, pd.DataFrame(), [f"{symbol}: Insufficient bars ({len(df)} < required {min_bars})."]
 
-    # 1. Normalize column names (Title case: Open, High, Low, Close, Volume)
+    # 1. Require a genuine time index. RangeIndex/numeric indices are not timestamps,
+    # and accepting them would make arbitrary row order look like historical market data.
     clean_df = df.copy()
+    if not isinstance(clean_df.index, pd.DatetimeIndex):
+        if pd.api.types.is_numeric_dtype(clean_df.index.dtype):
+            return False, pd.DataFrame(), [
+                f"{symbol}: Rejected numeric OHLCV index; an explicit timestamp/date index is required."
+            ]
+        try:
+            parsed_index = pd.to_datetime(clean_df.index, errors="coerce")
+            if parsed_index.isna().any():
+                return False, pd.DataFrame(), [
+                    f"{symbol}: Rejected OHLCV index containing missing or unparseable timestamps."
+                ]
+            clean_df.index = pd.DatetimeIndex(parsed_index)
+        except (TypeError, ValueError, OverflowError):
+            return False, pd.DataFrame(), [
+                f"{symbol}: Rejected OHLCV index; could not normalize it to timestamps."
+            ]
+
+    # 2. Normalize column names (Title case: Open, High, Low, Close, Volume)
     col_map = {}
     for c in clean_df.columns:
         c_lower = str(c).lower().strip()
@@ -67,7 +86,7 @@ def validate_ohlcv_dataframe(
     if "Volume" not in clean_df.columns:
         return False, pd.DataFrame(), [f"{symbol}: Missing required Volume column; volume must not be fabricated as zero."]
 
-    # 2. Chronological Ordering and Duplicate Timestamps
+    # 3. Chronological Ordering and Duplicate Timestamps
     if not clean_df.index.is_monotonic_increasing:
         clean_df.sort_index(inplace=True)
         warnings.append(f"{symbol}: Timestamps were not sorted chronologically; sorted ascending.")
@@ -78,7 +97,7 @@ def validate_ohlcv_dataframe(
             f"{symbol}: Rejected {dup_count} duplicate timestamp records; resolve source ambiguity before ingestion."
         ]
 
-    # 3. Numeric conversions & NaN/non-finite filtering
+    # 4. Numeric conversions & NaN/non-finite filtering
     for col in ["Open", "High", "Low", "Close", "Volume"]:
         clean_df[col] = pd.to_numeric(clean_df[col], errors="coerce")
 
