@@ -50,7 +50,8 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/health') || request.method !== 'GET') {
     event.respondWith(
       fetch(request).catch(() => {
-        return new Response(JSON.stringify({ status: 'OFFLINE', message: 'You are currently offline.' }), {
+        return new Response(JSON.stringify({ status: 'OFFLINE', data_unavailable: true, message: 'You are currently offline. Market data unavailable.' }), {
+          status: 503,
           headers: { 'Content-Type': 'application/json' }
         });
       })

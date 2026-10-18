@@ -218,7 +218,7 @@ class DataWatchdog:
                 else:
                     ep_swing["status"] = "HEALTHY_STANDBY"
 
-                ep_swing["age_seconds"] = stream_age if stream_age is not None else 0
+                ep_swing["age_seconds"] = stream_age
                 if stream_ts_str:
                     ep_swing["last_packet_time_ist"] = stream_ts_str
             except Exception as e:
@@ -399,7 +399,7 @@ class DataWatchdog:
                 chart_age = None
                 if ep_chart["last_success_ts"] > 0:
                     chart_age = max(0, int(now_ts - ep_chart["last_success_ts"]))
-                ep_chart["age_seconds"] = chart_age if chart_age is not None else 0
+                ep_chart["age_seconds"] = chart_age
                 ep_chart["details"]["last_count"] = last_chart_count
                 if is_market_open:
                     if chart_age is not None and chart_age <= 900:  # 15 minutes
@@ -424,7 +424,7 @@ class DataWatchdog:
                     yf_age = max(0, int(now_ts - ep_yf["last_success_ts"]))
                 elif stream_age is not None:
                     yf_age = stream_age
-                ep_yf["age_seconds"] = yf_age if yf_age is not None else 0
+                ep_yf["age_seconds"] = yf_age
                 if is_market_open:
                     if yf_age is not None and yf_age <= 900:  # 15 minutes
                         ep_yf["status"] = "HEALTHY"

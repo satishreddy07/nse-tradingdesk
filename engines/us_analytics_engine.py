@@ -345,7 +345,9 @@ class USAnalyticsEngine:
             persisted = state_engine.get_kv("latest_us_analytics")
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
                 self._cache = persisted
-                self._cache_ts = now_ts
+                orig_epoch = persisted.get("timestamp_epoch")
+                self._cache_ts = float(orig_epoch) if orig_epoch else 0.0
+                persisted["is_persisted_cache"] = True
                 return persisted
 
         # All US tickers to fetch concurrently

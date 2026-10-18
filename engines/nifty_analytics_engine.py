@@ -134,16 +134,16 @@ NIFTY_50_CONSTITUENTS = [
 
 # Official 2026 Indian (RBI MPC, MOSPI CPI/GDP) & US (Fed FOMC, CPI/NFP) Macro Event Calendar with Actual Prints & Outcomes
 CENTRAL_BANK_EVENTS_2026 = [
-    {"date": "2026-01-28", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "COMPLETED", "outcome_print": "Rates Held at 5.25%-5.50%", "market_impact": "NEUTRAL"},
+    {"date": "2026-01-28", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "COMPLETED", "outcome_print": "Target Range Maintained at 3.50%-3.75%", "market_impact": "NEUTRAL"},
     {"date": "2026-02-06", "bank": "RBI MPC", "title": "RBI Monetary Policy Committee Rate Decision", "status": "COMPLETED", "outcome_print": "Repo Rate 6.50% Unchanged", "market_impact": "NEUTRAL"},
-    {"date": "2026-03-18", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision & Dot Plot", "status": "COMPLETED", "outcome_print": "Rates Unchanged at 5.25%-5.50% • 3 Cuts in 2026 projected", "market_impact": "BULLISH_SUPPORTIVE"},
+    {"date": "2026-03-18", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision & Dot Plot", "status": "COMPLETED", "outcome_print": "Rates Unchanged at 3.50%-3.75%", "market_impact": "NEUTRAL"},
     {"date": "2026-04-08", "bank": "RBI MPC", "title": "RBI Monetary Policy Committee Rate Decision", "status": "COMPLETED", "outcome_print": "Repo Rate 6.50% Unchanged", "market_impact": "NEUTRAL"},
-    {"date": "2026-05-06", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "COMPLETED", "outcome_print": "Rates Unchanged at 5.25%-5.50%", "market_impact": "NEUTRAL"},
+    {"date": "2026-05-06", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "COMPLETED", "outcome_print": "Rates Unchanged at 3.50%-3.75%", "market_impact": "NEUTRAL"},
     {"date": "2026-06-05", "bank": "RBI MPC", "title": "RBI Monetary Policy Committee Rate Decision", "status": "COMPLETED", "outcome_print": "Repo 6.50% Unchanged (4-2 Vote)", "market_impact": "NEUTRAL"},
-    {"date": "2026-06-17", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "COMPLETED", "outcome_print": "Rates Held at 5.25%-5.50%", "market_impact": "NEUTRAL"},
-    {"date": "2026-07-29", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "COMPLETED", "outcome_print": "Rates held; Powell signaled Sept easing cycle", "market_impact": "BULLISH_SUPPORTIVE"},
+    {"date": "2026-06-17", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "COMPLETED", "outcome_print": "Rates Held at 3.50%-3.75%", "market_impact": "NEUTRAL"},
+    {"date": "2026-07-29", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "COMPLETED", "outcome_print": "Rates held at 3.50%-3.75%", "market_impact": "NEUTRAL"},
     {"date": "2026-08-07", "bank": "RBI MPC", "title": "RBI Monetary Policy Committee Rate Decision", "status": "COMPLETED", "outcome_print": "Repo 6.50% Unchanged (4-2 Vote)", "market_impact": "NEUTRAL"},
-    {"date": "2026-09-16", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "COMPLETED", "outcome_print": "Fed delivers 50 bps Jumbo Cut to 4.75%-5.00%", "market_impact": "STRONG_BULLISH_CATALYST"},
+    {"date": "2026-09-16", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "COMPLETED", "outcome_print": "Target Range Raised 25 bps to 3.75%-4.00%", "market_impact": "HAWKISH_REACTION"},
     {"date": "2026-10-09", "bank": "RBI MPC", "title": "RBI Monetary Policy Committee Rate & Stance Decision", "status": "COMPLETED", "outcome_print": "Repo 6.50% Unchanged (5-1) • Stance shifted to NEUTRAL (Dovish Pivot)", "market_impact": "BULLISH_LIQUIDITY_PIVOT"},
     {"date": "2026-10-13", "bank": "INDIA CPI / IIP", "title": "India MOSPI Retail CPI Inflation & Industrial Production", "status": "COMPLETED", "outcome_print": "Retail CPI 5.49% (Food base effect) | IIP -0.1%", "market_impact": "MODERATE_HEADWIND_SHORT_TERM"},
     {"date": "2026-10-14", "bank": "INDIA WPI", "title": "India Wholesale Price Index (WPI) & Trade Balance Data", "status": "COMPLETED", "outcome_print": "WPI 1.84% (In-line with consensus 1.85%)", "market_impact": "WATCH_INPUT_COSTS"},
@@ -1024,10 +1024,12 @@ class NiftyAnalyticsEngine:
             persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
                 persisted["source"] = "MASTER_DB_PERSISTED_NSE_CHAIN"
+                persisted["is_persisted_snapshot"] = True
+                orig_ts = persisted.get("fetched_at_epoch")
                 with self._lock:
                     self._option_chain_mem_cache = persisted
                     self._option_chain_cache = persisted
-                    self._option_chain_cache_ts = now_ts
+                    self._option_chain_cache_ts = orig_ts if orig_ts else (now_ts - 3600.0)
                 return persisted
 
         session = self._get_nse_session(force_refresh=force_refresh)
@@ -6730,8 +6732,25 @@ class NiftyAnalyticsEngine:
             day_low = float(meta.get("regularMarketDayLow") or spot)
             diff_pts = round(spot - prev_close, 2)
             diff_pct = round((diff_pts / prev_close) * 100.0, 2) if prev_close > 0 else 0.0
-            market_time = meta.get("regularMarketTime") or now_ts
-            tick_age = max(0.0, round(now_ts - market_time, 1))
+
+            market_time = meta.get("regularMarketTime")
+            if market_time and isinstance(market_time, (int, float)) and market_time > 0:
+                prov_dt = datetime.datetime.fromtimestamp(market_time, tz=IST)
+                provider_timestamp = format_ist(prov_dt)
+                diff_sec = now_ts - market_time
+                if diff_sec < -60:
+                    tick_age = None
+                    is_stale = True
+                    warning = "FUTURE_TIMESTAMP_ERROR"
+                else:
+                    tick_age = max(0.0, round(diff_sec, 1))
+                    is_stale = tick_age > 180.0
+                    warning = None
+            else:
+                provider_timestamp = None
+                tick_age = None
+                is_stale = True
+                warning = "MISSING_PROVIDER_TIMESTAMP"
 
             atm_strike = int(round(spot / 50.0) * 50)
             res = {
@@ -6742,13 +6761,17 @@ class NiftyAnalyticsEngine:
                 "day_high": day_high,
                 "day_low": day_low,
                 "atm_strike": atm_strike,
-                "timestamp": ts_now,
+                "provider_timestamp": provider_timestamp,
+                "timestamp": provider_timestamp or ts_now,
+                "received_at": ts_now,
                 "source": "YAHOO_LIVE_FAST_STREAM",
-                "is_live": is_market_open,
+                "is_live": is_market_open and not is_stale,
+                "is_stale": is_stale,
                 "market_status": mkt_state_str,
                 "session_phase": mkt_phase,
                 "age_seconds": tick_age,
-                "latency_ms": lat_ms
+                "latency_ms": lat_ms,
+                "warning": warning
             }
             with self._lock:
                 self._live_spot_cache = res
@@ -6789,12 +6812,15 @@ class NiftyAnalyticsEngine:
                             "day_high": float(idx.get("high") or spot),
                             "day_low": float(idx.get("low") or spot),
                             "atm_strike": atm_strike,
+                            "provider_timestamp": None,
                             "timestamp": ts_now,
+                            "received_at": ts_now,
                             "source": "NSE_ALL_INDICES_STREAM",
                             "is_live": is_market_open,
+                            "is_stale": False,
                             "market_status": mkt_state_str,
                             "session_phase": mkt_phase,
-                            "age_seconds": 1.2,
+                            "age_seconds": None,
                             "latency_ms": lat_ms
                         }
                         with self._lock:
@@ -6816,6 +6842,7 @@ class NiftyAnalyticsEngine:
                         "timestamp": ts_now,
                         "source": "NSE_OPTION_CHAIN_LIVE",
                         "is_live": is_market_open,
+                        "is_stale": cache_age > 180.0,
                         "market_status": mkt_state_str,
                         "session_phase": mkt_phase,
                         "age_seconds": round(cache_age, 1)
@@ -6828,49 +6855,67 @@ class NiftyAnalyticsEngine:
                     "SELECT spot_price, timestamp_ist FROM intraday_option_snapshots ORDER BY id DESC LIMIT 1"
                 ).fetchone()
                 if r:
+                    snap_ts = r["timestamp_ist"]
+                    actual_age = None
+                    if snap_ts:
+                        try:
+                            clean_t = snap_ts.replace(" IST", "").strip()
+                            dt_s = datetime.datetime.strptime(clean_t[:19], "%Y-%m-%d %H:%M:%S")
+                            actual_age = max(0.0, (now_ist().replace(tzinfo=None) - dt_s).total_seconds())
+                        except Exception:
+                            pass
                     return {
                         "price": float(r["spot_price"]),
-                        "timestamp": r["timestamp_ist"],
+                        "provider_timestamp": snap_ts,
+                        "timestamp": snap_ts,
                         "source": "DB_SNAPSHOT_CACHE",
                         "is_live": False,
+                        "is_stale": True,
+                        "is_fallback": True,
                         "market_status": mkt_state_str,
                         "session_phase": mkt_phase,
-                        "age_seconds": 60.0
+                        "age_seconds": round(actual_age, 1) if actual_age is not None else None
                     }
+
         # 6. Fallback to latest historical close in ohlcv_master_store or nifty_predictions_log
         try:
             with state_engine._lock:
                 with state_engine._get_connection() as conn:
-                    p_row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
+                    p_row = conn.execute("SELECT spot_at_prediction, prediction_timestamp FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
                     if p_row and p_row["spot_at_prediction"]:
                         return {
                             "price": float(p_row["spot_at_prediction"]),
-                            "timestamp": ts_now,
+                            "timestamp": str(p_row["prediction_timestamp"] or ts_now),
                             "source": "PREDICTION_LEDGER_ANCHOR",
                             "is_live": False,
+                            "is_stale": True,
+                            "is_fallback": True,
                             "market_status": mkt_state_str,
                             "session_phase": mkt_phase,
-                            "age_seconds": 120.0
+                            "age_seconds": None
                         }
-                    ohlcv_row = conn.execute("SELECT close FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY') AND close > 0 ORDER BY date DESC LIMIT 1").fetchone()
+                    ohlcv_row = conn.execute("SELECT close, updated_at FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY') AND close > 0 ORDER BY date DESC LIMIT 1").fetchone()
                     if ohlcv_row and ohlcv_row["close"]:
                         return {
                             "price": float(ohlcv_row["close"]),
-                            "timestamp": ts_now,
+                            "timestamp": str(ohlcv_row["updated_at"] or ts_now),
                             "source": "OHLCV_MASTER_ANCHOR",
                             "is_live": False,
+                            "is_stale": True,
+                            "is_fallback": True,
                             "market_status": mkt_state_str,
                             "session_phase": mkt_phase,
-                            "age_seconds": 300.0
+                            "age_seconds": None
                         }
         except Exception:
             pass
-        return {"price": 0.0, "timestamp": ts_now, "source": "UNAVAILABLE", "is_live": False, "market_status": mkt_state_str, "session_phase": mkt_phase, "age_seconds": 0}
+        return {"price": 0.0, "status": "DATA_UNAVAILABLE", "timestamp": ts_now, "source": "UNAVAILABLE", "is_live": False, "is_stale": True, "market_status": mkt_state_str, "session_phase": mkt_phase, "age_seconds": None}
 
     @classmethod
     def get_india_vix(cls) -> Dict[str, Any]:
         """
         Retrieves latest India VIX quote (^INDIAVIX) from live market or ohlcv_master_store.
+        If data is unavailable, returns explicit DATA_UNAVAILABLE status without hardcoded fallback (F-5.4).
         """
         try:
             with state_engine._lock:
@@ -6885,16 +6930,19 @@ class NiftyAnalyticsEngine:
                             "current_vix": float(row["close"]),
                             "change_pct": float(row["change_pct"] or 0.0),
                             "date": str(row["date"]),
-                            "source": "OHLCV_MASTER_STORE"
+                            "source": "OHLCV_MASTER_STORE",
+                            "vix_available": True
                         }
         except Exception as ex:
             logger.debug(f"Failed to read India VIX from ohlcv_master_store: {ex}")
 
         return {
-            "current_vix": DEFAULT_OPTIONS_IV,
+            "status": "DATA_UNAVAILABLE",
+            "current_vix": None,
+            "vix_available": False,
             "change_pct": 0.0,
             "date": format_ist(),
-            "source": "DEFAULT_CONFIG"
+            "source": "UNAVAILABLE"
         }
 
     def get_nifty_intraday_minute_chart(self, interval: str = "1m") -> Dict[str, Any]:

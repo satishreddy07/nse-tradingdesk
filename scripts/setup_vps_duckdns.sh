@@ -25,8 +25,12 @@ server {
 }
 EOF
 
-ln -sf /etc/nginx/sites-available/nseuniverse.duckdns.org.conf /etc/nginx/sites-enabled/nseuniverse.duckdns.org.conf
-rm -f /etc/nginx/sites-enabled/default
+# Backup existing default site before modification (Finding 3.5)
+if [ -f /etc/nginx/sites-enabled/default ]; then
+    echo "Backing up existing /etc/nginx/sites-enabled/default to /etc/nginx/sites-available/default.bak"
+    cp -n /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default.bak || true
+    rm -f /etc/nginx/sites-enabled/default
+fi
 
 echo "=== 2. Testing Nginx syntax ==="
 nginx -t
@@ -37,9 +41,13 @@ systemctl reload nginx
 echo "=== 4. Requesting Let's Encrypt SSL certificate via Certbot ==="
 certbot --nginx -d nseuniverse.duckdns.org --non-interactive --agree-tos --register-unsafely-without-email --redirect || echo "Certbot encountered an issue, will inspect"
 
-echo "=== 5. Stopping and disabling Cloudflare Quick Tunnel ==="
-systemctl stop cloudflared || true
-systemctl disable cloudflared || true
+if [[ "$*" == *"--disable-cloudflared"* ]]; then
+    echo "=== 5. Stopping and disabling Cloudflare Quick Tunnel (--disable-cloudflared specified) ==="
+    systemctl stop cloudflared || true
+    systemctl disable cloudflared || true
+else
+    echo "=== 5. Cloudflare Tunnel preserved (pass --disable-cloudflared if switching completely) ==="
+fi
 
 echo "=== 6. Status of Nginx and NSE Services ==="
 systemctl is-active nginx

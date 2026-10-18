@@ -60,6 +60,7 @@ class NSEMarketCalendar:
         "2026-05-28": "Bakri Id",
         "2026-06-26": "Muharram",
         "2026-08-15": "Independence Day",
+        "2026-08-26": "Id-E-Milad (Milad-un-Nabi)",
         "2026-09-14": "Ganesh Chaturthi",
         "2026-10-02": "Mahatma Gandhi Jayanti",
         "2026-10-20": "Dussehra",
@@ -115,12 +116,7 @@ class NSEMarketCalendar:
             if cached and isinstance(cached, dict):
                 holidays_dict = cached.get("holidays") or {}
                 if isinstance(holidays_dict, dict) and holidays_dict:
-                    # Replace current year dates with authoritative NSE synced dates if present
-                    synced_years = {k[:4] for k in holidays_dict.keys() if len(k) >= 4}
-                    for yr in synced_years:
-                        for k in list(cls.NSE_HOLIDAYS.keys()):
-                            if k.startswith(f"{yr}-"):
-                                cls.NSE_HOLIDAYS.pop(k, None)
+                    # Update baseline holidays with authoritative synced dates from DB vault
                     cls.NSE_HOLIDAYS.update(holidays_dict)
                     cls._holiday_meta.update({
                         "source": cached.get("source", "MASTER_DB_CACHE"),

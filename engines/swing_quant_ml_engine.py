@@ -1587,10 +1587,24 @@ class SwingQuantMLEngine:
         reg = Ridge(alpha=2.0)
         reg.fit(X_scaled, y_reg)
 
-        # Compute Metrics
-        preds = calibrated_clf.predict_proba(X_scaled)[:, 1]
+        # Out-of-sample Holdout Evaluation (Finding 6.5)
+        if len(X) >= 8:
+            split_idx = int(len(X) * 0.75)
+            X_tr, X_val = X[:split_idx], X[split_idx:]
+            y_tr_c, y_val_c = y_class[:split_idx], y_class[split_idx:]
+
+            sc_eval = StandardScaler()
+            X_tr_s = sc_eval.fit_transform(X_tr)
+            X_val_s = sc_eval.transform(X_val)
+
+            clf_eval = HistGradientBoostingClassifier(max_iter=100, learning_rate=0.08, min_samples_leaf=3, random_state=42)
+            clf_eval.fit(X_tr_s, y_tr_c)
+            preds_val = clf_eval.predict_proba(X_val_s)[:, 1] if len(clf_eval.classes_) > 1 else np.full(len(X_val), float(np.mean(y_tr_c)))
+            brier = float(np.mean((preds_val - y_val_c) ** 2))
+        else:
+            brier = 0.25
+
         win_rate = float(np.mean(y_class))
-        brier = float(np.mean((preds - y_class) ** 2))
 
         metadata = {
             "trained_at": format_ist(),

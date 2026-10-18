@@ -102,13 +102,18 @@ def validate_ohlcv_dataframe(
         return False, pd.DataFrame(), [f"{symbol}: Insufficient positive bars ({len(clean_df)} < {min_bars})."]
 
     # 5. Price Geometry Sanity (High >= Low, High >= max(Open, Close), Low <= min(Open, Close))
-    # Correct inverted wicks where High < Low or Open/Close outside High-Low range
+    # Quarantine/drop corrupt bars where High < Low (Finding 4.3: do NOT silently swap into false candles)
     inverted_hl = clean_df["High"] < clean_df["Low"]
     if inverted_hl.sum() > 0:
         inv_count = int(inverted_hl.sum())
-        # Swap high and low where inverted
-        clean_df.loc[inverted_hl, ["High", "Low"]] = clean_df.loc[inverted_hl, ["Low", "High"]].values
-        warnings.append(f"{symbol}: Corrected {inv_count} bars where High was less than Low.")
+        inv_ratio = inv_count / max(1, len(clean_df))
+        if inv_ratio > 0.05:
+            return False, pd.DataFrame(), [f"{symbol}: Unacceptable data corruption: {inv_count}/{len(clean_df)} bars ({inv_ratio*100:.1f}%) have High < Low."]
+        clean_df = clean_df[~inverted_hl]
+        warnings.append(f"{symbol}: Quarantined {inv_count} corrupted bars where High was less than Low.")
+
+    if len(clean_df) < min_bars:
+        return False, pd.DataFrame(), [f"{symbol}: Insufficient valid bars remaining after corruption quarantine ({len(clean_df)} < {min_bars})."]
 
     clean_df["High"] = clean_df[["High", "Open", "Close"]].max(axis=1)
     clean_df["Low"] = clean_df[["Low", "Open", "Close"]].min(axis=1)
@@ -125,10 +130,11 @@ def validate_ohlcv_dataframe(
 
 def check_data_freshness(timestamp_str: Optional[str], max_age_seconds: int = 900) -> Dict[str, Any]:
     """
-    Checks data timestamp freshness against current IST time.
+    Checks data timestamp freshness against current IST time (Finding 4.4).
+    Flags future timestamps as errors and missing timestamps as DATA_UNAVAILABLE.
     """
-    if not timestamp_str:
-        return {"status": "UNKNOWN", "is_stale": True, "age_seconds": None, "error": "Missing timestamp"}
+    if not timestamp_str or str(timestamp_str).strip() in ("", "--", "None", "null"):
+        return {"status": "DATA_UNAVAILABLE", "is_stale": True, "age_seconds": None, "error": "Missing timestamp"}
 
     try:
         clean_ts = timestamp_str.replace(" IST", "").strip()
@@ -142,7 +148,19 @@ def check_data_freshness(timestamp_str: Optional[str], max_age_seconds: int = 90
             return {"status": "INVALID_FORMAT", "is_stale": True, "age_seconds": None}
 
         dt_now = now_ist().replace(tzinfo=None)
-        age_sec = max(0, int((dt_now - dt).total_seconds()))
+        diff_sec = (dt_now - dt).total_seconds()
+
+        # Reject timestamps in the future (> 60s clock skew)
+        if diff_sec < -60:
+            return {
+                "status": "FUTURE_TIMESTAMP_ERROR",
+                "is_stale": True,
+                "age_seconds": None,
+                "timestamp": timestamp_str,
+                "error": f"Timestamp is in the future ({int(abs(diff_sec))}s ahead of server IST)"
+            }
+
+        age_sec = max(0, int(diff_sec))
         is_stale = age_sec > max_age_seconds
         return {
             "status": "VALID" if not is_stale else "STALE",

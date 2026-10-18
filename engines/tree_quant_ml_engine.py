@@ -128,17 +128,29 @@ class TreeQuantMLEngine:
         t0 = time.time()
         horizon = horizon.upper()
 
-        if df is None or df.empty:
+        is_synthetic_prior = False
+        if df is None:
             df = unified_ml_dataset.get_dataset_for_horizon(horizon, include_counterfactuals=True)
-
-        if df.empty or len(df) < 6:
-            # Cold-start bootstrapping using synthetic domain priors
-            df = self._generate_domain_prior_dataset(horizon, count=60)
+            if df.empty or len(df) < 10:
+                # Cold-start bootstrapping using synthetic domain priors
+                df = self._generate_domain_prior_dataset(horizon, count=60)
+                is_synthetic_prior = True
 
         # Ensure target is valid binary
         df = df[df[target_col].notnull()].copy()
         if len(df) < 6:
-            return {"status": "INSUFFICIENT_DATA", "samples": len(df)}
+            return {
+                "status": "INSUFFICIENT_DATA",
+                "is_promoted": False,
+                "samples": len(df),
+                "metrics": {
+                    "ensemble_brier": 0.50,
+                    "baseline_brier": 0.50,
+                    "ensemble_auc": 0.50,
+                    "lgb_brier": 0.50,
+                    "xgb_brier": 0.50
+                }
+            }
 
         df = df.loc[:, ~df.columns.duplicated()].copy()
         feature_cols = [c for c in UNIFIED_FEATURE_COLS if c in df.columns]
@@ -156,10 +168,22 @@ class TreeQuantMLEngine:
         X_train, y_train = X[:split_idx], y[:split_idx]
         X_test, y_test = X[split_idx + purge_gap:], y[split_idx + purge_gap:]
 
+        # F-6.2: Never reuse training data as test data. Block promotion on insufficient out-of-sample data.
         if len(X_test) < 2 or len(np.unique(y_train)) < 2:
-            # Fallback for small initial samples
-            X_train, y_train = X, y
-            X_test, y_test = X, y
+            return {
+                "status": "INSUFFICIENT_DATA",
+                "is_promoted": False,
+                "reason": "Insufficient out-of-sample test samples or single-class data.",
+                "samples": len(df),
+                "horizon": horizon,
+                "metrics": {
+                    "ensemble_brier": 0.50,
+                    "baseline_brier": 0.50,
+                    "ensemble_auc": 0.50,
+                    "lgb_brier": 0.50,
+                    "xgb_brier": 0.50
+                }
+            }
 
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train)
@@ -236,7 +260,7 @@ class TreeQuantMLEngine:
         xgb_auc = float(roc_auc_score(y_test, xgb_preds_test)) if len(np.unique(y_test)) > 1 else 0.50
 
         # ---------------------------------------------------------------------
-        # C. CALIBRATED ENSEMBLE (50/50 blend optimized by Brier score)
+        # C. ENSEMBLE PROBABILITY BLEND (Finding 6.3: 50/50 model blend)
         # ---------------------------------------------------------------------
         ensemble_preds_test = (lgb_preds_test * 0.5) + (xgb_preds_test * 0.5)
         ensemble_brier = float(brier_score_loss(y_test, ensemble_preds_test)) if len(y_test) > 1 else 0.25
@@ -267,6 +291,8 @@ class TreeQuantMLEngine:
             "version": version,
             "horizon": horizon,
             "trained_at": format_ist(),
+            "data_provenance": "SYNTHETIC_DOMAIN_PRIORS" if is_synthetic_prior else "EMPIRICAL_LIVE_TRADES",
+            "is_synthetic_baseline": is_synthetic_prior,
             "feature_cols": feature_cols,
             "scaler": scaler,
             "lgb_model": lgb_model,
@@ -291,15 +317,19 @@ class TreeQuantMLEngine:
         self._candidate_models[horizon] = bundle
 
         # Promotion Gate Evaluation:
-        # If no active model exists yet, promote as initial baseline.
         has_active = horizon in self._active_models
         if not has_active:
             is_promoted = True
-            status_label = "PROMOTED_INITIAL_BASELINE"
+            status_label = "PROMOTED_INITIAL_BASELINE" if not is_synthetic_prior else "PROMOTED_SYNTHETIC_BASELINE"
         else:
             prev_brier = self._active_models[horizon]["metrics"].get("ensemble_brier", 0.25)
-            is_promoted = (ensemble_brier <= prev_brier or ensemble_brier <= baseline_brier) and (ensemble_auc >= 0.50)
-            status_label = "PROMOTED_PRODUCTION" if is_promoted else "CANDIDATE_REJECTED"
+            # Never promote a synthetic model over an active empirical model (Finding 6.4)
+            if is_synthetic_prior and not self._active_models[horizon].get("is_synthetic_baseline", False):
+                is_promoted = False
+                status_label = "CANDIDATE_REJECTED_SYNTHETIC"
+            else:
+                is_promoted = (ensemble_brier <= prev_brier or ensemble_brier <= baseline_brier) and (ensemble_auc >= 0.50)
+                status_label = "PROMOTED_PRODUCTION" if is_promoted else "CANDIDATE_REJECTED"
 
         metadata = {
             "active_version": version if is_promoted else self._active_metadata.get(f"{horizon}_active_version", version),

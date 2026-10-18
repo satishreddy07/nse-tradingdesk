@@ -76,7 +76,7 @@ def _norm_cdf(x: float) -> float:
 def _black_scholes_price(S: float, K: float, T: float, r: float, sigma: float, option_type: str = "CE") -> float:
     """
     Standard Black-Scholes-Merton option pricing formula.
-    S: Spot price, K: Strike price, T: Time to expiry in years, r: Risk-free rate (7%), sigma: IV (decimal).
+    S: Spot price, K: Strike price, T: Time to expiry in years, r: Risk-free rate (5.5% annual RBI 91-day T-Bill benchmark, RISK_FREE_RATE), sigma: IV (decimal).
     """
     if T <= 1e-6:
         # At expiry

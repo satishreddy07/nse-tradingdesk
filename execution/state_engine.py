@@ -397,7 +397,8 @@ class StateEngine:
                 compact[col] = df[col].astype(np.float32)
         compact["Volume"] = vols_s
 
-        blob = zlib.compress(pickle.dumps(compact, protocol=pickle.HIGHEST_PROTOCOL), level=1)
+        # Safe serialization using compressed JSON (Finding 3.4)
+        blob = zlib.compress(compact.to_json(orient="split", date_format="iso").encode("utf-8"), level=1)
         meta = {
             "last_bar_date": last_bar_date,
             "bars_count": len(compact),
@@ -587,7 +588,16 @@ class StateEngine:
                 ).fetchone()
                 if row and row["ohlcv_blob"]:
                     try:
-                        df = pickle.loads(zlib.decompress(row["ohlcv_blob"]))
+                        raw_bytes = zlib.decompress(row["ohlcv_blob"])
+                        if raw_bytes.startswith(b"{"):
+                            import io
+                            df = pd.read_json(io.BytesIO(raw_bytes), orient="split")
+                            if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
+                                df.index = pd.to_datetime(df.index)
+                        else:
+                            # Safe fallback for legacy database records
+                            df = pickle.loads(raw_bytes)
+
                         upd_str = row["updated_at"] or ""
                         try:
                             naive_dt = datetime.datetime.strptime(upd_str[:19], "%Y-%m-%d %H:%M:%S")

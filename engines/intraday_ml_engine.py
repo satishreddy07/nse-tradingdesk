@@ -140,11 +140,27 @@ class IntradayMLEngine:
         if len(X) >= 6:
             try:
                 X_scaled = scaler.fit_transform(X)
-                ridge_model.fit(X_scaled, y_d)
-                r2_score = round(float(ridge_model.score(X_scaled, y_d)), 3)
 
+                # Cross-validated out-of-sample metrics (Finding 6.5)
+                from sklearn.model_selection import cross_val_score
+                cv_k = min(3, len(X))
+                if cv_k >= 2 and len(np.unique(y_r)) > 1:
+                    try:
+                        r2_cv = cross_val_score(ridge_model, X_scaled, y_d, cv=cv_k, scoring="r2")
+                        r2_score = round(float(np.mean(r2_cv)), 3)
+                    except Exception:
+                        r2_score = 0.0
+                    try:
+                        acc_cv = cross_val_score(clf_model, X_scaled, y_r, cv=cv_k)
+                        acc_score = round(float(np.mean(acc_cv)), 3)
+                    except Exception:
+                        acc_score = 0.50
+                else:
+                    r2_score = 0.0
+                    acc_score = 0.50
+
+                ridge_model.fit(X_scaled, y_d)
                 clf_model.fit(X_scaled, y_r)
-                acc_score = round(float(clf_model.score(X_scaled, y_r)), 3)
 
                 x_live_scaled = scaler.transform([x_live])
                 pred_ret_pct = float(ridge_model.predict(x_live_scaled)[0])

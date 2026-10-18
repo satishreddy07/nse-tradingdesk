@@ -271,9 +271,6 @@ class NiftyForecastLearningEngine:
         purge_w = 1 if horizon == "T+1" else 5
         cv = PurgedEmbargoedTimeSeriesSplit(n_splits=3, purge_window=purge_w, embargo_window=2)
 
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-
         # Baseline: Majority class
         val_briers: List[float] = []
         val_accs: List[float] = []
@@ -282,8 +279,12 @@ class NiftyForecastLearningEngine:
         base_accs: List[float] = []
 
         for train_idx, val_idx in cv.split(X):
-            X_tr, y_tr_c, y_tr_r = X_scaled[train_idx], y_cls[train_idx], y_reg[train_idx]
-            X_va, y_va_c, y_va_r = X_scaled[val_idx], y_cls[val_idx], y_reg[val_idx]
+            # F-6.1: fit scaler on training fold only; transform validation fold to eliminate data leakage
+            fold_scaler = StandardScaler()
+            X_tr = fold_scaler.fit_transform(X[train_idx])
+            X_va = fold_scaler.transform(X[val_idx])
+            y_tr_c, y_tr_r = y_cls[train_idx], y_reg[train_idx]
+            y_va_c, y_va_r = y_cls[val_idx], y_reg[val_idx]
 
             # Train Fold Models
             lgb_fold = lgb.LGBMClassifier(n_estimators=30, max_depth=3, learning_rate=0.08, verbose=-1, random_state=42)
@@ -345,6 +346,9 @@ class NiftyForecastLearningEngine:
         baseline_brier = float(np.mean(base_briers)) if base_briers else 0.48
 
         # 2. Fit Full Dataset Models for Production Candidate
+        final_scaler = StandardScaler()
+        X_scaled = final_scaler.fit_transform(X)
+
         final_lgb = lgb.LGBMClassifier(n_estimators=45, max_depth=3, learning_rate=0.07, verbose=-1, random_state=42)
         final_lgb.fit(X_scaled, y_cls)
 
@@ -362,7 +366,7 @@ class NiftyForecastLearningEngine:
             "horizon": horizon,
             "version": version_tag,
             "trained_at": format_ist(),
-            "scaler": scaler,
+            "scaler": final_scaler,
             "lgb_model": final_lgb,
             "xgb_model": final_xgb,
             "ridge_model": final_ridge,

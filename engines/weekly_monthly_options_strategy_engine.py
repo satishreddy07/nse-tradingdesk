@@ -86,7 +86,7 @@ def _norm_cdf(x: float) -> float:
 def _black_scholes_price(S: float, K: float, T: float, r: float, sigma: float, option_type: str = "CE") -> float:
     """
     Standard Black-Scholes-Merton option pricing formula.
-    S: Spot price, K: Strike price, T: Time to expiry in years, r: Risk-free rate (7%), sigma: IV (decimal).
+    S: Spot price, K: Strike price, T: Time to expiry in years, r: Risk-free rate (5.5% annual RBI 91-day T-Bill benchmark, RISK_FREE_RATE), sigma: IV (decimal).
     """
     if T <= 1e-6:
         return max(0.0, S - K) if option_type.upper() == "CE" else max(0.0, K - S)
@@ -536,24 +536,49 @@ class WeeklyMonthlyOptionsStrategyEngine:
         cal_exp_str = cal_expiries["current_weekly"] if horizon == "WEEKLY" else cal_expiries["current_monthly"]
         cal_dte = cal_expiries["dte_weekly"] if horizon == "WEEKLY" else cal_expiries["dte_monthly"]
 
-        dte = max(1, cal_dte)
+        dte = max(0, cal_dte)
         parsed_exp = None
         if expiry_date:
             for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
                 try:
                     parsed_exp = datetime.datetime.strptime(expiry_date.strip(), fmt).date()
-                    dte = max(1, (parsed_exp - today).days)
+                    dte = max(0, (parsed_exp - today).days)
                     break
                 except Exception:
                     pass
 
-        if dte_override is not None and dte_override > 0:
-            dte = int(dte_override)
+        # Expiry day handling: distinguish 0-DTE intraday remaining hours from multi-day horizon (Finding 6.7)
+        is_expiry_day = False
+        if dte_override is not None:
+            if dte_override <= 0:
+                is_expiry_day = True
+                dte = 0.0
+            else:
+                dte = float(dte_override)
+        elif parsed_exp and parsed_exp == today:
+            is_expiry_day = True
+        elif not parsed_exp and cal_dte <= 0:
+            is_expiry_day = True
+            expiry_date = cal_exp_str
         elif not parsed_exp:
             expiry_date = cal_exp_str
             dte = max(1, cal_dte)
 
-        t_years = max(0.0025, float(dte) / 365.0)
+        if is_expiry_day:
+            now_dt = now_ist()
+            close_dt = now_dt.replace(hour=15, minute=30, second=0, microsecond=0)
+            seconds_remaining = (close_dt - now_dt).total_seconds()
+            if seconds_remaining > 0:
+                hours_remaining = seconds_remaining / 3600.0
+                dte = round(max(0.01, min(0.95, hours_remaining / 6.25 if hours_remaining <= 6.25 else 0.95)), 3)
+                t_years = max(0.0001, seconds_remaining / (365.0 * 24.0 * 3600.0))
+            else:
+                dte = 0.0
+                t_years = 0.0001
+        else:
+            dte = max(1, int(round(dte)))
+            t_years = max(0.0025, float(dte) / 365.0)
+
         sigma_dec = iv_pct / 100.0
 
         # Exact formula: S * sigma * sqrt(T)
@@ -801,6 +826,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(net_credit, 1),
                 "max_profit_inr": round(max_profit, 1),
                 "max_loss_inr": round(sl_loss, 1),
+                "planned_stop_loss_inr": round(sl_loss, 1),
+                "contractual_max_loss": round(s_1s_pe * lot_size - net_credit, 1),
+                "risk_profile": "UNDEFINED_DOWNSIDE",
                 "expectancy_inr": exp_inr,
                 "profit_factor": pf,
                 "sl_pct": default_sl_pct,
@@ -828,6 +856,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(spread_credit, 1),
                 "max_profit_inr": round(spread_credit, 1),
                 "max_loss_inr": round(spread_max_loss, 1),
+                "planned_stop_loss_inr": round(spread_credit * default_sl_pct, 1),
+                "contractual_max_loss": round(spread_max_loss, 1),
+                "risk_profile": "DEFINED_RISK",
                 "expectancy_inr": exp_spread,
                 "profit_factor": pf_spread,
                 "sl_pct": default_sl_pct,
@@ -856,6 +887,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(asym_credit, 1),
                 "max_profit_inr": round(asym_credit, 1),
                 "max_loss_inr": round(asym_sl, 1),
+                "planned_stop_loss_inr": round(asym_sl, 1),
+                "contractual_max_loss": "UNLIMITED",
+                "risk_profile": "UNDEFINED_UNLIMITED",
                 "expectancy_inr": exp_asym,
                 "profit_factor": pf_asym,
                 "sl_pct": default_sl_pct,
@@ -881,6 +915,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(credit_125, 1),
                 "max_profit_inr": round(credit_125, 1),
                 "max_loss_inr": round(sl_125, 1),
+                "planned_stop_loss_inr": round(sl_125, 1),
+                "contractual_max_loss": round(s_1_25s_pe * lot_size - credit_125, 1),
+                "risk_profile": "UNDEFINED_DOWNSIDE",
                 "expectancy_inr": exp_125,
                 "profit_factor": pf_125,
                 "sl_pct": default_sl_pct,
@@ -910,6 +947,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(net_credit, 1),
                 "max_profit_inr": round(max_profit, 1),
                 "max_loss_inr": round(sl_loss, 1),
+                "planned_stop_loss_inr": round(sl_loss, 1),
+                "contractual_max_loss": "UNLIMITED",
+                "risk_profile": "UNDEFINED_UNLIMITED",
                 "expectancy_inr": exp_inr,
                 "profit_factor": pf,
                 "sl_pct": default_sl_pct,
@@ -937,6 +977,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(spread_credit, 1),
                 "max_profit_inr": round(spread_credit, 1),
                 "max_loss_inr": round(spread_max_loss, 1),
+                "planned_stop_loss_inr": round(spread_credit * default_sl_pct, 1),
+                "contractual_max_loss": round(spread_max_loss, 1),
+                "risk_profile": "DEFINED_RISK",
                 "expectancy_inr": exp_spread,
                 "profit_factor": pf_spread,
                 "sl_pct": default_sl_pct,
@@ -965,6 +1008,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(asym_credit, 1),
                 "max_profit_inr": round(asym_credit, 1),
                 "max_loss_inr": round(asym_sl, 1),
+                "planned_stop_loss_inr": round(asym_sl, 1),
+                "contractual_max_loss": "UNLIMITED",
+                "risk_profile": "UNDEFINED_UNLIMITED",
                 "expectancy_inr": exp_asym,
                 "profit_factor": pf_asym,
                 "sl_pct": default_sl_pct,
@@ -990,6 +1036,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(credit_125, 1),
                 "max_profit_inr": round(credit_125, 1),
                 "max_loss_inr": round(sl_125, 1),
+                "planned_stop_loss_inr": round(sl_125, 1),
+                "contractual_max_loss": "UNLIMITED",
+                "risk_profile": "UNDEFINED_UNLIMITED",
                 "expectancy_inr": exp_125,
                 "profit_factor": pf_125,
                 "sl_pct": default_sl_pct,
@@ -1024,6 +1073,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(net_credit, 1),
                 "max_profit_inr": round(net_credit, 1),
                 "max_loss_inr": round(sl_loss, 1),
+                "planned_stop_loss_inr": round(sl_loss, 1),
+                "contractual_max_loss": "UNLIMITED",
+                "risk_profile": "UNDEFINED_UNLIMITED",
                 "expectancy_inr": exp_inr,
                 "profit_factor": pf,
                 "sl_pct": default_sl_pct,
@@ -1054,6 +1106,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(condor_credit, 1),
                 "max_profit_inr": round(condor_credit, 1),
                 "max_loss_inr": round(condor_max_loss, 1),
+                "planned_stop_loss_inr": round(condor_credit * default_sl_pct, 1),
+                "contractual_max_loss": round(condor_max_loss, 1),
+                "risk_profile": "DEFINED_RISK",
                 "expectancy_inr": exp_condor,
                 "profit_factor": pf_condor,
                 "sl_pct": default_sl_pct,
@@ -1075,6 +1130,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(net_credit * 0.88, 1),
                 "max_profit_inr": round(net_credit * 0.88, 1),
                 "max_loss_inr": round(sl_loss * 0.88, 1),
+                "planned_stop_loss_inr": round(sl_loss * 0.88, 1),
+                "contractual_max_loss": "UNLIMITED",
+                "risk_profile": "UNDEFINED_UNLIMITED",
                 "expectancy_inr": round(exp_inr * 0.90, 1),
                 "profit_factor": pf,
                 "sl_pct": default_sl_pct,
@@ -1106,6 +1164,9 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "net_credit_inr": round(credit_125, 1),
                 "max_profit_inr": round(credit_125, 1),
                 "max_loss_inr": round(sl_125, 1),
+                "planned_stop_loss_inr": round(sl_125, 1),
+                "contractual_max_loss": "UNLIMITED",
+                "risk_profile": "UNDEFINED_UNLIMITED",
                 "expectancy_inr": exp_125,
                 "profit_factor": pf_125,
                 "sl_pct": default_sl_pct,
