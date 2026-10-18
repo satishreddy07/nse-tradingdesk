@@ -33,7 +33,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -263,36 +263,39 @@ class NiftyForecastLearningEngine:
         y_raw = df["target_class"].values
         y_cls = np.array([0 if y == -1 else (1 if y == 0 else 2) for y in y_raw])
         y_reg = df["actual_return_pct"].values
+        weights = df["sample_weight"].values if "sample_weight" in df.columns else np.ones(len(df), dtype=np.float64)
 
         # 1. Purged & Embargoed Time-Series Cross-Validation
         # T+1: 1-bar purge window. T+5: 5-bar purge window to avoid forward label overlap.
         purge_w = 1 if horizon == "T+1" else 5
         cv = PurgedEmbargoedTimeSeriesSplit(n_splits=3, purge_window=purge_w, embargo_window=2)
 
-        # Baseline: Majority class
+        # Baseline: Empirical class frequency prior distribution (proper probabilistic baseline)
         val_briers: List[float] = []
         val_accs: List[float] = []
         val_maes: List[float] = []
         base_briers: List[float] = []
         base_accs: List[float] = []
+        freq_briers: List[float] = []
 
         for train_idx, val_idx in cv.split(X):
-            # F-6.1: fit scaler on training fold only; transform validation fold to eliminate data leakage
+            # Fit scaler on training fold only; transform validation fold to eliminate data leakage
             fold_scaler = StandardScaler()
             X_tr = fold_scaler.fit_transform(X[train_idx])
             X_va = fold_scaler.transform(X[val_idx])
             y_tr_c, y_tr_r = y_cls[train_idx], y_reg[train_idx]
             y_va_c, y_va_r = y_cls[val_idx], y_reg[val_idx]
+            w_tr = weights[train_idx]
 
-            # Train Fold Models
+            # Train Fold Models with sample weights
             lgb_fold = lgb.LGBMClassifier(n_estimators=30, max_depth=3, learning_rate=0.08, verbose=-1, random_state=42)
-            lgb_fold.fit(X_tr, y_tr_c)
+            lgb_fold.fit(X_tr, y_tr_c, sample_weight=w_tr)
 
             xgb_fold = xgb.XGBClassifier(n_estimators=30, max_depth=3, learning_rate=0.08, random_state=42, eval_metric="mlogloss")
-            xgb_fold.fit(X_tr, y_tr_c)
+            xgb_fold.fit(X_tr, y_tr_c, sample_weight=w_tr)
 
             ridge_fold = Ridge(alpha=2.0)
-            ridge_fold.fit(X_tr, y_tr_r)
+            ridge_fold.fit(X_tr, y_tr_r, sample_weight=w_tr)
 
             p_lgb = lgb_fold.predict_proba(X_va)
             p_xgb = xgb_fold.predict_proba(X_va)
@@ -326,16 +329,23 @@ class NiftyForecastLearningEngine:
             pred_r = ridge_fold.predict(X_va)
             val_maes.append(float(mean_absolute_error(y_va_r, pred_r)))
 
-            # Baseline majority class
-            maj_class = int(np.bincount(y_tr_c).argmax())
+            # Baseline: Majority class one-hot baseline
+            counts = np.bincount(y_tr_c, minlength=3)
+            maj_class = int(counts.argmax())
             base_acc = float(np.mean(y_va_c == maj_class))
             base_accs.append(base_acc)
 
-            p_base = np.zeros((len(X_va), 3), dtype=np.float64)
+            p_base_maj = np.zeros((len(X_va), 3), dtype=np.float64)
             if 0 <= maj_class < 3:
-                p_base[:, maj_class] = 1.0
-            base_brier = float(np.mean(np.sum((p_base - y_one_hot) ** 2, axis=1)))
+                p_base_maj[:, maj_class] = 1.0
+            base_brier = float(np.mean(np.sum((p_base_maj - y_one_hot) ** 2, axis=1)))
             base_briers.append(base_brier)
+
+            # Empirical class frequency prior
+            class_freqs = counts / max(1, len(y_tr_c))
+            p_base_freq = np.tile(class_freqs, (len(X_va), 1))
+            freq_brier = float(np.mean(np.sum((p_base_freq - y_one_hot) ** 2, axis=1)))
+            freq_briers.append(freq_brier)
 
         avg_acc = float(np.mean(val_accs)) if val_accs else 0.55
         avg_brier = float(np.mean(val_briers)) if val_briers else 0.35
@@ -348,13 +358,13 @@ class NiftyForecastLearningEngine:
         X_scaled = final_scaler.fit_transform(X)
 
         final_lgb = lgb.LGBMClassifier(n_estimators=45, max_depth=3, learning_rate=0.07, verbose=-1, random_state=42)
-        final_lgb.fit(X_scaled, y_cls)
+        final_lgb.fit(X_scaled, y_cls, sample_weight=weights)
 
         final_xgb = xgb.XGBClassifier(n_estimators=45, max_depth=3, learning_rate=0.07, random_state=42, eval_metric="mlogloss")
-        final_xgb.fit(X_scaled, y_cls)
+        final_xgb.fit(X_scaled, y_cls, sample_weight=weights)
 
         final_ridge = Ridge(alpha=2.0)
-        final_ridge.fit(X_scaled, y_reg)
+        final_ridge.fit(X_scaled, y_reg, sample_weight=weights)
 
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         version_tag = f"nifty_{horizon.lower()}_{timestamp_str}"
@@ -375,12 +385,13 @@ class NiftyForecastLearningEngine:
                 "return_mae_pct": round(avg_mae, 2),
                 "baseline_accuracy": round(baseline_acc * 100.0, 1),
                 "baseline_brier": round(baseline_brier, 4),
+                "class_frequency_brier": round(float(np.mean(freq_briers)), 4) if freq_briers else round(baseline_brier, 4),
                 "sample_count": len(df)
             }
         }
 
         # 3. Controlled Promotion Gatekeeper
-        # Criteria: Candidate must outperform baseline Brier score and have >= Baseline Accuracy
+        # Criteria: Candidate must outperform baseline Brier score and strictly match or beat production
         active_ver = self._active_metadata.get(f"{horizon}_active_version")
         prod_brier = 0.50
         if active_ver:
@@ -388,7 +399,8 @@ class NiftyForecastLearningEngine:
             prod_brier = float(prod_meta.get("metrics", {}).get("brier_score", 0.50))
 
         is_better_than_baseline = avg_brier <= baseline_brier
-        is_competitive_with_prod = avg_brier <= (prod_brier + 0.02)
+        # Strictly match or beat production; remove +0.02 degradation tolerance that ratchets quality down
+        is_competitive_with_prod = avg_brier <= prod_brier
 
         if is_better_than_baseline and is_competitive_with_prod:
             status_label = "PROMOTED_PRODUCTION"
@@ -408,7 +420,7 @@ class NiftyForecastLearningEngine:
             }
         else:
             # If no active model currently, promote as initial baseline
-            if not active_ver:
+            if not active_ver and is_better_than_baseline:
                 status_label = "PROMOTED_INITIAL_BASELINE"
                 self._active_models[horizon] = bundle
                 self._active_metadata[f"{horizon}_active_version"] = version_tag
@@ -431,9 +443,11 @@ class NiftyForecastLearningEngine:
         duration = round(time.time() - t0, 2)
         logger.info(f"✨ Trained {horizon} Nifty Models: Acc {avg_acc*100:.1f}%, Brier {avg_brier:.4f} (Baseline: {baseline_brier:.4f}) -> {status_label} ({duration}s)")
 
-        # Record into ML Performance Engine audit history
+        # Record into ML Performance Engine audit history with accurate 3-fold CV split sizes
         try:
             from engines.ml_performance_engine import ml_performance_engine
+            val_size = len(df) // 3
+            train_size = len(df) - val_size
             ml_performance_engine.record_training_run(
                 model_name=f"NIFTY_{horizon.replace('+', '')}_TACTICAL" if horizon == "T+1" else f"NIFTY_{horizon.replace('+', '')}_STRUCTURAL",
                 model_version=version_tag,
@@ -441,9 +455,9 @@ class NiftyForecastLearningEngine:
                 duration_sec=duration,
                 status=status_label,
                 dataset_version="NSE_DAILY_OHLCV_V1",
-                train_records=int(len(df) * 0.7),
-                val_records=int(len(df) * 0.15),
-                test_records=int(len(df) * 0.15),
+                train_records=train_size,
+                val_records=val_size,
+                test_records=val_size,
                 feature_count=len(NIFTY_FEATURE_COLS),
                 metrics=bundle["metrics"],
                 artifact_path=str(bundle_path),
@@ -458,6 +472,118 @@ class NiftyForecastLearningEngine:
             "version": version_tag,
             "metrics": bundle["metrics"],
             "training_duration_seconds": duration
+        }
+
+    # =========================================================================
+    # 2.5 REAL-TIME MODEL INFERENCE & PREDICTION (F-47)
+    # =========================================================================
+    def predict(
+        self,
+        horizon: str,
+        features: Optional[Union[Dict[str, float], pd.DataFrame, np.ndarray]] = None
+    ) -> Dict[str, Any]:
+        """
+        Runs live or backtest inference using the active LightGBM + XGBoost + Ridge ensemble.
+        Extracts probability distribution (prob_up, prob_flat, prob_down), expected return pct,
+        and directional verdict.
+        """
+        horizon = horizon.replace(" ", "+").upper()
+        if horizon not in ("T+1", "T+5"):
+            raise ValueError(f"Invalid horizon '{horizon}'. Must be 'T+1' or 'T+5'.")
+
+        with self._lock:
+            bundle = self._active_models.get(horizon)
+            if not bundle:
+                # Try loading from disk artifact path recorded in active metadata
+                meta = self._active_metadata.get(f"{horizon}_metadata", {})
+                art_path = meta.get("artifact_path")
+                if art_path and os.path.exists(art_path):
+                    try:
+                        with open(art_path, "rb") as f:
+                            bundle = pickle.load(f)
+                            self._active_models[horizon] = bundle
+                    except Exception as e:
+                        logger.warning(f"Failed to load bundle from {art_path}: {e}")
+
+            if not bundle:
+                return {
+                    "status": "MODEL_NOT_TRAINED",
+                    "horizon": horizon,
+                    "prob_up": 0.3333,
+                    "prob_flat": 0.3334,
+                    "prob_down": 0.3333,
+                    "expected_return_pct": 0.0,
+                    "verdict": "RANGE-BOUND",
+                    "inferred_at": format_ist()
+                }
+
+        scaler = bundle["scaler"]
+        lgb_model = bundle["lgb_model"]
+        xgb_model = bundle["xgb_model"]
+        ridge_model = bundle["ridge_model"]
+
+        # Vectorize features
+        if features is None or (isinstance(features, dict) and not features):
+            # Extract live features snapshot from state_engine
+            last_pred = state_engine.get_kv("last_nifty_prediction", {})
+            pillars = last_pred.get("pillars", {}) if isinstance(last_pred, dict) else {}
+            features_dict = {
+                "composite_score": float(last_pred.get("composite_score", 0.0) or 0.0),
+                "near_atm_pcr": float(pillars.get("options_overlay", {}).get("near_atm_pcr", 1.0) or 1.0),
+                "vix_spot": float(pillars.get("nifty_technicals", {}).get("vix", 14.0) or 14.0),
+                "rsi14": float(pillars.get("nifty_technicals", {}).get("rsi14", 50.0) or 50.0),
+                "trend_strength_adx": float(pillars.get("nifty_technicals", {}).get("adx14", 25.0) or 25.0),
+                "fii_fut_long_pct": float(pillars.get("institutional_flows", {}).get("latest_oi", {}).get("fii_fut_long_pct", 50.0) or 50.0),
+                "sp_5d_ret": 0.0,
+                "gold_5d_ret": 0.0,
+                "inr_5d_ret": 0.0,
+            }
+            x_scaled = scaler.transform(np.array([[float(features_dict.get(c, 0.0)) for c in NIFTY_FEATURE_COLS]], dtype=np.float64))
+        elif isinstance(features, dict):
+            raw_vec = np.array([[float(features.get(c, 0.0)) for c in NIFTY_FEATURE_COLS]], dtype=np.float64)
+            x_scaled = scaler.transform(raw_vec)
+        elif isinstance(features, pd.DataFrame):
+            raw_vec = np.array([[float(features.iloc[-1].get(c, 0.0)) for c in NIFTY_FEATURE_COLS]], dtype=np.float64)
+            x_scaled = scaler.transform(raw_vec)
+        elif isinstance(features, np.ndarray):
+            vec = features.reshape(1, -1)
+            x_scaled = scaler.transform(vec)
+        else:
+            raw_vec = np.zeros((1, len(NIFTY_FEATURE_COLS)), dtype=np.float64)
+            x_scaled = scaler.transform(raw_vec)
+
+        # Probabilities: class 0 is Bearish, 1 is Flat, 2 is Bullish
+        p_lgb = lgb_model.predict_proba(x_scaled)
+        p_xgb = xgb_model.predict_proba(x_scaled)
+
+        p_lgb_full = np.zeros((1, 3), dtype=np.float64)
+        for idx, cls in enumerate(lgb_model.classes_):
+            if 0 <= cls < 3:
+                p_lgb_full[:, cls] = p_lgb[:, idx]
+
+        p_xgb_full = np.zeros((1, 3), dtype=np.float64)
+        for idx, cls in enumerate(xgb_model.classes_):
+            if 0 <= cls < 3:
+                p_xgb_full[:, cls] = p_xgb[:, idx]
+
+        p_ens = 0.5 * p_lgb_full + 0.5 * p_xgb_full
+        pred_class = int(np.argmax(p_ens, axis=1)[0])
+        pred_ret = float(ridge_model.predict(x_scaled)[0])
+
+        verdict_map = {0: "BEARISH", 1: "RANGE-BOUND", 2: "BULLISH"}
+        verdict = verdict_map.get(pred_class, "RANGE-BOUND")
+
+        return {
+            "status": "OK",
+            "horizon": horizon,
+            "model_version": bundle.get("version"),
+            "prob_down": round(float(p_ens[0, 0]), 4),
+            "prob_flat": round(float(p_ens[0, 1]), 4),
+            "prob_up": round(float(p_ens[0, 2]), 4),
+            "expected_return_pct": round(pred_ret, 4),
+            "verdict": verdict,
+            "predicted_direction": verdict,
+            "inferred_at": format_ist()
         }
 
     # =========================================================================

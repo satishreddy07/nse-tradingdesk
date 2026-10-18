@@ -1004,7 +1004,8 @@ class PercentileScoringEngine:
         df['p_rs'] = p_rs_market * 0.5 + p_rs_sector * 0.5
 
         # Pillar 6 — Proximity (10%)
-        p_dist_pivot = cls.pct_rank(df['dist_to_pivot'], ascending=False)
+        # Stocks closest to pivot (smallest absolute distance) receive the highest proximity percentile
+        p_dist_pivot = cls.pct_rank(df['dist_to_pivot'].abs(), ascending=False)
         p_tightness = cls.pct_rank(df['base_tightness'], ascending=False)
         df['p_proximity'] = p_dist_pivot * 0.6 + p_tightness * 0.4
 

@@ -2,6 +2,7 @@ import time
 import queue
 import threading
 import logging
+import uuid
 from typing import Callable, Any, Dict, List, Optional
 from core.data_quality import now_ist, format_ist
 
@@ -42,6 +43,10 @@ class ExecutionQueueManager:
             try:
                 task = self._queue.get(timeout=1.0)
             except queue.Empty:
+                continue
+
+            if task.get("cancelled"):
+                self._queue.task_done()
                 continue
 
             task_id = task.get("id")
@@ -113,7 +118,7 @@ class ExecutionQueueManager:
                         "task_type": task_type
                     }
 
-            task_id = f"TASK-{int(time.time() * 1000)}-{id(task_fn) % 1000}"
+            task_id = f"TASK-{uuid.uuid4().hex[:12]}"
             task_item = {
                 "id": task_id,
                 "name": task_name,
@@ -123,7 +128,8 @@ class ExecutionQueueManager:
                 "kwargs": kwargs,
                 "enqueued_at": format_ist(),
                 "done_event": None,
-                "result_holder": None
+                "result_holder": None,
+                "cancelled": False
             }
             self._queue.put(task_item)
             q_size = self._queue.qsize()
@@ -157,7 +163,7 @@ class ExecutionQueueManager:
         done_event = threading.Event()
         result_holder = {"status": "PENDING", "result": None, "error": None}
 
-        task_id = f"SYNC-TASK-{int(time.time() * 1000)}"
+        task_id = f"SYNC-TASK-{uuid.uuid4().hex[:12]}"
         task_item = {
             "id": task_id,
             "name": task_name,
@@ -167,13 +173,17 @@ class ExecutionQueueManager:
             "kwargs": kwargs,
             "enqueued_at": format_ist(),
             "done_event": done_event,
-            "result_holder": result_holder
+            "result_holder": result_holder,
+            "cancelled": False
         }
         self._queue.put(task_item)
         logger.info(f"⏳ [Queue] Sync task enqueued: '{task_name}'. Waiting for completion...")
 
         completed = done_event.wait(timeout=timeout)
         if not completed:
+            task_item["cancelled"] = True
+            result_holder["status"] = "TIMED_OUT"
+            result_holder["error"] = f"Task '{task_name}' timed out after {timeout}s"
             logger.warning(f"⚠️ [Queue] Sync task '{task_name}' timed out after {timeout}s.")
             return None
 
@@ -225,6 +235,12 @@ class ExecutionQueueManager:
                 "queued_count": len(queued),
                 "queued_tasks": queued
             }
+
+    def stop(self, timeout: float = 5.0):
+        """Signals the worker thread to stop and waits for termination."""
+        self._stop_event.set()
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=timeout)
 
 
 execution_queue = ExecutionQueueManager()

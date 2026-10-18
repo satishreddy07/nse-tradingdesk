@@ -2764,11 +2764,35 @@ class NiftyAnalyticsEngine:
         except Exception as e:
             logger.debug(f"Auxiliary SQLite history load notice: {e}")
 
+        cache_key = f"{cutoff_date}_{len(series_map.get('^NSEI', []))}"
+        now_ts = time.time()
+        if hasattr(cls, "_nifty_ml_model_cache") and cls._nifty_ml_model_cache.get(cache_key):
+            cached_entry, cached_time = cls._nifty_ml_model_cache[cache_key]
+            if now_ts - cached_time < 1800.0:
+                return cached_entry
+
+        t1_fwd_hit: Optional[float] = None
+        t5_fwd_hit: Optional[float] = None
+        try:
+            from core.nifty_prediction_ledger import nifty_prediction_ledger
+            ledger_stats = nifty_prediction_ledger.get_ledger_statistics()
+            t1_s = ledger_stats.get("t1_statistics", {})
+            t5_s = ledger_stats.get("t5_statistics", {})
+            if t1_s.get("resolved", 0) >= 10:
+                t1_fwd_hit = float(t1_s["hit_rate_pct"])
+            if t5_s.get("resolved", 0) >= 10:
+                t5_fwd_hit = float(t5_s["hit_rate_pct"])
+        except Exception as e:
+            logger.debug(f"Could not load ledger stats for ML training: {e}")
+
         X: List[List[float]] = []
         y_ret1: List[float] = []
         y_reg1: List[int] = []
-        y_ret5: List[float] = []
         sample_weights: List[float] = []
+
+        X_t5: List[List[float]] = []
+        y_ret5: List[float] = []
+        sample_weights_t5: List[float] = []
 
         start_idx = max(30, 0)
         for i in range(start_idx, n_bars - 1):
@@ -2790,20 +2814,36 @@ class NiftyAnalyticsEngine:
             it_ret = ((it_now - it_prev) / max(1.0, it_prev)) * 100.0
             s_sec = np.clip((b_ret * 0.65 + it_ret * 0.35) * 16.0, -40.0, 40.0)
 
-            sp_now = sp.get(dt, 5000.0)
-            sp_prev = sp.get(dates[i - 1], sp_now) if i > 0 else sp_now
-            sp_ret = ((sp_now - sp_prev) / max(1.0, sp_prev)) * 100.0
+            # Empirical macro return deltas: return 0.0 delta if either current or previous day is missing (no synthetic constants)
+            if dt in sp and i > 0 and dates[i - 1] in sp:
+                sp_now = sp[dt]
+                sp_prev = sp[dates[i - 1]]
+                sp_ret = ((sp_now - sp_prev) / max(1.0, sp_prev)) * 100.0
+            else:
+                sp_ret = 0.0
             s_glob = np.clip(sp_ret * 18.0, -40.0, 40.0)
 
-            v_now = vix.get(dt, 14.0)
-            v_prev = vix.get(dates[i - 1], v_now) if i > 0 else v_now
-            v_chg = ((v_now - v_prev) / max(1.0, v_prev)) * 100.0
-            inr_now = inr.get(dt, 86.0)
-            inr_prev = inr.get(dates[i - 1], inr_now) if i > 0 else inr_now
-            inr_chg = ((inr_now - inr_prev) / max(1.0, inr_prev)) * 100.0
-            g_now = gold.get(dt, 2600.0)
-            g_prev = gold.get(dates[i - 1], g_now) if i > 0 else g_now
-            g_chg = ((g_now - g_prev) / max(1.0, g_prev)) * 100.0
+            if dt in vix and i > 0 and dates[i - 1] in vix:
+                v_now = vix[dt]
+                v_prev = vix[dates[i - 1]]
+                v_chg = ((v_now - v_prev) / max(1.0, v_prev)) * 100.0
+            else:
+                v_chg = 0.0
+
+            if dt in inr and i > 0 and dates[i - 1] in inr:
+                inr_now = inr[dt]
+                inr_prev = inr[dates[i - 1]]
+                inr_chg = ((inr_now - inr_prev) / max(1.0, inr_prev)) * 100.0
+            else:
+                inr_chg = 0.0
+
+            if dt in gold and i > 0 and dates[i - 1] in gold:
+                g_now = gold[dt]
+                g_prev = gold[dates[i - 1]]
+                g_chg = ((g_now - g_prev) / max(1.0, g_prev)) * 100.0
+            else:
+                g_chg = 0.0
+
             s_macro = np.clip((-v_chg * 2.2) + (-inr_chg * 14.0) + (-g_chg * 2.0), -40.0, 40.0)
 
             s_breadth = s_tech * 0.8
@@ -2823,19 +2863,18 @@ class NiftyAnalyticsEngine:
             else:
                 s_inst = np.clip(s_sec * 0.45 + s_tech * 0.25, -30.0, 30.0)
 
-            X.append([s_tech, s_breadth, s_sec, s_glob, s_macro, s_deriv, s_inst])
+            feat_row = [s_tech, s_breadth, s_sec, s_glob, s_macro, s_deriv, s_inst]
+            X.append(feat_row)
             y_ret1.append(ret1)
             y_reg1.append(1 if ret1 >= 0.08 else (-1 if ret1 <= -0.08 else 0))
+            sample_weights.append(1.0)
 
+            # T+5 is only appended for mature 5-session forward windows (no partial horizon truncation)
             if i + 5 < n_bars:
                 ret5_fwd = ((closes[i + 5] - s0) / max(1.0, s0)) * 100.0
+                X_t5.append(feat_row)
                 y_ret5.append(ret5_fwd)
-            else:
-                # Use actual available realized return to latest known bar
-                ret_avail = ((closes[-1] - s0) / max(1.0, s0)) * 100.0
-                y_ret5.append(ret_avail)
-
-            sample_weights.append(1.0)
+                sample_weights_t5.append(1.0)
 
         # Ingest verified live out-of-sample prediction rows from SQLite
         live_samples_count = 0
@@ -2852,7 +2891,7 @@ class NiftyAnalyticsEngine:
                         inst_v = float(p.get("institutional", 0.0))
                         if inst_v == 0.0:
                             inst_v = float(p.get("sectoral", 0.0)) * 0.4 + float(p.get("technical", 0.0)) * 0.2
-                        X.append([
+                        live_row = [
                             float(p.get("technical", 0.0)),
                             float(p.get("breadth", 0.0)),
                             float(p.get("sectoral", 0.0)),
@@ -2860,35 +2899,44 @@ class NiftyAnalyticsEngine:
                             float(p.get("macro", 0.0)),
                             float(p.get("news_deriv", 0.0)),
                             float(inst_v),
-                        ])
+                        ]
+                        X.append(live_row)
                         ret1_live = float(r["t1_actual_return_pct"])
                         y_ret1.append(ret1_live)
                         y_reg1.append(1 if ret1_live >= 0.08 else (-1 if ret1_live <= -0.08 else 0))
-                        ret5_live = float(r["t5_actual_return_pct"]) if r["t5_actual_return_pct"] is not None else ret1_live
-                        y_ret5.append(ret5_live)
                         sample_weights.append(2.5)  # Live forward-tested predictions receive 2.5x weight
                         live_samples_count += 1
+
+                        # Ingest T+5 only if the 5-day horizon has actually matured
+                        if r["t5_actual_return_pct"] is not None:
+                            X_t5.append(live_row)
+                            y_ret5.append(float(r["t5_actual_return_pct"]))
+                            sample_weights_t5.append(2.5)
         except Exception as e:
             logger.debug(f"Error ingesting live prediction log samples: {e}")
 
         if len(X) < 20:
-            return {
+            out = {
                 "total_samples": len(X),
                 "historical_samples": len(X) - live_samples_count,
                 "live_samples": live_samples_count,
-                "t1_hit_rate_pct": 72.0,
-                "t5_hit_rate_pct": 75.0,
+                "t1_hit_rate_pct": t1_fwd_hit,
+                "t5_hit_rate_pct": t5_fwd_hit,
+                "in_sample_t1_acc_pct": None,
                 "learned_weights_t1": {"technical": 0.22, "breadth": 0.20, "sectoral": 0.18, "global": 0.14, "macro": 0.10, "news_deriv": 0.08, "institutional": 0.08},
                 "learned_weights_t5": {"technical": 0.28, "breadth": 0.22, "sectoral": 0.18, "global": 0.14, "macro": 0.10, "news_deriv": 0.04, "institutional": 0.04},
                 "r2_score": 0.0,
-                "brier_score": 0.25,
+                "brier_score": None,
                 "status": "INSUFFICIENT_SAMPLES",
             }
+            if not hasattr(cls, "_nifty_ml_model_cache"):
+                cls._nifty_ml_model_cache = {}
+            cls._nifty_ml_model_cache[cache_key] = (out, now_ts)
+            return out
 
         X_arr = np.array(X, dtype=np.float64)
         y_r1_arr = np.array(y_ret1, dtype=np.float64)
         y_c1_arr = np.array(y_reg1, dtype=np.int64)
-        y_r5_arr = np.array(y_ret5, dtype=np.float64)
         sw_arr = np.array(sample_weights, dtype=np.float64)
 
         scaler = StandardScaler()
@@ -2900,9 +2948,6 @@ class NiftyAnalyticsEngine:
 
         clf_t1 = LogisticRegression(max_iter=300, C=1.0)
         clf_t1.fit(X_s, y_c1_arr, sample_weight=sw_arr)
-
-        ridge_t5 = Ridge(alpha=2.5)
-        ridge_t5.fit(X_s, y_r5_arr, sample_weight=sw_arr)
 
         acc_t1 = round(float(np.mean((pred_ret1 > 0) == (y_r1_arr > 0))) * 100.0, 1)
         r2_t1 = round(float(ridge_t1.score(X_s, y_r1_arr)), 4)
@@ -2917,17 +2962,27 @@ class NiftyAnalyticsEngine:
         else:
             brier_t1 = 0.20
 
-        coefs_t1 = np.abs(ridge_t1.coef_)
-        sum_c1 = np.sum(coefs_t1)
-        norm_w1 = (coefs_t1 / sum_c1) if sum_c1 > 1e-6 else np.ones(len(coefs_t1)) / len(coefs_t1)
-
-        coefs_t5 = np.abs(ridge_t5.coef_)
-        sum_c5 = np.sum(coefs_t5)
-        norm_w5 = (coefs_t5 / sum_c5) if sum_c5 > 1e-6 else np.ones(len(coefs_t5)) / len(coefs_t5)
-
         pillar_names = ["technical", "breadth", "sectoral", "global", "macro", "news_deriv", "institutional"]
         prior_w1 = {"technical": 0.22, "breadth": 0.20, "sectoral": 0.18, "global": 0.14, "macro": 0.10, "news_deriv": 0.08, "institutional": 0.08}
         prior_w5 = {"technical": 0.28, "breadth": 0.22, "sectoral": 0.18, "global": 0.14, "macro": 0.10, "news_deriv": 0.04, "institutional": 0.04}
+
+        # Enforce non-negative weights for directional pillars to prevent sign inversion
+        coefs_t1 = np.clip(ridge_t1.coef_, 0.0, None)
+        sum_c1 = np.sum(coefs_t1)
+        norm_w1 = (coefs_t1 / sum_c1) if sum_c1 > 1e-6 else np.array([prior_w1[p] for p in pillar_names])
+
+        if len(X_t5) >= 20:
+            X_t5_arr = np.array(X_t5, dtype=np.float64)
+            y_r5_arr = np.array(y_ret5, dtype=np.float64)
+            sw_t5_arr = np.array(sample_weights_t5, dtype=np.float64)
+            X_t5_s = scaler.transform(X_t5_arr)
+            ridge_t5 = Ridge(alpha=2.5)
+            ridge_t5.fit(X_t5_s, y_r5_arr, sample_weight=sw_t5_arr)
+            coefs_t5 = np.clip(ridge_t5.coef_, 0.0, None)
+            sum_c5 = np.sum(coefs_t5)
+            norm_w5 = (coefs_t5 / sum_c5) if sum_c5 > 1e-6 else np.array([prior_w5[p] for p in pillar_names])
+        else:
+            norm_w5 = np.array([prior_w5[p] for p in pillar_names])
 
         learned_w1 = {}
         for idx, p in enumerate(pillar_names):
@@ -2945,20 +3000,25 @@ class NiftyAnalyticsEngine:
             "total_samples": len(X),
             "historical_samples": len(X) - live_samples_count,
             "live_samples": live_samples_count,
-            "t1_hit_rate_pct": acc_t1,
-            "t5_hit_rate_pct": min(85.0, round(acc_t1 * 1.08, 1)),
+            "t1_hit_rate_pct": t1_fwd_hit,
+            "t5_hit_rate_pct": t5_fwd_hit,
+            "in_sample_t1_acc_pct": acc_t1,
             "r2_score": r2_t1,
             "brier_score": brier_t1,
             "learned_weights_t1": learned_w1,
             "learned_weights_t5": learned_w5,
             "last_trained_ist": format_ist(),
             "model_type": "Ridge Multi-Factor Regressor + Calibrated Logistic Classifier (L2 Regularized)",
-            "status": "OPTIMIZED_ONLINE",
+            "status": "FORWARD_TEST_VALIDATED" if (t1_fwd_hit is not None and t5_fwd_hit is not None) else "OPTIMIZED_ONLINE",
         }
         try:
             state_engine.set_kv("nifty_ml_model_metadata", out)
         except Exception:
             pass
+
+        if not hasattr(cls, "_nifty_ml_model_cache"):
+            cls._nifty_ml_model_cache = {}
+        cls._nifty_ml_model_cache[cache_key] = (out, now_ts)
         return out
 
     @classmethod
@@ -3834,8 +3894,15 @@ class NiftyAnalyticsEngine:
                 "title": f"{t5_verdict} • Expected 5D Move {t5_expected_pts:+.1f} pts ({t5_expected_pct:+.2f}%) toward ₹{t5_expected_close:,.0f}",
                 "detail": (
                     f"Calibrated 5-Day Probabilities: Up {t5_probs['up']*100:.1f}% | Range {t5_probs['flat']*100:.1f}% | Down {t5_probs['down']*100:.1f}%. "
-                    f"1σ Weekly Price Cone: [₹{t5_low_1s:,.0f} – ₹{t5_high_1s:,.0f}] (2σ Tail Band: [₹{t5_low_2s:,.0f} – ₹{t5_high_2s:,.0f}]). "
-                    f"Forward-Test Realized Hit Rate: {self_training_summary.get('t1_hit_rate_pct', 70.0):.1f}% (T+1) & {self_training_summary.get('t5_hit_rate_pct', 75.0):.1f}% (T+5)."
+                    f"Forward-Test Realized Hit Rate: " + (
+                        f"{self_training_summary['t1_hit_rate_pct']:.1f}% (T+1)"
+                        if self_training_summary.get('t1_hit_rate_pct') is not None
+                        else "INSUFFICIENT_DATA (T+1)"
+                    ) + " & " + (
+                        f"{self_training_summary['t5_hit_rate_pct']:.1f}% (T+5)."
+                        if self_training_summary.get('t5_hit_rate_pct') is not None
+                        else "INSUFFICIENT_DATA (T+5)."
+                    )
                 )
             },
             {
@@ -4401,6 +4468,8 @@ class NiftyAnalyticsEngine:
 
         fresh_preds = self.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
         st = fresh_preds.get("self_training_engine", {})
+        t1_rate_str = f"{st['t1_hit_rate_pct']:.1f}%" if st.get('t1_hit_rate_pct') is not None else "INSUFFICIENT_DATA"
+        t5_rate_str = f"{st['t5_hit_rate_pct']:.1f}%" if st.get('t5_hit_rate_pct') is not None else "INSUFFICIENT_DATA"
 
         eod_msg = (
             f"📊 <b>NIFTY 50 EOD PREDICTION PERFORMANCE & LEARNING REVIEW</b>\n"
@@ -4410,8 +4479,8 @@ class NiftyAnalyticsEngine:
             f"🏆 <b>Directional Result:</b> {'✅ HIT' if outcome == 'CORRECT' else '❌ MISS'}\n"
             f"🛡 <b>1σ Price Cone [₹{cone_1s[0]:,.0f} – ₹{cone_1s[1]:,.0f}]:</b> {'✅ HELD WITHIN CONE' if cone_hit else '⚠️ BREACHED CONE'}\n\n"
             f"🧠 <b>Adaptive Self-Learning Update:</b>\n"
-            f"• Realized T+1 Hit Rate: <b>{st.get('t1_hit_rate_pct', 70.0):.1f}%</b>\n"
-            f"• Realized T+5 Hit Rate: <b>{st.get('t5_hit_rate_pct', 75.0):.1f}%</b>\n"
+            f"• Realized T+1 Hit Rate: <b>{t1_rate_str}</b>\n"
+            f"• Realized T+5 Hit Rate: <b>{t5_rate_str}</b>\n"
             f"• Sessions Evaluated: {st.get('sessions_evaluated', 0)}\n\n"
             f"🕒 <i>Evaluated & Synced at {format_ist()}</i>"
         )

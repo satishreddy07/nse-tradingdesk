@@ -477,20 +477,20 @@ class MLPerformanceEngine:
                 "last_training_timestamp": h_meta.get("last_trained_ist", format_ist()),
                 "last_evaluation_timestamp": h_meta.get("last_trained_ist", format_ist()),
                 "sample_counts": {
-                    "train": int(h_meta.get("train_samples", 42)),
-                    "val": int(h_meta.get("test_samples", 16)),
-                    "test": int(h_meta.get("test_samples", 16)),
-                    "total": int(h_meta.get("total_samples", 60))
+                    "train": int(h_meta.get("train_samples", 0)),
+                    "val": int(h_meta.get("test_samples", 0)),
+                    "test": int(h_meta.get("test_samples", 0)),
+                    "total": int(h_meta.get("total_samples", 0))
                 },
                 "feature_count": len(UNIFIED_FEATURE_COLS),
                 "feature_names": UNIFIED_FEATURE_COLS,
                 "hyperparameters": {"lgb_leaves": 15, "xgb_depth": 4, "cv_purge_window": 2, "embargo_window": 2},
-                "target_distribution": {"WIN": "56%", "LOSS": "44%"},
+                "target_distribution": h_meta.get("target_distribution", {"WIN": "0%", "LOSS": "0%"}),
                 "metrics": {
-                    "ensemble_acc": float(h_mets.get("ensemble_acc", 56.2)),
-                    "ensemble_brier": float(h_mets.get("ensemble_brier", 0.3296)),
-                    "ensemble_auc": float(h_mets.get("ensemble_auc", 0.418)),
-                    "baseline_brier": float(h_mets.get("baseline_brier", 0.2234))
+                    "ensemble_acc": float(h_mets["ensemble_acc"]) if "ensemble_acc" in h_mets else None,
+                    "ensemble_brier": float(h_mets["ensemble_brier"]) if "ensemble_brier" in h_mets else None,
+                    "ensemble_auc": float(h_mets["ensemble_auc"]) if "ensemble_auc" in h_mets else None,
+                    "baseline_brier": float(h_mets["baseline_brier"]) if "baseline_brier" in h_mets else None
                 },
                 "warnings_and_limitations": [
                     "Empirical Stop-Loss Invariant: Enforces strictly 40% SL on Weekly and 50% SL on Monthly options.",
@@ -522,17 +522,17 @@ class MLPerformanceEngine:
             "last_training_timestamp": sq_meta.get("trained_at", format_ist()),
             "last_evaluation_timestamp": sq_meta.get("trained_at", format_ist()),
             "sample_counts": {
-                "train": int(sq_meta.get("prior_samples", 160)),
-                "val": int(sq_meta.get("empirical_samples", 6)),
-                "test": int(sq_meta.get("empirical_samples", 6)),
-                "total": int(sq_meta.get("total_samples", 166))
+                "train": int(sq_meta.get("prior_samples", 0)),
+                "val": int(sq_meta.get("empirical_samples", 0)),
+                "test": int(sq_meta.get("empirical_samples", 0)),
+                "total": int(sq_meta.get("total_samples", 0))
             },
             "feature_count": len(sq_meta.get("features", [])),
             "feature_names": sq_meta.get("features", []),
             "hyperparameters": {"min_win_prob": 0.55, "min_expected_r": 0.28, "max_dist_pivot_pct": 3.0},
-            "target_distribution": {"WIN": "53%", "LOSS": "47%"},
+            "target_distribution": sq_meta.get("target_distribution", {"WIN": "0%", "LOSS": "0%"}),
             "metrics": {
-                "empirical_win_rate_pct": float(sq_ds.get("empirical_win_rate_pct", 50.0)),
+                "empirical_win_rate_pct": float(sq_ds["empirical_win_rate_pct"]) if "empirical_win_rate_pct" in sq_ds else None,
                 "brier_score": float(sq_meta.get("brier_score", 0.1233)),
                 "resolved_trades": int(sq_ds.get("resolved_trades", 6))
             },
@@ -978,13 +978,13 @@ class MLPerformanceEngine:
                     "regime": reg,
                     "total_samples": total_samples,
                     "is_low_sample": total_samples < 10,
-                    "directional_accuracy_pct": dir_acc,
-                    "trade_win_rate_pct": win_rate,
-                    "trade_expectancy": exp_r,
-                    "target_hit_rate_pct": tgt_rate,
-                    "sl_hit_rate_pct": sl_rate,
-                    "brier_score": brier_score,
-                    "max_drawdown_pct": regime_dd
+                    "directional_accuracy_pct": dir_acc if n_count > 0 else 0.0,
+                    "trade_win_rate_pct": win_rate if t_count > 0 else 0.0,
+                    "trade_expectancy": exp_r if t_count > 0 else 0.0,
+                    "target_hit_rate_pct": tgt_rate if t_count > 0 else 0.0,
+                    "sl_hit_rate_pct": sl_rate if t_count > 0 else 0.0,
+                    "brier_score": brier_score if n_count > 0 else 0.0,
+                    "max_drawdown_pct": regime_dd if t_count > 0 else 0.0
                 }
 
         return {"status": "SUCCESS", "regimes": summary, "evaluated_at": format_ist()}

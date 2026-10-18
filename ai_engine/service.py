@@ -236,8 +236,8 @@ class AIService:
                         expected_return_pct=0.35,
                         expected_points=85.0,
                         expected_close=24800.0,
-                        model_version="6-Pillar-v2.4",
-                        validation_status="WALK_FORWARD_VALIDATED (Hit Rate: 72.0%)"
+                        model_version="6-Pillar-Empirical",
+                        validation_status="BENCHMARK_SYNTHETIC_FIXTURE"
                     ),
                     PredictionHorizonItem(
                         horizon="T+5",
@@ -248,8 +248,8 @@ class AIService:
                         expected_return_pct=-0.80,
                         expected_points=-195.0,
                         expected_close=24520.0,
-                        model_version="6-Pillar-v2.4",
-                        validation_status="WALK_FORWARD_VALIDATED (Hit Rate: 74.5%)"
+                        model_version="6-Pillar-Empirical",
+                        validation_status="BENCHMARK_SYNTHETIC_FIXTURE"
                     )
                 ],
                 market_context=MarketContextItem(
@@ -428,7 +428,7 @@ class AIService:
                     system_prompt=system_prompt,
                     model_id=target_model,
                     temperature=0.1,
-                    max_tokens=1000
+                    max_tokens=3000
                 )
                 if res and res.get("content"):
                     raw_res = res["content"]

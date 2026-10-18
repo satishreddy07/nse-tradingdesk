@@ -103,15 +103,18 @@ def build_prediction_context(
     options_overlay = pillars.get("options_overlay") or {}
     sectoral_rows = pillars.get("sectoral_analysis") or []
 
-    # Determine real data mode: LIVE only during regular trading hours
+    # Determine real data mode: LIVE only if live feed was actually observed during trading hours
     if data_mode_override:
         data_mode = data_mode_override
+    elif predictions_data.get("data_mode"):
+        data_mode = predictions_data.get("data_mode")
     else:
         can_trade, _ = NSEMarketCalendar.can_execute_trades()
-        data_mode = "LIVE" if can_trade else "HISTORICAL_DAILY"
+        data_mode = "LIVE" if (can_trade and not spot_unavailable and predictions_data.get("is_live_stream", False)) else "HISTORICAL_DAILY"
 
     # Timezone-aware ISO-8601 as-of timestamp
     as_of = datetime.now(timezone.utc).isoformat()
+    model_version = str(self_training.get("model_version") or "6-Pillar-Empirical")
 
     # Build T+1 Prediction with normalized probabilities and empirical validation status
     t1_verdict = str(t1_f.get("verdict") or "RANGE-BOUND")
@@ -138,7 +141,7 @@ def build_prediction_context(
         expected_close=safe_optional_float(t1_f.get("expected_close")),
         forecast_range_1sigma=list(t1_f.get("range_1sigma")) if t1_f.get("range_1sigma") else None,
         forecast_range_2sigma=list(t1_f.get("range_2sigma")) if t1_f.get("range_2sigma") else None,
-        model_version="6-Pillar-v2.4",
+        model_version=model_version,
         validation_status=t1_status,
     )
 
@@ -167,7 +170,7 @@ def build_prediction_context(
         expected_close=safe_optional_float(t5_f.get("expected_close")),
         forecast_range_1sigma=list(t5_f.get("range_1sigma")) if t5_f.get("range_1sigma") else None,
         forecast_range_2sigma=list(t5_f.get("range_2sigma")) if t5_f.get("range_2sigma") else None,
-        model_version="6-Pillar-v2.4",
+        model_version=model_version,
         validation_status=t5_status,
     )
 
@@ -221,7 +224,7 @@ def build_prediction_context(
             if isinstance(n, dict):
                 news_items_clean.append({
                     "title": str(n.get("title") or "")[:150],
-                    "source": str(n.get("source") or n.get("category") or "Economic Times/LiveMint"),
+                    "source": str(n.get("source") or n.get("category") or "Unknown Source"),
                     "published_at": str(n.get("published_at") or n.get("published") or n.get("pub_date") or ""),
                 })
     raw_catalysts = news_data.get("detected_live_catalysts") or []

@@ -1543,6 +1543,20 @@ def post_nifty_forecast_rollback_endpoint(horizon: str = "T+1"):
     return nifty_forecast_learning_engine.rollback_model(horizon=horizon)
 
 
+@app.get("/api/nifty-forecast/predict")
+def get_nifty_forecast_predict_endpoint(horizon: str = "T+1"):
+    """Runs real-time inference on the active LightGBM/XGBoost ensemble for Nifty forecasts (F-47)."""
+    from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
+    return nifty_forecast_learning_engine.predict(horizon=horizon)
+
+
+@app.post("/api/nifty-forecast/predict")
+def post_nifty_forecast_predict_endpoint(payload: Optional[Dict[str, Any]] = None, horizon: str = "T+1"):
+    """Runs inference on the active LightGBM/XGBoost ensemble with optional custom feature payload (F-47)."""
+    from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
+    return nifty_forecast_learning_engine.predict(horizon=horizon, features=payload)
+
+
 # ==============================================================================
 # ML PERFORMANCE & MODEL INTELLIGENCE DASHBOARD ENDPOINTS
 # ==============================================================================

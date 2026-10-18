@@ -190,6 +190,10 @@ class HorizonLearningOrchestrator:
         total_reentry_wins = 0
         reentry_triggers_count = 0
         reentry_successful_recoveries = 0
+        total_base_gross_win = 0.0
+        total_base_gross_loss = 0.0
+        total_reentry_gross_win = 0.0
+        total_reentry_gross_loss = 0.0
 
         per_regime_samples = max(10, sample_size // len(regimes))
 
@@ -267,6 +271,16 @@ class HorizonLearningOrchestrator:
                 net_base = (base_pts * lot) - cost_base
                 net_reentry = (reentry_pts * lot) - cost_reentry
 
+                if net_base > 0:
+                    total_base_gross_win = total_base_gross_win + net_base
+                else:
+                    total_base_gross_loss = total_base_gross_loss + abs(net_base)
+
+                if net_reentry > 0:
+                    total_reentry_gross_win = total_reentry_gross_win + net_reentry
+                else:
+                    total_reentry_gross_loss = total_reentry_gross_loss + abs(net_reentry)
+
                 reg_base_pnl += net_base
                 reg_reentry_pnl += net_reentry
 
@@ -286,10 +300,11 @@ class HorizonLearningOrchestrator:
             }
 
         total_samples = per_regime_samples * len(regimes)
-        base_profit_factor = round(abs(total_base_pnl / 10000.0), 2) if total_base_pnl > 0 else 0.85
-        reentry_profit_factor = round(abs(total_reentry_pnl / 10000.0), 2) if total_reentry_pnl > 0 else 0.95
+        base_profit_factor = round(total_base_gross_win / total_base_gross_loss, 2) if total_base_gross_loss > 0 else (round(total_base_gross_win, 2) if total_base_gross_win > 0 else 0.0)
+        reentry_profit_factor = round(total_reentry_gross_win / total_reentry_gross_loss, 2) if total_reentry_gross_loss > 0 else (round(total_reentry_gross_win, 2) if total_reentry_gross_win > 0 else 0.0)
 
         comparison = {
+            "evaluation_type": "SCENARIO_SIMULATION_GRID",
             "horizon": horizon,
             "configured_sl_pct": f"{int(sl_pct * 100)}%",
             "re_entry_policy": "1-Time Price-Triggered Re-entry at Original Entry Premium",

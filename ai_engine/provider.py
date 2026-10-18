@@ -88,7 +88,7 @@ class AIProviderAdapter:
             "User-Agent": "NSE-TradingDesk-AI/1.0",
         }
         if provider == "openrouter":
-            headers["HTTP-Referer"] = "https://github.com/satishreddy07/tradingdesk"
+            headers["HTTP-Referer"] = "https://github.com/satishreddy07/nse-tradingdesk"
             headers["X-Title"] = "NSE Trading Desk AI Layer"
 
         payload: Dict[str, Any] = {
@@ -154,6 +154,9 @@ class AIProviderAdapter:
                         time.sleep(1.5 * attempts)
                         continue
                     raise ProviderError(f"Rate limit exceeded on {provider} free tier", provider=provider, status_code=429, is_transient=True)
+
+                if status == 404 or (status == 400 and ("decommission" in resp.text.lower() or "not found" in resp.text.lower() or "does not exist" in resp.text.lower())):
+                    raise ProviderError(f"Model '{model_id}' unavailable or decommissioned on {provider} (HTTP {status}): {resp.text[:200]}", provider=provider, status_code=status, is_transient=False)
 
                 last_error = ProviderError(err_msg, provider=provider, status_code=status, is_transient=is_transient)
 
