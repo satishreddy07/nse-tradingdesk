@@ -485,8 +485,8 @@ class IntradayOptionsStrategyEngine:
                     iv_pct = float(vix_data["current_vix"])
             except Exception:
                 pass
-        if iv_pct <= 0:
-            iv_pct = 13.0
+        if not np.isfinite(iv_pct) or iv_pct <= 0:
+            raise ValueError("Verified implied volatility is unavailable; fixed-IV substitution is prohibited for actionable strike calculations.")
 
         now_dt = now_ist()
         today = now_dt.date()
@@ -711,7 +711,13 @@ class IntradayOptionsStrategyEngine:
             except Exception:
                 pass
             if vix_default <= 0.0:
-                vix_default = 13.0
+                return {
+                    "status": "DATA_UNAVAILABLE",
+                    "message": "Historical prediction rows lack a verified India VIX observation; refusing to invent a fixed volatility value.",
+                    "sessions_evaluated": 0,
+                    "comparison_matrix": {},
+                    "regime_breakdown": {}
+                }
 
             for r in rows[-lookback_sessions:]:
                 s_spot = float(r["spot_at_prediction"] or 0.0)
@@ -1860,10 +1866,12 @@ class IntradayOptionsStrategyEngine:
 
         for r in rows:
             r_code = regime_map.get(str(r["regime"]).upper(), 0.0)
-            iv = float(r["iv_at_entry"] or 13.0)
-            em = float(r["expected_move"] or 150.0)
-            sl = float(r["sl_threshold_pct"] or 0.30)
-            sig = float(r["sigma_level"] or 1.0)
+            if r["iv_at_entry"] is None or float(r["iv_at_entry"]) <= 0 or r["expected_move"] is None or float(r["expected_move"]) <= 0:
+                continue
+            iv = float(r["iv_at_entry"])
+            em = float(r["expected_move"])
+            sl = float(r["sl_threshold_pct"] if r["sl_threshold_pct"] is not None else 0.30)
+            sig = float(r["sigma_level"] if r["sigma_level"] is not None else 1.0)
             pnl = float(r["net_pnl_inr"] or 0.0)
             win_val = int(r["win"] or (1 if pnl > 0 else 0))
 
@@ -2014,7 +2022,8 @@ class IntradayOptionsStrategyEngine:
                 except Exception:
                     pass
                 if vix_fallback <= 0.0:
-                    vix_fallback = 13.0
+                    logger.warning("Skipping prediction-ledger fallback: verified historical India VIX is unavailable.")
+                    return []
 
                 with state_engine._lock:
                     with state_engine._get_connection() as conn:
