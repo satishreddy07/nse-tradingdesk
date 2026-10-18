@@ -1306,6 +1306,8 @@ class WeeklyMonthlyOptionsStrategyEngine:
                             verdict = str((r["t5_verdict"] if is_weekly and r["t5_verdict"] else r["t1_verdict"]) or "RANGE BOUND")
                             steps = 15 if is_weekly else 25
                             path = cls._synthesize_multi_day_path(s_spot, close_spot, ret_pct, steps=steps)
+                            # Prediction rows do not contain historical option IV; do not simulate option premiums from a fixed IV.
+                            continue
                             sessions_data.append({
                                 "date": str(r["prediction_date"]),
                                 "spot": s_spot,
@@ -2325,7 +2327,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             if df is not None and not df.empty and len(df) >= holding_bars + 20:
                 df = df.sort_index()
                 ret_series = df["Close"].pct_change()
-                rolling_vol = (ret_series.rolling(20).std() * math.sqrt(252) * 100.0).fillna(13.0)
+                rolling_vol = ret_series.rolling(20, min_periods=20).std() * math.sqrt(252) * 100.0
 
                 # Stride through historical holding periods to generate non-overlapping or stepped windows
                 stride = max(1, holding_bars // 2)
@@ -2345,8 +2347,11 @@ class WeeklyMonthlyOptionsStrategyEngine:
                                     continue
 
                                 ret_pct = round(((close_px - open_px) / open_px) * 100.0, 2)
-                                vol_pct = round(float(rolling_vol.iloc[idx + holding_bars - 1]), 1)
-                                vol_pct = max(9.5, min(35.0, vol_pct))
+                                vol_pct_raw = float(rolling_vol.iloc[idx + holding_bars - 1])
+                                if not np.isfinite(vol_pct_raw) or vol_pct_raw <= 0:
+                                    continue
+                                # Realized volatility is used only as a disclosed scenario proxy.
+                                vol_pct = round(vol_pct_raw, 2)
 
                                 # Multi-day intermediate daily closes path
                                 path = [round(float(p), 2) for p in window_df["Close"].tolist()]
@@ -2427,6 +2432,8 @@ class WeeklyMonthlyOptionsStrategyEngine:
                             steps = 15 if is_weekly else 25
                             path = cls._synthesize_multi_day_path(s_spot, close_p, ret_p, steps=steps)
 
+                            # Prediction rows do not contain historical option IV; do not simulate option premiums from a fixed IV.
+                            continue
                             sessions.append({
                                 "date": str(r["prediction_date"]),
                                 "spot": round(s_spot, 2),
