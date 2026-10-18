@@ -975,7 +975,7 @@ class MLPerformanceEngine:
                     dd = r_peak - r_eq
                     if dd > r_max_dd:
                         r_max_dd = dd
-                regime_dd = round((r_max_dd / max(1.0, r_peak)) * 100.0, 2) if r_peak > 0 else 0.0
+                regime_dd = round((r_max_dd / r_peak) * 100.0, 2) if t_rows and r_peak > 0 else None
 
                 # Multiclass Brier score: sum of squared errors across UP/FLAT/DOWN probabilities.
                 # Rows with missing/invalid class probabilities or realized labels are excluded, never imputed.
