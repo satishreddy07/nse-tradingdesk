@@ -477,21 +477,40 @@ class UnifiedMLDataset:
         self,
         horizon: str,
         include_counterfactuals: bool = False,
-        min_resolved_only: bool = True
+        min_resolved_only: bool = True,
+        record_types: Optional[List[str]] = None
     ) -> pd.DataFrame:
         """
-        Retrieves feature vectors and resolved targets for training a specific horizon.
-        Guarantees zero target leakage and strict chronological ordering.
+        Retrieves resolved training rows for one explicitly selected cohort.
+        Production defaults to actual LIVE fills only; PAPER, BACKTEST, and
+        COUNTERFACTUAL cohorts must be requested separately.
         """
         horizon = horizon.upper()
-        where_clauses = [f"trading_horizon = '{horizon}'"]
+        allowed_types = {"LIVE", "PAPER", "BACKTEST", "COUNTERFACTUAL"}
+        if record_types is None:
+            selected_types = None if include_counterfactuals else ["LIVE"]
+        else:
+            selected_types = [str(item).upper() for item in record_types]
+            invalid_types = set(selected_types) - allowed_types
+            if invalid_types:
+                raise ValueError(f"Unsupported ML record_type values: {sorted(invalid_types)}")
+            if "COUNTERFACTUAL" in selected_types and not include_counterfactuals:
+                raise ValueError("Counterfactual training requires include_counterfactuals=True.")
 
+        where_clauses = ["trading_horizon = ?"]
+        params: List[Any] = [horizon]
         if min_resolved_only:
-            where_clauses.append("status IN ('RESOLVED_TARGET', 'RESOLVED_STOP_LOSS', 'EXPIRED', 'RESOLVED_MANUAL', 'REJECTED_SIM')")
+            where_clauses.append("status IN ('RESOLVED_TARGET', 'RESOLVED_STOP_LOSS', 'EXPIRED', 'RESOLVED_MANUAL')")
             where_clauses.append("is_winner IS NOT NULL")
 
-        if not include_counterfactuals:
-            where_clauses.append("record_type IN ('LIVE', 'PAPER', 'BACKTEST')")
+        if selected_types:
+            placeholders = ",".join("?" for _ in selected_types)
+            where_clauses.append(f"record_type IN ({placeholders})")
+            params.extend(selected_types)
+            if "LIVE" in selected_types:
+                where_clauses.append("actual_entry IS NOT NULL AND actual_entry > 0")
+        elif not include_counterfactuals:
+            where_clauses.append("record_type != 'COUNTERFACTUAL'")
 
         where_sql = " AND ".join(where_clauses)
         query = f"""
@@ -510,7 +529,7 @@ class UnifiedMLDataset:
 
         with self._lock:
             with self._get_connection() as conn:
-                df = pd.read_sql(query, conn)
+                df = pd.read_sql(query, conn, params=params)
 
         if df.empty:
             return pd.DataFrame()
