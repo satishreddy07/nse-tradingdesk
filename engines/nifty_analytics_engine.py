@@ -6308,7 +6308,10 @@ class NiftyAnalyticsEngine:
                 is_weekly_bearish = "BEARISH" in t5_verdict or composite_score_t5 <= -6.0
                 is_weekly_bullish = "BULLISH" in t5_verdict or composite_score_t5 >= 6.0
 
-                if is_weekly_bearish and not is_weekly_bullish:
+                if target_iv is None or target_iv <= 0:
+                    condition = "VOLATILITY_DATA_UNAVAILABLE"
+                    candidates = []
+                elif is_weekly_bearish and not is_weekly_bullish:
                     if composite_score_t5 <= -20.0 or "STRONG BEARISH" in t5_verdict:
                         condition = "STRONG_BEARISH"
                         candidates = ["BEAR_PUT_SPREAD", "BEAR_CALL_SPREAD"]
@@ -6348,7 +6351,7 @@ class NiftyAnalyticsEngine:
                 elif "BEARISH_SUPPLY" in market_state or "MILD_BEARISH" in market_state or composite_score <= -8.0:
                     condition = "MILD_BEARISH_TREND"
                     candidates = ["BEAR_CALL_SPREAD", "BEAR_PUT_SPREAD"]
-                elif "BREAKOUT" in market_state or "VOLATILE" in market_state or w_iv >= 16.0:
+                elif "BREAKOUT" in market_state or "VOLATILE" in market_state or (w_iv is not None and w_iv >= 16.0):
                     condition = "BREAKOUT_LIKELY_UNCERTAIN"
                     candidates = ["LONG_STRADDLE", "LONG_STRANGLE"]
                 else:
