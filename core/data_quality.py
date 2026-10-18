@@ -73,9 +73,10 @@ def validate_ohlcv_dataframe(
         warnings.append(f"{symbol}: Timestamps were not sorted chronologically; sorted ascending.")
 
     if clean_df.index.has_duplicates:
-        dup_count = clean_df.index.duplicated().sum()
-        clean_df = clean_df[~clean_df.index.duplicated(keep="last")]
-        warnings.append(f"{symbol}: Dropped {dup_count} duplicate timestamp records.")
+        dup_count = int(clean_df.index.duplicated().sum())
+        return False, pd.DataFrame(), [
+            f"{symbol}: Rejected {dup_count} duplicate timestamp records; resolve source ambiguity before ingestion."
+        ]
 
     # 3. Numeric conversions & NaN/non-finite filtering
     for col in ["Open", "High", "Low", "Close", "Volume"]:
