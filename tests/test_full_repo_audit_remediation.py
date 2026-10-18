@@ -735,6 +735,51 @@ def test_option_chain_rejects_nonfinite_iv_for_skew_and_gex(monkeypatch):
     assert result["volatility_and_gex"]["iv_data_quality"] == "DATA_UNAVAILABLE"
 
 
+def test_strategy_greeks_are_unavailable_without_observed_iv():
+    """Missing leg volatility must not silently turn into an assumed 12% or 2% IV."""
+    engine = NiftyAnalyticsEngine()
+    expiry = (now_ist().date() + datetime.timedelta(days=5)).strftime("%Y-%m-%d")
+    result = engine._calc_strategy_greeks(
+        spot=25000.0,
+        legs=[{"action": "SELL", "type": "CE", "strike": 25000, "qty": 75}],
+        expiry_date_str=expiry,
+    )
+    assert result["status"] == "DATA_UNAVAILABLE"
+    assert result["delta"] is None
+    assert result["theta"] is None
+    assert result["gamma"] is None
+    assert result["vega"] is None
+    assert "no verified finite positive IV" in result["reason"]
+
+
+def test_strategy_greeks_use_actual_finite_iv_without_floor():
+    """Valid per-leg IV produces finite Greeks and keeps its provenance explicit."""
+    engine = NiftyAnalyticsEngine()
+    expiry = (now_ist().date() + datetime.timedelta(days=5)).strftime("%Y-%m-%d")
+    result = engine._calc_strategy_greeks(
+        spot=25000.0,
+        legs=[{"action": "SELL", "type": "CE", "strike": 25000, "qty": 75, "iv": 0.5}],
+        expiry_date_str=expiry,
+    )
+    assert result["status"] == "OK"
+    assert result["volatility_source"] == "LEG_MARKET_IV"
+    assert result["expiry_time_source"] == "EXCHANGE_CLOSE_15_30_IST"
+    assert all(np.isfinite(result[key]) for key in ("delta", "theta", "gamma", "vega"))
+
+
+def test_strategy_greeks_reject_expired_contract_instead_of_using_fallback():
+    """Past expiry timestamps are not silently reset to an upcoming calendar expiry."""
+    engine = NiftyAnalyticsEngine()
+    expiry = (now_ist().date() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    result = engine._calc_strategy_greeks(
+        spot=25000.0,
+        legs=[{"action": "SELL", "type": "CE", "strike": 25000, "qty": 75, "iv": 13.5}],
+        expiry_date_str=expiry,
+    )
+    assert result["status"] == "DATA_UNAVAILABLE"
+    assert "expiry has passed" in result["reason"]
+
+
 def test_unified_ml_dataset_rejects_missing_feature_imputation(tmp_path):
     """Incomplete feature payloads remain visible in storage but are never zero-imputed into training."""
     from core.unified_ml_dataset import UNIFIED_FEATURE_COLS

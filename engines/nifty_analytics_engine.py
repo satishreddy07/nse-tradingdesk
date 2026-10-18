@@ -5463,37 +5463,122 @@ class NiftyAnalyticsEngine:
         }
 
     def _calc_strategy_greeks(
-        self, spot: float, legs: List[Dict[str, Any]], expiry_date_str: str, base_iv: float = 12.0
-    ) -> Dict[str, float]:
+        self,
+        spot: float,
+        legs: List[Dict[str, Any]],
+        expiry_date_str: str,
+        base_iv: Optional[float] = None
+    ) -> Dict[str, Any]:
         """
-        Computes exact Black-Scholes portfolio Greeks (Delta, Theta, Gamma, Vega)
-        across all constituent legs using live spot price, strike, option type, IV, and DTE.
-        Zero hardcoded mock numbers.
+        Calculate Black-Scholes Greeks only when spot, expiry, quantities, and every leg's
+        volatility are available and finite. Date-only expiries are valued to the exchange
+        close (15:30 IST); missing inputs never become zero/12% IV/5-day assumptions.
         """
-        if spot <= 0.0 or not legs:
-            return {"delta": 0.0, "theta": 0.0, "gamma": 0.0, "vega": 0.0}
+        unavailable = {
+            "delta": None,
+            "theta": None,
+            "gamma": None,
+            "vega": None,
+            "status": "DATA_UNAVAILABLE",
+            "reason": None,
+            "volatility_source": None,
+            "expiry_time_source": None
+        }
+        try:
+            spot_value = float(spot)
+        except (TypeError, ValueError, OverflowError):
+            spot_value = float("nan")
+        if not math.isfinite(spot_value) or spot_value <= 0.0:
+            unavailable["reason"] = "A finite positive spot price is required to calculate strategy Greeks."
+            return unavailable
+        if not isinstance(legs, list) or not legs:
+            unavailable["reason"] = "No option legs are available to calculate strategy Greeks."
+            return unavailable
 
-        dte = 5.0
-        today_date = now_ist().date()
-        parsed_exp = False
-        if expiry_date_str:
-            exp_clean = expiry_date_str.strip().split()[0]
-            for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
-                try:
-                    exp_dt = datetime.datetime.strptime(exp_clean, fmt).date()
-                    diff_days = (exp_dt - today_date).days
-                    dte = max(0.5, float(diff_days))
-                    parsed_exp = True
-                    break
-                except Exception:
-                    pass
-        if not parsed_exp:
-            cal_exp = NSEMarketCalendar.get_active_options_expiries()
-            dte = max(0.5, float(cal_exp.get("dte_weekly", 4.0)))
+        # A provided expiry is part of the contract; do not silently replace a malformed
+        # or expired expiry with the nearest calendar expiry.
+        if not isinstance(expiry_date_str, str) or not expiry_date_str.strip():
+            unavailable["reason"] = "The strategy has no explicit expiry date."
+            return unavailable
+        expiry_date = None
+        expiry_text = expiry_date_str.strip().split()[0]
+        for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+            try:
+                expiry_date = datetime.datetime.strptime(expiry_text, fmt).date()
+                break
+            except ValueError:
+                continue
+        if expiry_date is None:
+            unavailable["reason"] = f"Could not parse strategy expiry: {expiry_text!r}."
+            return unavailable
 
-        t_years = max(0.001, dte / 365.0)
+        now = now_ist()
+        expiry_naive = datetime.datetime.combine(expiry_date, datetime.time(hour=15, minute=30))
+        expiry_dt = IST.localize(expiry_naive) if hasattr(IST, "localize") else expiry_naive.replace(tzinfo=now.tzinfo)
+        seconds_to_expiry = (expiry_dt - now).total_seconds()
+        if not math.isfinite(seconds_to_expiry) or seconds_to_expiry <= 0.0:
+            unavailable["reason"] = "The strategy expiry has passed; Greeks are not estimated for expired contracts."
+            return unavailable
+        t_years = seconds_to_expiry / (365.0 * 24.0 * 60.0 * 60.0)
         sqrt_t = math.sqrt(t_years)
         r = RISK_FREE_RATE
+
+        try:
+            supplied_base_iv = float(base_iv) if base_iv is not None else float("nan")
+        except (TypeError, ValueError, OverflowError):
+            supplied_base_iv = float("nan")
+        usable_base_iv = supplied_base_iv if math.isfinite(supplied_base_iv) and supplied_base_iv > 0.0 else None
+        normalized_legs = []
+        used_leg_iv = 0
+        used_base_iv = 0
+        for index, leg in enumerate(legs):
+            if not isinstance(leg, dict):
+                unavailable["reason"] = f"Option leg {index + 1} is not a valid record."
+                return unavailable
+            try:
+                strike = float(leg.get("strike"))
+                quantity = float(leg.get("qty"))
+            except (TypeError, ValueError, OverflowError):
+                unavailable["reason"] = f"Option leg {index + 1} is missing a valid strike or quantity."
+                return unavailable
+            if not math.isfinite(strike) or strike <= 0.0 or not math.isfinite(quantity) or quantity <= 0.0:
+                unavailable["reason"] = f"Option leg {index + 1} has an invalid strike or quantity."
+                return unavailable
+
+            option_type = str(leg.get("type", "")).upper()
+            action = str(leg.get("action", "")).upper()
+            if option_type not in ("CE", "PE") or action not in ("BUY", "SELL"):
+                unavailable["reason"] = f"Option leg {index + 1} has an unsupported action or option type."
+                return unavailable
+
+            raw_iv = leg.get("iv")
+            iv_from_leg = raw_iv is not None
+            if raw_iv is None:
+                iv_value = usable_base_iv
+            else:
+                try:
+                    iv_value = float(raw_iv)
+                except (TypeError, ValueError, OverflowError):
+                    unavailable["reason"] = f"Option leg {index + 1} has malformed implied volatility."
+                    return unavailable
+            if iv_value is None or not math.isfinite(iv_value) or iv_value <= 0.0:
+                unavailable["reason"] = (
+                    f"Option leg {index + 1} has no verified finite positive IV; "
+                    "fixed volatility substitution is not permitted."
+                )
+                return unavailable
+            if iv_from_leg:
+                used_leg_iv += 1
+            else:
+                used_base_iv += 1
+
+            normalized_legs.append({
+                "strike": strike,
+                "quantity": quantity,
+                "option_type": option_type,
+                "action": action,
+                "iv": iv_value / 100.0
+            })
 
         def _norm_cdf(x: float) -> float:
             return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
@@ -5505,47 +5590,52 @@ class NiftyAnalyticsEngine:
         net_theta = 0.0
         net_gamma = 0.0
         net_vega = 0.0
+        for leg in normalized_legs:
+            strike = leg["strike"]
+            quantity = leg["quantity"]
+            sigma = leg["iv"]
+            sign = 1.0 if leg["action"] == "BUY" else -1.0
+            lots = quantity / float(NIFTY_LOT_SIZE)
 
-        for leg in legs:
-            try:
-                stk = float(leg.get("strike", spot))
-                opt_type = str(leg.get("type", "CE")).upper()
-                action = str(leg.get("action", "BUY")).upper()
-                qty = float(leg.get("qty", NIFTY_LOT_SIZE))
-                sign = 1.0 if action == "BUY" else -1.0
-                lots = qty / float(NIFTY_LOT_SIZE)
+            d1 = (
+                math.log(spot_value / strike) + (r + 0.5 * sigma * sigma) * t_years
+            ) / (sigma * sqrt_t)
+            d2 = d1 - sigma * sqrt_t
 
-                iv_raw = leg.get("iv") or base_iv
-                if iv_raw is None or float(iv_raw) <= 0:
-                    continue
-                iv_val = float(iv_raw)
-                sig = max(0.02, iv_val / 100.0)
+            if leg["option_type"] == "CE":
+                delta = _norm_cdf(d1)
+                theta = (
+                    -(spot_value * _norm_pdf(d1) * sigma) / (2.0 * sqrt_t)
+                    - r * strike * math.exp(-r * t_years) * _norm_cdf(d2)
+                ) / 365.0
+            else:
+                delta = _norm_cdf(d1) - 1.0
+                theta = (
+                    -(spot_value * _norm_pdf(d1) * sigma) / (2.0 * sqrt_t)
+                    + r * strike * math.exp(-r * t_years) * _norm_cdf(-d2)
+                ) / 365.0
 
-                d1 = (math.log(max(1e-4, spot) / max(1e-4, stk)) + (r + 0.5 * sig * sig) * t_years) / (sig * sqrt_t)
-                d2 = d1 - sig * sqrt_t
+            gamma = _norm_pdf(d1) / (spot_value * sigma * sqrt_t)
+            vega = (spot_value * _norm_pdf(d1) * sqrt_t) / 100.0
 
-                if opt_type == "CE":
-                    delta = _norm_cdf(d1)
-                    theta = (-(spot * _norm_pdf(d1) * sig) / (2.0 * sqrt_t) - r * stk * math.exp(-r * t_years) * _norm_cdf(d2)) / 365.0
-                else:
-                    delta = _norm_cdf(d1) - 1.0
-                    theta = (-(spot * _norm_pdf(d1) * sig) / (2.0 * sqrt_t) + r * stk * math.exp(-r * t_years) * _norm_cdf(-d2)) / 365.0
+            net_delta += sign * delta * lots
+            net_theta += sign * theta * quantity
+            net_gamma += sign * gamma * lots
+            net_vega += sign * vega * quantity
 
-                gamma = _norm_pdf(d1) / (spot * sig * sqrt_t)
-                vega = (spot * _norm_pdf(d1) * sqrt_t) / 100.0
-
-                net_delta += sign * delta * lots
-                net_theta += sign * theta * qty
-                net_gamma += sign * gamma * lots
-                net_vega += sign * vega * qty
-            except Exception:
-                continue
-
+        volatility_source = (
+            "LEG_MARKET_IV" if used_leg_iv and not used_base_iv
+            else ("LEG_IV_WITH_BASE_IV_FALLBACK" if used_leg_iv and used_base_iv else "BASE_IV_PROXY")
+        )
         return {
-            "delta": round(net_delta, 2),
-            "theta": round(net_theta, 1),
-            "gamma": round(net_gamma, 4),
-            "vega": round(net_vega, 1)
+            "delta": round(net_delta, 4),
+            "theta": round(net_theta, 4),
+            "gamma": round(net_gamma, 6),
+            "vega": round(net_vega, 4),
+            "status": "OK",
+            "reason": None,
+            "volatility_source": volatility_source,
+            "expiry_time_source": "EXCHANGE_CLOSE_15_30_IST"
         }
 
     def get_options_portfolio(self) -> Dict[str, Any]:
