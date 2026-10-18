@@ -355,10 +355,17 @@
             <span id="badge-master-stocks" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-900/70 font-mono text-emerald-200">--</span>
           </button>
 
+          <button onclick="switchTab('tab-screener')" id="nav-tab-screener" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
+            <i data-lucide="filter" class="w-3.5 h-3.5 text-pink-400 shrink-0"></i>
+            <span>EQ-FINAL Screener</span>
+            <span id="badge-screener-count" class="px-1.5 py-0.2 rounded text-[10px] bg-pink-900/70 font-mono text-pink-200">792</span>
+          </button>
+
           <button onclick="switchTab('tab-signals')" id="nav-tab-signals" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
             <i data-lucide="crosshair" class="w-3.5 h-3.5 text-cyan-400 shrink-0"></i>
             <span>Signals Screener</span>
           </button>
+
 
           <button onclick="switchTab('tab-history')" id="nav-tab-history" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
             <i data-lucide="history" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
@@ -872,9 +879,256 @@
     </div>
 
       <!-- ================================================================= -->
+      <!-- TAB: EQ-FINAL & CUSTOM SCREENER (CHARTINK HYBRID MATRIX)          -->
+      <!-- ================================================================= -->
+      <div id="tab-screener" class="tab-content hidden space-y-4 sm:space-y-6">
+        
+        <!-- Header & Preset Selector -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-slate-800">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-pink-500/20 text-pink-300 border border-pink-500/40 flex items-center gap-1">
+                  <i data-lucide="star" class="w-3 h-3 fill-pink-400 text-pink-400"></i>
+                  <span id="screener-active-preset-badge">EQ-FINAL</span>
+                </span>
+                <span class="px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  REAL-TIME CMP (0-MIN DELAY)
+                </span>
+              </div>
+              <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2 mt-1">
+                <span>Institutional Fundamental & Technical Filter Matrix</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5">
+                Stock passes <strong class="text-slate-200">all</strong> of the below filters in <strong class="text-cyan-300">cash segment</strong>:
+              </p>
+            </div>
+            
+            <!-- Preset Dropdown & Fast Actions -->
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300">
+                <span class="text-slate-500 text-[11px]">Preset:</span>
+                <select id="screener-preset-select" onchange="onScreenerPresetChange()" class="bg-transparent text-white font-semibold focus:outline-none cursor-pointer">
+                  <option value="EQ-FINAL">EQ-FINAL (Default)</option>
+                </select>
+              </div>
+              <button onclick="openAddConditionModal()" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1 transition cursor-pointer">
+                <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span>Add Filter</span>
+              </button>
+              <button onclick="resetToDefaultEQFinal()" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 flex items-center gap-1 transition cursor-pointer" title="Reset to EQ-FINAL rules">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                <span>Reset</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Active Conditions Container -->
+          <div class="mt-4">
+            <div id="screener-conditions-list" class="space-y-2">
+              <!-- Dynamically rendered condition pills -->
+            </div>
+
+            <!-- Magic filter quick-add pills -->
+            <div class="mt-3 pt-3 border-t border-slate-800/80 flex flex-wrap items-center gap-2">
+              <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                <i data-lucide="sparkles" class="w-3 h-3 text-amber-400"></i>
+                <span>Quick Add:</span>
+              </span>
+              <button onclick="quickAddCondition('Daily', 'Daily Rsi( 14 )', '>=', 50, 'Greater than equal to')" class="px-2 py-0.5 rounded-lg text-[11px] bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition cursor-pointer">+ RSI(14) >= 50</button>
+              <button onclick="quickAddCondition('Daily', 'Daily Ema( Daily Close , 20 ) > Daily Ema( Daily Close , 50 )', '>', 0, 'Greater than')" class="px-2 py-0.5 rounded-lg text-[11px] bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition cursor-pointer">+ EMA20 > EMA50</button>
+              <button onclick="quickAddCondition('Daily', 'Daily Volume', '>=', 500000, 'Greater than equal to')" class="px-2 py-0.5 rounded-lg text-[11px] bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition cursor-pointer">+ Vol >= 5 Lacs</button>
+              <button onclick="quickAddCondition('Daily', 'Daily Sma( Daily Volume * Daily Close , 50 )', '>=', 50000000, 'Greater than equal to')" class="px-2 py-0.5 rounded-lg text-[11px] bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition cursor-pointer">+ Turnover >= 5 Cr</button>
+            </div>
+          </div>
+
+          <!-- Action & Run Toolbar -->
+          <div class="mt-4 pt-4 border-t border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="screener-run-btn" onclick="runScreenerScan(true)" class="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition cursor-pointer">
+                <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+                <span id="screener-run-btn-text">Run Scan</span>
+              </button>
+              <button onclick="promptSaveCurrentPreset()" class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition cursor-pointer">
+                <i data-lucide="save" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span>Save Scan</span>
+              </button>
+              <button onclick="copyScreenerResults()" class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition cursor-pointer">
+                <i data-lucide="copy" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>Copy</span>
+              </button>
+              <button onclick="exportScreenerCSV()" class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition cursor-pointer">
+                <i data-lucide="download" class="w-3.5 h-3.5 text-blue-400"></i>
+                <span>CSV</span>
+              </button>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <div class="relative w-full sm:w-64">
+                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500"></i>
+                <input type="text" id="screener-search-input" onkeyup="filterScreenerTable()" placeholder="Search stocks (e.g. ONWARDTEC)..." class="bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-pink-500 w-full font-mono">
+              </div>
+              <span id="screener-count-badge" class="px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold bg-slate-950 border border-slate-800 text-pink-300 shrink-0">
+                0 Stocks
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results Table (Pixel-perfect matching Chartink) -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800 text-xs">
+            <span class="font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <i data-lucide="table" class="w-4 h-4 text-pink-400"></i>
+              <span>Screened Stocks</span>
+            </span>
+            <div class="flex items-center gap-2 text-slate-400 text-[11px]">
+              <span>Rows per page:</span>
+              <select id="screener-page-size" onchange="onScreenerPageSizeChange()" class="bg-slate-950 border border-slate-800 rounded px-2 py-0.5 text-slate-200 cursor-pointer">
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="ALL">All</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto custom-scroll mt-3">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="bg-slate-950/80 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800 select-none">
+                <tr>
+                  <th onclick="sortScreenerColumn('sr')" class="p-3 cursor-pointer hover:text-white">
+                    <span class="flex items-center gap-1">Sr. <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-600"></i></span>
+                  </th>
+                  <th onclick="sortScreenerColumn('name')" class="p-3 cursor-pointer hover:text-white">
+                    <span class="flex items-center gap-1">Stock Name <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-600"></i></span>
+                  </th>
+                  <th onclick="sortScreenerColumn('symbol')" class="p-3 cursor-pointer hover:text-white">
+                    <span class="flex items-center gap-1">Symbol <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-600"></i></span>
+                  </th>
+                  <th onclick="sortScreenerColumn('close')" class="p-3 cursor-pointer hover:text-white text-right">
+                    <span class="flex items-center justify-end gap-1">Close <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-600"></i></span>
+                  </th>
+                  <th onclick="sortScreenerColumn('per_chg')" class="p-3 cursor-pointer hover:text-white text-right">
+                    <span class="flex items-center justify-end gap-1">%_change <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-600"></i></span>
+                  </th>
+                  <th onclick="sortScreenerColumn('volume')" class="p-3 cursor-pointer hover:text-white text-right">
+                    <span class="flex items-center justify-end gap-1">Volume <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-600"></i></span>
+                  </th>
+                  <th onclick="sortScreenerColumn('ema20')" class="p-3 cursor-pointer hover:text-white text-right">
+                    <span class="flex items-center justify-end gap-1">20EMA (% Dist) <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-600"></i></span>
+                  </th>
+                  <th class="p-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody id="screener-results-tbody" class="divide-y divide-slate-800/60 font-mono">
+                <tr>
+                  <td colspan="8" class="p-8 text-center text-slate-500 font-sans">
+                    <div class="flex flex-col items-center justify-center gap-2">
+                      <div class="w-6 h-6 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+                      <span>Loading EQ-FINAL screener stocks...</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination Bar -->
+          <div id="screener-pagination" class="mt-4 pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+            <span id="screener-pagination-info">Showing 1 to 20 of 0 stocks</span>
+            <div id="screener-pagination-controls" class="flex items-center gap-1 flex-wrap">
+              <!-- Page buttons rendered by JS -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Add Condition Modal -->
+      <div id="modal-add-condition" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-5 shadow-2xl space-y-4">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i data-lucide="plus-circle" class="w-4 h-4 text-cyan-400"></i>
+              <span>Add Custom Filter Rule</span>
+            </h3>
+            <button onclick="closeAddConditionModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+
+          <div class="space-y-3 text-xs">
+            <div>
+              <label class="block text-slate-400 font-semibold mb-1">Timeframe</label>
+              <select id="modal-cond-timeframe" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 cursor-pointer">
+                <option value="Daily" selected>Daily</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Quarterly">Quarterly</option>
+                <option value="Yearly">Yearly</option>
+                <option value="Overall">Overall / Any</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-slate-400 font-semibold mb-1">Indicator / Field</label>
+              <select id="modal-cond-field" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 cursor-pointer">
+                <optgroup label="Fundamentals">
+                  <option value="Market Cap">Market Cap (Cr)</option>
+                  <option value="Yearly Return on capital employed percentage">Return on capital employed (ROCE %)</option>
+                  <option value="Yearly Return on net worth percentage">Return on net worth (ROE %)</option>
+                  <option value="Yearly Debt equity ratio">Debt equity ratio</option>
+                  <option value="Quarterly Eps after extraordinary items basic">Quarterly EPS</option>
+                  <option value="Quarterly Net profit/reported profit after tax">Quarterly Net profit (PAT)</option>
+                </optgroup>
+                <optgroup label="Price & Liquidity">
+                  <option value="Daily Close">Close Price</option>
+                  <option value="Daily Volume">Volume</option>
+                  <option value="Daily Sma( Daily Volume * Daily Close , 50 )">50D Daily Turnover (Volume * Close)</option>
+                  <option value="Daily Sma( Daily Volume , 20 )">20D Volume SMA</option>
+                </optgroup>
+                <optgroup label="Technical Indicators">
+                  <option value="Daily Rsi( 14 )">RSI (14)</option>
+                  <option value="Daily Ema( Daily Close , 20 )">20 EMA</option>
+                  <option value="Daily Ema( Daily Close , 50 )">50 EMA</option>
+                  <option value="Daily Ema( Daily Close , 200 )">200 EMA</option>
+                  <option value="Daily Atr( 14 )">ATR (14)</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-slate-400 font-semibold mb-1">Operator</label>
+                <select id="modal-cond-operator" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 cursor-pointer">
+                  <option value=">=">Greater than equal to (&ge;)</option>
+                  <option value="<=">Less than equal to (&le;)</option>
+                  <option value=">">Greater than (&gt;)</option>
+                  <option value="<">Less than (&lt;)</option>
+                  <option value="=">Equals (=)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-slate-400 font-semibold mb-1">Threshold Value</label>
+                <input type="number" step="any" id="modal-cond-value" placeholder="e.g. 50" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500">
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+            <button onclick="closeAddConditionModal()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer">Cancel</button>
+            <button onclick="submitAddConditionModal()" class="px-4 py-2 rounded-xl text-xs font-bold bg-pink-500 hover:bg-pink-400 text-slate-950 transition cursor-pointer">Add Condition</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================================================================= -->
       <!-- TAB 3: LIVE SIGNALS & SCREENER DESK                               -->
       <!-- ================================================================= -->
       <div id="tab-signals" class="tab-content hidden space-y-4 sm:space-y-6">
+
         
         <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-slate-800">
@@ -12813,7 +13067,8 @@
           'bg-cyan-500/15', 'text-cyan-300', 'border-cyan-500/40',
           'bg-violet-500/15', 'text-violet-300', 'border-violet-500/40',
           'bg-emerald-500/15', 'text-emerald-300', 'border-emerald-500/40',
-          'bg-indigo-500/15', 'text-indigo-300', 'border-indigo-500/40'
+          'bg-indigo-500/15', 'text-indigo-300', 'border-indigo-500/40',
+          'bg-pink-500/15', 'text-pink-300', 'border-pink-500/40'
         );
         btn.classList.add('text-slate-400', 'border-transparent');
       });
@@ -12824,6 +13079,9 @@
           activeBtn.classList.add('bg-violet-500/15', 'text-violet-300', 'border-violet-500/40');
         } else if (tabId === 'tab-charts') {
           activeBtn.classList.add('bg-emerald-500/15', 'text-emerald-300', 'border-emerald-500/40');
+        } else if (tabId === 'tab-screener') {
+          activeBtn.classList.add('bg-pink-500/15', 'text-pink-300', 'border-pink-500/40');
+          if (typeof initScreenerTab === 'function') initScreenerTab();
         } else if (tabId === 'tab-analytics') {
           activeBtn.classList.add('bg-indigo-500/15', 'text-indigo-300', 'border-indigo-500/40');
         } else if (tabId === 'tab-ml-training') {
@@ -12833,6 +13091,7 @@
         }
         activeBtn.classList.remove('text-slate-400', 'border-transparent');
       }
+
 
       // Highlight Cloud Vault button on mobile if user tapped Vault & Cron
       const mobVault = document.getElementById('mob-mod-vault');
@@ -16354,8 +16613,503 @@
       }
     }
 
+    // =========================================================================
+    // EQ-FINAL & CUSTOM SCREENER FRONTEND CONTROLLER
+    // =========================================================================
+    const screenerState = {
+      presets: {},
+      currentPreset: 'EQ-FINAL',
+      conditions: [],
+      rawStocks: [],
+      filteredStocks: [],
+      currentPage: 1,
+      pageSize: 20,
+      sortCol: 'per_chg',
+      sortAsc: false,
+      isLoading: false,
+      hasLoadedOnce: false
+    };
+
+    const DEFAULT_CONDITIONS_FALLBACK = [
+      { id: "c1", timeframe: "Overall", field: "Market Cap", operator: ">=", operator_label: "Greater than equal to", value: 300, raw_clause: "Market Cap >= 300" },
+      { id: "c2", timeframe: "Daily", field: "Daily Sma( Daily Volume * Daily Close , 50 )", operator: ">=", operator_label: "Greater than equal to", value: 10000000, raw_clause: "Daily Sma( Daily Volume * Daily Close , 50 ) >= 10000000" },
+      { id: "c3", timeframe: "Yearly", field: "Yearly Return on capital employed percentage", operator: ">=", operator_label: "Greater than equal to", value: 10, raw_clause: "Yearly Return on capital employed percentage >= 10" },
+      { id: "c4", timeframe: "Yearly", field: "Yearly Return on net worth percentage", operator: ">=", operator_label: "Greater than equal to", value: 10, raw_clause: "Yearly Return on net worth percentage >= 10" },
+      { id: "c5", timeframe: "Yearly", field: "Yearly Debt equity ratio", operator: "<=", operator_label: "Less than equal to", value: 1.5, raw_clause: "Yearly Debt equity ratio <= 1.5" },
+      { id: "c6", timeframe: "Quarterly", field: "Quarterly Eps after extraordinary items basic", operator: ">", operator_label: "Greater than", value: 0, raw_clause: "Quarterly Eps after extraordinary items basic > 0" },
+      { id: "c7", timeframe: "Quarterly", field: "Quarterly Net profit/reported profit after tax", operator: ">", operator_label: "Greater than", value: 0, raw_clause: "Quarterly Net profit/reported profit after tax > 0" },
+      { id: "c8", timeframe: "Daily", field: "Daily Close", operator: ">", operator_label: "Greater than", value: 75, raw_clause: "Daily Close > 75" }
+    ];
+
+    async function initScreenerTab() {
+      if (!screenerState.hasLoadedOnce) {
+        screenerState.hasLoadedOnce = true;
+        await loadScreenerPresets();
+        runScreenerScan(false);
+      }
+    }
+
+    async function loadScreenerPresets() {
+      try {
+        const res = await fetch('/api/screener/presets');
+        const data = await res.json();
+        if (data && data.presets) {
+          screenerState.presets = data.presets;
+          renderScreenerPresetDropdown();
+          if (screenerState.presets[screenerState.currentPreset]) {
+            screenerState.conditions = JSON.parse(JSON.stringify(screenerState.presets[screenerState.currentPreset].conditions || DEFAULT_CONDITIONS_FALLBACK));
+          } else {
+            screenerState.conditions = JSON.parse(JSON.stringify(DEFAULT_CONDITIONS_FALLBACK));
+          }
+          renderScreenerConditions();
+        }
+      } catch (err) {
+        console.error("Failed to load screener presets:", err);
+        screenerState.conditions = JSON.parse(JSON.stringify(DEFAULT_CONDITIONS_FALLBACK));
+        renderScreenerConditions();
+      }
+    }
+
+    function renderScreenerPresetDropdown() {
+      const select = document.getElementById('screener-preset-select');
+      if (!select) return;
+      const keys = Object.keys(screenerState.presets);
+      if (!keys.length) {
+        select.innerHTML = '<option value="EQ-FINAL">EQ-FINAL (Default)</option>';
+        return;
+      }
+      select.innerHTML = keys.map(k => {
+        const p = screenerState.presets[k];
+        const isSel = k === screenerState.currentPreset ? 'selected' : '';
+        return `<option value="${escapeHtml(k)}" ${isSel}>${escapeHtml(k)}${p.is_default ? ' (Default)' : ''}</option>`;
+      }).join('');
+    }
+
+    function onScreenerPresetChange() {
+      const select = document.getElementById('screener-preset-select');
+      if (!select) return;
+      const chosen = select.value;
+      screenerState.currentPreset = chosen;
+      const badge = document.getElementById('screener-active-preset-badge');
+      if (badge) badge.textContent = chosen;
+      if (screenerState.presets[chosen]) {
+        screenerState.conditions = JSON.parse(JSON.stringify(screenerState.presets[chosen].conditions || DEFAULT_CONDITIONS_FALLBACK));
+      }
+      renderScreenerConditions();
+      runScreenerScan(false);
+    }
+
+    function renderScreenerConditions() {
+      const container = document.getElementById('screener-conditions-list');
+      if (!container) return;
+      if (!screenerState.conditions.length) {
+        container.innerHTML = '<div class="p-4 text-center text-slate-500 italic text-xs">No active filters. Click "+ Add Filter" to add a condition.</div>';
+        return;
+      }
+
+      container.innerHTML = screenerState.conditions.map((c, idx) => {
+        const opLabel = c.operator_label || (c.operator === '>=' ? 'Greater than equal to' : (c.operator === '<=' ? 'Less than equal to' : (c.operator === '>' ? 'Greater than' : (c.operator === '<' ? 'Less than' : 'Equals'))));
+        return `
+          <div class="flex flex-wrap items-center justify-between gap-2 p-2 sm:p-2.5 rounded-xl bg-slate-900 border border-slate-800/80 hover:border-slate-700 transition text-xs">
+            <div class="flex flex-wrap items-center gap-1.5 min-w-0 font-sans">
+              <span class="w-5 h-5 rounded-full bg-slate-800 text-slate-400 font-mono text-[10px] flex items-center justify-center shrink-0">#${idx + 1}</span>
+              <span class="px-2 py-0.5 rounded font-mono font-bold text-[11px] bg-slate-800 text-slate-300 border border-slate-700/60">${escapeHtml(c.timeframe || 'Daily')}</span>
+              <span class="font-semibold text-slate-200">${escapeHtml(c.field)}</span>
+              <span class="text-pink-400 font-medium">${escapeHtml(opLabel)}</span>
+              <span class="px-2 py-0.5 rounded font-mono font-bold text-[11px] bg-pink-500/10 text-pink-300 border border-pink-500/30">Number ${escapeHtml(String(c.value))}</span>
+            </div>
+            <button onclick="removeScreenerCondition('${escapeHtml(c.id || idx)}')" class="text-slate-500 hover:text-rose-400 p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer" title="Delete condition">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `;
+      }).join('');
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    function removeScreenerCondition(condId) {
+      screenerState.conditions = screenerState.conditions.filter((c, idx) => (c.id || idx).toString() !== condId.toString());
+      renderScreenerConditions();
+    }
+
+    function quickAddCondition(timeframe, field, operator, value, operator_label) {
+      screenerState.conditions.push({
+        id: 'c_' + Date.now(),
+        timeframe: timeframe,
+        field: field,
+        operator: operator,
+        operator_label: operator_label || operator,
+        value: value,
+        raw_clause: `${field} ${operator} ${value}`
+      });
+      renderScreenerConditions();
+    }
+
+    function openAddConditionModal() {
+      const modal = document.getElementById('modal-add-condition');
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeAddConditionModal() {
+      const modal = document.getElementById('modal-add-condition');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function submitAddConditionModal() {
+      const tf = document.getElementById('modal-cond-timeframe').value;
+      const field = document.getElementById('modal-cond-field').value;
+      const op = document.getElementById('modal-cond-operator').value;
+      const opLabel = document.getElementById('modal-cond-operator').options[document.getElementById('modal-cond-operator').selectedIndex].text;
+      const val = parseFloat(document.getElementById('modal-cond-value').value);
+
+      if (isNaN(val)) {
+        alert("Please enter a valid numeric value.");
+        return;
+      }
+
+      screenerState.conditions.push({
+        id: 'c_' + Date.now(),
+        timeframe: tf,
+        field: field,
+        operator: op,
+        operator_label: opLabel,
+        value: val,
+        raw_clause: `${field} ${op} ${val}`
+      });
+
+      renderScreenerConditions();
+      closeAddConditionModal();
+    }
+
+    function resetToDefaultEQFinal() {
+      screenerState.currentPreset = 'EQ-FINAL';
+      const select = document.getElementById('screener-preset-select');
+      if (select) select.value = 'EQ-FINAL';
+      const badge = document.getElementById('screener-active-preset-badge');
+      if (badge) badge.textContent = 'EQ-FINAL';
+      screenerState.conditions = JSON.parse(JSON.stringify(DEFAULT_CONDITIONS_FALLBACK));
+      renderScreenerConditions();
+      runScreenerScan(true);
+    }
+
+    async function promptSaveCurrentPreset() {
+      const name = prompt("Enter a name for this custom screener preset:", screenerState.currentPreset === 'EQ-FINAL' ? 'My Custom Scan' : screenerState.currentPreset);
+      if (!name || !name.trim()) return;
+      try {
+        const res = await fetch('/api/screener/save-preset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim(),
+            conditions: screenerState.conditions,
+            description: `Custom scan with ${screenerState.conditions.length} filters`
+          })
+        });
+        const d = await res.json();
+        if (d.status === 'SUCCESS') {
+          alert(`✅ Preset '${name}' saved successfully!`);
+          screenerState.currentPreset = name.trim();
+          await loadScreenerPresets();
+        } else {
+          alert(`Error saving preset: ${d.detail || d.message || 'Unknown error'}`);
+        }
+      } catch (err) {
+        alert(`Failed to save preset: ${err.message}`);
+      }
+    }
+
+    async function runScreenerScan(forceRefresh = false) {
+      if (screenerState.isLoading) return;
+      screenerState.isLoading = true;
+
+      const runBtn = document.getElementById('screener-run-btn');
+      const runText = document.getElementById('screener-run-btn-text');
+      const tbody = document.getElementById('screener-results-tbody');
+
+      if (runBtn) runBtn.disabled = true;
+      if (runText) runText.textContent = "Scanning...";
+      if (tbody && forceRefresh) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" class="p-8 text-center text-slate-500 font-sans">
+              <div class="flex flex-col items-center justify-center gap-2">
+                <div class="w-6 h-6 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+                <span>Scanning NSE equities through fundamental & technical matrices...</span>
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+
+      try {
+        const payload = {
+          preset_name: screenerState.currentPreset,
+          custom_conditions: screenerState.conditions,
+          force_refresh: forceRefresh
+        };
+        const res = await fetch('/api/screener/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.status === 'SUCCESS' && Array.isArray(data.results)) {
+          screenerState.rawStocks = data.results;
+          screenerState.currentPage = 1;
+
+          // Update badges
+          const countBadge = document.getElementById('screener-count-badge');
+          if (countBadge) countBadge.textContent = `${data.count} Stocks`;
+          const navBadge = document.getElementById('badge-screener-count');
+          if (navBadge) navBadge.textContent = `${data.count}`;
+
+          filterScreenerTable();
+        } else {
+          if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-rose-400 font-sans">Scan notice: ${escapeHtml(data.message || 'No stocks matched conditions')}</td></tr>`;
+          }
+        }
+      } catch (err) {
+        console.error("Screener scan error:", err);
+        if (tbody) {
+          tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-rose-400 font-sans">Failed to execute scan: ${escapeHtml(err.message)}</td></tr>`;
+        }
+      } finally {
+        screenerState.isLoading = false;
+        if (runBtn) runBtn.disabled = false;
+        if (runText) runText.textContent = "Run Scan";
+      }
+    }
+
+    function filterScreenerTable() {
+      const q = (document.getElementById('screener-search-input')?.value || '').trim().toLowerCase();
+      if (!q) {
+        screenerState.filteredStocks = [...screenerState.rawStocks];
+      } else {
+        screenerState.filteredStocks = screenerState.rawStocks.filter(s =>
+          (s.symbol && s.symbol.toLowerCase().includes(q)) ||
+          (s.name && s.name.toLowerCase().includes(q))
+        );
+      }
+      renderScreenerTable();
+    }
+
+    function sortScreenerColumn(col) {
+      if (screenerState.sortCol === col) {
+        screenerState.sortAsc = !screenerState.sortAsc;
+      } else {
+        screenerState.sortCol = col;
+        screenerState.sortAsc = col === 'name' || col === 'symbol';
+      }
+      renderScreenerTable();
+    }
+
+    function onScreenerPageSizeChange() {
+      const val = document.getElementById('screener-page-size')?.value;
+      screenerState.pageSize = val === 'ALL' ? 'ALL' : parseInt(val, 10);
+      screenerState.currentPage = 1;
+      renderScreenerTable();
+    }
+
+    function renderScreenerTable() {
+      const tbody = document.getElementById('screener-results-tbody');
+      if (!tbody) return;
+
+      let stocks = [...screenerState.filteredStocks];
+
+      // Sorting
+      const col = screenerState.sortCol;
+      const asc = screenerState.sortAsc;
+      stocks.sort((a, b) => {
+        let vA = a[col];
+        let vB = b[col];
+        if (vA == null) vA = asc ? Infinity : -Infinity;
+        if (vB == null) vB = asc ? Infinity : -Infinity;
+        if (typeof vA === 'string') {
+          return asc ? vA.localeCompare(vB) : vB.localeCompare(vA);
+        }
+        return asc ? vA - vB : vB - vA;
+      });
+
+      const total = stocks.length;
+      if (!total) {
+        tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-500 font-sans italic">No stocks match your query or filters.</td></tr>`;
+        renderScreenerPagination(0, 0, 0, 1);
+        return;
+      }
+
+      // Pagination slice
+      let pageItems = stocks;
+      let startIdx = 0;
+      let endIdx = total;
+      let totalPages = 1;
+
+      if (screenerState.pageSize !== 'ALL') {
+        const ps = screenerState.pageSize;
+        totalPages = Math.ceil(total / ps);
+        if (screenerState.currentPage > totalPages) screenerState.currentPage = totalPages;
+        if (screenerState.currentPage < 1) screenerState.currentPage = 1;
+        startIdx = (screenerState.currentPage - 1) * ps;
+        endIdx = Math.min(startIdx + ps, total);
+        pageItems = stocks.slice(startIdx, endIdx);
+      }
+
+      tbody.innerHTML = pageItems.map((s, idx) => {
+        const isPos = s.per_chg >= 0;
+        const chgClass = isPos ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+        const chgSign = isPos ? '+' : '';
+        const emaDist = s.ema20 != null ? Number(s.ema20).toFixed(2) : '--';
+        const emaClass = s.ema20 >= 0 ? 'text-emerald-400' : 'text-rose-400';
+
+        return `
+          <tr class="hover:bg-slate-800/50 transition">
+            <td class="p-3 text-slate-500">${startIdx + idx + 1}</td>
+            <td class="p-3 font-sans font-semibold text-slate-200">
+              <span class="hover:text-cyan-300 transition cursor-pointer" onclick="openStockChartFromScreener('${escapeHtml(s.symbol)}')">${escapeHtml(s.name)}</span>
+            </td>
+            <td class="p-3 font-bold text-white">
+              <button onclick="openStockChartFromScreener('${escapeHtml(s.symbol)}')" class="font-mono text-cyan-400 hover:text-cyan-300 hover:underline transition cursor-pointer">
+                ${escapeHtml(s.symbol)}
+              </button>
+            </td>
+            <td class="p-3 text-right font-mono font-bold text-slate-100">&#8377;${Number(s.close).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td class="p-3 text-right font-mono">
+              <span class="px-2 py-0.5 rounded text-[11px] font-bold border ${chgClass}">
+                ${chgSign}${Number(s.per_chg).toFixed(2)}%
+              </span>
+            </td>
+            <td class="p-3 text-right font-mono text-slate-300">${escapeHtml(s.volume_formatted || s.volume.toLocaleString('en-IN'))}</td>
+            <td class="p-3 text-right font-mono font-semibold ${emaClass}">${emaDist > 0 ? '+' : ''}${emaDist}%</td>
+            <td class="p-3 text-center">
+              <button onclick="triggerQuickTradeFromScreener('${escapeHtml(s.symbol)}', ${s.close})" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/40 hover:border-pink-500 flex items-center gap-1 mx-auto transition cursor-pointer">
+                <i data-lucide="zap" class="w-3 h-3 text-pink-400"></i>
+                <span>Trade</span>
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      renderScreenerPagination(startIdx + 1, endIdx, total, totalPages);
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    function renderScreenerPagination(from, to, total, totalPages) {
+      const info = document.getElementById('screener-pagination-info');
+      const controls = document.getElementById('screener-pagination-controls');
+      if (info) info.textContent = total > 0 ? `Showing ${from} to ${to} of ${total} stocks` : 'Showing 0 stocks';
+      if (!controls) return;
+
+      if (screenerState.pageSize === 'ALL' || totalPages <= 1) {
+        controls.innerHTML = '';
+        return;
+      }
+
+      const cur = screenerState.currentPage;
+      let html = `
+        <button onclick="setScreenerPage(${cur - 1})" ${cur === 1 ? 'disabled class="px-2 py-1 rounded bg-slate-900 text-slate-600 cursor-not-allowed"' : 'class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"'}>&laquo; Prev</button>
+      `;
+
+      // Window of pages
+      const pagesToShow = [];
+      for (let p = 1; p <= totalPages; p++) {
+        if (p === 1 || p === totalPages || (p >= cur - 2 && p <= cur + 2)) {
+          pagesToShow.push(p);
+        }
+      }
+
+      let lastP = 0;
+      for (const p of pagesToShow) {
+        if (lastP && p - lastP > 1) {
+          html += `<span class="px-1 text-slate-600">...</span>`;
+        }
+        if (p === cur) {
+          html += `<button class="px-2.5 py-1 rounded bg-pink-500 text-slate-950 font-bold text-xs">${p}</button>`;
+        } else {
+          html += `<button onclick="setScreenerPage(${p})" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs cursor-pointer">${p}</button>`;
+        }
+        lastP = p;
+      }
+
+      html += `
+        <button onclick="setScreenerPage(${cur + 1})" ${cur === totalPages ? 'disabled class="px-2 py-1 rounded bg-slate-900 text-slate-600 cursor-not-allowed"' : 'class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"'}>Next &raquo;</button>
+      `;
+      controls.innerHTML = html;
+    }
+
+    function setScreenerPage(p) {
+      screenerState.currentPage = p;
+      renderScreenerTable();
+    }
+
+    function openStockChartFromScreener(symbol) {
+      if (!symbol) return;
+      const clean = symbol.replace('.NS', '').trim();
+      switchTab('tab-charts');
+      const searchBox = document.getElementById('chart-ticker-search');
+      if (searchBox) {
+        searchBox.value = clean;
+        if (typeof selectHistoricalTicker === 'function') {
+          selectHistoricalTicker(clean);
+        }
+      }
+    }
+
+    function triggerQuickTradeFromScreener(symbol, closePrice) {
+      const clean = symbol.replace('.NS', '').trim();
+      const qty = Math.max(1, Math.floor(10000 / (closePrice || 100)));
+      if (confirm(`Execute instant Swing Order for ${clean}?\n\nPrice: ₹${closePrice}\nEstimated Qty (for ₹10,000): ${qty} shares\n\nClick OK to route directly to Execution Desk.`)) {
+        if (typeof submitManualTradeExecution === 'function') {
+          submitManualTradeExecution(clean, 'BUY', qty, closePrice);
+        } else {
+          switchTab('tab-p1');
+          alert(`Switched to Institutional Desk for ${clean}. Review sizing and click Confirm Order.`);
+        }
+      }
+    }
+
+    function copyScreenerResults() {
+      const stocks = screenerState.filteredStocks;
+      if (!stocks.length) {
+        alert("No stocks to copy.");
+        return;
+      }
+      let tsv = "Sr\tStock Name\tSymbol\tClose\t% Change\tVolume\t20EMA\n";
+      stocks.forEach((s, i) => {
+        tsv += `${i + 1}\t${s.name}\t${s.symbol}\t${s.close}\t${s.per_chg}%\t${s.volume}\t${s.ema20}%\n`;
+      });
+      navigator.clipboard.writeText(tsv).then(() => {
+        alert(`✅ Copied ${stocks.length} screened stocks to clipboard in spreadsheet format!`);
+      }).catch(err => {
+        alert("Clipboard error: " + err);
+      });
+    }
+
+    function exportScreenerCSV() {
+      const stocks = screenerState.filteredStocks;
+      if (!stocks.length) {
+        alert("No stocks to export.");
+        return;
+      }
+      let csv = "Sr,Stock Name,Symbol,Close,Percent Change,Volume,20EMA Distance\n";
+      stocks.forEach((s, i) => {
+        csv += `${i + 1},"${(s.name || '').replace(/"/g, '""')}",${s.symbol},${s.close},${s.per_chg},${s.volume},${s.ema20}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `screener_${screenerState.currentPreset.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
     // Register Service Worker
     if ('serviceWorker' in navigator) {
+
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js', { scope: '/' })
           .then((reg) => {

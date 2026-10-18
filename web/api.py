@@ -10,7 +10,7 @@ import threading
 import math
 import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 import numpy as np
 
@@ -53,6 +53,7 @@ from engines.nifty500_engine import (
     get_nifty500_status, get_live_compounded_equity,
     PORTFOLIO_TYPE as P2_TYPE
 )
+from engines.custom_screener_engine import custom_screener_engine
 from execution.state_engine import state_engine
 from core.execution_queue import execution_queue
 from core.data_watchdog import data_watchdog
@@ -60,6 +61,7 @@ from scheduler.cron_scheduler import (
     start_scheduler, shutdown_scheduler, get_scheduler_status,
     register_external_request_origin
 )
+
 
 logger = logging.getLogger("WebAPI")
 
@@ -2000,5 +2002,61 @@ def evaluate_candidate_endpoint(symbol: str):
         "ai_decision": ai_res.model_dump(),
         "evaluated_at": format_ist()
     }
+
+
+# ==============================================================================
+# CUSTOM SCREENER & EQ-FINAL RULE BUILDER ENDPOINTS
+# ==============================================================================
+
+class RunScreenerRequest(BaseModel):
+    preset_name: Optional[str] = "EQ-FINAL"
+    custom_conditions: Optional[List[Dict[str, Any]]] = None
+    raw_clause: Optional[str] = None
+    force_refresh: bool = False
+
+class SavePresetRequest(BaseModel):
+    name: str
+    conditions: List[Dict[str, Any]]
+    description: Optional[str] = ""
+
+@app.get("/api/screener/presets")
+def get_screener_presets_endpoint():
+    """Returns all configured screener presets (including default EQ-FINAL)."""
+    return {
+        "status": "SUCCESS",
+        "presets": custom_screener_engine.get_presets()
+    }
+
+@app.post("/api/screener/run")
+def run_custom_screener_endpoint(req: RunScreenerRequest):
+    """Executes screener scan with real-time enrichment and 20EMA distance."""
+    try:
+        res = custom_screener_engine.run_scan(
+            preset_name=req.preset_name,
+            custom_conditions=req.custom_conditions,
+            raw_clause=req.raw_clause,
+            force_refresh=req.force_refresh
+        )
+        return res
+    except Exception as e:
+        logger.error(f"Error running custom screener: {e}")
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+@app.post("/api/screener/save-preset")
+def save_screener_preset_endpoint(req: SavePresetRequest, _auth=Depends(verify_admin_key)):
+    """Saves a user-configured custom screener preset."""
+    ok = custom_screener_engine.save_preset(req.name, req.conditions, req.description)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Invalid preset name or empty conditions.")
+    return {"status": "SUCCESS", "message": f"Preset '{req.name}' saved successfully."}
+
+@app.delete("/api/screener/preset/{name}")
+def delete_screener_preset_endpoint(name: str, _auth=Depends(verify_admin_key)):
+    """Deletes a user-configured custom screener preset."""
+    ok = custom_screener_engine.delete_preset(name)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Cannot delete default preset 'EQ-FINAL' or preset not found.")
+    return {"status": "SUCCESS", "message": f"Preset '{name}' deleted successfully."}
+
 
 
