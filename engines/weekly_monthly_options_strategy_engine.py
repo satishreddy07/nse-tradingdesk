@@ -525,7 +525,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             except Exception:
                 pass
         if iv_pct <= 0:
-            iv_pct = DEFAULT_OPTIONS_IV
+            raise ValueError("Verified implied volatility is unavailable; fixed-IV substitution is prohibited for actionable strike calculations.")
 
         horizon = horizon.upper()
         today = now_ist().date()
@@ -1702,7 +1702,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
         )
 
         # Spot & IV lookups
-        iv_val = 13.0
+        iv_val = 0.0
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
             v_data = nifty_analytics_engine.get_india_vix()
@@ -1721,12 +1721,21 @@ class WeeklyMonthlyOptionsStrategyEngine:
             if spot_chain > 0:
                 spot_price = spot_chain
             chain_sec = deep_chain.get("weekly" if horizon == "WEEKLY" else "monthly", {})
-            iv_val = float(chain_sec.get("atm_iv") or chain_sec.get("volatility_and_gex", {}).get("atm_iv") or 13.2)
+            iv_val = float(chain_sec.get("atm_iv") or chain_sec.get("volatility_and_gex", {}).get("atm_iv") or 0.0)
             c_exp = chain_sec.get("expiry_date") or chain_sec.get("expiry")
             if c_exp:
                 expiry_date = str(c_exp)
         except Exception as e:
             logger.debug(f"Deep chain lookup notice: {e}")
+
+        if not np.isfinite(iv_val) or iv_val <= 0.0:
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "reason": "No verified option-chain IV or current India VIX; automatic strategy deployment is blocked.",
+                "horizon": horizon,
+                "spot_price": spot_price,
+                "candidates": []
+            }
 
         # Run Pre-Trade Strategy Tournament to select the architecture with HIGHEST PROBABILITY OF WINNING
         tournament = self.analyze_highest_win_probability_strategy(
