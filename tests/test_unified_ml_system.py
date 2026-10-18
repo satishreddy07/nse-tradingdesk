@@ -173,6 +173,10 @@ class TestMultiHorizonTrainingAndModelRegistry:
             assert "ensemble_brier" in metrics
             assert "baseline_brier" in metrics
             assert "ensemble_auc" in metrics
+            if h_res["status"] == "INSUFFICIENT_DATA":
+                assert metrics["ensemble_brier"] is None
+                assert metrics["baseline_brier"] is None
+                assert metrics["ensemble_auc"] is None
 
         # Test Rollback API on WEEKLY horizon
         rollback_res = tree_quant_ml_engine.rollback_model("WEEKLY")
