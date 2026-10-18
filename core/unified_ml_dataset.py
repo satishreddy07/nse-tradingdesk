@@ -355,7 +355,7 @@ class UnifiedMLDataset:
                 """, (
                     float(actual_exit), exit_time, exit_reason, status,
                     float(gross_pnl), float(net_pnl), float(total_costs),
-                    float(r_mult), int(is_win), int(target_before_sl),
+                    float(r_mult), int(is_win), (int(target_before_sl) if target_before_sl is not None else None),
                     _finite_feature_value(mae_pct), _finite_feature_value(mfe_pct),
                     _finite_feature_value(hold_duration_mins),
                     int(re_entry_count) if re_entry_count is not None else None,

@@ -1325,19 +1325,73 @@ class IntradayOptionsStrategyEngine:
         daytime_conf = self.calculate_daytime_confidence(intraday_regime_info)
         confidence_pct = float(daytime_conf["intraday_confidence_pct"])
 
-        # Option Chain live data
+        # Option-chain analysis may still be displayed when stale/unverified, but trade creation
+        # requires a current provider timestamp for the exact weekly contract.
         oc_data = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=force_refresh)
         w_oc = oc_data.get("weekly", {})
-        iv_val = float(w_oc.get("volatility_and_gex", {}).get("atm_iv") or 12.8)
-        expiry_date = w_oc.get("expiry") or now_ist().strftime("%Y-%m-%d")
+        iv_info = w_oc.get("volatility_and_gex") or {}
+        expiry_date = w_oc.get("expiry") or w_oc.get("expiry_date")
+        chain_spot_raw = oc_data.get("spot_price")
+        iv_raw = iv_info.get("atm_iv")
 
-        # Sigma Strikes - dynamically calculates 0DTE vs non-0DTE intraday cycle
-        sigma_calc = self.calculate_sigma_strikes(spot=spot_price, iv_pct=iv_val, expiry_date=expiry_date)
+        try:
+            chain_spot = float(chain_spot_raw)
+        except (TypeError, ValueError, OverflowError):
+            chain_spot = float("nan")
+        try:
+            iv_val = float(iv_raw)
+        except (TypeError, ValueError, OverflowError):
+            iv_val = float("nan")
+
+        data_block_reason = None
+        if oc_data.get("status") != "OK" or oc_data.get("trading_allowed") is not True:
+            data_block_reason = (
+                oc_data.get("freshness_error")
+                or oc_data.get("data_quality")
+                or oc_data.get("message")
+                or "The NIFTY option chain is not verified and live."
+            )
+        elif w_oc.get("status") != "OK" or w_oc.get("trading_allowed") is not True:
+            data_block_reason = (
+                w_oc.get("freshness_error")
+                or w_oc.get("data_quality")
+                or "The selected weekly expiry has no verified live quote timestamp."
+            )
+        elif not math.isfinite(chain_spot) or chain_spot <= 0:
+            data_block_reason = "Verified option-chain spot is unavailable."
+        elif not expiry_date:
+            data_block_reason = "The option chain did not identify the active weekly expiry."
+        elif not math.isfinite(iv_val) or iv_val <= 0 or iv_info.get("iv_data_quality") != "VALID_CHAIN_IV":
+            data_block_reason = "A finite, verified option-chain ATM IV is unavailable."
+
+        if data_block_reason:
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "reason": f"Intraday auto-trade blocked: {data_block_reason}",
+                "decision_source": "INTRADAY_ANALYSIS",
+                "intraday_analysis": intraday_regime_info,
+                "intraday_confidence_pct": confidence_pct,
+                "confidence_details": daytime_conf,
+                "option_chain_data_quality": oc_data.get("data_quality"),
+                "weekly_chain_data_quality": w_oc.get("data_quality"),
+                "timestamp_ist": format_ist()
+            }
+
+        # Use the spot carried by the same provider-timestamped chain as the selected IV.
+        spot_price = chain_spot
+        sigma_calc = self.calculate_sigma_strikes(spot=spot_price, iv_pct=iv_val, expiry_date=str(expiry_date))
         strikes_map = sigma_calc["strikes"]
-        is_zero_dte = bool(sigma_calc.get("is_zero_dte", False))
-        expiry_cycle = str(sigma_calc.get("expiry_cycle", "INTRADAY"))
-        dte = int(sigma_calc.get("dte", 0))
-        t_years = float(sigma_calc.get("time_to_expiry_years", 0.0027))
+        is_zero_dte = bool(sigma_calc["is_zero_dte"])
+        expiry_cycle = str(sigma_calc["expiry_cycle"])
+        dte = int(sigma_calc["dte"])
+        t_years = float(sigma_calc["time_to_expiry_years"])
+        if not math.isfinite(t_years) or t_years <= 0:
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "reason": "The active expiry produced an invalid time-to-expiry value; trade creation blocked.",
+                "decision_source": "INTRADAY_ANALYSIS",
+                "timestamp_ist": format_ist()
+            }
 
         # Differential daytime confidence bar:
         # Expiry Day (0DTE): higher gamma risk, requires >= 60.0% confidence

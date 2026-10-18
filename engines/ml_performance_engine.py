@@ -941,7 +941,7 @@ class MLPerformanceEngine:
         max_drawdown_pct = (
             round((max_dd / peak) * 100.0, 2)
             if drawdown_observations and peak > 0
-            else (0.0 if not trades else None)
+            else None
         )
 
         return {

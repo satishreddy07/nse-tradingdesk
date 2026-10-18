@@ -1702,8 +1702,62 @@ class WeeklyMonthlyOptionsStrategyEngine:
             if spot_chain > 0:
                 spot_price = spot_chain
             chain_sec = deep_chain.get("weekly" if horizon == "WEEKLY" else "monthly", {})
-            iv_val = float(chain_sec.get("atm_iv") or chain_sec.get("volatility_and_gex", {}).get("atm_iv") or 0.0)
+            iv_raw = chain_sec.get("atm_iv")
+            if iv_raw is None:
+                iv_raw = (chain_sec.get("volatility_and_gex") or {}).get("atm_iv")
+            try:
+                chain_iv = float(iv_raw)
+            except (TypeError, ValueError, OverflowError):
+                chain_iv = float("nan")
             c_exp = chain_sec.get("expiry_date") or chain_sec.get("expiry")
+
+            if deep_chain.get("status") != "OK" or deep_chain.get("trading_allowed") is not True:
+                return {
+                    "status": "DATA_UNAVAILABLE",
+                    "reason": (
+                        "Automatic deployment blocked because option-chain quotes lack a fresh, "
+                        "verified NSE provider timestamp."
+                    ),
+                    "horizon": horizon,
+                    "spot_price": spot_price,
+                    "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
+                    "weekly_prediction_model": weekly_model_info,
+                    "weekly_model_info": weekly_model_info,
+                    "candidates": [],
+                    "option_chain_data_quality": deep_chain.get("data_quality"),
+                    "timestamp_ist": now_str
+                }
+            if chain_sec.get("status") != "OK" or chain_sec.get("trading_allowed") is not True:
+                return {
+                    "status": "DATA_UNAVAILABLE",
+                    "reason": (
+                        f"Automatic {horizon.lower()} deployment blocked because the selected expiry "
+                        "has no fresh, verified quote timestamp."
+                    ),
+                    "horizon": horizon,
+                    "spot_price": spot_price,
+                    "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
+                    "weekly_prediction_model": weekly_model_info,
+                    "weekly_model_info": weekly_model_info,
+                    "candidates": [],
+                    "option_chain_data_quality": chain_sec.get("data_quality"),
+                    "timestamp_ist": now_str
+                }
+            iv_quality = (chain_sec.get("volatility_and_gex") or {}).get("iv_data_quality")
+            if not math.isfinite(chain_iv) or chain_iv <= 0 or iv_quality != "VALID_CHAIN_IV":
+                return {
+                    "status": "DATA_UNAVAILABLE",
+                    "reason": "Automatic deployment requires finite ATM IV from the selected live option chain.",
+                    "horizon": horizon,
+                    "spot_price": spot_price,
+                    "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
+                    "weekly_prediction_model": weekly_model_info,
+                    "weekly_model_info": weekly_model_info,
+                    "candidates": [],
+                    "option_chain_data_quality": iv_quality or "DATA_UNAVAILABLE",
+                    "timestamp_ist": now_str
+                }
+            iv_val = chain_iv
             if c_exp:
                 expiry_date = str(c_exp)
         except Exception as e:
@@ -1997,6 +2051,21 @@ class WeeklyMonthlyOptionsStrategyEngine:
         try:
             deep_chain = nifty_analytics_engine.get_deep_option_chain()
             chain_sec = deep_chain.get("weekly" if horizon == "WEEKLY" else "monthly", {})
+            if (
+                deep_chain.get("data_quality") != "VALID_PROVIDER_TIMESTAMP"
+                or deep_chain.get("is_stale") is not False
+                or chain_sec.get("data_quality") != "VALID_PROVIDER_TIMESTAMP"
+                or chain_sec.get("is_stale") is not False
+            ):
+                return {
+                    "status": "DATA_UNAVAILABLE",
+                    "reason": "Position monitoring left unchanged because the selected option-chain quote is stale or unverified.",
+                    "horizon": horizon,
+                    "active_count": len(active_rows),
+                    "data_quality": deep_chain.get("data_quality"),
+                    "expiry_data_quality": chain_sec.get("data_quality"),
+                    "timestamp_ist": now_str
+                }
             chain_data = chain_sec.get("all_strikes") or chain_sec.get("strikes", [])
             spot_price = float(deep_chain.get("spot") or deep_chain.get("spot_price") or 0.0)
         except Exception:
