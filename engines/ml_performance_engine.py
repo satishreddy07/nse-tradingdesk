@@ -957,11 +957,11 @@ class MLPerformanceEngine:
                 t_wins = sum(1 for r in t_rows if (r[0] or 0.0) > 0 or r[3] == 1)
                 sl_hits = sum(1 for r in t_rows if "SL" in str(r[2] or "").upper() or "STOP" in str(r[2] or "").upper())
 
-                dir_acc = round((n_hits / max(1, n_count)) * 100.0, 1) if n_count > 0 else 0.0
-                win_rate = round((t_wins / max(1, t_count)) * 100.0, 1) if t_count > 0 else 0.0
-                exp_r = round(float(np.mean([r[0] for r in t_rows])), 1) if t_rows else 0.0
-                tgt_rate = round((sum(r[1] or 0 for r in t_rows) / max(1, t_count)) * 100.0, 1) if t_count > 0 else 0.0
-                sl_rate = round((sl_hits / max(1, t_count)) * 100.0, 1) if t_count > 0 else 0.0
+                dir_acc = round((n_hits / n_count) * 100.0, 1) if n_count > 0 else None
+                win_rate = round((t_wins / t_count) * 100.0, 1) if t_count > 0 else None
+                exp_r = round(float(np.mean([r[0] for r in t_rows])), 1) if t_rows else None
+                tgt_rate = round((sum(r[1] or 0 for r in t_rows) / t_count) * 100.0, 1) if t_count > 0 else None
+                sl_rate = round((sl_hits / t_count) * 100.0, 1) if t_count > 0 else None
 
                 # Real peak-to-trough max drawdown on regime trades equity curve
                 r_eq = 0.0
@@ -977,24 +977,30 @@ class MLPerformanceEngine:
                         r_max_dd = dd
                 regime_dd = round((r_max_dd / max(1.0, r_peak)) * 100.0, 2) if r_peak > 0 else 0.0
 
-                # Brier score calculation: MSE of predicted class probability against actual binary outcome (F-33, Finding 6.6)
-                if n_count > 0:
-                    brier_sq_errors = []
-                    for r in n_rows:
-                        # Extract predicted direction probability
-                        p_dir = str(r[5] or "").upper() if len(r) > 5 else "BULLISH"
-                        if "BULL" in p_dir:
-                            p_prob = float(r[2]) if len(r) > 2 and r[2] is not None else 0.5
-                        elif "BEAR" in p_dir:
-                            p_prob = float(r[4]) if len(r) > 4 and r[4] is not None else 0.5
-                        else:
-                            p_prob = float(r[3]) if len(r) > 3 and r[3] is not None else 0.5
-
-                        y = 1.0 if r[0] == 1 else 0.0
-                        brier_sq_errors.append((p_prob - y) ** 2)
-                    brier_score = round(float(np.mean(brier_sq_errors)), 3) if brier_sq_errors else 0.0
-                else:
-                    brier_score = 0.0
+                # Multiclass Brier score: sum of squared errors across UP/FLAT/DOWN probabilities.
+                # Rows with missing/invalid class probabilities or realized labels are excluded, never imputed.
+                brier_sq_errors = []
+                for r in n_rows:
+                    probs = [r[2], r[3], r[4]]
+                    label = str(r[6] or "").strip().upper() if len(r) > 6 else ""
+                    if label in ("UP", "BULLISH", "BULL", "1"):
+                        actual = [1.0, 0.0, 0.0]
+                    elif label in ("FLAT", "RANGE", "RANGE_BOUND", "0"):
+                        actual = [0.0, 1.0, 0.0]
+                    elif label in ("DOWN", "BEARISH", "BEAR", "-1"):
+                        actual = [0.0, 0.0, 1.0]
+                    else:
+                        continue
+                    try:
+                        p_values = [float(value) for value in probs]
+                    except (TypeError, ValueError):
+                        continue
+                    if not all(np.isfinite(value) and 0.0 <= value <= 1.0 for value in p_values):
+                        continue
+                    if abs(sum(p_values) - 1.0) > 0.02:
+                        continue
+                    brier_sq_errors.append(sum((p - y) ** 2 for p, y in zip(p_values, actual)))
+                brier_score = round(float(np.mean(brier_sq_errors)), 4) if brier_sq_errors else None
 
                 summary[reg] = {
                     "regime": reg,
