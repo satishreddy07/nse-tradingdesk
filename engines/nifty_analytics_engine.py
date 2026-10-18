@@ -6811,12 +6811,23 @@ class NiftyAnalyticsEngine:
                         if raw_prov_ts:
                             try:
                                 prov_dt = pd.to_datetime(raw_prov_ts, dayfirst=True)
+                                if pd.isna(prov_dt):
+                                    raise ValueError("Invalid provider timestamp")
+                                if getattr(prov_dt, "tzinfo", None) is None:
+                                    prov_dt = IST.localize(prov_dt) if hasattr(IST, "localize") else prov_dt.replace(tzinfo=now_ist().tzinfo)
+                                else:
+                                    prov_dt = prov_dt.astimezone(now_ist().tzinfo)
                                 provider_timestamp = format_ist(prov_dt)
-                                prov_age_sec = max(0.0, (now_ist() - (IST.localize(prov_dt) if hasattr(IST, "localize") else prov_dt.replace(tzinfo=now_ist().tzinfo))).total_seconds())
+                                prov_age_sec = (now_ist() - prov_dt).total_seconds()
                             except Exception:
                                 provider_timestamp = str(raw_prov_ts)
 
-                        is_stale_quote = (prov_age_sec is None or prov_age_sec > 180.0) if is_market_open else False
+                        # Missing, malformed, or future provider timestamps are never treated as fresh.
+                        is_stale_quote = (
+                            prov_age_sec is None
+                            or prov_age_sec < -60.0
+                            or (is_market_open and prov_age_sec > 180.0)
+                        )
                         res = {
                             "price": round(spot, 2),
                             "change_pts": diff_pts,
