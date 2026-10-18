@@ -149,7 +149,11 @@ class TestUnifiedMLDataset:
         assert resolved_cf is True
 
         # 5. Extract training dataset and verify columns
-        df = unified_ml_dataset.get_dataset_for_horizon(horizon="WEEKLY", include_counterfactuals=True)
+        df = unified_ml_dataset.get_dataset_for_horizon(
+            horizon="WEEKLY",
+            include_counterfactuals=True,
+            record_types=["LIVE", "COUNTERFACTUAL"],
+        )
         assert not df.empty
         assert "is_winner" in df.columns
 
