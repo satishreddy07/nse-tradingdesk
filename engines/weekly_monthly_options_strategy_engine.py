@@ -2218,13 +2218,21 @@ class WeeklyMonthlyOptionsStrategyEngine:
         }
 
         for r in rows:
+            # Do not manufacture entry-time IV, expected move, expiry, or risk features.
+            if (
+                r["iv_at_entry"] is None or float(r["iv_at_entry"]) <= 0
+                or r["expected_move"] is None or float(r["expected_move"]) <= 0
+                or r["dte_at_entry"] is None or float(r["dte_at_entry"]) < 0
+                or r["sl_threshold_pct"] is None or float(r["sl_threshold_pct"]) <= 0
+            ):
+                continue
             reg_val = regime_map.get(str(r["regime"]).upper().replace(" ", "_"), 0.0)
-            iv = float(r["iv_at_entry"] or 13.2)
-            em = float(r["expected_move"] or 300.0)
-            dte = float(r["dte_at_entry"] or (5 if horizon == "WEEKLY" else 25))
-            sl = float(r["sl_threshold_pct"] or (0.40 if horizon == "WEEKLY" else 0.50))
+            iv = float(r["iv_at_entry"])
+            em = float(r["expected_move"])
+            dte = float(r["dte_at_entry"])
+            sl = float(r["sl_threshold_pct"])
             net_p = float(r["net_pnl_inr"] or 0.0)
-            w = int(r["win"] or (1 if net_p > 0 else 0))
+            w = int(r["win"]) if r["win"] is not None else (1 if net_p > 0 else 0)
 
             X.append([reg_val, iv, em, dte, sl])
             y_win.append(w)
