@@ -499,6 +499,8 @@ def test_h06_unified_ml_dataset_cohort_separation(tmp_path):
         assert row is not None
         assert row[0] is None  # Actual entry must remain NULL
         assert row[1] == "PENDING_FILL"  # Never inferred as FILLED without verified execution
+    # Production training must not consume accepted-but-unfilled signals.
+    assert ds.get_dataset_for_horizon("WEEKLY").empty
 
 
 def test_h07_telegram_vault_restore_safety():
