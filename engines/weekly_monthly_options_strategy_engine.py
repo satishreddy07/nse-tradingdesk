@@ -1296,22 +1296,6 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "timestamp_ist": format_ist()
             }
 
-        if not sessions_data:
-            return {
-                "status": "DATA_UNAVAILABLE",
-                "message": "No historical session data available for positional options backtest.",
-                "decision_source": f"WEEKLY_PREDICTION_MODEL_T5 ({horizon.capitalize()})",
-                "horizon": horizon,
-                "specified_sl_pct": default_sl,
-                "sessions_evaluated": 0,
-                "date_range": "N/A",
-                "lot_size": lot_size,
-                "comparison_matrix": {},
-                "regime_breakdown": {},
-                "summary_insights": ["Data unavailable: No historical session data found in database."],
-                "timestamp_ist": format_ist()
-            }
-
         # Test Configurations Matrix:
         # A. Specified Strategy With 1-Time Re-entry
         # B. Specified Strategy Without Re-entry (Vanilla SL)
