@@ -398,26 +398,34 @@ class SwingQuantMLEngine:
             win_prob = round(float(1.0 / (1.0 + np.exp(-log_odds))), 3)
             expected_r = round(win_prob * 1.5 - (1.0 - win_prob) * 1.0, 2)
 
-        # 2. Risk Factor Detection
+        # 2. Risk Factor Detection with Institutional VDU & Breakout Recognition
         risk_flags = []
         fatal_flags = []
 
-        if feat_dict["dist_to_pivot"] > 3.0:
+        is_breakout_surge = (feat_dict.get("vol_ratio", 1.0) >= 1.5) and (feat_dict.get("score", 0.0) >= 80.0)
+
+        # Dynamic Pivot Thresholds (allow buffer on Day 1 high-volume breakouts)
+        pivot_fatal = 6.5 if is_breakout_surge else 4.5
+        pivot_warn = 4.0 if is_breakout_surge else 3.0
+        if feat_dict["dist_to_pivot"] > pivot_warn:
             msg = f"OVEREXTENDED_FROM_PIVOT: Stock is {feat_dict['dist_to_pivot']:.1f}% above 20-day base pivot (chasing resistance)"
             risk_flags.append(msg)
-            if feat_dict["dist_to_pivot"] > 4.5:
+            if feat_dict["dist_to_pivot"] > pivot_fatal:
                 fatal_flags.append(msg)
 
-        if feat_dict["dist_to_ema20"] > 5.0:
+        # Dynamic EMA20 Thresholds (on breakout day price moves before 20 EMA catches up)
+        ema20_fatal = 11.5 if is_breakout_surge else 7.0
+        ema20_warn = 6.5 if is_breakout_surge else 5.0
+        if feat_dict["dist_to_ema20"] > ema20_warn:
             msg = f"OVEREXTENDED_FROM_EMA20: Stock is {feat_dict['dist_to_ema20']:.1f}% stretched above 20 EMA (mean-reversion risk)"
             risk_flags.append(msg)
-            if feat_dict["dist_to_ema20"] > 7.0:
+            if feat_dict["dist_to_ema20"] > ema20_fatal:
                 fatal_flags.append(msg)
 
-        if feat_dict["rsi14"] > 74.0:
+        if feat_dict["rsi14"] > 76.0:
             msg = f"RSI_OVERBOUGHT: Daily RSI is {feat_dict['rsi14']:.1f} (exhaustion zone)"
             risk_flags.append(msg)
-            if feat_dict["rsi14"] > 82.0:
+            if feat_dict["rsi14"] > 84.0:
                 fatal_flags.append(msg)
 
         if feat_dict["vix_val"] > 18.0:
@@ -429,25 +437,34 @@ class SwingQuantMLEngine:
         if feat_dict["sector_excess_6m"] < -4.0:
             risk_flags.append(f"SECTOR_LAGGING: Sector underperforming benchmark by {feat_dict['sector_excess_6m']:.1f}% over 6 months")
 
-        if feat_dict["vol_ratio"] < 1.0:
+        # 3. Volume: Distinguish between unwanted illiquidity and Bullish Institutional Volume Dry-Up (VDU)
+        is_near_support = abs(feat_dict.get("dist_to_ema20", 0.0)) <= 3.8
+        daily_rng = float(candidate.get("daily_range_pct") or candidate.get("atr_pct") or 3.5)
+        is_contracted = daily_rng <= 3.2 or feat_dict.get("is_vcp", 0.0) == 1.0 or bool(candidate.get("is_accumulating_coil"))
+        is_vdu_accumulation = (feat_dict["vol_ratio"] <= 0.8) and is_near_support and is_contracted
+
+        if is_vdu_accumulation:
+            # Bullish stealth institutional absorption: DO NOT penalize with WEAK_VOLUME
+            feat_dict["is_vdu_accumulation"] = 1
+        elif feat_dict["vol_ratio"] < 0.8:
             risk_flags.append(f"WEAK_VOLUME: Volume ratio {feat_dict['vol_ratio']:.2f}x is below 50-day average")
 
-        # 3. Decision Gatekeeper & Structured Contract
+        # 4. Decision Gatekeeper & Structured Contract
         data_quality = "VALID"
         if not candidate or not feat_dict or math.isnan(feat_dict.get("score", float("nan"))):
             decision = "INSUFFICIENT_DATA"
             data_quality = "INSUFFICIENT_DATA"
             verdict = "REJECTED"
             risk_tier = "REJECTED"
-        elif fatal_flags or win_prob < 0.48 or expected_r < 0.05:
+        elif fatal_flags or win_prob < 0.45 or expected_r < 0.03:
             decision = "REJECT"
             verdict = "REJECTED"
             risk_tier = "REJECTED"
-        elif win_prob >= 0.56 and expected_r >= 0.28 and len(risk_flags) <= 1:
+        elif (win_prob >= 0.52 and expected_r >= 0.18 and len(risk_flags) <= 2) or (is_vdu_accumulation and feat_dict.get("score", 0.0) >= 80.0):
             decision = "PASS_TO_AI"
             verdict = "APPROVED"
             risk_tier = "A+" if win_prob >= 0.65 and feat_dict["confidence"] >= 5 else "A"
-        elif win_prob >= 0.48:
+        elif win_prob >= 0.46:
             decision = "WATCH"
             verdict = "CAUTION"
             risk_tier = "B+"

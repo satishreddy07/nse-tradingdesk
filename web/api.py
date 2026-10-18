@@ -2149,4 +2149,38 @@ def compare_screener_summary_endpoint():
         return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
 
 
+# --------------------------------------------------------------------------
+# INSTITUTIONAL MOVERS & ACCUMULATION RESEARCH ENDPOINTS
+# --------------------------------------------------------------------------
+@app.get("/api/research/movers-accumulation")
+def get_movers_accumulation_research(force_refresh: bool = False):
+    """
+    Returns empirical research data on positive moving stocks:
+    - Pre-breakout tightness, volume dry-up (VDU), 20 EMA launch rate
+    - Common findings across runners
+    - Archetype classification breakdown
+    - Cryptographic SHA-256 verified audit snapshot
+    """
+    from engines.accumulation_research_engine import accumulation_research_engine
+    try:
+        report = accumulation_research_engine.get_latest_research() if not force_refresh else accumulation_research_engine.run_research_scan(force_refresh=True)
+        return _sanitize_for_json(report)
+    except Exception as e:
+        logger.error(f"Error fetching movers accumulation research: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+@app.post("/api/research/run-study")
+def trigger_movers_research_study(force_refresh: bool = True):
+    """Triggers an on-demand empirical research scan of moving stocks and pre-breakout accumulation."""
+    from engines.accumulation_research_engine import accumulation_research_engine
+    try:
+        report = accumulation_research_engine.run_research_scan(force_refresh=True)
+        return _sanitize_for_json(report)
+    except Exception as e:
+        logger.error(f"Error executing movers research study: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+
 

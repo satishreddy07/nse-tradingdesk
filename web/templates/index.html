@@ -361,6 +361,12 @@
             <span id="badge-screener-count" class="px-1.5 py-0.2 rounded text-[10px] bg-pink-900/70 font-mono text-pink-200">792</span>
           </button>
 
+          <button onclick="switchTab('tab-research')" id="nav-tab-research" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
+            <i data-lucide="microscope" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
+            <span>Movers Research</span>
+            <span id="badge-research-count" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-900/70 font-mono text-amber-200">50</span>
+          </button>
+
           <button onclick="switchTab('tab-signals')" id="nav-tab-signals" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
             <i data-lucide="crosshair" class="w-3.5 h-3.5 text-cyan-400 shrink-0"></i>
             <span>Signals Screener</span>
@@ -1276,6 +1282,206 @@
           <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
             <button onclick="closeAddConditionModal()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer">Cancel</button>
             <button onclick="submitAddConditionModal()" class="px-4 py-2 rounded-xl text-xs font-bold bg-pink-500 hover:bg-pink-400 text-slate-950 transition cursor-pointer">Add Condition</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- TAB: MOVERS & ACCUMULATION RESEARCH LAB                           -->
+      <!-- ================================================================= -->
+      <div id="tab-research" class="tab-content hidden space-y-4 sm:space-y-6">
+        
+        <!-- Header Panel -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 relative overflow-hidden">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5">
+                  <i data-lucide="microscope" class="w-3.5 h-3.5 text-amber-400"></i>
+                  <span>EMPIRICAL MOVERS RESEARCH LAB</span>
+                </span>
+                <span id="res-status-badge" class="px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  AUTO CADENCE: EVERY 30 MINS (09:15-15:30 IST)
+                </span>
+                <span id="res-sha-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700 truncate max-w-xs" title="Cryptographic SHA-256 Audit Verification">
+                  SHA-256: VERIFYING...
+                </span>
+              </div>
+              <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2 mt-1">
+                <span>Moving Stocks & Pre-Breakout Accumulation Forensics</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5">
+                Analyzes all positive stocks across the universe, pulls daily OHLCV candles, and reverse-engineers pre-breakout Volume Dry-Up (VDU), range contraction, and 20 EMA coiling.
+              </p>
+            </div>
+
+            <!-- Action Controls -->
+            <div class="flex items-center gap-2.5 shrink-0">
+              <div class="text-right hidden sm:block">
+                <div class="text-[10px] font-mono text-slate-400">LAST RESEARCH SCAN</div>
+                <div id="res-last-scan-time" class="text-xs font-mono font-bold text-amber-300">--:--:-- IST</div>
+              </div>
+              <button onclick="triggerMoversResearchScan()" id="btn-run-research-scan" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/40 text-amber-300 font-semibold text-xs flex items-center gap-2 transition cursor-pointer shadow-lg shadow-amber-500/10">
+                <i data-lucide="refresh-cw" id="icon-refresh-research" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>Run Live Research Scan</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Common Findings & Pattern Statistics Cards -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-4">
+            
+            <!-- Card 1: Volume Dry-Up (VDU) -->
+            <div class="bg-slate-850/80 border border-slate-800 rounded-xl p-3.5 relative overflow-hidden group hover:border-amber-500/40 transition">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-mono font-semibold text-slate-400 uppercase tracking-wider">Volume Dry-Up (VDU)</span>
+                <i data-lucide="droplet" class="w-4 h-4 text-amber-400"></i>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span id="res-kpi-vdu" class="text-2xl font-mono font-bold text-amber-300">--%</span>
+                <span class="text-xs text-slate-400 font-sans">of moving stocks</span>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-1 leading-snug">
+                Vol ratio &le; 0.8x on T-1 (institutional absorption without price impact).
+              </p>
+            </div>
+
+            <!-- Card 2: 20 EMA Support Launch -->
+            <div class="bg-slate-850/80 border border-slate-800 rounded-xl p-3.5 relative overflow-hidden group hover:border-cyan-500/40 transition">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-mono font-semibold text-slate-400 uppercase tracking-wider">20 EMA Launch Base</span>
+                <i data-lucide="trending-up" class="w-4 h-4 text-cyan-400"></i>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span id="res-kpi-ema" class="text-2xl font-mono font-bold text-cyan-300">--%</span>
+                <span class="text-xs text-slate-400 font-sans">within &plusmn;3.8%</span>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-1 leading-snug">
+                Resting directly on 20-day exponential moving average before the move.
+              </p>
+            </div>
+
+            <!-- Card 3: Volatility Contraction / Tightness -->
+            <div class="bg-slate-850/80 border border-slate-800 rounded-xl p-3.5 relative overflow-hidden group hover:border-emerald-500/40 transition">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-mono font-semibold text-slate-400 uppercase tracking-wider">Tight Pre-Breakout Range</span>
+                <i data-lucide="minimize-2" class="w-4 h-4 text-emerald-400"></i>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span id="res-kpi-tight" class="text-2xl font-mono font-bold text-emerald-300">--%</span>
+                <span class="text-xs text-slate-400 font-sans">range &le; 3.2%</span>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-1 leading-snug">
+                Daily range contracted tightly before explosive range expansion.
+              </p>
+            </div>
+
+            <!-- Card 4: Breakout Day Volume Surge -->
+            <div class="bg-slate-850/80 border border-slate-800 rounded-xl p-3.5 relative overflow-hidden group hover:border-violet-500/40 transition">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-mono font-semibold text-slate-400 uppercase tracking-wider">Breakout Day Surge</span>
+                <i data-lucide="zap" class="w-4 h-4 text-violet-400"></i>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span id="res-kpi-surge" class="text-2xl font-mono font-bold text-violet-300">--x</span>
+                <span class="text-xs text-slate-400 font-sans">average volume</span>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-1 leading-snug">
+                Volume expansion multiplier when momentum algos and institutions chase.
+              </p>
+            </div>
+          </div>
+
+          <!-- Archetype Distribution Filter Pills -->
+          <div class="mt-5 pt-4 border-t border-slate-800">
+            <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+              <span class="text-xs font-mono font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <i data-lucide="pie-chart" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>Pre-Breakout Archetype Breakdown:</span>
+              </span>
+              <span id="res-total-movers-label" class="text-xs font-mono text-slate-400">Showing 50 Moving Stocks</span>
+            </div>
+            <div id="res-archetype-pills" class="flex items-center gap-1.5 flex-wrap">
+              <button onclick="filterMoversArchetype('ALL')" class="res-arch-pill active px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 transition cursor-pointer">
+                All Archetypes (<span id="res-arch-all-count">0</span>)
+              </button>
+              <button onclick="filterMoversArchetype('Textbook VDU Coil')" class="res-arch-pill px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer">
+                Textbook VDU Coil (<span id="res-arch-coil-count">0</span>)
+              </button>
+              <button onclick="filterMoversArchetype('VDU at EMA Support')" class="res-arch-pill px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer">
+                VDU at EMA Support (<span id="res-arch-emasup-count">0</span>)
+              </button>
+              <button onclick="filterMoversArchetype('Tight Base at EMA')" class="res-arch-pill px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer">
+                Tight Base at EMA (<span id="res-arch-tightbase-count">0</span>)
+              </button>
+              <button onclick="filterMoversArchetype('Momentum Continuation')" class="res-arch-pill px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer">
+                Momentum Continuation (<span id="res-arch-momentum-count">0</span>)
+              </button>
+              <button onclick="filterMoversArchetype('50 EMA Deep Pullback')" class="res-arch-pill px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer">
+                50 EMA Deep Pullback (<span id="res-arch-pullback-count">0</span>)
+              </button>
+              <button onclick="filterMoversArchetype('Loose / Consolidating')" class="res-arch-pill px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer">
+                Loose / Consolidating (<span id="res-arch-loose-count">0</span>)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Forensics Data Table Card -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-bold text-white flex items-center gap-1.5">
+                <i data-lucide="table" class="w-4 h-4 text-amber-400"></i>
+                <span>Movers Pre-Breakout Forensic Registry</span>
+              </span>
+              <span id="res-filtered-count-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">
+                0 stocks
+              </span>
+            </div>
+            <!-- Search & Quick Filters -->
+            <div class="flex items-center gap-2">
+              <div class="relative w-48 sm:w-64">
+                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                <input type="text" id="res-search-input" oninput="searchMoversTable(this.value)" placeholder="Search symbol or name..." class="w-full bg-slate-950/80 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500/50 font-mono">
+              </div>
+              <button onclick="filterMoversQuick('VDU')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+                VDU Only
+              </button>
+              <button onclick="filterMoversQuick('EMA')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+                At 20 EMA
+              </button>
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div class="overflow-x-auto mt-3">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="text-[11px] uppercase font-mono bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="py-2.5 px-3">#</th>
+                  <th class="py-2.5 px-3">Symbol / Company</th>
+                  <th class="py-2.5 px-3 text-right">LTP / Close</th>
+                  <th class="py-2.5 px-3 text-right">Breakout %</th>
+                  <th class="py-2.5 px-3 text-right">Breakout Surge</th>
+                  <th class="py-2.5 px-3 text-right">T-1 Daily Range</th>
+                  <th class="py-2.5 px-3 text-right">T-1 VDU Ratio</th>
+                  <th class="py-2.5 px-3 text-right">T-1 EMA20 Dist</th>
+                  <th class="py-2.5 px-3 text-center">Pre-Breakout Archetype</th>
+                  <th class="py-2.5 px-3 text-center">Engine Classification</th>
+                </tr>
+              </thead>
+              <tbody id="res-movers-table-body" class="divide-y divide-slate-800/60 font-mono">
+                <tr>
+                  <td colspan="10" class="py-8 text-center text-slate-500 font-sans">
+                    <div class="flex flex-col items-center gap-2">
+                      <div class="w-6 h-6 border-2 border-amber-500/30 border-t-amber-400 rounded-full animate-spin"></div>
+                      <span>Loading Empirical Movers Research Data...</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -13238,6 +13444,9 @@
         } else if (tabId === 'tab-screener') {
           activeBtn.classList.add('bg-pink-500/15', 'text-pink-300', 'border-pink-500/40');
           if (typeof initScreenerTab === 'function') initScreenerTab();
+        } else if (tabId === 'tab-research') {
+          activeBtn.classList.add('bg-amber-500/15', 'text-amber-300', 'border-amber-500/40');
+          if (typeof loadMoversResearch === 'function') loadMoversResearch();
         } else if (tabId === 'tab-analytics') {
           activeBtn.classList.add('bg-indigo-500/15', 'text-indigo-300', 'border-indigo-500/40');
         } else if (tabId === 'tab-ml-training') {
@@ -13265,6 +13474,7 @@
       lucide.createIcons();
       if (tabId === 'tab-charts') loadFetchedStocksData();
       if (tabId === 'tab-signals') renderGlobalSignals();
+      if (tabId === 'tab-research') loadMoversResearch();
       if (tabId === 'tab-history') loadHistoryData();
       if (tabId === 'tab-scheduler') loadScanLogs();
       if (tabId === 'tab-analytics') loadAllEquityCurves();
@@ -17403,6 +17613,236 @@
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+    }
+
+    // =========================================================================
+    // MOVERS & ACCUMULATION RESEARCH LAB CLIENT-SIDE ENGINE
+    // =========================================================================
+    const researchState = {
+      isLoading: false,
+      data: null,
+      activeArchetype: 'ALL',
+      searchQuery: '',
+      quickFilter: 'ALL',
+      allMovers: [],
+      filteredMovers: []
+    };
+
+    async function loadMoversResearch(forceRefresh = false) {
+      if (researchState.isLoading) return;
+      researchState.isLoading = true;
+
+      const refreshIcon = document.getElementById('icon-refresh-research');
+      if (refreshIcon) refreshIcon.classList.add('animate-spin');
+
+      try {
+        const url = `/api/research/movers-accumulation?force_refresh=${forceRefresh ? 'true' : 'false'}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        researchState.data = data;
+        researchState.allMovers = data.movers || [];
+
+        // Update KPIs
+        const vduEl = document.getElementById('res-kpi-vdu');
+        if (vduEl) vduEl.textContent = `${data.vdu_rate_pct || 0}%`;
+
+        const emaEl = document.getElementById('res-kpi-ema');
+        if (emaEl) emaEl.textContent = `${data.ema20_launch_rate_pct || 0}%`;
+
+        const tightEl = document.getElementById('res-kpi-tight');
+        if (tightEl) tightEl.textContent = `${data.tightness_rate_pct || 0}%`;
+
+        const surgeEl = document.getElementById('res-kpi-surge');
+        if (surgeEl) surgeEl.textContent = `${data.avg_breakout_surge || 0}x`;
+
+        // Update Header & Metadata
+        const timeEl = document.getElementById('res-last-scan-time');
+        if (timeEl) timeEl.textContent = data.run_timestamp || '--';
+
+        const shaEl = document.getElementById('res-sha-badge');
+        if (shaEl) {
+          const sha = data.sha256_hash || '';
+          shaEl.textContent = `SHA-256: ${sha.slice(0, 16)}...`;
+          shaEl.title = `Cryptographic Verification Hash: ${sha}`;
+        }
+
+        const badgeCount = document.getElementById('badge-research-count');
+        if (badgeCount) badgeCount.textContent = (data.movers || []).length;
+
+        // Update Archetype pill counts
+        const archDist = data.archetype_distribution || {};
+        const setPill = (id, count) => {
+          const el = document.getElementById(id);
+          if (el) el.textContent = count || 0;
+        };
+        setPill('res-arch-all-count', (data.movers || []).length);
+        setPill('res-arch-coil-count', archDist['Textbook VDU Coil']);
+        setPill('res-arch-emasup-count', archDist['VDU at EMA Support']);
+        setPill('res-arch-tightbase-count', archDist['Tight Base at EMA']);
+        setPill('res-arch-momentum-count', archDist['Momentum Continuation']);
+        setPill('res-arch-pullback-count', archDist['50 EMA Deep Pullback']);
+        setPill('res-arch-loose-count', archDist['Loose / Consolidating']);
+
+        applyMoversFilters();
+      } catch (err) {
+        console.error("Error loading movers research data:", err);
+      } finally {
+        researchState.isLoading = false;
+        if (refreshIcon) refreshIcon.classList.remove('animate-spin');
+      }
+    }
+
+    async function triggerMoversResearchScan() {
+      const btn = document.getElementById('btn-run-research-scan');
+      if (btn) btn.disabled = true;
+      try {
+        await fetch('/api/research/run-study', { method: 'POST' });
+        await loadMoversResearch(false);
+      } catch (err) {
+        console.error("Error running research study scan:", err);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function filterMoversArchetype(arch) {
+      researchState.activeArchetype = arch;
+      document.querySelectorAll('.res-arch-pill').forEach(pill => {
+        pill.classList.remove('active', 'bg-amber-500/20', 'text-amber-300', 'border-amber-500/40');
+        pill.classList.add('text-slate-400');
+      });
+      event.currentTarget.classList.add('active', 'bg-amber-500/20', 'text-amber-300', 'border-amber-500/40');
+      event.currentTarget.classList.remove('text-slate-400');
+      applyMoversFilters();
+    }
+
+    function searchMoversTable(query) {
+      researchState.searchQuery = (query || '').trim().toLowerCase();
+      applyMoversFilters();
+    }
+
+    function filterMoversQuick(type) {
+      if (researchState.quickFilter === type) {
+        researchState.quickFilter = 'ALL';
+      } else {
+        researchState.quickFilter = type;
+      }
+      applyMoversFilters();
+    }
+
+    function applyMoversFilters() {
+      let filtered = [...researchState.allMovers];
+
+      if (researchState.activeArchetype !== 'ALL') {
+        filtered = filtered.filter(m => m.archetype === researchState.activeArchetype);
+      }
+
+      if (researchState.quickFilter === 'VDU') {
+        filtered = filtered.filter(m => m.is_vdu);
+      } else if (researchState.quickFilter === 'EMA') {
+        filtered = filtered.filter(m => m.is_near_ema20);
+      }
+
+      if (researchState.searchQuery) {
+        const q = researchState.searchQuery;
+        filtered = filtered.filter(m => 
+          (m.symbol && m.symbol.toLowerCase().includes(q)) ||
+          (m.name && m.name.toLowerCase().includes(q))
+        );
+      }
+
+      researchState.filteredMovers = filtered;
+
+      const badge = document.getElementById('res-filtered-count-badge');
+      if (badge) badge.textContent = `${filtered.length} of ${researchState.allMovers.length} stocks`;
+
+      const lbl = document.getElementById('res-total-movers-label');
+      if (lbl) lbl.textContent = `Showing ${filtered.length} of ${researchState.allMovers.length} Moving Stocks`;
+
+      renderMoversTable(filtered);
+    }
+
+    function renderMoversTable(movers) {
+      const tbody = document.getElementById('res-movers-table-body');
+      if (!tbody) return;
+
+      if (!movers || !movers.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="10" class="py-8 text-center text-slate-500 font-sans">
+              No moving stocks found matching current filter.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      let html = '';
+      movers.forEach((m, idx) => {
+        const chgClass = m.chg_pct >= 5.0 ? 'text-emerald-400 font-bold' : (m.chg_pct > 0 ? 'text-emerald-300' : 'text-rose-400');
+        const vduClass = m.pre_vdu_t1 <= 0.5 ? 'text-amber-300 font-bold' : (m.pre_vdu_t1 <= 0.8 ? 'text-amber-400' : 'text-slate-400');
+        const rngClass = m.pre_range_t1 <= 2.5 ? 'text-emerald-400 font-bold' : (m.pre_range_t1 <= 3.2 ? 'text-emerald-300' : 'text-slate-300');
+        const emaDistClass = Math.abs(m.dist_ema20_t1) <= 3.8 ? 'text-cyan-300 font-bold' : 'text-slate-400';
+
+        // Archetype color badge
+        let archBadge = 'bg-slate-800 text-slate-300 border-slate-700';
+        if (m.archetype === 'Textbook VDU Coil') {
+          archBadge = 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold';
+        } else if (m.archetype === 'VDU at EMA Support') {
+          archBadge = 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40';
+        } else if (m.archetype === 'Tight Base at EMA') {
+          archBadge = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+        } else if (m.archetype === 'Momentum Continuation') {
+          archBadge = 'bg-violet-500/20 text-violet-300 border-violet-500/40';
+        } else if (m.archetype === '50 EMA Deep Pullback') {
+          archBadge = 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+        }
+
+        // Engine Status badge
+        let bucketBadge = 'bg-slate-800 text-slate-400';
+        if (m.engine_bucket === 'BUY_NOW') {
+          bucketBadge = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold';
+        } else if (m.engine_bucket === 'PRE_BREAKOUT') {
+          bucketBadge = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
+        } else if (m.engine_bucket === 'WAIT_PULLBACK') {
+          bucketBadge = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+        } else if (m.engine_bucket === 'AVOID') {
+          bucketBadge = 'bg-rose-500/10 text-rose-400/80 border border-rose-500/20';
+        }
+
+        html += `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-2.5 px-3 text-slate-500">${idx + 1}</td>
+            <td class="py-2.5 px-3">
+              <div class="font-bold text-white flex items-center gap-1.5">
+                <span>${m.symbol}</span>
+                ${m.is_vdu && m.is_tight ? '<span class="px-1 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">COIL</span>' : ''}
+              </div>
+              <div class="text-[10px] text-slate-400 font-sans truncate max-w-[140px]">${m.name || m.symbol}</div>
+            </td>
+            <td class="py-2.5 px-3 text-right text-slate-200">₹${Number(m.close).toFixed(2)}</td>
+            <td class="py-2.5 px-3 text-right ${chgClass}">+${Number(m.chg_pct).toFixed(2)}%</td>
+            <td class="py-2.5 px-3 text-right text-violet-300 font-semibold">${Number(m.breakout_vol_ratio).toFixed(1)}x</td>
+            <td class="py-2.5 px-3 text-right ${rngClass}">${Number(m.pre_range_t1).toFixed(2)}%</td>
+            <td class="py-2.5 px-3 text-right ${vduClass}">${Number(m.pre_vdu_t1).toFixed(2)}x</td>
+            <td class="py-2.5 px-3 text-right ${emaDistClass}">${m.dist_ema20_t1 >= 0 ? '+' : ''}${Number(m.dist_ema20_t1).toFixed(1)}%</td>
+            <td class="py-2.5 px-3 text-center">
+              <span class="px-2 py-0.5 rounded text-[10px] border ${archBadge}">
+                ${m.archetype}
+              </span>
+            </td>
+            <td class="py-2.5 px-3 text-center">
+              <span class="px-2 py-0.5 rounded text-[10px] ${bucketBadge}">
+                ${m.engine_bucket || 'NOT_IN_DB'}
+              </span>
+              ${m.engine_score ? `<span class="text-[10px] text-slate-400 ml-1">(${Number(m.engine_score).toFixed(0)})</span>` : ''}
+            </td>
+          </tr>
+        `;
+      });
+
+      tbody.innerHTML = html;
+      lucide.createIcons();
     }
 
     // Register Service Worker

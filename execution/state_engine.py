@@ -241,6 +241,10 @@ class StateEngine:
                     cursor.execute("ALTER TABLE latest_signals ADD COLUMN ai_summary TEXT DEFAULT '';")
                 except Exception:
                     pass
+                try:
+                    cursor.execute("ALTER TABLE latest_signals ADD COLUMN entry_type TEXT DEFAULT 'BREAKOUT_SURGE';")
+                except Exception:
+                    pass
 
                 # Backfill open active positions into quant_trade_dataset if not tracked yet
                 try:
@@ -1742,8 +1746,8 @@ class StateEngine:
                         tier, close, entry, sl, t1, t2, rr, shares, capital_at_risk,
                         risk_pct, atr_pct, rsi14, dist_to_pivot, dist_to_ema20,
                         inst_score, week_confluence, intraday_pct, intraday_adj, rs_spread,
-                        expected_r, ml_verdict, rejection_reason, ai_summary, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        expected_r, entry_type, ml_verdict, rejection_reason, ai_summary, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         sym_clean, p_type, s.get("sector", "DIVERSIFIED"), s.get("bucket", "WATCH"),
                         float(s.get("score", 0.0)), int(s.get("confidence", 0)), float(s.get("ml_prob", 0.0)),
@@ -1755,7 +1759,8 @@ class StateEngine:
                         float(s.get("inst_score", 0.0)), 1 if s.get("week_confluence") else 0,
                         float(s.get("intraday_pct", 0.0)), float(s.get("intraday_adj", 0.0)),
                         float(s.get("rs_spread", 0.0)),
-                        float(s.get("expected_r", 0.0)), str(s.get("ml_verdict", "APPROVED")),
+                        float(s.get("expected_r", 0.0)), str(s.get("entry_type", "BREAKOUT_SURGE")),
+                        str(s.get("ml_verdict", "APPROVED")),
                         str(s.get("rejection_reason", "")), str(s.get("ai_summary", "")),
                         now_str
                     ))

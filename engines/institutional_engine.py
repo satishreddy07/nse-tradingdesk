@@ -854,6 +854,13 @@ class FeatureEngine:
         inst_score = float(min(100.0, max(0.0, inst_score)))
 
         range_pos = float((c_now - c_low) / ((c_high - c_low) + 1e-9) * 100.0)
+        daily_range_pct = float((c_high - c_low) / (c_low + 1e-9) * 100.0)
+        is_accumulating_coil = bool(
+            abs(dist_to_ema20) <= 3.8 and
+            daily_range_pct <= 3.2 and
+            vol_ratio <= 0.85 and
+            c_now > ema50_now
+        )
 
         vol_factor = bench_ctx["vol_factor"]
         projected_vol_ratio = vol_ratio / vol_factor
@@ -869,6 +876,8 @@ class FeatureEngine:
             "close": round(c_now, 2),
             "high": round(c_high, 2),
             "low": round(c_low, 2),
+            "daily_range_pct": round(daily_range_pct, 2),
+            "is_accumulating_coil": is_accumulating_coil,
             "ema20_slope": ema20_slope,
             "ema50_slope": ema50_slope,
             "adx14": adx14,
@@ -1125,6 +1134,9 @@ class ExecutionEngine:
         dist_pivot = float(row.get('dist_to_pivot', 0.0) or 0.0)
         dist_ema20 = float(row.get('dist_to_ema20', 0.0) or 0.0)
         vol_ratio = float(row.get('vol_ratio', 1.0) or 1.0)
+        daily_range_pct = float(row.get('daily_range_pct', 5.0) or 5.0)
+        is_accumulating_coil = bool(row.get('is_accumulating_coil', False))
+
         # F-35: Fail-closed default (PENDING / HOLD) rather than fail-open APPROVED
         ml_verdict = str(row.get('ml_verdict', 'PENDING')).upper()
         ml_dec = str(row.get('ml_decision', 'HOLD')).upper()
@@ -1135,8 +1147,17 @@ class ExecutionEngine:
 
         if score < 40.0:
             return "AVOID"
-        # F-35: Test both sides of pivot & EMA20 proximity (abs(dist_pivot) <= 2.0 and abs(dist_ema20) <= 5.0)
-        elif score >= 80.0 and abs(dist_pivot) <= 2.0 and abs(dist_ema20) <= 5.0:
+
+        # 1. ACCUMULATION COIL (Stealth Day 1 Entry before the jump):
+        # High score, resting within 3.8% of 20 EMA, tight range (<=3.2%), volume dry-up (<=0.85x)
+        if score >= 78.0 and abs(dist_ema20) <= 3.8:
+            if is_accumulating_coil or (vol_ratio <= 0.85 and daily_range_pct <= 3.2):
+                if ml_verdict in ("APPROVED", "CAUTION") or ml_dec in ("PASS_TO_AI", "WATCH"):
+                    return "BUY_NOW"
+
+        # 2. BREAKOUT SURGE (Momentum Entry on volume expansion):
+        # Tested proximity to pivot & EMA20, volume >= 1.15x
+        if score >= 80.0 and abs(dist_pivot) <= 3.5 and abs(dist_ema20) <= 6.5:
             if vol_ratio >= 1.15 and (ml_verdict == "APPROVED" or ml_dec == "PASS_TO_AI"):
                 return "BUY_NOW"
             else:
@@ -1163,7 +1184,7 @@ class ExecutionEngine:
             return {
                 "entry": 0.0, "sl": 0.0, "t1": 0.0, "t2": 0.0, "rr": 0.0,
                 "shares": 0, "capital_at_risk": 0.0, "risk_pct": 0.0,
-                "atr_pct": 0.0, "tier": "REJECT"
+                "atr_pct": 0.0, "tier": "REJECT", "entry_type": "REJECT"
             }
 
         atr14 = float(row.get('atr14', 0.0) or 0.0)
@@ -1177,6 +1198,10 @@ class ExecutionEngine:
         score = float(row.get('score', 0.0) or 0.0)
         conf = int(row.get('confidence', 3) or 3)
         ml_verdict = str(row.get('ml_verdict', 'PENDING')).upper()
+        dist_ema20 = float(row.get('dist_to_ema20', 0.0) or 0.0)
+        daily_rng = float(row.get('daily_range_pct', 5.0) or 5.0)
+        is_accum_coil = bool(row.get('is_accumulating_coil', False) or (abs(dist_ema20) <= 3.8 and daily_rng <= 3.2))
+        entry_type = "ACCUMULATION_COIL" if is_accum_coil else "BREAKOUT_SURGE"
 
         # Dynamically scale tier risk relative to base_risk_pct
         if score >= 90.0 and conf >= 5 and ml_verdict == "APPROVED":
@@ -1189,20 +1214,27 @@ class ExecutionEngine:
             risk_pct = round(base_risk_pct * (0.60 / 0.75), 4)
             tier = "B+"
 
-        structure_sl = min(low_20d, entry - 1.5 * atr14)
-        hard_sl = entry * 0.92
-        sl = round(max(structure_sl, hard_sl), 2)
-
-        risk_per_share = entry - sl
-        if risk_per_share <= 0:
-            sl = round(entry * 0.95, 2)
+        if entry_type == "ACCUMULATION_COIL":
+            # Tight structural stop placed directly below 20 EMA (typically 2.0% - 2.8% risk)
+            sl_dist_pct = max(2.0, abs(dist_ema20) + 1.2)
+            sl = round(entry * (1.0 - (sl_dist_pct / 100.0)), 2)
             risk_per_share = entry - sl
-
-        r = risk_per_share
-        t1 = round(entry + 1.5 * r, 2)
-        t2 = round(entry + 3.0 * r, 2)
-        # F-35: Dynamic RR calculation
-        rr = round((t2 - entry) / max(0.01, risk_per_share), 2)
+            r = max(0.01, risk_per_share)
+            t1 = round(entry + 2.5 * r, 2)
+            t2 = round(entry + 4.5 * r, 2)
+            rr = round((t2 - entry) / r, 2)
+        else:
+            structure_sl = min(low_20d, entry - 1.5 * atr14)
+            hard_sl = entry * 0.92
+            sl = round(max(structure_sl, hard_sl), 2)
+            risk_per_share = entry - sl
+            if risk_per_share <= 0:
+                sl = round(entry * 0.95, 2)
+                risk_per_share = entry - sl
+            r = max(0.01, risk_per_share)
+            t1 = round(entry + 1.5 * r, 2)
+            t2 = round(entry + 3.0 * r, 2)
+            rr = round((t2 - entry) / r, 2)
 
         risk_amt = capital * (risk_pct / 100.0)
         shares = int(risk_amt / risk_per_share) if risk_per_share > 0 else 0
@@ -1227,7 +1259,8 @@ class ExecutionEngine:
             "shares": shares,
             "capital_at_risk": capital_at_risk,
             "risk_pct": risk_pct,
-            "tier": tier
+            "tier": tier,
+            "entry_type": entry_type
         }
 
 
@@ -1543,6 +1576,7 @@ class InstitutionalEngine:
                     "intraday_adj": round(row['intraday_adj'], 2),
                     "rs_spread": round(row.get('sector_excess_6m', 0.0), 2),
                     "expected_r": float(row.get('expected_r', 0.0)),
+                    "entry_type": str(pos_info.get('entry_type', 'BREAKOUT_SURGE')),
                     "ml_verdict": str(row.get('ml_verdict', 'APPROVED')),
                     "risk_flags": str(row.get('risk_flags_json', '[]'))
                 })

@@ -751,6 +751,26 @@ def scheduled_daily_moc_backup_job():
         logger.error(f"03:45 PM Daily MOC Backup Job error: {e}")
 
 
+def scheduled_movers_research_job():
+    """
+    Every 30 mins during market hours (09:15 to 15:30 IST):
+    Scans positive moving stocks, downloads OHLCV data, analyzes pre-breakout accumulation signatures,
+    and updates the empirical movers research audit.
+    """
+    curr = now_ist()
+    if not NSEMarketCalendar.is_trading_day(curr.date()):
+        return
+    can_trade, _ = NSEMarketCalendar.can_execute_trades()
+    if not can_trade:
+        return
+    try:
+        from engines.accumulation_research_engine import accumulation_research_engine
+        logger.info("🔬 [30-Min Movers Research] Triggering periodic accumulation research scan...")
+        accumulation_research_engine.run_research_scan(force_refresh=True)
+    except Exception as e:
+        logger.warning(f"30-Min Movers Research scan notice: {e}")
+
+
 def start_scheduler():
     """Initializes and starts the BackgroundScheduler with IST triggers & Render Anti-Sleep Guard."""
     global _scheduler
@@ -933,6 +953,16 @@ def start_scheduler():
             name="02:15 PM Expiry Afternoon Gamma Unwind Alert",
             replace_existing=True,
             misfire_grace_time=180
+        )
+
+        # Job 5: Every 30 Minutes Movers Accumulation Research Scan (Mon-Fri, 09:30-15:30 IST)
+        _scheduler.add_job(
+            scheduled_movers_research_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour="9-15", minute="0,30", timezone=IST),
+            id="job_movers_research_30m",
+            name="30-Min Movers & Pre-Breakout Accumulation Research Scan",
+            replace_existing=True,
+            misfire_grace_time=300
         )
 
         _scheduler.start()
