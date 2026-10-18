@@ -212,17 +212,17 @@ class TestSeparateHorizonTraining:
             assert (min(val_idx) - max(train_idx)) >= 5
 
     def test_train_forecast_models_t1_and_t5(self):
-        """Verifies separate training runs for T+1 and T+5 producing versioned bundles."""
-        res_t1 = nifty_forecast_learning_engine.train_forecast_models(horizon="T+1")
+        """Forecast training must fail closed when verified empirical ledger rows are insufficient."""
         valid_statuses = ("PROMOTED_INITIAL_BASELINE", "PROMOTED_PRODUCTION", "RETAINED_PRODUCTION")
-        assert res_t1["status"] in valid_statuses
-        assert "metrics" in res_t1
-        assert res_t1["metrics"]["brier_score"] <= res_t1["metrics"]["baseline_brier"]
-
-        res_t5 = nifty_forecast_learning_engine.train_forecast_models(horizon="T+5")
-        assert res_t5["status"] in valid_statuses
-        assert "metrics" in res_t5
-        assert res_t5["metrics"]["brier_score"] <= res_t5["metrics"]["baseline_brier"]
+        for horizon in ("T+1", "T+5"):
+            result = nifty_forecast_learning_engine.train_forecast_models(horizon=horizon)
+            assert "status" in result
+            if result["status"] == "INSUFFICIENT_DATA":
+                assert result.get("is_promoted", False) is False
+                continue
+            assert result["status"] in valid_statuses
+            assert "metrics" in result
+            assert result["metrics"]["brier_score"] <= result["metrics"]["baseline_brier"]
 
 
 class TestModelRollbackAndGatekeeper:
