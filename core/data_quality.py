@@ -65,8 +65,7 @@ def validate_ohlcv_dataframe(
         return False, pd.DataFrame(), [f"{symbol}: Missing required price columns {missing_cols}."]
 
     if "Volume" not in clean_df.columns:
-        clean_df["Volume"] = 0.0
-        warnings.append(f"{symbol}: Missing Volume column, populated with zeros.")
+        return False, pd.DataFrame(), [f"{symbol}: Missing required Volume column; volume must not be fabricated as zero."]
 
     # 2. Chronological Ordering and Duplicate Timestamps
     if not clean_df.index.is_monotonic_increasing:
@@ -78,9 +77,15 @@ def validate_ohlcv_dataframe(
         clean_df = clean_df[~clean_df.index.duplicated(keep="last")]
         warnings.append(f"{symbol}: Dropped {dup_count} duplicate timestamp records.")
 
-    # 3. Numeric conversions & NaN filtering
+    # 3. Numeric conversions & NaN/non-finite filtering
     for col in ["Open", "High", "Low", "Close", "Volume"]:
         clean_df[col] = pd.to_numeric(clean_df[col], errors="coerce")
+
+    finite_rows = np.isfinite(clean_df[["Open", "High", "Low", "Close", "Volume"]].to_numpy(dtype=np.float64)).all(axis=1)
+    if not finite_rows.all():
+        bad_count = int((~finite_rows).sum())
+        clean_df = clean_df.loc[finite_rows].copy()
+        warnings.append(f"{symbol}: Quarantined {bad_count} rows with non-finite OHLCV values.")
 
     nan_rows = clean_df[["Open", "High", "Low", "Close", "Volume"]].isna().any(axis=1)
     if nan_rows.sum() > 0:
@@ -141,7 +146,9 @@ def validate_ohlcv_dataframe(
     extreme_jumps = ret > 0.50
     if extreme_jumps.sum() > 0:
         jump_count = int(extreme_jumps.sum())
-        warnings.append(f"{symbol}: Detected {jump_count} extreme price jumps (> 50% single candle shift).")
+        return False, pd.DataFrame(), [
+            f"{symbol}: Rejected {jump_count} unexplained price jump(s) greater than 50%; verify corporate actions/adjusted prices before ingestion."
+        ]
 
     return True, clean_df, warnings
 
