@@ -5483,7 +5483,9 @@ class NiftyAnalyticsEngine:
         if opt_chain_data:
             base_iv_raw = (
                 opt_chain_data.get("weekly", {}).get("atm_iv")
+                or opt_chain_data.get("weekly", {}).get("volatility_and_gex", {}).get("atm_iv")
                 or opt_chain_data.get("monthly", {}).get("atm_iv")
+                or opt_chain_data.get("monthly", {}).get("volatility_and_gex", {}).get("atm_iv")
                 or opt_chain_data.get("atm_iv")
             )
         base_iv = float(base_iv_raw) if base_iv_raw is not None and float(base_iv_raw) > 0 else None
