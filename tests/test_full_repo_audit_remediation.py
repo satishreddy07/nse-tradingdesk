@@ -86,7 +86,7 @@ def test_inverted_candles_rejected():
         "Low": [95.0, 96.0, 97.0, 98.0],
         "Close": [102.0, 103.0, 104.0, 105.0],
         "Volume": [5000, 5000, 5000, 5000]
-    })
+    }, index=pd.date_range("2026-01-01", periods=4, freq="D"))
     is_valid, _, warnings = validate_ohlcv_dataframe(df_clean, min_bars=3)
     assert is_valid is True
 
