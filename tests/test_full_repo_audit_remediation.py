@@ -600,6 +600,7 @@ def test_unified_ml_dataset_rejects_missing_feature_imputation(tmp_path):
     ds = UnifiedMLDataset(db_path=str(tmp_path / "feature_quality.db"))
     features = {col: 1.0 for col in UNIFIED_FEATURE_COLS}
     features.pop("nifty_spot")
+    features.pop("iv_spot")
     row_id = ds.record_signal_and_trade(
         signal_id="SIG_MISSING_FEATURE",
         trade_id="TRADE_MISSING_FEATURE",
@@ -635,6 +636,48 @@ def test_unified_ml_dataset_rejects_missing_feature_imputation(tmp_path):
         gross_pnl=20.0, net_pnl=18.0, total_costs=2.0
     )
     assert ds.get_dataset_for_horizon("WEEKLY").empty
+
+
+def test_manual_exit_does_not_fabricate_target_path_or_rule_compliance(tmp_path):
+    """Manual exits without path evidence must not be labeled target/SL first or rule-compliant."""
+    from core.unified_ml_dataset import UNIFIED_FEATURE_COLS
+
+    ds = UnifiedMLDataset(db_path=str(tmp_path / "manual_exit_quality.db"))
+    features = {col: 1.0 for col in UNIFIED_FEATURE_COLS}
+    row_id = ds.record_signal_and_trade(
+        signal_id="SIG_MANUAL_EXIT",
+        trade_id="TRADE_MANUAL_EXIT",
+        instrument="NIFTY",
+        trading_horizon="WEEKLY",
+        strategy_name="TEST",
+        record_type="LIVE",
+        market_session="MORNING",
+        accept_reject_verdict="ACCEPTED",
+        decision_source="RULE_BASED",
+        features=features,
+        regime="RANGE_BOUND",
+        spot_at_entry=25000.0,
+        intended_entry=100.0,
+        intended_target=80.0,
+        intended_sl=140.0,
+        sl_threshold_pct=40.0,
+        quantity=1,
+        capital_at_risk=40.0,
+        actual_entry=100.0,
+    )
+    assert row_id > 0
+    assert ds.record_trade_outcome(
+        trade_id="TRADE_MANUAL_EXIT", actual_exit=110.0,
+        exit_reason="MANUAL_CLOSE", gross_pnl=10.0, net_pnl=8.0, total_costs=2.0
+    )
+    with ds._get_connection() as conn:
+        row = conn.execute(
+            "SELECT target_hit_before_sl, rules_followed, mae_pct FROM unified_trade_learning_dataset WHERE id = ?",
+            (row_id,),
+        ).fetchone()
+        assert row["target_hit_before_sl"] is None
+        assert row["rules_followed"] is None
+        assert row["mae_pct"] is None
 
 
 def test_format_ist_converts_timezone_aware_values():

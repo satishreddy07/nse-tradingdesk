@@ -871,20 +871,14 @@ class MLPerformanceEngine:
         brokerage_cost = total_trades * 40.0
         net_pnl = round(gross_pnl - slippage_cost - brokerage_cost, 2)
 
-        win_rate = round((len(wins) / max(1, total_trades)) * 100.0, 1) if total_trades > 0 else 0.0
-        avg_win = round(float(np.mean([(t.get("gross_pnl") or t.get("net_pnl") or 0.0) for t in wins])), 2) if wins else 0.0
-        avg_loss = round(float(np.mean([abs((t.get("gross_pnl") or t.get("net_pnl") or 0.0)) for t in losses])), 2) if losses else 0.0
+        win_rate = round((len(wins) / total_trades) * 100.0, 1) if total_trades > 0 else None
+        avg_win = round(float(np.mean([(t.get("gross_pnl") or t.get("net_pnl") or 0.0) for t in wins])), 2) if wins else None
+        avg_loss = round(float(np.mean([abs((t.get("gross_pnl") or t.get("net_pnl") or 0.0) for t in losses])), 2) if losses else None
 
         gross_win_sum = sum((t.get("gross_pnl") or t.get("net_pnl") or 0.0) for t in wins)
         gross_loss_sum = sum(abs((t.get("gross_pnl") or t.get("net_pnl") or 0.0)) for t in losses)
-        if gross_loss_sum > 0:
-            profit_factor = round(gross_win_sum / gross_loss_sum, 2)
-        elif gross_win_sum > 0:
-            profit_factor = round(gross_win_sum, 2)
-        else:
-            profit_factor = 0.0
-
-        net_expectancy = round(net_pnl / max(1, total_trades), 2) if total_trades > 0 else 0.0
+        profit_factor = round(gross_win_sum / gross_loss_sum, 2) if gross_loss_sum > 0 else None
+        net_expectancy = round(net_pnl / total_trades, 2) if total_trades > 0 else None
 
         # F-33: Compute real max drawdown from cumulative trade equity curve
         eq = 0.0
@@ -898,7 +892,7 @@ class MLPerformanceEngine:
             dd = peak - eq
             if dd > max_dd:
                 max_dd = dd
-        max_drawdown_pct = round((max_dd / max(1.0, peak)) * 100.0, 2) if peak > 0 else 0.0
+        max_drawdown_pct = round((max_dd / max(1.0, peak)) * 100.0, 2) if peak > 0 else None
 
         return {
             "horizon": h_norm,

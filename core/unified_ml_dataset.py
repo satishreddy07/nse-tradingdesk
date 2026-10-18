@@ -290,11 +290,11 @@ class UnifiedMLDataset:
         net_pnl: float,
         total_costs: float,
         actual_exit_time: Optional[str] = None,
-        mae_pct: float = 0.0,
-        mfe_pct: float = 0.0,
-        hold_duration_mins: float = 0.0,
-        re_entry_count: int = 0,
-        rules_followed: int = 1
+        mae_pct: Optional[float] = None,
+        mfe_pct: Optional[float] = None,
+        hold_duration_mins: Optional[float] = None,
+        re_entry_count: Optional[int] = None,
+        rules_followed: Optional[int] = None
     ) -> bool:
         """
         Updates an active or counterfactual trade record with verified terminal outcomes.
@@ -311,10 +311,12 @@ class UnifiedMLDataset:
             target_before_sl = 0
             status = "RESOLVED_STOP_LOSS"
         elif "TIME" in exit_reason.upper() or "EXPIRY" in exit_reason.upper():
-            target_before_sl = 1 if net_pnl > 0 else 0
+            # End-of-period PnL does not establish whether target or stop was touched first.
+            target_before_sl = None
             status = "EXPIRED"
         else:
-            target_before_sl = 1 if net_pnl > 0 else 0
+            # Manual/other exits cannot be classified as target-before-stop from PnL sign alone.
+            target_before_sl = None
             status = "RESOLVED_MANUAL"
 
         with self._lock:
@@ -354,8 +356,11 @@ class UnifiedMLDataset:
                     float(actual_exit), exit_time, exit_reason, status,
                     float(gross_pnl), float(net_pnl), float(total_costs),
                     float(r_mult), int(is_win), int(target_before_sl),
-                    float(mae_pct), float(mfe_pct), float(hold_duration_mins),
-                    int(re_entry_count), int(rules_followed), format_ist(), trade_id
+                    _finite_feature_value(mae_pct), _finite_feature_value(mfe_pct),
+                    _finite_feature_value(hold_duration_mins),
+                    int(re_entry_count) if re_entry_count is not None else None,
+                    int(rules_followed) if rules_followed is not None else None,
+                    format_ist(), trade_id
                 ))
                 conn.commit()
                 return True
