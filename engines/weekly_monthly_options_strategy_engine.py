@@ -1236,7 +1236,14 @@ class WeeklyMonthlyOptionsStrategyEngine:
             except Exception:
                 pass
         if iv_val <= 0.0:
-            iv_val = 13.0
+            logger.warning("Options strategy tournament blocked: verified option-chain IV and VIX are unavailable.")
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "reason": "Verified implied volatility is unavailable; refusing to substitute a fixed IV assumption.",
+                "horizon": horizon,
+                "spot_price": spot_price,
+                "candidates": []
+            }
 
         return cls.analyze_highest_win_probability_strategy(
             verdict=weekly_verdict,
