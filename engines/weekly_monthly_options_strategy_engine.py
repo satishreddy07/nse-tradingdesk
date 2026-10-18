@@ -2288,8 +2288,6 @@ class WeeklyMonthlyOptionsStrategyEngine:
         ohlcv_master_store (^NSEI) or verified nifty_predictions_log.
         Zero hardcoded or fake random numbers.
         """
-        import pickle
-        import zlib
         sessions: List[Dict[str, Any]] = []
         is_weekly = (horizon.upper() == "WEEKLY")
         holding_bars = 5 if is_weekly else 20
@@ -2297,32 +2295,20 @@ class WeeklyMonthlyOptionsStrategyEngine:
 
         # 1. Primary Source: High-Fidelity OHLCV Master Store (^NSEI / NIFTY)
         try:
-            with state_engine._lock:
-                with state_engine._get_connection() as conn:
-                    row = conn.execute(
-                        "SELECT ohlcv_blob FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY') AND ohlcv_blob IS NOT NULL"
-                    ).fetchone()
-                    if row and row[0]:
-                        raw = row[0]
-                        try:
-                            df = pickle.loads(zlib.decompress(raw))
-                        except Exception:
-                            try:
-                                df = pickle.loads(raw)
-                            except Exception:
-                                df = None
+            df, _ = state_engine.get_ohlcv_df('^NSEI')
+            if df is None or df.empty:
+                df, _ = state_engine.get_ohlcv_df('NIFTY')
+            if df is not None and not df.empty and len(df) >= holding_bars + 20:
+                df = df.sort_index()
+                ret_series = df["Close"].pct_change()
+                rolling_vol = (ret_series.rolling(20).std() * math.sqrt(252) * 100.0).fillna(13.0)
 
-                        if df is not None and not df.empty and len(df) >= holding_bars + 20:
-                            df = df.sort_index()
-                            ret_series = df["Close"].pct_change()
-                            rolling_vol = (ret_series.rolling(20).std() * math.sqrt(252) * 100.0).fillna(13.0)
+                # Stride through historical holding periods to generate non-overlapping or stepped windows
+                stride = max(1, holding_bars // 2)
+                start_idx = 20
+                end_idx = len(df) - holding_bars
 
-                            # Stride through historical holding periods to generate non-overlapping or stepped windows
-                            stride = max(1, holding_bars // 2)
-                            start_idx = 20
-                            end_idx = len(df) - holding_bars
-
-                            for idx in range(start_idx, end_idx + 1, stride):
+                for idx in range(start_idx, end_idx + 1, stride):
                                 window_df = df.iloc[idx : idx + holding_bars]
                                 if len(window_df) < holding_bars:
                                     continue

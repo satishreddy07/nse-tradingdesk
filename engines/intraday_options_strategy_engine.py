@@ -1930,76 +1930,63 @@ class IntradayOptionsStrategyEngine:
         Loads real historical Nifty 50 sessions directly from Single Master DB ohlcv_master_store (^NSEI).
         Zero hardcoded or fake random numbers.
         """
-        import pickle
-        import zlib
         sessions: List[Dict[str, Any]] = []
         try:
-            with state_engine._lock:
-                with state_engine._get_connection() as conn:
-                    row = conn.execute(
-                        "SELECT ohlcv_blob FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY') AND ohlcv_blob IS NOT NULL"
-                    ).fetchone()
-                    if row and row[0]:
-                        raw = row[0]
-                        try:
-                            df = pickle.loads(zlib.decompress(raw))
-                        except Exception:
-                            try:
-                                df = pickle.loads(raw)
-                            except Exception:
-                                df = None
-                        if df is not None and not df.empty:
-                            df = df.sort_index()
-                            req_bars = min(len(df), max(count + 20, 50))
-                            slice_df = df.iloc[-req_bars:]
-                            ret_series = slice_df["Close"].pct_change()
-                            rolling_vol = (ret_series.rolling(20).std() * math.sqrt(252) * 100.0).fillna(13.0)
+            df, _ = state_engine.get_ohlcv_df('^NSEI')
+            if df is None or df.empty:
+                df, _ = state_engine.get_ohlcv_df('NIFTY')
+            if df is not None and not df.empty:
+                df = df.sort_index()
+                req_bars = min(len(df), max(count + 20, 50))
+                slice_df = df.iloc[-req_bars:]
+                ret_series = slice_df["Close"].pct_change()
+                rolling_vol = (ret_series.rolling(20).std() * math.sqrt(252) * 100.0).fillna(13.0)
 
-                            start_idx = 20 if len(slice_df) > 25 else 1
-                            for idx in range(start_idx, len(slice_df)):
-                                bar = slice_df.iloc[idx]
-                                dt_val = slice_df.index[idx]
-                                date_str = dt_val.strftime("%Y-%m-%d") if hasattr(dt_val, "strftime") else str(dt_val)[:10]
-                                open_px = float(bar["Open"])
-                                high_px = float(bar["High"])
-                                low_px = float(bar["Low"])
-                                close_px = float(bar["Close"])
-                                if open_px <= 0:
-                                    continue
-                                ret_pct = round(((close_px - open_px) / open_px) * 100.0, 2)
-                                vol_pct = round(float(rolling_vol.iloc[idx]), 1)
-                                vol_pct = max(9.5, min(35.0, vol_pct))
+                start_idx = 20 if len(slice_df) > 25 else 1
+                for idx in range(start_idx, len(slice_df)):
+                    bar = slice_df.iloc[idx]
+                    dt_val = slice_df.index[idx]
+                    date_str = dt_val.strftime("%Y-%m-%d") if hasattr(dt_val, "strftime") else str(dt_val)[:10]
+                    open_px = float(bar["Open"])
+                    high_px = float(bar["High"])
+                    low_px = float(bar["Low"])
+                    close_px = float(bar["Close"])
+                    if open_px <= 0:
+                        continue
+                    ret_pct = round(((close_px - open_px) / open_px) * 100.0, 2)
+                    vol_pct = round(float(rolling_vol.iloc[idx]), 1)
+                    vol_pct = max(9.5, min(35.0, vol_pct))
 
-                                # Strictly eliminate look-ahead bias: verdict at market open must use pre-open info
-                                prev_bar = slice_df.iloc[idx - 1]
-                                prev_close = float(prev_bar["Close"])
-                                gap_pct = ((open_px - prev_close) / prev_close) * 100.0 if prev_close > 0 else 0.0
-                                prior_5_close = float(slice_df.iloc[max(0, idx - 6)]["Close"])
-                                prior_5d_mom = ((prev_close - prior_5_close) / prior_5_close) * 100.0 if prior_5_close > 0 else 0.0
-                                pre_market_signal = round(gap_pct * 0.5 + prior_5d_mom * 0.5, 2)
+                    # Strictly eliminate look-ahead bias: verdict at market open must use pre-open info
+                    prev_bar = slice_df.iloc[idx - 1]
+                    prev_close = float(prev_bar["Close"])
+                    gap_pct = ((open_px - prev_close) / prev_close) * 100.0 if prev_close > 0 else 0.0
+                    prior_5_close = float(slice_df.iloc[max(0, idx - 6)]["Close"])
+                    prior_5d_mom = ((prev_close - prior_5_close) / prior_5_close) * 100.0 if prior_5_close > 0 else 0.0
+                    pre_market_signal = round(gap_pct * 0.5 + prior_5d_mom * 0.5, 2)
 
-                                if pre_market_signal >= 0.80:
-                                    verdict = "STRONG BULLISH"
-                                elif pre_market_signal >= 0.20:
-                                    verdict = "MILD BULLISH"
-                                elif pre_market_signal <= -0.80:
-                                    verdict = "STRONG BEARISH"
-                                elif pre_market_signal <= -0.20:
-                                    verdict = "MILD BEARISH"
-                                else:
-                                    verdict = "RANGE BOUND"
+                    if pre_market_signal >= 0.80:
+                        verdict = "STRONG BULLISH"
+                    elif pre_market_signal >= 0.20:
+                        verdict = "MILD BULLISH"
+                    elif pre_market_signal <= -0.80:
+                        verdict = "STRONG BEARISH"
+                    elif pre_market_signal <= -0.20:
+                        verdict = "MILD BEARISH"
+                    else:
+                        verdict = "RANGE BOUND"
 
-                                sessions.append({
-                                    "date": date_str,
-                                    "spot": round(open_px, 2),
-                                    "close": round(close_px, 2),
-                                    "high": round(high_px, 2),
-                                    "low": round(low_px, 2),
-                                    "ret_pct": ret_pct,
-                                    "verdict": verdict,
-                                    "composite_score": round(pre_market_signal * 25.0, 1),
-                                    "iv_pct": vol_pct
-                                })
+                    sessions.append({
+                        "date": date_str,
+                        "spot": round(open_px, 2),
+                        "close": round(close_px, 2),
+                        "high": round(high_px, 2),
+                        "low": round(low_px, 2),
+                        "ret_pct": ret_pct,
+                        "verdict": verdict,
+                        "composite_score": round(pre_market_signal * 25.0, 1),
+                        "iv_pct": vol_pct
+                    })
         except Exception as e:
             logger.warning(f"Real historical sessions load notice: {e}")
 

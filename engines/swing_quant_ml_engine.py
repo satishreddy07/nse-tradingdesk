@@ -1652,12 +1652,15 @@ class SwingQuantMLEngine:
             saved_blob = state_engine.get_kv("swing_quant_ml_bundle")
             if saved_blob and isinstance(saved_blob, bytes):
                 bundle = pickle.loads(saved_blob)
-                self._classifier = bundle.get("classifier")
-                self._regressor = bundle.get("regressor")
-                self._scaler = bundle.get("scaler")
-                self._model_metadata = bundle.get("metadata") or {}
-                logger.info(f"Restored SwingQuantMLModel from KV vault ({self._model_metadata.get('total_samples', 0)} samples)")
-                return
+                if isinstance(bundle, dict) and "classifier" in bundle:
+                    self._classifier = bundle.get("classifier")
+                    self._regressor = bundle.get("regressor")
+                    self._scaler = bundle.get("scaler")
+                    self._model_metadata = bundle.get("metadata") or {}
+                    logger.info(f"Restored SwingQuantMLModel from KV vault ({self._model_metadata.get('total_samples', 0)} samples)")
+                    return
+                else:
+                    logger.warning("Corrupted or unexpected ML bundle structure in KV store; re-bootstrapping.")
         except Exception as e:
             logger.debug(f"Could not restore ML bundle from KV: {e}")
 

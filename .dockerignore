@@ -11,6 +11,13 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 data/historical_data/
+data/vault_manifest.json
+data/vault_config.json
+data/backups/
+data/*.json
+logs/
+*.log
+models/registry/*.bundle
 venv/
 .venv/
 .pytest_cache/

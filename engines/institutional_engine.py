@@ -1177,14 +1177,15 @@ class ExecutionEngine:
         conf = int(row.get('confidence', 3) or 3)
         ml_verdict = str(row.get('ml_verdict', 'PENDING')).upper()
 
+        # Dynamically scale tier risk relative to base_risk_pct
         if score >= 90.0 and conf >= 5 and ml_verdict == "APPROVED":
-            risk_pct = 1.00
+            risk_pct = round(base_risk_pct * (1.00 / 0.75), 4)
             tier = "A+"
         elif score >= 80.0 and conf >= 4 and ml_verdict == "APPROVED":
-            risk_pct = 0.75
+            risk_pct = round(base_risk_pct * 1.0, 4)
             tier = "A"
         else:
-            risk_pct = 0.60
+            risk_pct = round(base_risk_pct * (0.60 / 0.75), 4)
             tier = "B+"
 
         structure_sl = min(low_20d, entry - 1.5 * atr14)
@@ -1604,12 +1605,12 @@ class InstitutionalEngine:
                     "sector": str(r.get('sector', 'DIVERSIFIED'))
                 }
 
-                # Step 1: Pre-Trade ML Gatekeeper
+                # Step 1: Pre-Trade ML Gatekeeper (Fail-closed defaults)
                 eval_res = swing_quant_ml_engine.evaluate_candidate(r.to_dict(), market_regime=market_regime)
-                ml_decision = str(eval_res.get("decision", "PASS_TO_AI"))
-                ml_prob = float(eval_res.get("win_prob", 0.55))
+                ml_decision = str(eval_res.get("decision", "REJECT_NOT_EVALUABLE"))
+                ml_prob = float(eval_res.get("win_prob", 0.0))
                 ml_score = float(eval_res.get("prediction_score", r['score']))
-                expected_r = float(eval_res.get("expected_r", 0.35))
+                expected_r = float(eval_res.get("expected_r", 0.0))
                 risk_flags = list(eval_res.get("risk_flags", []))
                 fatal_flags = list(eval_res.get("fatal_flags", []))
 
@@ -1693,7 +1694,7 @@ class InstitutionalEngine:
                 if cand_df is not None:
                     dq_valid, _, dq_warnings = validate_ohlcv_dataframe(cand_df, symbol=ticker)
                 else:
-                    dq_valid, dq_warnings = True, []
+                    dq_valid, dq_warnings = False, ["Missing OHLCV candle data"]
                 is_stale = (not feed_allowed)
                 dq_status = "valid" if (feed_allowed and dq_valid and not is_stale) else ("stale" if is_stale else "invalid")
                 real_data_quality = {
@@ -1710,6 +1711,8 @@ class InstitutionalEngine:
                 ai_req_id = f"ai_req_{ticker}_{int(time.time())}"
                 ds_summary = swing_quant_ml_engine.get_status().get("dataset_summary", {})
                 dataset_count = int(ds_summary.get("total_records") or 1)
+                emp_win_rate = ds_summary.get("empirical_win_rate")
+                emp_wr_float = round(float(emp_win_rate), 4) if emp_win_rate is not None else None
                 ai_request = SwingCandidateAIRequest(
                     schema_version="1.0",
                     request_id=ai_req_id,
@@ -1762,13 +1765,14 @@ class InstitutionalEngine:
                         capital_at_risk=float(r.get('capital_at_risk', 3750.0)),
                         estimated_transaction_costs=round(float(r['entry']) * int(r['shares']) * 0.0012, 2)
                     ),
+                    # Use real empirical summary if available; never fabricate candidate ml_prob as historical win rate
                     historical_evidence=SwingHistoricalEvidence(
                         sample_count=dataset_count,
-                        target_before_stop_frequency=ml_prob,
-                        stop_before_target_frequency=round(1.0 - ml_prob, 2),
+                        target_before_stop_frequency=emp_wr_float,
+                        stop_before_target_frequency=round(1.0 - emp_wr_float, 4) if emp_wr_float is not None else None,
                         evaluation_type="out_of_sample",
                         period="NSE 500 Historical Validation",
-                        historical_win_rate=ml_prob
+                        historical_win_rate=emp_wr_float
                     ),
                     portfolio_context=SwingPortfolioContext(
                         already_held=(ticker in active_syms),

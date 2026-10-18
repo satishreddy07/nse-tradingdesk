@@ -4,7 +4,7 @@ Validates inputs, preserves data fidelity, and ensures no hallucinated facts.
 """
 import math
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from core.market_calendar import NSEMarketCalendar
 from ai_engine.schemas import (
@@ -50,6 +50,17 @@ def _determine_direction(verdict_str: str) -> str:
     return "RANGE-BOUND"
 
 
+def _normalize_probabilities(p_up: Any, p_flat: Any, p_down: Any) -> Tuple[float, float, float]:
+    """Ensures directional horizon probabilities sum to 1.0."""
+    u = float(np_clip_prob(p_up))
+    f = float(np_clip_prob(p_flat))
+    d = float(np_clip_prob(p_down))
+    total = u + f + d
+    if total > 0.0:
+        return round(u / total, 4), round(f / total, 4), round(d / total, 4)
+    return 0.3333, 0.3334, 0.3333
+
+
 def build_prediction_context(
     predictions_data: Dict[str, Any],
     data_mode_override: Optional[str] = None
@@ -61,6 +72,7 @@ def build_prediction_context(
     if not isinstance(predictions_data, dict) or predictions_data.get("status") != "OK":
         raise ValueError("Invalid predictions data passed to context builder: status is not OK")
 
+    spot_unavailable = False
     spot = safe_float(predictions_data.get("spot_price"), default=0.0)
     if spot <= 0.0:
         try:
@@ -78,7 +90,9 @@ def build_prediction_context(
         except Exception:
             pass
     if spot <= 0.0:
-        spot = 24000.0  # Safe positive baseline for offline test fixtures
+        spot_unavailable = True
+        spot = 1.0  # Safe minimal positive float for schema compliance; flagged as INSUFFICIENT_DATA
+
     composite_score = safe_float(predictions_data.get("composite_score"), default=0.0)
     t1_f = predictions_data.get("t1_forecast") or {}
     t5_f = predictions_data.get("t5_forecast") or {}
@@ -99,38 +113,62 @@ def build_prediction_context(
     # Timezone-aware ISO-8601 as-of timestamp
     as_of = datetime.now(timezone.utc).isoformat()
 
-    # Build T+1 Prediction
+    # Build T+1 Prediction with normalized probabilities and empirical validation status
     t1_verdict = str(t1_f.get("verdict") or "RANGE-BOUND")
+    t1_p_up, t1_p_flat, t1_p_down = _normalize_probabilities(
+        t1_f.get("prob_up", 0.5),
+        t1_f.get("prob_flat", 0.2),
+        t1_f.get("prob_down", 0.3)
+    )
+    t1_hit = self_training.get("t1_hit_rate_pct")
+    t1_status = (
+        f"WALK_FORWARD_VALIDATED (Historical Hit Rate: {float(t1_hit):.1f}%)"
+        if t1_hit is not None
+        else "WALK_FORWARD_UNVALIDATED (Historical Hit Rate: INSUFFICIENT_DATA)"
+    )
+
     t1_item = PredictionHorizonItem(
         horizon="T+1",
         direction=_determine_direction(t1_verdict),
-        probability_up=float(np_clip_prob(t1_f.get("prob_up", 0.5))),
-        probability_flat=float(np_clip_prob(t1_f.get("prob_flat", 0.2))),
-        probability_down=float(np_clip_prob(t1_f.get("prob_down", 0.3))),
+        probability_up=t1_p_up,
+        probability_flat=t1_p_flat,
+        probability_down=t1_p_down,
         expected_return_pct=safe_optional_float(t1_f.get("expected_pct")),
         expected_points=safe_optional_float(t1_f.get("expected_pts")),
         expected_close=safe_optional_float(t1_f.get("expected_close")),
         forecast_range_1sigma=list(t1_f.get("range_1sigma")) if t1_f.get("range_1sigma") else None,
         forecast_range_2sigma=list(t1_f.get("range_2sigma")) if t1_f.get("range_2sigma") else None,
         model_version="6-Pillar-v2.4",
-        validation_status=f"WALK_FORWARD_VALIDATED (Historical Hit Rate: {safe_float(self_training.get('t1_hit_rate_pct'), 70.0):.1f}%)",
+        validation_status=t1_status,
     )
 
-    # Build T+5 Prediction
+    # Build T+5 Prediction with normalized probabilities and empirical validation status
     t5_verdict = str(t5_f.get("verdict") or "RANGE-BOUND")
+    t5_p_up, t5_p_flat, t5_p_down = _normalize_probabilities(
+        t5_f.get("prob_up", 0.5),
+        t5_f.get("prob_flat", 0.2),
+        t5_f.get("prob_down", 0.3)
+    )
+    t5_hit = self_training.get("t5_hit_rate_pct")
+    t5_status = (
+        f"WALK_FORWARD_VALIDATED (Historical Hit Rate: {float(t5_hit):.1f}%)"
+        if t5_hit is not None
+        else "WALK_FORWARD_UNVALIDATED (Historical Hit Rate: INSUFFICIENT_DATA)"
+    )
+
     t5_item = PredictionHorizonItem(
         horizon="T+5",
         direction=_determine_direction(t5_verdict),
-        probability_up=float(np_clip_prob(t5_f.get("prob_up", 0.5))),
-        probability_flat=float(np_clip_prob(t5_f.get("prob_flat", 0.2))),
-        probability_down=float(np_clip_prob(t5_f.get("prob_down", 0.3))),
+        probability_up=t5_p_up,
+        probability_flat=t5_p_flat,
+        probability_down=t5_p_down,
         expected_return_pct=safe_optional_float(t5_f.get("expected_pct")),
         expected_points=safe_optional_float(t5_f.get("expected_pts")),
         expected_close=safe_optional_float(t5_f.get("expected_close")),
         forecast_range_1sigma=list(t5_f.get("range_1sigma")) if t5_f.get("range_1sigma") else None,
         forecast_range_2sigma=list(t5_f.get("range_2sigma")) if t5_f.get("range_2sigma") else None,
         model_version="6-Pillar-v2.4",
-        validation_status=f"WALK_FORWARD_VALIDATED (Historical Hit Rate: {safe_float(self_training.get('t5_hit_rate_pct'), 75.0):.1f}%)",
+        validation_status=t5_status,
     )
 
     # Macro regime
@@ -212,7 +250,7 @@ def build_prediction_context(
         composite_score_t5=comp_score_t5,
         regime=regime,
         event_risk=str(news_data.get("event_risk_flag") or "NORMAL"),
-        data_quality="VALID",
+        data_quality="INSUFFICIENT_DATA" if spot_unavailable else "VALID",
         pillar_scores=predictions_data.get("pillar_scores"),
         sectoral_leaders=sector_leaders if sector_leaders else None,
         fii_dii_summary=fii_dii_summary,

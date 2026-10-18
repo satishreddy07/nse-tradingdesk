@@ -6182,7 +6182,7 @@
                  'bg-slate-900 border-slate-700 text-slate-200';
       
       toast.className = `p-3.5 rounded-xl border shadow-2xl text-xs flex items-center gap-2 pointer-events-auto transition-all transform translate-y-2 opacity-0 ${bg}`;
-      toast.innerHTML = `<span>${message}</span>`;
+      toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
       container.appendChild(toast);
 
       requestAnimationFrame(() => {
@@ -7208,9 +7208,9 @@
       if (sugGrid && sugs.length > 0) {
         sugGrid.innerHTML = sugs.map(s => `
           <div class="bg-slate-900/80 border border-purple-500/30 rounded-2xl p-4">
-            <div class="text-[10px] font-mono font-bold uppercase text-purple-400">${s.horizon || 'QUANT ADVISORY'}</div>
-            <div class="text-xs sm:text-sm font-bold text-white mt-1">${s.title || ''}</div>
-            <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">${s.detail || ''}</p>
+            <div class="text-[10px] font-mono font-bold uppercase text-purple-400">${escapeHtml(s.horizon || 'QUANT ADVISORY')}</div>
+            <div class="text-xs sm:text-sm font-bold text-white mt-1">${escapeHtml(s.title || '')}</div>
+            <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">${escapeHtml(s.detail || '')}</p>
           </div>
         `).join('');
       }
@@ -7870,7 +7870,7 @@
         twList.innerHTML = tw.map(t => `
           <li class="flex items-start gap-2 bg-slate-900/60 p-2.5 rounded-xl border border-emerald-500/20">
             <span class="text-emerald-400 font-bold shrink-0 mt-0.5">✓</span>
-            <span class="leading-relaxed text-slate-200">${t}</span>
+            <span class="leading-relaxed text-slate-200">${escapeHtml(t)}</span>
           </li>
         `).join('');
       }
@@ -7881,7 +7881,7 @@
         hwList.innerHTML = hw.map(h => `
           <li class="flex items-start gap-2 bg-slate-900/60 p-2.5 rounded-xl border border-rose-500/20">
             <span class="text-rose-400 font-bold shrink-0 mt-0.5">⚠️</span>
-            <span class="leading-relaxed text-slate-200">${h}</span>
+            <span class="leading-relaxed text-slate-200">${escapeHtml(h)}</span>
           </li>
         `).join('');
       }
@@ -8168,7 +8168,7 @@
       const t1Uncert = document.getElementById('ai-t1-uncertainties');
       if (t1Uncert) {
         const u = t1Data.uncertainties || [];
-        t1Uncert.innerHTML = u.length ? u.map(x => `<li>${x}</li>`).join('') : '<li class="text-slate-500">None specified</li>';
+        t1Uncert.innerHTML = u.length ? u.map(x => `<li>${escapeHtml(x)}</li>`).join('') : '<li class="text-slate-500">None specified</li>';
       }
 
       const t5Interp = document.getElementById('ai-t5-interpretation');
@@ -8177,45 +8177,45 @@
       const t5Uncert = document.getElementById('ai-t5-uncertainties');
       if (t5Uncert) {
         const u = t5Data.uncertainties || [];
-        t5Uncert.innerHTML = u.length ? u.map(x => `<li>${x}</li>`).join('') : '<li class="text-slate-500">None specified</li>';
+        t5Uncert.innerHTML = u.length ? u.map(x => `<li>${escapeHtml(x)}</li>`).join('') : '<li class="text-slate-500">None specified</li>';
       }
 
       // Triad: Conflicts, Evidence & Event Risks
       const confList = document.getElementById('ai-conflicts-list');
       if (confList) {
         const c = data.conflicts || [];
-        confList.innerHTML = c.length ? c.map(x => `<li class="flex items-start gap-1.5"><span class="text-rose-400 shrink-0">⚠️</span><span>${x}</span></li>`).join('') : '<li class="text-slate-500">No directional or regime conflicts detected.</li>';
+        confList.innerHTML = c.length ? c.map(x => `<li class="flex items-start gap-1.5"><span class="text-rose-400 shrink-0">⚠️</span><span>${escapeHtml(x)}</span></li>`).join('') : '<li class="text-slate-500">No directional or regime conflicts detected.</li>';
       }
 
       const evList = document.getElementById('ai-evidence-list');
       if (evList) {
         const e = data.supporting_evidence || [];
-        evList.innerHTML = e.length ? e.map(x => `<li class="flex items-start gap-1.5"><span class="text-emerald-400 shrink-0">✓</span><span>${x}</span></li>`).join('') : '<li class="text-slate-500">Evidence documented in multi-pillar scores.</li>';
+        evList.innerHTML = e.length ? e.map(x => `<li class="flex items-start gap-1.5"><span class="text-emerald-400 shrink-0">✓</span><span>${escapeHtml(x)}</span></li>`).join('') : '<li class="text-slate-500">Evidence documented in multi-pillar scores.</li>';
       }
 
       const erList = document.getElementById('ai-event-risks-list');
       if (erList) {
         const r = data.event_risks || [];
-        erList.innerHTML = r.length ? r.map(x => `<li class="flex items-start gap-1.5"><span class="text-amber-400 shrink-0">⚡</span><span>${x}</span></li>`).join('') : '<li class="text-slate-500">No immediate high-impact event risks noted.</li>';
+        erList.innerHTML = r.length ? r.map(x => `<li class="flex items-start gap-1.5"><span class="text-amber-400 shrink-0">⚡</span><span>${escapeHtml(x)}</span></li>`).join('') : '<li class="text-slate-500">No immediate high-impact event risks noted.</li>';
       }
 
       // Bottom Row: Reasons to Avoid, Missing Data, Strategy Matrix
       const avoidList = document.getElementById('ai-avoid-trade-list');
       if (avoidList) {
         const a = data.reasons_to_avoid_trade || [];
-        avoidList.innerHTML = a.length ? a.map(x => `<li>${x}</li>`).join('') : '<li class="text-slate-500">Normal trading conditions.</li>';
+        avoidList.innerHTML = a.length ? a.map(x => `<li>${escapeHtml(x)}</li>`).join('') : '<li class="text-slate-500">Normal trading conditions.</li>';
       }
 
       const missList = document.getElementById('ai-missing-data-list');
       if (missList) {
         const m = data.missing_or_stale_data || [];
-        missList.innerHTML = m.length ? m.map(x => `<li>${x}</li>`).join('') : '<li class="text-slate-500">All required inputs verified fresh.</li>';
+        missList.innerHTML = m.length ? m.map(x => `<li>${escapeHtml(x)}</li>`).join('') : '<li class="text-slate-500">All required inputs verified fresh.</li>';
       }
 
       const stratList = document.getElementById('ai-strategy-considerations-list');
       if (stratList) {
         const s = data.strategy_considerations || [];
-        stratList.innerHTML = s.length ? s.map(x => `<li class="text-cyan-300 font-semibold">• ${x}</li>`).join('') : '<li class="text-slate-500">Standard strategy matrix rules apply.</li>';
+        stratList.innerHTML = s.length ? s.map(x => `<li class="text-cyan-300 font-semibold">• ${escapeHtml(x)}</li>`).join('') : '<li class="text-slate-500">Standard strategy matrix rules apply.</li>';
       }
 
       // Telemetry

@@ -147,10 +147,25 @@ async def capture_public_host_middleware(request: Request, call_next):
 # --------------------------------------------------------------------------
 @app.api_route("/health", methods=["GET", "HEAD"])
 def health_check():
-    return {
-        "status": "ok",
-        "timestamp": format_ist()
-    }
+    db_healthy = True
+    db_msg = "connected"
+    try:
+        from execution.state_engine import state_engine
+        with state_engine._get_connection() as conn:
+            conn.execute("SELECT 1").fetchone()
+    except Exception as e:
+        db_healthy = False
+        db_msg = str(e)
+
+    status_code = 200 if db_healthy else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ok" if db_healthy else "degraded",
+            "database": "healthy" if db_healthy else f"unhealthy: {db_msg}",
+            "timestamp": format_ist()
+        }
+    )
 
 
 @app.get("/favicon.ico")
@@ -1380,17 +1395,44 @@ def get_ml_tree_structure_endpoint(horizon: str = "INTRADAY", tree_index: int = 
 
 @app.get("/api/ml/shap")
 def get_ml_shap_explanation_endpoint(horizon: str = "INTRADAY"):
-    """Computes exact TreeSHAP feature attributions natively via XGBoost C++ engine."""
+    """Computes exact TreeSHAP feature attributions natively via XGBoost C++ engine using live measured market indicators."""
     from engines.tree_quant_ml_engine import tree_quant_ml_engine
-    # Use current market regime features
+
+    # Dynamically extract live measured market features
+    comp_score = 0.0
+    atm_pcr = 1.0
+    vix_val = 15.0
+    rsi_val = 50.0
+    adx_val = 25.0
+    regime_code = 1.0
+
+    try:
+        from execution.state_engine import state_engine
+        last_pred = state_engine.get_kv("last_nifty_prediction", {})
+        if isinstance(last_pred, dict):
+            comp_score = float(last_pred.get("composite_score", 0.0) or 0.0)
+            overlay = last_pred.get("pillars", {}).get("options_overlay", {})
+            atm_pcr = float(overlay.get("near_atm_pcr", 1.0) or 1.0)
+            vix_m = [
+                m for m in last_pred.get("pillars", {}).get("macro_cross_asset", [])
+                if isinstance(m, dict) and ("VIX" in str(m.get("ticker", "")).upper() or "VIX" in str(m.get("name", "")).upper())
+            ]
+            if vix_m:
+                vix_val = float(vix_m[0].get("last_close") or vix_m[0].get("close") or 15.0)
+            tech = last_pred.get("pillars", {}).get("nifty_technicals", {})
+            rsi_val = float(tech.get("rsi14", 50.0) or 50.0)
+            adx_val = float(tech.get("adx14", 25.0) or 25.0)
+    except Exception:
+        pass
+
     sample_features = {
-        "composite_score": 14.5,
-        "near_atm_pcr": 1.22,
-        "vix_spot": 13.8,
-        "rsi14": 58.5,
-        "trend_strength_adx": 26.0,
+        "composite_score": comp_score,
+        "near_atm_pcr": atm_pcr,
+        "vix_spot": vix_val,
+        "rsi14": rsi_val,
+        "trend_strength_adx": adx_val,
         "horizon_code": 1.0 if horizon == "INTRADAY" else (2.0 if horizon == "WEEKLY" else 4.0),
-        "regime_code": 1.0
+        "regime_code": regime_code
     }
     return tree_quant_ml_engine.compute_shap_explanations(horizon=horizon, features=sample_features)
 

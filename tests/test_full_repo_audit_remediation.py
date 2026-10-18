@@ -280,3 +280,95 @@ def test_nifty_learning_fold_scaler_isolation():
     assert "X_tr = fold_scaler.fit_transform(X[train_idx])" in content
     assert "X_va = fold_scaler.transform(X[val_idx])" in content
 
+
+# =============================================================================
+# 6. PIPELINE, RISK & SIZING INTEGRITY (Findings 5.4, 5.5, 6.1, 6.6, 7.6, 8.3)
+# =============================================================================
+def test_nifty500_compounded_equity_unrealized_pnl():
+    """Verify get_live_compounded_equity includes unrealized P&L from active positions (Finding 5.5)."""
+    from engines.nifty500_engine import get_live_compounded_equity
+    with patch("execution.state_engine.state_engine.get_trade_history", return_value=[{"portfolio_type": "NIFTY500_MOMENTUM", "pnl": 5000.0}]):
+        with patch("execution.state_engine.state_engine.get_active_positions", return_value=[
+            {"symbol": "INFY", "portfolio_type": "NIFTY500_MOMENTUM", "entry_price": 1000.0, "current_price": 1050.0, "quantity": 10}
+        ]):
+            curr_eq, tot_eq, slots = get_live_compounded_equity(initial_cash=500000.0)
+            # 500,000 + 5,000 realized + (1050 - 1000)*10 = 505,500
+            assert tot_eq == 505500.0
+            assert slots == 1
+
+
+def test_nifty500_universe_and_benchmark_fail_closed():
+    """Verify Nifty 500 fails closed when constituents or benchmarks are unavailable (Finding 5.4)."""
+    from engines.nifty500_engine import get_nifty500_symbols
+    with patch("requests.get", side_effect=Exception("Network error")):
+        with patch("execution.state_engine.state_engine.get_kv", return_value=[]):
+            with patch("execution.state_engine.state_engine.get_all_ohlcv_metadata", return_value=[]):
+                syms = get_nifty500_symbols()
+                assert syms == []  # Must never silently return arbitrary 10 stocks
+
+
+def test_institutional_calculate_position_scales_with_base_risk():
+    """Verify calculate_position dynamically scales tier risk relative to base_risk_pct (Finding 6.6)."""
+    from engines.institutional_engine import ExecutionEngine
+    row_a_plus = pd.Series({"close": 1000.0, "atr14": 20.0, "low": 980.0, "score": 95.0, "confidence": 5, "ml_verdict": "APPROVED"})
+    row_a = pd.Series({"close": 1000.0, "atr14": 20.0, "low": 980.0, "score": 85.0, "confidence": 4, "ml_verdict": "APPROVED"})
+    row_b = pd.Series({"close": 1000.0, "atr14": 20.0, "low": 980.0, "score": 75.0, "confidence": 3, "ml_verdict": "APPROVED"})
+
+    # With base_risk_pct = 0.75
+    p_a_plus = ExecutionEngine.calculate_position(row_a_plus, capital=100000.0, base_risk_pct=0.75)
+    p_a = ExecutionEngine.calculate_position(row_a, capital=100000.0, base_risk_pct=0.75)
+    p_b = ExecutionEngine.calculate_position(row_b, capital=100000.0, base_risk_pct=0.75)
+    assert p_a_plus["risk_pct"] == 1.0
+    assert p_a["risk_pct"] == 0.75
+    assert p_b["risk_pct"] == 0.60
+
+    # With custom base_risk_pct = 0.50
+    p_a_plus_half = ExecutionEngine.calculate_position(row_a_plus, capital=100000.0, base_risk_pct=0.50)
+    assert round(p_a_plus_half["risk_pct"], 2) == round(0.50 * (1.0 / 0.75), 2)
+
+
+def test_ai_context_builder_probabilities_and_hit_rate():
+    """Verify AI context builder normalizes probabilities and removes fabricated defaults (Finding 7.6)."""
+    from ai_engine.context_builder import build_prediction_context
+    sample_preds = {
+        "status": "OK",
+        "spot_price": 24500.0,
+        "composite_score": 10.0,
+        "t1_forecast": {
+            "verdict": "BULLISH",
+            "prob_up": 0.6,
+            "prob_flat": 0.3,
+            "prob_down": 0.3,  # sum is 1.2
+        },
+        "t5_forecast": {
+            "verdict": "RANGE-BOUND",
+            "prob_up": 0.4,
+            "prob_flat": 0.4,
+            "prob_down": 0.4,  # sum is 1.2
+        },
+        "self_training_engine": {}  # missing hit rates
+    }
+    contract = build_prediction_context(sample_preds, data_mode_override="HISTORICAL_DAILY")
+    t1_p = contract.predictions[0]
+    t5_p = contract.predictions[1]
+
+    # Probabilities must sum to 1.0 (within rounding tolerance)
+    assert round(t1_p.probability_up + t1_p.probability_flat + t1_p.probability_down, 2) == 1.0
+    assert round(t5_p.probability_up + t5_p.probability_flat + t5_p.probability_down, 2) == 1.0
+    # Must report INSUFFICIENT_DATA rather than fabricated 70%/75%
+    assert "INSUFFICIENT_DATA" in t1_p.validation_status
+    assert "INSUFFICIENT_DATA" in t5_p.validation_status
+
+
+def test_health_check_database_readiness():
+    """Verify /health endpoint validates database connectivity (Finding 8.3)."""
+    from fastapi.testclient import TestClient
+    from web.api import app
+    client = TestClient(app)
+    res = client.get("/health")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ok"
+    assert data["database"] == "healthy"
+
+

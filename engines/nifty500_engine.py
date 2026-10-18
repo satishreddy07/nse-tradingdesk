@@ -85,7 +85,15 @@ def get_live_compounded_equity(initial_cash: float = P2_BASE_CAPITAL) -> Tuple[f
     open_trades = state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)
     open_slots_count = len(open_trades)
 
-    total_equity = initial_cash + realized_pnl
+    # Compute unrealized P&L from active open positions
+    unrealized_pnl = 0.0
+    for pos in open_trades:
+        curr_px = float(pos.get("current_price") or pos.get("entry_price") or 0.0)
+        entry_px = float(pos.get("entry_price") or 0.0)
+        qty = float(pos.get("quantity") or 0.0)
+        unrealized_pnl += (curr_px - entry_px) * qty
+
+    total_equity = initial_cash + realized_pnl + unrealized_pnl
     current_equity = max(total_equity, 10000.0)
     return current_equity, total_equity, open_slots_count
 
@@ -124,11 +132,12 @@ def get_nifty500_symbols() -> List[str]:
     meta_rows = state_engine.get_all_ohlcv_metadata(limit=500)
     if meta_rows:
         syms = [r["symbol"] for r in meta_rows if not r["symbol"].startswith("^")]
-        if syms:
+        if len(syms) >= 10:
             logger.info(f"-> Loaded {len(syms)} stocks from Single Master File OHLCV store.")
             return syms
 
-    return ["RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "BHARTIARTL", "SBIN", "LICI", "ITC", "HINDUNILVR"]
+    logger.error("🚨 [NIFTY500] All constituent sources unavailable. Failing closed.")
+    return []
 
 
 async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
@@ -419,24 +428,28 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
         stocks_done=len(df_all["symbol"].unique())
     )
 
-    # Macro Regime Gate Audit on ^CRSLDX
+    # Macro Regime Gate Audit on ^CRSLDX or ^NSEI
     b_df = df_all[df_all["symbol"] == "^CRSLDX"].copy()
     if b_df.empty:
         b_df = df_all[df_all["symbol"] == "^NSEI"].copy()
-        if b_df.empty:
-            b_df = df_all.groupby("date").agg({"close": "mean"}).reset_index()
-            b_df["symbol"] = "^CRSLDX"
 
-    b_df = b_df.sort_values("date").drop_duplicates("date").reset_index(drop=True)
-    b_df["bench_ema50"] = b_df["close"].ewm(span=50, adjust=False).mean()
-    b_df["bull_regime"] = b_df["close"] > b_df["bench_ema50"]
-    b_df["bench_ret_63"] = b_df["close"].pct_change(63)
+    if b_df.empty:
+        logger.warning("🚨 [NIFTY500] No official benchmark (^CRSLDX or ^NSEI) data found. Failing regime check closed.")
+        bench_ltp = 0.0
+        bench_ema = 0.0
+        is_bullish = False
+        macro_regime_label = "BENCHMARK_UNAVAILABLE (HOLD 100% CASH - ZERO LONGS)"
+    else:
+        b_df = b_df.sort_values("date").drop_duplicates("date").reset_index(drop=True)
+        b_df["bench_ema50"] = b_df["close"].ewm(span=50, adjust=False).mean()
+        b_df["bull_regime"] = b_df["close"] > b_df["bench_ema50"]
+        b_df["bench_ret_63"] = b_df["close"].pct_change(63)
 
-    latest_bench = b_df.iloc[-1]
-    bench_ltp = float(latest_bench["close"])
-    bench_ema = float(latest_bench["bench_ema50"])
-    is_bullish = bool(latest_bench["bull_regime"])
-    macro_regime_label = "BULL REGIME (EXECUTE BUYS)" if is_bullish else "BEAR REGIME (HOLD 100% CASH - ZERO LONGS)"
+        latest_bench = b_df.iloc[-1]
+        bench_ltp = float(latest_bench["close"])
+        bench_ema = float(latest_bench["bench_ema50"])
+        is_bullish = bool(latest_bench["bull_regime"])
+        macro_regime_label = "BULL REGIME (EXECUTE BUYS)" if is_bullish else "BEAR REGIME (HOLD 100% CASH - ZERO LONGS)"
 
     _nifty500_engine_state["macro_regime"] = macro_regime_label
     _nifty500_engine_state["bench_ltp"] = bench_ltp
@@ -576,10 +589,10 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
         dist_to_pivot = round(((entry_px - pivot_px) / pivot_px) * 100.0, 2)
         dist_to_ema20 = round(((entry_px - float(row["ema_20"])) / float(row["ema_20"])) * 100.0, 2)
 
-        # F-32: Evaluate via SwingQuantMLEngine for genuine calibrated ML probability and expected R
-        ml_prob = 0.50
+        # F-32 & Finding 6.1: Evaluate via SwingQuantMLEngine with fail-closed exception handling
+        ml_prob = None
         exp_r = 0.0
-        ml_verd = "APPROVED"
+        ml_verd = "REJECTED"
         try:
             from engines.swing_quant_ml_engine import swing_quant_ml_engine
             eval_input = {
@@ -596,12 +609,14 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
                 "sector": get_stock_sector(sym)
             }
             eval_res = swing_quant_ml_engine.evaluate_candidate(eval_input)
-            ml_prob = eval_res.get("win_prob", 0.50)
+            ml_prob = eval_res.get("win_prob")
             exp_r = eval_res.get("expected_r", 0.0)
-            ml_verd = eval_res.get("verdict", "APPROVED")
-        except Exception:
-            ml_prob = 0.50
+            ml_verd = eval_res.get("verdict", "REJECTED")
+        except Exception as e:
+            logger.warning(f"ML evaluation failed for {sym}: {e}. Failing closed.")
+            ml_prob = None
             exp_r = 0.0
+            ml_verd = "REJECTED"
 
         signal_item = {
             "symbol": sym,
@@ -636,7 +651,16 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
 
         can_trade_now, gate_msg = NSEMarketCalendar.can_execute_trades()
 
-        if auto_execute and can_trade_now and is_bullish and is_strict_setup and len(orders) < available_slots and shares > 0:
+        if (
+            auto_execute
+            and can_trade_now
+            and is_bullish
+            and is_strict_setup
+            and ml_verd == "APPROVED"
+            and (ml_prob is not None and ml_prob >= 0.50)
+            and len(orders) < available_slots
+            and shares > 0
+        ):
 
             order_payload = {
                 "symbol": sym,
