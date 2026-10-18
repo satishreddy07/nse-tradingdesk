@@ -92,8 +92,9 @@ def test_inverted_candles_rejected():
 
     # Invert a single candle (High < Low)
     df_corrupt = df_clean.copy()
-    df_corrupt.loc[1, "High"] = 90.0
-    df_corrupt.loc[1, "Low"] = 110.0
+    corrupt_date = pd.Timestamp("2026-01-02")
+    df_corrupt.loc[corrupt_date, "High"] = 90.0
+    df_corrupt.loc[corrupt_date, "Low"] = 110.0
 
     # With 1 of 4 candles corrupt (> 5%), it must be rejected or quarantined
     is_valid_c, cleaned_df, warnings_c = validate_ohlcv_dataframe(df_corrupt, min_bars=3)

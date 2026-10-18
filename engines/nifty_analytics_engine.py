@@ -5504,7 +5504,18 @@ class NiftyAnalyticsEngine:
                 or opt_chain_data.get("monthly", {}).get("volatility_and_gex", {}).get("atm_iv")
                 or opt_chain_data.get("atm_iv")
             )
-        base_iv = float(base_iv_raw) if base_iv_raw is not None and float(base_iv_raw) > 0 else None
+        try:
+            parsed_base_iv = float(base_iv_raw) if base_iv_raw is not None else float("nan")
+        except (TypeError, ValueError, OverflowError):
+            parsed_base_iv = float("nan")
+        base_iv = parsed_base_iv if math.isfinite(parsed_base_iv) and parsed_base_iv > 0 else None
+
+        def _usable_chain_iv(value: Any) -> Optional[float]:
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            return parsed if math.isfinite(parsed) and parsed > 0 else None
 
         weekly_ltp_map = {}
         monthly_ltp_map = {}
@@ -5521,8 +5532,12 @@ class NiftyAnalyticsEngine:
                 weekly_ltp_map[float(stk_int)] = weekly_ltp_map[stk_int]
                 if "ce_ltp" in row: weekly_ltp_map[stk_int]["CE"] = float(row["ce_ltp"])
                 if "pe_ltp" in row: weekly_ltp_map[stk_int]["PE"] = float(row["pe_ltp"])
-                if "ce_iv" in row: weekly_ltp_map[stk_int]["CE_IV"] = float(row["ce_iv"])
-                if "pe_iv" in row: weekly_ltp_map[stk_int]["PE_IV"] = float(row["pe_iv"])
+                ce_iv_value = _usable_chain_iv(row.get("ce_iv"))
+                if ce_iv_value is not None:
+                    weekly_ltp_map[stk_int]["CE_IV"] = ce_iv_value
+                pe_iv_value = _usable_chain_iv(row.get("pe_iv"))
+                if pe_iv_value is not None:
+                    weekly_ltp_map[stk_int]["PE_IV"] = pe_iv_value
 
         for row in monthly_chain:
             stk = row.get("strike")
@@ -5537,8 +5552,12 @@ class NiftyAnalyticsEngine:
                 monthly_ltp_map[float(stk_int)] = monthly_ltp_map[stk_int]
                 if "ce_ltp" in row: monthly_ltp_map[stk_int]["CE"] = float(row["ce_ltp"])
                 if "pe_ltp" in row: monthly_ltp_map[stk_int]["PE"] = float(row["pe_ltp"])
-                if "ce_iv" in row: monthly_ltp_map[stk_int]["CE_IV"] = float(row["ce_iv"])
-                if "pe_iv" in row: monthly_ltp_map[stk_int]["PE_IV"] = float(row["pe_iv"])
+                ce_iv_value = _usable_chain_iv(row.get("ce_iv"))
+                if ce_iv_value is not None:
+                    monthly_ltp_map[stk_int]["CE_IV"] = ce_iv_value
+                pe_iv_value = _usable_chain_iv(row.get("pe_iv"))
+                if pe_iv_value is not None:
+                    monthly_ltp_map[stk_int]["PE_IV"] = pe_iv_value
 
         active_strategies = []
         closed_strategies = []
