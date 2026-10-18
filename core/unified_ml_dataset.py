@@ -488,12 +488,19 @@ class UnifiedMLDataset:
         horizon = horizon.upper()
         allowed_types = {"LIVE", "PAPER", "BACKTEST", "COUNTERFACTUAL"}
         if record_types is None:
-            selected_types = None if include_counterfactuals else ["LIVE"]
+            if include_counterfactuals:
+                raise ValueError(
+                    "Explicit record_types are required when include_counterfactuals=True "
+                    "to prevent accidental mixing of empirical and counterfactual cohorts."
+                )
+            selected_types = ["LIVE"]
         else:
             selected_types = [str(item).upper() for item in record_types]
             invalid_types = set(selected_types) - allowed_types
             if invalid_types:
                 raise ValueError(f"Unsupported ML record_type values: {sorted(invalid_types)}")
+            if not selected_types:
+                raise ValueError("record_types must contain at least one cohort.")
             if "COUNTERFACTUAL" in selected_types and not include_counterfactuals:
                 raise ValueError("Counterfactual training requires include_counterfactuals=True.")
 
@@ -503,14 +510,13 @@ class UnifiedMLDataset:
             where_clauses.append("status IN ('RESOLVED_TARGET', 'RESOLVED_STOP_LOSS', 'EXPIRED', 'RESOLVED_MANUAL')")
             where_clauses.append("is_winner IS NOT NULL")
 
-        if selected_types:
-            placeholders = ",".join("?" for _ in selected_types)
-            where_clauses.append(f"record_type IN ({placeholders})")
-            params.extend(selected_types)
-            if "LIVE" in selected_types:
-                where_clauses.append("actual_entry IS NOT NULL AND actual_entry > 0")
-        elif not include_counterfactuals:
-            where_clauses.append("record_type != 'COUNTERFACTUAL'")
+        # Always scope to the explicitly selected cohort(s). LIVE rows require a verified actual fill,
+        # but this must not accidentally filter out explicitly selected PAPER/BACKTEST/COUNTERFACTUAL rows.
+        placeholders = ",".join("?" for _ in selected_types)
+        where_clauses.append(f"record_type IN ({placeholders})")
+        params.extend(selected_types)
+        if "LIVE" in selected_types:
+            where_clauses.append("(record_type != 'LIVE' OR (actual_entry IS NOT NULL AND actual_entry > 0))")
 
         where_sql = " AND ".join(where_clauses)
         query = f"""

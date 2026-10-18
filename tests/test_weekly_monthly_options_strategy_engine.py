@@ -59,6 +59,54 @@ def test_weekly_monthly_dynamic_sigma_strike_selection():
     assert m_res["strikes"]["strike_1s_ce"] > w_res["strikes"]["strike_1s_ce"]
 
 
+
+@pytest.mark.parametrize("bad_iv", [float("nan"), float("inf"), float("-inf")])
+def test_weekly_monthly_sigma_rejects_nonfinite_iv(monkeypatch, bad_iv):
+    """Non-finite IV must not produce a strike calculation or a silent fixed-IV fallback."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+
+    monkeypatch.setattr(nifty_analytics_engine, "get_india_vix", lambda: {"current_vix": bad_iv})
+    with pytest.raises(ValueError, match="Verified implied volatility is unavailable"):
+        WeeklyMonthlyOptionsStrategyEngine.calculate_sigma_strikes(
+            spot=22600.0,
+            iv_pct=bad_iv,
+            horizon="WEEKLY",
+        )
+
+
+def test_weekly_monthly_sigma_rejects_nonfinite_spot_without_fallback(monkeypatch):
+    """An invalid spot must be rejected if both live and stored fallback prices are unavailable."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    from execution.state_engine import state_engine
+
+    monkeypatch.setattr(nifty_analytics_engine, "get_live_nifty_spot", lambda: {"price": float("nan")})
+    # Use an isolated prediction lookup that has no usable row.
+    class EmptyConnection:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def execute(self, *args):
+            class EmptyResult:
+                def fetchone(self):
+                    return None
+            return EmptyResult()
+
+    class EmptyLock:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(state_engine, "_lock", EmptyLock())
+    monkeypatch.setattr(state_engine, "_get_connection", lambda: EmptyConnection())
+    with pytest.raises(RuntimeError, match="Live Nifty Spot Price unavailable"):
+        WeeklyMonthlyOptionsStrategyEngine.calculate_sigma_strikes(
+            spot=float("nan"),
+            iv_pct=13.2,
+            horizon="WEEKLY",
+        )
+
 def test_weekly_five_regimes_rules():
     """Verify Weekly strategies: all regimes use 40% Stop-Loss."""
     # 1. Strong Bullish: Sell PE @ 1-sigma, 40% SL

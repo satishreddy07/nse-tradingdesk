@@ -502,6 +502,12 @@ def test_h06_unified_ml_dataset_cohort_separation(tmp_path):
     # Production training must not consume accepted-but-unfilled signals.
     assert ds.get_dataset_for_horizon("WEEKLY").empty
 
+    # Counterfactual opt-in must not silently mix all cohorts; callers select cohorts explicitly.
+    with pytest.raises(ValueError, match="Explicit record_types"):
+        ds.get_dataset_for_horizon("WEEKLY", include_counterfactuals=True)
+    with pytest.raises(ValueError, match="at least one cohort"):
+        ds.get_dataset_for_horizon("WEEKLY", record_types=[])
+
 
 def test_h07_telegram_vault_restore_safety():
     """H-07: Telegram vault restore rejects corrupt databases and enforces safety limits."""

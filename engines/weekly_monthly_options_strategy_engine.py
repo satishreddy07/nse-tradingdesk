@@ -502,29 +502,50 @@ class WeeklyMonthlyOptionsStrategyEngine:
         Uses actual expiry calendar and eligible listed strikes (multiple of 50).
         Records all inputs and calculation timestamp. Zero hardcoded strike distances.
         """
-        if spot <= 0:
+        # Normalize scalar inputs before comparisons: NaN bypasses ordinary <= 0 checks.
+        try:
+            spot = float(spot)
+        except (TypeError, ValueError, OverflowError):
+            spot = 0.0
+
+        if not math.isfinite(spot) or spot <= 0:
             try:
                 from engines.nifty_analytics_engine import nifty_analytics_engine
-                spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+                live_spot = nifty_analytics_engine.get_live_nifty_spot().get("price")
+                spot = float(live_spot) if live_spot is not None else 0.0
             except Exception:
-                pass
-            if spot <= 0:
-                with state_engine._lock:
-                    with state_engine._get_connection() as conn:
-                        row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
-                        if row:
-                            spot = float(row[0])
-            if spot <= 0:
+                spot = 0.0
+            if not math.isfinite(spot) or spot <= 0:
+                try:
+                    with state_engine._lock:
+                        with state_engine._get_connection() as conn:
+                            row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
+                            if row:
+                                spot = float(row[0])
+                except (TypeError, ValueError, OverflowError):
+                    spot = 0.0
+            if not math.isfinite(spot) or spot <= 0:
                 raise RuntimeError("Live Nifty Spot Price unavailable for option strike calculation.")
-        if iv_pct <= 0:
+
+        try:
+            iv_pct = float(iv_pct)
+        except (TypeError, ValueError, OverflowError):
+            iv_pct = 0.0
+
+        if not math.isfinite(iv_pct) or iv_pct <= 0:
             try:
                 from engines.nifty_analytics_engine import nifty_analytics_engine
                 vix_data = nifty_analytics_engine.get_india_vix()
-                if vix_data and vix_data.get("current_vix", 0) > 0:
-                    iv_pct = float(vix_data["current_vix"])
+                vix_raw = vix_data.get("current_vix") if isinstance(vix_data, dict) else None
+                vix_candidate = float(vix_raw) if vix_raw is not None else 0.0
+                if math.isfinite(vix_candidate) and vix_candidate > 0:
+                    iv_pct = vix_candidate
+            except (TypeError, ValueError, OverflowError):
+                pass
             except Exception:
                 pass
-        if iv_pct <= 0:
+
+        if not math.isfinite(iv_pct) or iv_pct <= 0:
             raise ValueError("Verified implied volatility is unavailable; fixed-IV substitution is prohibited for actionable strike calculations.")
 
         horizon = horizon.upper()
