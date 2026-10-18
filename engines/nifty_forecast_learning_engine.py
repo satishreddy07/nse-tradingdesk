@@ -324,7 +324,7 @@ class NiftyForecastLearningEngine:
                 "status": status_label,
                 "artifact_path": str(bundle_path),
                 "metrics": bundle["metrics"],
-                "sample_counts": {"total": len(df), "train": len(X_train), "validation_evaluations": validation_sample_count, "test": len(y_test)},
+                "sample_counts": {"total": len(df), "train": len(X_train), "val": validation_sample_count, "test": len(y_test)},
                 "dataset_version": "NIFTY_PREDICTION_LEDGER_EMPIRICAL_V1",
                 "feature_provenance": "EMPIRICAL_PREDICTION_LEDGER_SNAPSHOTS",
                 "evaluated_at": format_ist(),
