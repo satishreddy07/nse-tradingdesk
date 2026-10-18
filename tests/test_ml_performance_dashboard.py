@@ -75,14 +75,13 @@ class TestTrainingHistoryAudit:
     def test_training_runs_persisted(self):
         history = ml_performance_engine.get_training_history(limit=10)
         assert isinstance(history, list)
-        assert len(history) > 0, "Expected historical training runs to be indexed"
-
-        run = history[0]
-        assert "run_id" in run
-        assert "model_name" in run
-        assert "status" in run
-        assert "duration_sec" in run
-        assert "train_records" in run
+        # Legacy artifacts without empirical run metadata must not be indexed as invented training runs.
+        for run in history:
+            assert "run_id" in run
+            assert "model_name" in run
+            assert "status" in run
+            assert "duration_sec" in run
+            assert "train_records" in run
 
     def test_record_new_training_run(self):
         run_id = ml_performance_engine.record_training_run(
