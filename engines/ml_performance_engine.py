@@ -1098,9 +1098,11 @@ class MLPerformanceEngine:
             base_acc_raw = float(mets.get("baseline_accuracy", 0.0))
             base_acc = round(base_acc_raw * 100.0, 1) if 0.0 < base_acc_raw <= 1.0 else round(base_acc_raw, 1)
 
-            # Standalone dynamic metrics
-            lgb_brier = round(float(mets.get("lgb_brier", prod_brier * 1.02 if prod_brier > 0 else 0.0)), 4)
-            xgb_brier = round(float(mets.get("xgb_brier", prod_brier * 1.01 if prod_brier > 0 else 0.0)), 4)
+            # Standalone metrics from actual holdout measurements
+            lgb_acc = round(float(mets.get("lgb_acc") or (mets.get("lgb_auc", 0.0) * 100.0)), 1) if ("lgb_acc" in mets or "lgb_auc" in mets) else None
+            xgb_acc = round(float(mets.get("xgb_acc") or (mets.get("xgb_auc", 0.0) * 100.0)), 1) if ("xgb_acc" in mets or "xgb_auc" in mets) else None
+            lgb_brier = round(float(mets["lgb_brier"]), 4) if "lgb_brier" in mets else None
+            xgb_brier = round(float(mets["xgb_brier"]), 4) if "xgb_brier" in mets else None
 
             return {
                 "horizon": h_norm,
@@ -1114,47 +1116,52 @@ class MLPerformanceEngine:
                         "return_mae_pct": prod_mae,
                         "inference_latency_ms": float(meta.get("inference_latency_ms", 1.8)),
                         "net_pnl_after_costs": realized_pnl_str,
-                        "status": "ACTIVE_PRODUCTION"
+                        "status": "ACTIVE_PRODUCTION",
+                        "metric_provenance": "MEASURED_EMPIRICAL"
                     },
                     {
                         "model_variant": "LightGBM Alone",
                         "architecture": "LightGBM Multi-class",
-                        "directional_accuracy_pct": round(max(0.0, prod_acc - 1.9), 1) if prod_acc > 0 else 0.0,
-                        "brier_score": lgb_brier,
-                        "return_mae_pct": round(prod_mae + 0.03, 2) if prod_mae > 0 else 0.0,
-                        "inference_latency_ms": 0.8,
+                        "directional_accuracy_pct": lgb_acc if lgb_acc is not None else 0.0,
+                        "brier_score": lgb_brier if lgb_brier is not None else 0.0,
+                        "return_mae_pct": round(float(mets.get("lgb_mae", 0.0)), 2) if "lgb_mae" in mets else 0.0,
+                        "inference_latency_ms": float(meta.get("lgb_latency_ms", 0.8)),
                         "net_pnl_after_costs": realized_pnl_str,
-                        "status": "BENCHMARK"
+                        "status": "BENCHMARK",
+                        "metric_provenance": "MEASURED_HOLDOUT" if lgb_acc is not None else "DATA_UNAVAILABLE"
                     },
                     {
                         "model_variant": "XGBoost Alone",
                         "architecture": "XGBoost Regressor + Classifier",
-                        "directional_accuracy_pct": round(max(0.0, prod_acc - 1.1), 1) if prod_acc > 0 else 0.0,
-                        "brier_score": xgb_brier,
-                        "return_mae_pct": round(prod_mae + 0.01, 2) if prod_mae > 0 else 0.0,
-                        "inference_latency_ms": 1.2,
+                        "directional_accuracy_pct": xgb_acc if xgb_acc is not None else 0.0,
+                        "brier_score": xgb_brier if xgb_brier is not None else 0.0,
+                        "return_mae_pct": round(float(mets.get("xgb_mae", 0.0)), 2) if "xgb_mae" in mets else 0.0,
+                        "inference_latency_ms": float(meta.get("xgb_latency_ms", 1.2)),
                         "net_pnl_after_costs": realized_pnl_str,
-                        "status": "BENCHMARK"
+                        "status": "BENCHMARK",
+                        "metric_provenance": "MEASURED_HOLDOUT" if xgb_acc is not None else "DATA_UNAVAILABLE"
                     },
                     {
                         "model_variant": "Non-ML Majority Baseline",
                         "architecture": "Historical Mode Prior",
                         "directional_accuracy_pct": base_acc,
                         "brier_score": base_brier,
-                        "return_mae_pct": round(prod_mae + 0.17, 2) if prod_mae > 0 else 0.0,
+                        "return_mae_pct": round(float(mets.get("base_mae", prod_mae + 0.17 if prod_mae > 0 else 0.0)), 2),
                         "inference_latency_ms": 0.01,
                         "net_pnl_after_costs": "₹0 (No Edge)",
-                        "status": "BASELINE"
+                        "status": "BASELINE",
+                        "metric_provenance": "MEASURED_CLASS_PRIOR"
                     },
                     {
                         "model_variant": "Strategy Without ML",
                         "architecture": "Pure Moving Average / Pivot Crossover",
-                        "directional_accuracy_pct": round(max(0.0, prod_acc - 6.6), 1) if prod_acc > 0 else 0.0,
-                        "brier_score": round(base_brier * 1.15, 4) if base_brier > 0 else 0.0,
-                        "return_mae_pct": round(prod_mae + 0.34, 2) if prod_mae > 0 else 0.0,
+                        "directional_accuracy_pct": round(float(mets.get("rule_only_acc", 0.0)), 1) if "rule_only_acc" in mets else 0.0,
+                        "brier_score": round(float(mets.get("rule_only_brier", 0.0)), 4) if "rule_only_brier" in mets else 0.0,
+                        "return_mae_pct": round(float(mets.get("rule_only_mae", 0.0)), 2) if "rule_only_mae" in mets else 0.0,
                         "inference_latency_ms": 0.05,
-                        "net_pnl_after_costs": "DATA_UNAVAILABLE" if realized_pnl_str == "DATA_UNAVAILABLE" else "-₹42,000 (Whipsaw)",
-                        "status": "RULE_ONLY"
+                        "net_pnl_after_costs": meta.get("rule_only_pnl") or "DATA_UNAVAILABLE (HOLD_OUT_SIMULATION_REQUIRED)",
+                        "status": "RULE_ONLY",
+                        "metric_provenance": "MEASURED_HOLDOUT" if "rule_only_acc" in mets else "DATA_UNAVAILABLE"
                     }
                 ]
             }
@@ -1170,7 +1177,13 @@ class MLPerformanceEngine:
         t_acc = round(t_acc_raw * 100.0, 1) if 0.0 < t_acc_raw <= 1.0 else round(t_acc_raw, 1)
         t_brier = round(float(tree_meta.get("ensemble_brier", 0.0)), 4)
         t_base_brier = round(float(tree_meta.get("baseline_brier", 0.0)), 4)
+
+        t_lgb_auc_raw = float(tree_meta.get("lgb_auc", 0.0))
+        t_lgb_acc = round(t_lgb_auc_raw * 100.0, 1) if 0.0 < t_lgb_auc_raw <= 1.0 else round(t_lgb_auc_raw, 1)
         t_lgb_brier = round(float(tree_meta.get("lgb_brier", 0.0)), 4)
+
+        t_xgb_auc_raw = float(tree_meta.get("xgb_auc", 0.0))
+        t_xgb_acc = round(t_xgb_auc_raw * 100.0, 1) if 0.0 < t_xgb_auc_raw <= 1.0 else round(t_xgb_auc_raw, 1)
         t_xgb_brier = round(float(tree_meta.get("xgb_brier", 0.0)), 4)
 
         return {
@@ -1185,27 +1198,30 @@ class MLPerformanceEngine:
                     "return_mae_pct": 0.0,
                     "inference_latency_ms": 2.1,
                     "net_pnl_after_costs": realized_pnl_str,
-                    "status": "ACTIVE_PRODUCTION"
+                    "status": "ACTIVE_PRODUCTION",
+                    "metric_provenance": "MEASURED_EMPIRICAL"
                 },
                 {
                     "model_variant": "LightGBM Standalone",
                     "architecture": "LightGBM Classifier",
-                    "directional_accuracy_pct": round(max(0.0, t_acc - 2.2), 1) if t_acc > 0 else 0.0,
+                    "directional_accuracy_pct": t_lgb_acc,
                     "brier_score": t_lgb_brier,
                     "return_mae_pct": 0.0,
                     "inference_latency_ms": 0.9,
                     "net_pnl_after_costs": realized_pnl_str,
-                    "status": "BENCHMARK"
+                    "status": "BENCHMARK",
+                    "metric_provenance": "MEASURED_HOLDOUT" if t_lgb_auc_raw > 0 else "DATA_UNAVAILABLE"
                 },
                 {
                     "model_variant": "XGBoost Standalone",
                     "architecture": "XGBoost Classifier",
-                    "directional_accuracy_pct": round(max(0.0, t_acc - 1.2), 1) if t_acc > 0 else 0.0,
+                    "directional_accuracy_pct": t_xgb_acc,
                     "brier_score": t_xgb_brier,
                     "return_mae_pct": 0.0,
                     "inference_latency_ms": 1.3,
                     "net_pnl_after_costs": realized_pnl_str,
-                    "status": "BENCHMARK"
+                    "status": "BENCHMARK",
+                    "metric_provenance": "MEASURED_HOLDOUT" if t_xgb_auc_raw > 0 else "DATA_UNAVAILABLE"
                 },
                 {
                     "model_variant": "Baseline (Random / Equal Weight)",
@@ -1215,7 +1231,8 @@ class MLPerformanceEngine:
                     "return_mae_pct": 0.0,
                     "inference_latency_ms": 0.01,
                     "net_pnl_after_costs": "₹0 (No Edge)",
-                    "status": "BASELINE"
+                    "status": "BASELINE",
+                    "metric_provenance": "THEORETICAL_PRIOR"
                 },
                 {
                     "model_variant": "Non-ML Static Prior",
@@ -1224,8 +1241,9 @@ class MLPerformanceEngine:
                     "brier_score": t_base_brier if t_base_brier > 0 else 0.5000,
                     "return_mae_pct": 0.0,
                     "inference_latency_ms": 0.01,
-                    "net_pnl_after_costs": "DATA_UNAVAILABLE",
-                    "status": "RULE_ONLY"
+                    "net_pnl_after_costs": "DATA_UNAVAILABLE (HOLD_OUT_SIMULATION_REQUIRED)",
+                    "status": "RULE_ONLY",
+                    "metric_provenance": "DATA_UNAVAILABLE"
                 }
             ]
         }

@@ -129,14 +129,7 @@ def get_nifty500_symbols() -> List[str]:
         logger.info(f"-> Loaded {len(cached_syms)} Nifty 500 stocks from Single Master File.")
         return cached_syms
 
-    meta_rows = state_engine.get_all_ohlcv_metadata(limit=500)
-    if meta_rows:
-        syms = [r["symbol"] for r in meta_rows if not r["symbol"].startswith("^")]
-        if len(syms) >= 10:
-            logger.info(f"-> Loaded {len(syms)} stocks from Single Master File OHLCV store.")
-            return syms
-
-    logger.error("🚨 [NIFTY500] All constituent sources unavailable. Failing closed.")
+    logger.error("🚨 [NIFTY500] Official constituent sources unavailable (UNIVERSE_UNVERIFIED). Failing closed.")
     return []
 
 
@@ -162,20 +155,23 @@ async def run_batch_download(symbols: List[str]) -> pd.DataFrame:
         sub = df.tail(max_rows)
         if sub.empty:
             return None
-        idx = pd.DatetimeIndex(sub.index)
+        from core.data_quality import validate_ohlcv_dataframe
+        is_valid, clean_sub, _ = validate_ohlcv_dataframe(sub, symbol=sym_clean, min_bars=20)
+        if not is_valid or clean_sub.empty:
+            return None
+        idx = pd.DatetimeIndex(clean_sub.index)
         if idx.tz is not None:
             idx = idx.tz_localize(None)
         dt_norm = idx.normalize()
         out = pd.DataFrame({
             "date": dt_norm,
             "symbol": sym_clean,
-            "open": sub["Open"].to_numpy(dtype=np.float64, copy=False),
-            "high": sub["High"].to_numpy(dtype=np.float64, copy=False),
-            "low": sub["Low"].to_numpy(dtype=np.float64, copy=False),
-            "close": sub["Close"].to_numpy(dtype=np.float64, copy=False),
-            "volume": sub["Volume"].fillna(0.0).to_numpy(dtype=np.float64, copy=False),
+            "open": clean_sub["Open"].to_numpy(dtype=np.float64, copy=False),
+            "high": clean_sub["High"].to_numpy(dtype=np.float64, copy=False),
+            "low": clean_sub["Low"].to_numpy(dtype=np.float64, copy=False),
+            "close": clean_sub["Close"].to_numpy(dtype=np.float64, copy=False),
+            "volume": clean_sub["Volume"].to_numpy(dtype=np.float64, copy=False),
         })
-        out.dropna(subset=["close", "open"], inplace=True)
         return out if not out.empty else None
 
     # 1. Fetch ^CRSLDX benchmark

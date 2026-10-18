@@ -464,6 +464,14 @@ class TelegramVaultManager:
             if raw_bytes[:2] == b"\x1f\x8b":
                 raw_bytes = gzip.decompress(raw_bytes)
 
+            # H-07: Enforce strict decompressed size limit (500MB max)
+            MAX_RESTORE_SIZE = 500 * 1024 * 1024
+            if len(raw_bytes) > MAX_RESTORE_SIZE:
+                return {
+                    "status": "ERROR",
+                    "message": f"Restored file exceeds safety size limit ({round(len(raw_bytes)/1024/1024, 1)}MB > 500MB)"
+                }
+
             with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
                 tmp_path = Path(tmp.name)
                 tmp.write(raw_bytes)
@@ -471,19 +479,44 @@ class TelegramVaultManager:
             conn = sqlite3.connect(str(tmp_path))
             try:
                 chk = conn.execute("PRAGMA integrity_check;").fetchone()
+                # Verify schema invariants and essential tables exist
+                candidate_tables = set(r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall())
+                required_tables = {"active_positions", "trade_history", "ohlcv_master_store"}
+                missing_tables = required_tables - candidate_tables
             finally:
                 try:
                     conn.close()
                 except Exception:
                     pass
+
             if not chk or chk[0] != "ok":
                 tmp_path.unlink(missing_ok=True)
                 return {"status": "ERROR", "message": "Restored file failed SQLite integrity check."}
 
-            with self._lock:
-                shutil.copy2(tmp_path, DB_PATH)
-                state_engine._ohlcv_mem_cache.clear()
-                state_engine._init_db()
+            if missing_tables:
+                tmp_path.unlink(missing_ok=True)
+                return {"status": "ERROR", "message": f"Restored file failed schema integrity; missing tables: {list(missing_tables)}"}
+
+            # Pre-restore snapshot for atomic recovery rollback
+            pre_restore_bak = DB_PATH.with_suffix(".pre_restore.db.bak")
+            if DB_PATH.exists():
+                try:
+                    shutil.copy2(DB_PATH, pre_restore_bak)
+                except Exception as bak_err:
+                    logger.warning(f"Could not create pre-restore snapshot: {bak_err}")
+
+            # Atomic swap with state_engine DB lock coordination
+            with self._lock, state_engine._lock:
+                try:
+                    shutil.copy2(tmp_path, DB_PATH)
+                    state_engine._ohlcv_mem_cache.clear()
+                    state_engine._init_db()
+                except Exception as swap_err:
+                    if pre_restore_bak.exists():
+                        shutil.copy2(pre_restore_bak, DB_PATH)
+                        state_engine._init_db()
+                    tmp_path.unlink(missing_ok=True)
+                    raise swap_err
             tmp_path.unlink(missing_ok=True)
 
             ohlcv_stats = state_engine.get_ohlcv_stats()

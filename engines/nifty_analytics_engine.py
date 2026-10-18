@@ -6804,6 +6804,19 @@ class NiftyAnalyticsEngine:
                         diff_pts = float(idx.get("variation") or 0.0)
                         diff_pct = float(idx.get("percentChange") or 0.0)
                         atm_strike = int(round(spot / 50.0) * 50)
+                        resp_data = resp.json() if hasattr(resp, "json") else {}
+                        raw_prov_ts = resp_data.get("timestamp") or idx.get("timestamp")
+                        provider_timestamp = None
+                        prov_age_sec = None
+                        if raw_prov_ts:
+                            try:
+                                prov_dt = pd.to_datetime(raw_prov_ts, dayfirst=True)
+                                provider_timestamp = format_ist(prov_dt)
+                                prov_age_sec = max(0.0, (now_ist() - (IST.localize(prov_dt) if hasattr(IST, "localize") else prov_dt.replace(tzinfo=now_ist().tzinfo))).total_seconds())
+                            except Exception:
+                                provider_timestamp = str(raw_prov_ts)
+
+                        is_stale_quote = (prov_age_sec is None or prov_age_sec > 180.0) if is_market_open else False
                         res = {
                             "price": round(spot, 2),
                             "change_pts": diff_pts,
@@ -6812,15 +6825,16 @@ class NiftyAnalyticsEngine:
                             "day_high": float(idx.get("high") or spot),
                             "day_low": float(idx.get("low") or spot),
                             "atm_strike": atm_strike,
-                            "provider_timestamp": None,
-                            "timestamp": ts_now,
+                            "provider_timestamp": provider_timestamp,
+                            "timestamp": provider_timestamp or ts_now,
                             "received_at": ts_now,
                             "source": "NSE_ALL_INDICES_STREAM",
-                            "is_live": is_market_open,
-                            "is_stale": False,
+                            "is_live": is_market_open and not is_stale_quote and provider_timestamp is not None,
+                            "is_stale": is_stale_quote or provider_timestamp is None,
+                            "data_quality": "VALID" if (provider_timestamp and not is_stale_quote) else "UNVERIFIED_SOURCE_TIMESTAMP",
                             "market_status": mkt_state_str,
                             "session_phase": mkt_phase,
-                            "age_seconds": None,
+                            "age_seconds": round(prov_age_sec, 1) if prov_age_sec is not None else None,
                             "latency_ms": lat_ms
                         }
                         with self._lock:
@@ -6830,19 +6844,23 @@ class NiftyAnalyticsEngine:
         except Exception as e:
             logger.debug(f"Fast live Nifty spot NSE indices notice: {e}")
 
-        # 4. Fallback to Option Chain cache underlyingValue
+        # 4. Fallback to Option Chain cache underlyingValue (Preserves original option chain timestamp)
         with self._lock:
             if hasattr(self, "_option_chain_mem_cache") and self._option_chain_mem_cache:
                 w = self._option_chain_mem_cache.get("weekly", {})
                 cache_age = time.time() - getattr(self, "_option_chain_cache_ts", 0.0)
                 if w and w.get("spot_price"):
                     spot = float(w["spot_price"])
+                    opt_ts = w.get("provider_timestamp") or w.get("timestamp")
                     return {
                         "price": round(spot, 2),
-                        "timestamp": ts_now,
+                        "provider_timestamp": opt_ts,
+                        "timestamp": opt_ts or ts_now,
+                        "received_at": ts_now,
                         "source": "NSE_OPTION_CHAIN_LIVE",
-                        "is_live": is_market_open,
-                        "is_stale": cache_age > 180.0,
+                        "is_live": is_market_open and cache_age <= 60.0,
+                        "is_stale": cache_age > 60.0 or not opt_ts,
+                        "data_quality": "VALID" if (cache_age <= 60.0 and opt_ts) else "STALE_CACHE",
                         "market_status": mkt_state_str,
                         "session_phase": mkt_phase,
                         "age_seconds": round(cache_age, 1)
@@ -6921,15 +6939,31 @@ class NiftyAnalyticsEngine:
             with state_engine._lock:
                 with state_engine._get_connection() as conn:
                     row = conn.execute("""
-                        SELECT close, change_pct, date FROM ohlcv_master_store
+                        SELECT close, change_pct, date, updated_at FROM ohlcv_master_store
                         WHERE symbol = '^INDIAVIX' AND close > 0
                         ORDER BY date DESC LIMIT 1
                     """).fetchone()
                     if row and row["close"]:
+                        vix_val = float(row["close"])
+                        date_str = str(row["date"])
+                        upd_str = row["updated_at"] or date_str
+                        age_sec = None
+                        is_stale = False
+                        try:
+                            clean_t = str(upd_str)[:19].replace(" IST", "")
+                            dt_v = datetime.datetime.strptime(clean_t, "%Y-%m-%d %H:%M:%S" if len(clean_t) > 10 else "%Y-%m-%d")
+                            age_sec = max(0.0, (now_ist().replace(tzinfo=None) - dt_v).total_seconds())
+                            is_stale = age_sec > 86400.0  # > 24 hours
+                        except Exception:
+                            is_stale = False
+
                         return {
-                            "current_vix": float(row["close"]),
+                            "current_vix": vix_val,
                             "change_pct": float(row["change_pct"] or 0.0),
-                            "date": str(row["date"]),
+                            "date": date_str,
+                            "updated_at": upd_str,
+                            "age_seconds": round(age_sec, 1) if age_sec is not None else None,
+                            "is_stale": is_stale,
                             "source": "OHLCV_MASTER_STORE",
                             "vix_available": True
                         }

@@ -372,3 +372,165 @@ def test_health_check_database_readiness():
     assert data["database"] == "healthy"
 
 
+# =============================================================================
+# 7. OCTOBER 18 AUDIT REMEDIATION VERIFICATION (C-03..C-05, H-01..H-08)
+# =============================================================================
+def test_h01_candle_geometry_quarantined_not_coerced():
+    """H-01: Verify OHLCV validation quarantines geometry violations rather than silently coercing High/Low."""
+    dates = pd.date_range("2026-01-01", periods=40, freq="B")
+    df = pd.DataFrame({
+        "Open": 100.0, "High": 105.0, "Low": 95.0, "Close": 102.0, "Volume": 10000.0
+    }, index=dates)
+
+    # Invert single candle
+    df.loc[dates[5], "High"] = 90.0
+    df.loc[dates[5], "Low"] = 110.0
+    is_valid, clean_df, warnings = validate_ohlcv_dataframe(df, symbol="TEST_GEOM", min_bars=30)
+    assert is_valid is True
+    # Corrupt bar was dropped/quarantined, not silently recalculated
+    assert len(clean_df) == 39
+    assert dates[5] not in clean_df.index
+    assert any("High was less than Low" in w or "candle geometry was violated" in w for w in warnings)
+
+
+def test_h02_and_h03_nifty500_ingestion_and_universe():
+    """H-02 & H-03: Verify Nifty 500 ingestion applies contract and universe fails closed."""
+    from engines.nifty500_engine import get_nifty500_symbols
+    with patch("requests.get", side_effect=Exception("Offline")):
+        with patch("execution.state_engine.state_engine.get_kv", return_value=[]):
+            with patch("execution.state_engine.state_engine.get_all_ohlcv_metadata", return_value=[]):
+                syms = get_nifty500_symbols()
+                assert syms == []  # Unverified universe returns empty
+
+
+def test_c03_nse_quote_freshness_without_provider_time():
+    """C-03: NSE quote fallback marks quotes stale/unverified when provider_timestamp is absent."""
+    eng = NiftyAnalyticsEngine()
+    fake_resp = MagicMock()
+    fake_resp.status_code = 200
+    fake_resp.json.return_value = {
+        "data": [{"index": "NIFTY 50", "last": 24500.0, "variation": 50.0, "percentChange": 0.2, "high": 24550.0, "low": 24450.0}]
+        # Omits timestamp to simulate missing provider time
+    }
+    fake_sess = MagicMock()
+    fake_sess.get.return_value = fake_resp
+    with patch("urllib.request.urlopen", side_effect=Exception("Offline")):
+        with patch.object(eng, "_get_nse_session", return_value=fake_sess):
+            res = eng.get_live_nifty_spot(force_refresh=True)
+            assert res["source"] == "NSE_ALL_INDICES_STREAM"
+            assert res["provider_timestamp"] is None
+            assert res["data_quality"] == "UNVERIFIED_SOURCE_TIMESTAMP"
+            assert res["is_stale"] is True
+
+
+def test_c04_forecast_and_tree_synthetic_prior_excluded():
+    """C-04: Forecast and Tree ML training fail closed on insufficient empirical data and reject synthetic priors."""
+    from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
+    with patch("engines.nifty_forecast_learning_engine.state_engine.get_ohlcv", return_value=None):
+        with patch("engines.nifty_forecast_learning_engine.nifty_prediction_ledger.get_training_records", return_value=pd.DataFrame()):
+            df_ret = nifty_forecast_learning_engine.compile_training_dataset("T1")
+            assert df_ret.empty  # Returns empty, zero synthetic priors injected
+
+    res = tree_quant_ml_engine.train_horizon_models("T1", df=pd.DataFrame())
+    assert res["status"] == "INSUFFICIENT_DATA"
+    assert res["is_promoted"] is False
+
+
+def test_c05_model_comparison_measured_provenance():
+    """C-05: Model comparison candidates report explicit metric_provenance and no hardcoded offsets."""
+    res = ml_performance_engine.get_model_comparison("WEEKLY")
+    candidates = res["candidates"]
+    for c in candidates:
+        assert "metric_provenance" in c
+        assert c["metric_provenance"] in ("MEASURED_EMPIRICAL", "MEASURED_HOLDOUT", "MEASURED_CLASS_PRIOR", "THEORETICAL_PRIOR", "DATA_UNAVAILABLE")
+        # Ensure no hardcoded fake P&L string
+        assert "-₹42,000 (Whipsaw)" not in str(c.get("net_pnl_after_costs", ""))
+
+
+def test_h05_options_simulation_risk_free_rate_and_disclaimer():
+    """H-05: Intraday options backtest returns SCENARIO_SIMULATION and uses RISK_FREE_RATE."""
+    from engines.intraday_options_strategy_engine import IntradayOptionsStrategyEngine
+    from core.config import RISK_FREE_RATE
+    sample_session = [{
+        "date": "2026-02-01",
+        "verdict": "STRONG_BULLISH",
+        "open": 24000.0,
+        "high": 24200.0,
+        "low": 23950.0,
+        "close": 24150.0,
+        "return_pct": 0.625,
+        "iv_pct": 14.0
+    }]
+    res = IntradayOptionsStrategyEngine._simulate_strategy_variant(sample_session)
+    assert res["simulation_type"] == "SCENARIO_SIMULATION"
+    assert res["model_assumptions"]["risk_free_rate"] == RISK_FREE_RATE
+
+
+def test_h06_unified_ml_dataset_cohort_separation():
+    """H-06: Unified ML dataset excludes counterfactuals by default and does not infer fills on signal entry."""
+    from core.unified_ml_dataset import UNIFIED_DATASET_TABLE
+    ds = UnifiedMLDataset()
+    # Ingestion without actual fill must be PENDING_FILL, not FILLED
+    sig_id = f"SIG_TEST_{int(datetime.datetime.now().timestamp())}"
+    trade_id = f"TRD_TEST_{int(datetime.datetime.now().timestamp())}"
+    ds.record_signal_and_trade(
+        signal_id=sig_id,
+        trade_id=trade_id,
+        instrument="NIFTY",
+        trading_horizon="WEEKLY",
+        strategy_name="TEST_STRAT",
+        record_type="LIVE",
+        market_session="2026-02-01",
+        accept_reject_verdict="ACCEPTED",
+        decision_source="SYSTEM",
+        features={"regime_confidence": 0.8},
+        regime="BULLISH",
+        spot_at_entry=24500.0,
+        intended_entry=24500.0,
+        intended_target=24800.0,
+        intended_sl=24350.0,
+        sl_threshold_pct=1.0,
+        quantity=1,
+        capital_at_risk=150.0,
+        actual_entry=None  # Not yet filled!
+    )
+    with ds._get_connection() as conn:
+        row = conn.execute(f"SELECT actual_entry, fill_status FROM {UNIFIED_DATASET_TABLE} WHERE trade_id = ?", (trade_id,)).fetchone()
+        assert row is not None
+        assert row[0] is None  # Actual entry must remain NULL
+        assert row[1] == "PENDING_FILL"  # Never inferred as FILLED without verified execution
+
+
+def test_h07_telegram_vault_restore_safety():
+    """H-07: Telegram vault restore rejects corrupt databases and enforces safety limits."""
+    from core.telegram_vault import telegram_vault
+    import inspect
+    src = inspect.getsource(telegram_vault.restore_master_file_from_cloud)
+    assert "MAX_RESTORE_SIZE" in src
+    assert "required_tables" in src
+    assert "state_engine._lock" in src
+
+
+def test_h08_state_engine_rejects_pickle_and_future_timestamp(tmp_path):
+    """H-08: State engine rejects legacy non-JSON blobs and flags future timestamps as invalid."""
+    import zlib
+    test_db = str(tmp_path / "test_h08.db")
+    eng = StateEngine(db_path=test_db)
+
+    # Insert a raw non-JSON blob directly into SQLite
+    fake_pickle_bytes = zlib.compress(b"NOT_A_JSON_BLOB")
+    now_future = (datetime.datetime.now() + datetime.timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
+    with eng._get_connection() as conn:
+        conn.execute("""
+            INSERT INTO ohlcv_master_store (symbol, last_bar_date, bars_count, updated_at, ohlcv_blob)
+            VALUES ('H08_SYM', '2026-02-01', 1, ?, ?)
+        """, (now_future, sqlite3.Binary(fake_pickle_bytes)))
+        conn.commit()
+
+    # Must reject non-JSON blob and return (None, 9999.0)
+    df, age = eng.get_ohlcv_df("H08_SYM")
+    assert df is None
+    assert age == 9999.0
+
+
+

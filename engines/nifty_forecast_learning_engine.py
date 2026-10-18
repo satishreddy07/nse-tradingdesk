@@ -93,11 +93,9 @@ class NiftyForecastLearningEngine:
         if nifty_df is None or len(nifty_df) < 40:
             if not ledger_df.empty and len(ledger_df) >= 15:
                 return ledger_df
-            # Fallback bootstrap dataset using domain priors combined with available ledger rows
-            prior_df = self._generate_domain_prior_dataset(horizon, count=80)
-            if not ledger_df.empty:
-                return pd.concat([prior_df, ledger_df], ignore_index=True)
-            return prior_df
+            # C-04: Exclude synthetic priors from production training; fail closed on insufficient empirical coverage
+            logger.warning(f"Insufficient empirical bars ({0 if nifty_df is None else len(nifty_df)}) and ledger rows ({len(ledger_df)}) for horizon {horizon}. Returning empirical dataset only.")
+            return ledger_df if not ledger_df.empty else pd.DataFrame()
 
         dates = [str(idx)[:10] for idx in nifty_df.index]
         c_flat = nifty_df["Close"].dropna().to_numpy(dtype=np.float64).flatten()

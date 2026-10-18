@@ -595,17 +595,24 @@ class StateEngine:
                             if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
                                 df.index = pd.to_datetime(df.index)
                         else:
-                            # Safe fallback for legacy database records
-                            df = pickle.loads(raw_bytes)
+                            # H-08: Reject unpickling non-JSON legacy blobs to eliminate arbitrary code execution risk
+                            logger.warning(f"Unsafe legacy blob format for {sym}; non-JSON serialization rejected.")
+                            return None, 9999.0
 
                         upd_str = row["updated_at"] or ""
+                        if not upd_str:
+                            return df, 9999.0
                         try:
                             naive_dt = datetime.datetime.strptime(upd_str[:19], "%Y-%m-%d %H:%M:%S")
                             upd_dt = IST.localize(naive_dt) if hasattr(IST, "localize") else naive_dt.replace(tzinfo=now_dt.tzinfo)
-                            age_hrs = max(0.0, (now_dt - upd_dt).total_seconds() / 3600.0)
+                            diff_sec = (now_dt - upd_dt).total_seconds()
+                            if diff_sec < -60.0:  # Future timestamp > 1 min in the future is invalid
+                                logger.warning(f"Future timestamp detected for {sym}: {upd_str}. Treating as invalid.")
+                                return df, 9999.0
+                            age_hrs = max(0.0, diff_sec / 3600.0)
                         except Exception:
-                            upd_dt = now_dt - datetime.timedelta(hours=1)
-                            age_hrs = 1.0
+                            # H-08: Malformed timestamp -> treat as invalid/stale, do NOT substitute 1.0 hr
+                            return df, 9999.0
                         self._ohlcv_mem_cache[sym] = (df, upd_dt)
                         return df, age_hrs
                     except Exception as e:

@@ -130,19 +130,29 @@ class TreeQuantMLEngine:
 
         is_synthetic_prior = False
         if df is None:
-            df = unified_ml_dataset.get_dataset_for_horizon(horizon, include_counterfactuals=True)
+            # C-04 & H-06: Production training uses verified empirical cohorts only; excludes counterfactuals
+            df = unified_ml_dataset.get_dataset_for_horizon(horizon, include_counterfactuals=False)
             if df.empty or len(df) < 10:
-                # Cold-start bootstrapping using synthetic domain priors
-                df = self._generate_domain_prior_dataset(horizon, count=60)
-                is_synthetic_prior = True
+                logger.warning(f"Insufficient empirical samples ({len(df)}) for horizon {horizon}. Aborting training without synthetic bootstrapping.")
+                return {
+                    "status": "INSUFFICIENT_DATA",
+                    "is_promoted": False,
+                    "samples": len(df),
+                    "metrics": {
+                        "ensemble_brier": 0.50,
+                        "baseline_brier": 0.50,
+                        "ensemble_auc": 0.50,
+                        "lgb_brier": 0.50,
+                        "xgb_brier": 0.50
+                    }
+                }
 
         # Ensure target is valid binary
-        df = df[df[target_col].notnull()].copy()
-        if len(df) < 6:
+        if df.empty or target_col not in df.columns or len(df) < 10:
             return {
                 "status": "INSUFFICIENT_DATA",
                 "is_promoted": False,
-                "samples": len(df),
+                "samples": len(df) if (df is not None and not df.empty) else 0,
                 "metrics": {
                     "ensemble_brier": 0.50,
                     "baseline_brier": 0.50,
@@ -151,6 +161,7 @@ class TreeQuantMLEngine:
                     "xgb_brier": 0.50
                 }
             }
+        df = df[df[target_col].notnull()].copy()
 
         df = df.loc[:, ~df.columns.duplicated()].copy()
         feature_cols = [c for c in UNIFIED_FEATURE_COLS if c in df.columns]
@@ -318,18 +329,17 @@ class TreeQuantMLEngine:
 
         # Promotion Gate Evaluation:
         has_active = horizon in self._active_models
-        if not has_active:
+        if is_synthetic_prior:
+            # C-04: Never promote synthetic domain-prior models to production baseline
+            is_promoted = False
+            status_label = "REJECTED_SYNTHETIC_DATA"
+        elif not has_active:
             is_promoted = True
-            status_label = "PROMOTED_INITIAL_BASELINE" if not is_synthetic_prior else "PROMOTED_SYNTHETIC_BASELINE"
+            status_label = "PROMOTED_INITIAL_BASELINE"
         else:
             prev_brier = self._active_models[horizon]["metrics"].get("ensemble_brier", 0.25)
-            # Never promote a synthetic model over an active empirical model (Finding 6.4)
-            if is_synthetic_prior and not self._active_models[horizon].get("is_synthetic_baseline", False):
-                is_promoted = False
-                status_label = "CANDIDATE_REJECTED_SYNTHETIC"
-            else:
-                is_promoted = (ensemble_brier <= prev_brier or ensemble_brier <= baseline_brier) and (ensemble_auc >= 0.50)
-                status_label = "PROMOTED_PRODUCTION" if is_promoted else "CANDIDATE_REJECTED"
+            is_promoted = (ensemble_brier <= prev_brier or ensemble_brier <= baseline_brier) and (ensemble_auc >= 0.50)
+            status_label = "PROMOTED_PRODUCTION" if is_promoted else "CANDIDATE_REJECTED"
 
         metadata = {
             "active_version": version if is_promoted else self._active_metadata.get(f"{horizon}_active_version", version),

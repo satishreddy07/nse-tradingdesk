@@ -257,9 +257,9 @@ class UnifiedMLDataset:
                     float(strike), expiry_date, float(dte_days), float(sigma_distance),
                     float(intended_entry), float(intended_target), float(intended_sl),
                     float(sl_threshold_pct), int(quantity), float(capital_at_risk),
-                    float(rr), rat_json, actual_entry or intended_entry,
+                    float(rr), rat_json, actual_entry if (actual_entry and actual_entry > 0) else None,
                     entry_time_val,
-                    "FILLED" if status == "ACTIVE" else "REJECTED",
+                    "FILLED" if (status == "ACTIVE" and actual_entry is not None and actual_entry > 0) else ("PENDING_FILL" if status == "ACTIVE" else "REJECTED"),
                     model_version, entry_time_val or now_ts, now_ts
                 ))
                 conn.commit()
@@ -476,7 +476,7 @@ class UnifiedMLDataset:
     def get_dataset_for_horizon(
         self,
         horizon: str,
-        include_counterfactuals: bool = True,
+        include_counterfactuals: bool = False,
         min_resolved_only: bool = True
     ) -> pd.DataFrame:
         """

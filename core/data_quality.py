@@ -82,11 +82,11 @@ def validate_ohlcv_dataframe(
     for col in ["Open", "High", "Low", "Close", "Volume"]:
         clean_df[col] = pd.to_numeric(clean_df[col], errors="coerce")
 
-    nan_rows = clean_df[["Open", "High", "Low", "Close"]].isna().any(axis=1)
+    nan_rows = clean_df[["Open", "High", "Low", "Close", "Volume"]].isna().any(axis=1)
     if nan_rows.sum() > 0:
         dropped_nans = int(nan_rows.sum())
         clean_df = clean_df[~nan_rows]
-        warnings.append(f"{symbol}: Dropped {dropped_nans} rows containing NaN/null prices.")
+        warnings.append(f"{symbol}: Dropped {dropped_nans} rows containing NaN/null prices or volume.")
 
     if len(clean_df) < min_bars:
         return False, pd.DataFrame(), [f"{symbol}: Insufficient valid bars remaining after NaN drop ({len(clean_df)} < {min_bars})."]
@@ -102,22 +102,39 @@ def validate_ohlcv_dataframe(
         return False, pd.DataFrame(), [f"{symbol}: Insufficient positive bars ({len(clean_df)} < {min_bars})."]
 
     # 5. Price Geometry Sanity (High >= Low, High >= max(Open, Close), Low <= min(Open, Close))
-    # Quarantine/drop corrupt bars where High < Low (Finding 4.3: do NOT silently swap into false candles)
+    # Quarantine/drop corrupt bars where geometry is violated (H-01: do NOT silently coerce into false candles)
     inverted_hl = clean_df["High"] < clean_df["Low"]
-    if inverted_hl.sum() > 0:
+    geom_violation = inverted_hl | \
+                     (clean_df["High"] < clean_df["Open"]) | \
+                     (clean_df["High"] < clean_df["Close"]) | \
+                     (clean_df["Low"] > clean_df["Open"]) | \
+                     (clean_df["Low"] > clean_df["Close"])
+
+    if geom_violation.sum() > 0:
         inv_count = int(inverted_hl.sum())
-        inv_ratio = inv_count / max(1, len(clean_df))
+        geom_count = int(geom_violation.sum())
+        inv_ratio = geom_count / max(1, len(clean_df))
         if inv_ratio > 0.05:
-            return False, pd.DataFrame(), [f"{symbol}: Unacceptable data corruption: {inv_count}/{len(clean_df)} bars ({inv_ratio*100:.1f}%) have High < Low."]
-        clean_df = clean_df[~inverted_hl]
-        warnings.append(f"{symbol}: Quarantined {inv_count} corrupted bars where High was less than Low.")
+            reason = f"High < Low ({inv_count} bars)" if inv_count > 0 else f"geometry violation ({geom_count} bars)"
+            return False, pd.DataFrame(), [f"{symbol}: Unacceptable data corruption: {geom_count}/{len(clean_df)} bars ({inv_ratio*100:.1f}%) have {reason}."]
+        clean_df = clean_df[~geom_violation]
+        if inv_count > 0:
+            warnings.append(f"{symbol}: Quarantined {geom_count} corrupted bars where High was less than Low or candle geometry was violated.")
+        else:
+            warnings.append(f"{symbol}: Quarantined {geom_count} corrupted bars with invalid candle geometry.")
 
     if len(clean_df) < min_bars:
         return False, pd.DataFrame(), [f"{symbol}: Insufficient valid bars remaining after corruption quarantine ({len(clean_df)} < {min_bars})."]
 
-    clean_df["High"] = clean_df[["High", "Open", "Close"]].max(axis=1)
-    clean_df["Low"] = clean_df[["Low", "Open", "Close"]].min(axis=1)
-    clean_df["Volume"] = clean_df["Volume"].clip(lower=0.0).fillna(0.0)
+    # 5b. Volume non-negativity and finite validation (do NOT silently fill or clip corrupt volume)
+    neg_vol = clean_df["Volume"] < 0
+    if neg_vol.sum() > 0:
+        bad_v_count = int(neg_vol.sum())
+        clean_df = clean_df[~neg_vol]
+        warnings.append(f"{symbol}: Quarantined {bad_v_count} rows with negative volume.")
+
+    if len(clean_df) < min_bars:
+        return False, pd.DataFrame(), [f"{symbol}: Insufficient valid bars remaining after volume quarantine ({len(clean_df)} < {min_bars})."]
 
     # 6. Single-bar extreme jump anomaly check (> 50% jump bar-to-bar without market event)
     ret = clean_df["Close"].pct_change().abs()

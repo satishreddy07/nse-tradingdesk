@@ -774,6 +774,12 @@ class IntradayOptionsStrategyEngine:
 
         return {
             "status": "OK",
+            "simulation_type": "SCENARIO_SIMULATION",
+            "model_assumptions": {
+                "pricing_model": "Black-Scholes Theoretical Repricing",
+                "risk_free_rate": RISK_FREE_RATE,
+                "disclaimer": "Scenario-based intraday path simulation, not historical market-quote replay"
+            },
             "decision_source": "INTRADAY_ANALYSIS",
             "sessions_evaluated": len(sessions_data),
             "date_range": f"{sessions_data[0]['date']} to {sessions_data[-1]['date']}",
@@ -801,11 +807,11 @@ class IntradayOptionsStrategyEngine:
         cum_pnl = 0.0
 
         for sess in sessions:
-            spot0 = sess["spot"]
-            close = sess["close"]
-            ret_pct = sess["ret_pct"]
-            iv_pct = sess["iv_pct"]
-            verdict = sess["verdict"]
+            spot0 = float(sess.get("spot") or sess.get("open") or 24000.0)
+            close = float(sess.get("close") or spot0)
+            ret_pct = float(sess.get("ret_pct") or sess.get("return_pct") or 0.0)
+            iv_pct = float(sess.get("iv_pct") or 14.0)
+            verdict = str(sess.get("verdict") or "RANGE_BOUND")
 
             rules = cls.get_strategy_rules(verdict)
             regime = rules["regime"]
@@ -828,7 +834,7 @@ class IntradayOptionsStrategyEngine:
                 strike = strikes_map[f"strike_{int(sig_level)}s_{typ.lower()}"]
 
                 # Initial entry premium at 09:16 IST
-                p0 = _black_scholes_price(S=spot0, K=strike, T=1.0 / 365.0, r=0.07, sigma=iv_pct / 100.0, option_type=typ)
+                p0 = _black_scholes_price(S=spot0, K=strike, T=1.0 / 365.0, r=RISK_FREE_RATE, sigma=iv_pct / 100.0, option_type=typ)
 
                 sl_policy = forced_sl if forced_sl is not None else leg_spec["sl_pct"]
 
@@ -861,7 +867,7 @@ class IntradayOptionsStrategyEngine:
                         S=spot_t,
                         K=leg.strike,
                         T=t_remaining_years,
-                        r=0.07,
+                        r=RISK_FREE_RATE,
                         sigma=iv_pct / 100.0,
                         option_type=leg.option_type
                     )
@@ -923,6 +929,12 @@ class IntradayOptionsStrategyEngine:
         tail_loss_avg = round(float(np.mean(sorted_losses[:tail_cutoff])), 2) if sorted_losses else 0.0
 
         return {
+            "simulation_type": "SCENARIO_SIMULATION",
+            "model_assumptions": {
+                "pricing_model": "Black-Scholes Theoretical Repricing",
+                "risk_free_rate": RISK_FREE_RATE,
+                "disclaimer": "Scenario-based intraday path simulation, not historical market-quote replay"
+            },
             "total_trades": total_trades,
             "win_rate_pct": win_rate,
             "total_net_pnl_inr": total_net_pnl,
@@ -1420,7 +1432,7 @@ class IntradayOptionsStrategyEngine:
                 ltp_key = "ce_ltp" if typ.upper() == "CE" else "pe_ltp"
                 p0 = float(stk_match.get(ltp_key) or 0.0)
             if p0 <= 0.0:
-                p0 = _black_scholes_price(spot_price, stk, t_years, 0.07, iv_val / 100.0, typ)
+                p0 = _black_scholes_price(spot_price, stk, t_years, RISK_FREE_RATE, iv_val / 100.0, typ)
 
             leg_tracker = OptionLegTracker(
                 leg_id=f"{strat_id_prim}-{typ}-{stk}",
