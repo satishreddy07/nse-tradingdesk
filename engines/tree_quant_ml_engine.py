@@ -138,13 +138,8 @@ class TreeQuantMLEngine:
                     "status": "INSUFFICIENT_DATA",
                     "is_promoted": False,
                     "samples": len(df),
-                    "metrics": {
-                        "ensemble_brier": 0.50,
-                        "baseline_brier": 0.50,
-                        "ensemble_auc": 0.50,
-                        "lgb_brier": 0.50,
-                        "xgb_brier": 0.50
-                    }
+                    "metrics": {},
+                "metric_provenance": "DATA_UNAVAILABLE"
                 }
 
         # Ensure target is valid binary
@@ -153,13 +148,8 @@ class TreeQuantMLEngine:
                 "status": "INSUFFICIENT_DATA",
                 "is_promoted": False,
                 "samples": len(df) if (df is not None and not df.empty) else 0,
-                "metrics": {
-                    "ensemble_brier": 0.50,
-                    "baseline_brier": 0.50,
-                    "ensemble_auc": 0.50,
-                    "lgb_brier": 0.50,
-                    "xgb_brier": 0.50
-                }
+                "metrics": {},
+                "metric_provenance": "DATA_UNAVAILABLE"
             }
         df = df[df[target_col].notnull()].copy()
 
@@ -187,13 +177,8 @@ class TreeQuantMLEngine:
                 "reason": "Insufficient out-of-sample test samples or single-class data.",
                 "samples": len(df),
                 "horizon": horizon,
-                "metrics": {
-                    "ensemble_brier": 0.50,
-                    "baseline_brier": 0.50,
-                    "ensemble_auc": 0.50,
-                    "lgb_brier": 0.50,
-                    "xgb_brier": 0.50
-                }
+                "metrics": {},
+                "metric_provenance": "DATA_UNAVAILABLE"
             }
 
         scaler = StandardScaler()
