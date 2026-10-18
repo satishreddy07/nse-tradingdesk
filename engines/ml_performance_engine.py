@@ -1202,18 +1202,22 @@ class MLPerformanceEngine:
         except Exception:
             tree_meta = {}
 
-        t_acc_raw = float(tree_meta.get("ensemble_auc", 0.0))
-        t_acc = round(t_acc_raw * 100.0, 1) if 0.0 < t_acc_raw <= 1.0 else round(t_acc_raw, 1)
-        t_brier = round(float(tree_meta.get("ensemble_brier", 0.0)), 4)
-        t_base_brier = round(float(tree_meta.get("baseline_brier", 0.0)), 4)
+        t_acc_raw = tree_meta.get("ensemble_acc")
+        t_acc = (round(float(t_acc_raw) * 100.0, 1) if 0.0 < float(t_acc_raw) <= 1.0 else round(float(t_acc_raw), 1)) if t_acc_raw is not None else None
+        t_brier_raw = tree_meta.get("ensemble_brier")
+        t_brier = round(float(t_brier_raw), 4) if t_brier_raw is not None else None
+        t_base_brier_raw = tree_meta.get("baseline_brier")
+        t_base_brier = round(float(t_base_brier_raw), 4) if t_base_brier_raw is not None else None
 
-        t_lgb_auc_raw = float(tree_meta.get("lgb_auc", 0.0))
-        t_lgb_acc = round(t_lgb_auc_raw * 100.0, 1) if 0.0 < t_lgb_auc_raw <= 1.0 else round(t_lgb_auc_raw, 1)
-        t_lgb_brier = round(float(tree_meta.get("lgb_brier", 0.0)), 4)
+        t_lgb_acc_raw = tree_meta.get("lgb_acc")
+        t_lgb_acc = (round(float(t_lgb_acc_raw) * 100.0, 1) if 0.0 < float(t_lgb_acc_raw) <= 1.0 else round(float(t_lgb_acc_raw), 1)) if t_lgb_acc_raw is not None else None
+        t_lgb_brier_raw = tree_meta.get("lgb_brier")
+        t_lgb_brier = round(float(t_lgb_brier_raw), 4) if t_lgb_brier_raw is not None else None
 
-        t_xgb_auc_raw = float(tree_meta.get("xgb_auc", 0.0))
-        t_xgb_acc = round(t_xgb_auc_raw * 100.0, 1) if 0.0 < t_xgb_auc_raw <= 1.0 else round(t_xgb_auc_raw, 1)
-        t_xgb_brier = round(float(tree_meta.get("xgb_brier", 0.0)), 4)
+        t_xgb_acc_raw = tree_meta.get("xgb_acc")
+        t_xgb_acc = (round(float(t_xgb_acc_raw) * 100.0, 1) if 0.0 < float(t_xgb_acc_raw) <= 1.0 else round(float(t_xgb_acc_raw), 1)) if t_xgb_acc_raw is not None else None
+        t_xgb_brier_raw = tree_meta.get("xgb_brier")
+        t_xgb_brier = round(float(t_xgb_brier_raw), 4) if t_xgb_brier_raw is not None else None
 
         return {
             "horizon": h_norm,
@@ -1224,40 +1228,40 @@ class MLPerformanceEngine:
                     "architecture": "LightGBM + XGBoost + Calibrated Classifier",
                     "directional_accuracy_pct": t_acc,
                     "brier_score": t_brier,
-                    "return_mae_pct": 0.0,
+                    "return_mae_pct": None,
                     "inference_latency_ms": None,
                     "net_pnl_after_costs": realized_pnl_str,
                     "status": "ACTIVE_PRODUCTION",
-                    "metric_provenance": "MEASURED_EMPIRICAL"
+                    "metric_provenance": "MEASURED_EMPIRICAL" if t_acc is not None and t_brier is not None else "DATA_UNAVAILABLE"
                 },
                 {
                     "model_variant": "LightGBM Standalone",
                     "architecture": "LightGBM Classifier",
                     "directional_accuracy_pct": t_lgb_acc,
                     "brier_score": t_lgb_brier,
-                    "return_mae_pct": 0.0,
+                    "return_mae_pct": None,
                     "inference_latency_ms": None,
                     "net_pnl_after_costs": realized_pnl_str,
                     "status": "BENCHMARK",
-                    "metric_provenance": "MEASURED_HOLDOUT" if t_lgb_auc_raw > 0 else "DATA_UNAVAILABLE"
+                    "metric_provenance": "MEASURED_HOLDOUT" if t_lgb_acc is not None and t_lgb_brier is not None else "DATA_UNAVAILABLE"
                 },
                 {
                     "model_variant": "XGBoost Standalone",
                     "architecture": "XGBoost Classifier",
                     "directional_accuracy_pct": t_xgb_acc,
                     "brier_score": t_xgb_brier,
-                    "return_mae_pct": 0.0,
+                    "return_mae_pct": None,
                     "inference_latency_ms": None,
                     "net_pnl_after_costs": realized_pnl_str,
                     "status": "BENCHMARK",
-                    "metric_provenance": "MEASURED_HOLDOUT" if t_xgb_auc_raw > 0 else "DATA_UNAVAILABLE"
+                    "metric_provenance": "MEASURED_HOLDOUT" if t_xgb_acc is not None and t_xgb_brier is not None else "DATA_UNAVAILABLE"
                 },
                 {
                     "model_variant": "Baseline (Random / Equal Weight)",
                     "architecture": "Uniform Random Class Prior",
                     "directional_accuracy_pct": None,
                     "brier_score": t_base_brier if t_base_brier > 0 else None,
-                    "return_mae_pct": 0.0,
+                    "return_mae_pct": None,
                     "inference_latency_ms": None,
                     "net_pnl_after_costs": "DATA_UNAVAILABLE (NO MEASURED BASELINE P&L)",
                     "status": "BASELINE",
@@ -1268,7 +1272,7 @@ class MLPerformanceEngine:
                     "architecture": "Historical Mode Prior",
                     "directional_accuracy_pct": None,
                     "brier_score": t_base_brier if t_base_brier > 0 else None,
-                    "return_mae_pct": 0.0,
+                    "return_mae_pct": None,
                     "inference_latency_ms": None,
                     "net_pnl_after_costs": "DATA_UNAVAILABLE (HOLD_OUT_SIMULATION_REQUIRED)",
                     "status": "RULE_ONLY",
