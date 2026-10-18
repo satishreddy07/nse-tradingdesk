@@ -356,10 +356,13 @@ class TreeQuantMLEngine:
             status_label = "PROMOTED_INITIAL_BASELINE"
         else:
             prev_brier = self._active_models[horizon]["metrics"].get("ensemble_brier")
-            is_promoted = (
-                prev_brier is None
-                or (ensemble_brier <= float(prev_brier) or ensemble_brier <= baseline_brier)
-            ) and ensemble_auc >= 0.50
+            if prev_brier is None:
+                is_promoted = ensemble_brier <= baseline_brier and ensemble_auc >= 0.50
+            else:
+                is_promoted = (
+                    (ensemble_brier <= float(prev_brier) or ensemble_brier <= baseline_brier)
+                    and ensemble_auc >= 0.50
+                )
             status_label = "PROMOTED_PRODUCTION" if is_promoted else "CANDIDATE_REJECTED"
 
         metadata = {
