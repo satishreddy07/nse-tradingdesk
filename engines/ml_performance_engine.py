@@ -394,14 +394,14 @@ class MLPerformanceEngine:
             "artifact_sha256": t1_hash,
             "dataset_version": "NSE_DAILY_OHLCV_V1",
             "training_date_range": "2024-01-01 to 2026-10-15",
-            "last_training_timestamp": t1_meta.get("promoted_at", "2026-10-15 17:36:47 IST"),
-            "last_evaluation_timestamp": t1_meta.get("promoted_at", format_ist()),
-            "sample_counts": {"train": 326, "val": 70, "test": 70, "total": int(t1_meta.get("metrics", {}).get("sample_count", 466))},
+            "last_training_timestamp": t1_meta.get("promoted_at"),
+            "last_evaluation_timestamp": t1_meta.get("evaluated_at"),
+            "sample_counts": t1_meta.get("sample_counts", {"total": t1_meta.get("metrics", {}).get("sample_count")}),
             "feature_count": len(NIFTY_FEATURE_COLS),
             "feature_names": NIFTY_FEATURE_COLS,
             "hyperparameters": {"n_estimators": 100, "learning_rate": 0.05, "num_leaves": 15, "cv_purge_window": 1},
-            "target_distribution": {"BULLISH": "44%", "FLAT": "18%", "BEARISH": "38%"},
-            "metrics": t1_meta.get("metrics", {"directional_accuracy": 47.1, "brier_score": 0.6165, "return_mae_pct": 0.61, "baseline_brier": 1.0805}),
+            "target_distribution": t1_meta.get("target_distribution"),
+            "metrics": t1_meta.get("metrics", {}),
             "warnings_and_limitations": [
                 "Overnight gap risk: Global market drift between 15:30 IST and 09:15 IST can distort technical levels.",
                 "High VIX regime sensitivity: Error cone expands non-linearly when India VIX > 16.0."
@@ -429,14 +429,14 @@ class MLPerformanceEngine:
             "artifact_sha256": t5_hash,
             "dataset_version": "NSE_DAILY_OHLCV_V1",
             "training_date_range": "2024-01-01 to 2026-10-15",
-            "last_training_timestamp": t5_meta.get("promoted_at", "2026-10-15 17:36:46 IST"),
-            "last_evaluation_timestamp": t5_meta.get("promoted_at", format_ist()),
-            "sample_counts": {"train": 322, "val": 69, "test": 69, "total": int(t5_meta.get("metrics", {}).get("sample_count", 460))},
+            "last_training_timestamp": t5_meta.get("promoted_at"),
+            "last_evaluation_timestamp": t5_meta.get("evaluated_at"),
+            "sample_counts": t5_meta.get("sample_counts", {"total": t5_meta.get("metrics", {}).get("sample_count")}),
             "feature_count": len(NIFTY_FEATURE_COLS),
             "feature_names": NIFTY_FEATURE_COLS,
             "hyperparameters": {"n_estimators": 100, "learning_rate": 0.05, "num_leaves": 15, "cv_purge_window": 5},
-            "target_distribution": {"BULLISH": "46%", "FLAT": "14%", "BEARISH": "40%"},
-            "metrics": t5_meta.get("metrics", {"directional_accuracy": 45.0, "brier_score": 0.6456, "return_mae_pct": 1.68, "baseline_brier": 1.0427}),
+            "target_distribution": t5_meta.get("target_distribution"),
+            "metrics": t5_meta.get("metrics", {}),
             "warnings_and_limitations": [
                 "5-day forward label autocorrelation: Enforces 5-bar purged CV to prevent multi-day leakage.",
                 "Weekly expiry theta acceleration: Option strike pricing shifts rapidly into Thursday settlement."
@@ -1114,7 +1114,7 @@ class MLPerformanceEngine:
                         "directional_accuracy_pct": prod_acc,
                         "brier_score": prod_brier,
                         "return_mae_pct": prod_mae,
-                        "inference_latency_ms": float(meta.get("inference_latency_ms", 1.8)),
+                        "inference_latency_ms": float(meta["inference_latency_ms"]) if meta.get("inference_latency_ms") is not None else None,
                         "net_pnl_after_costs": realized_pnl_str,
                         "status": "ACTIVE_PRODUCTION",
                         "metric_provenance": "MEASURED_EMPIRICAL"
@@ -1125,7 +1125,7 @@ class MLPerformanceEngine:
                         "directional_accuracy_pct": lgb_acc if lgb_acc is not None else 0.0,
                         "brier_score": lgb_brier if lgb_brier is not None else 0.0,
                         "return_mae_pct": round(float(mets.get("lgb_mae", 0.0)), 2) if "lgb_mae" in mets else 0.0,
-                        "inference_latency_ms": float(meta.get("lgb_latency_ms", 0.8)),
+                        "inference_latency_ms": float(meta["lgb_latency_ms"]) if meta.get("lgb_latency_ms") is not None else None,
                         "net_pnl_after_costs": realized_pnl_str,
                         "status": "BENCHMARK",
                         "metric_provenance": "MEASURED_HOLDOUT" if lgb_acc is not None else "DATA_UNAVAILABLE"
@@ -1136,7 +1136,7 @@ class MLPerformanceEngine:
                         "directional_accuracy_pct": xgb_acc if xgb_acc is not None else 0.0,
                         "brier_score": xgb_brier if xgb_brier is not None else 0.0,
                         "return_mae_pct": round(float(mets.get("xgb_mae", 0.0)), 2) if "xgb_mae" in mets else 0.0,
-                        "inference_latency_ms": float(meta.get("xgb_latency_ms", 1.2)),
+                        "inference_latency_ms": float(meta["xgb_latency_ms"]) if meta.get("xgb_latency_ms") is not None else None,
                         "net_pnl_after_costs": realized_pnl_str,
                         "status": "BENCHMARK",
                         "metric_provenance": "MEASURED_HOLDOUT" if xgb_acc is not None else "DATA_UNAVAILABLE"
@@ -1146,8 +1146,8 @@ class MLPerformanceEngine:
                         "architecture": "Historical Mode Prior",
                         "directional_accuracy_pct": base_acc,
                         "brier_score": base_brier,
-                        "return_mae_pct": round(float(mets.get("base_mae", prod_mae + 0.17 if prod_mae > 0 else 0.0)), 2),
-                        "inference_latency_ms": 0.01,
+                        "return_mae_pct": round(float(mets["base_mae"]), 2) if mets.get("base_mae") is not None else None,
+                        "inference_latency_ms": None,
                         "net_pnl_after_costs": "₹0 (No Edge)",
                         "status": "BASELINE",
                         "metric_provenance": "MEASURED_CLASS_PRIOR"
@@ -1158,7 +1158,7 @@ class MLPerformanceEngine:
                         "directional_accuracy_pct": round(float(mets.get("rule_only_acc", 0.0)), 1) if "rule_only_acc" in mets else 0.0,
                         "brier_score": round(float(mets.get("rule_only_brier", 0.0)), 4) if "rule_only_brier" in mets else 0.0,
                         "return_mae_pct": round(float(mets.get("rule_only_mae", 0.0)), 2) if "rule_only_mae" in mets else 0.0,
-                        "inference_latency_ms": 0.05,
+                        "inference_latency_ms": None,
                         "net_pnl_after_costs": meta.get("rule_only_pnl") or "DATA_UNAVAILABLE (HOLD_OUT_SIMULATION_REQUIRED)",
                         "status": "RULE_ONLY",
                         "metric_provenance": "MEASURED_HOLDOUT" if "rule_only_acc" in mets else "DATA_UNAVAILABLE"
@@ -1196,7 +1196,7 @@ class MLPerformanceEngine:
                     "directional_accuracy_pct": t_acc,
                     "brier_score": t_brier,
                     "return_mae_pct": 0.0,
-                    "inference_latency_ms": 2.1,
+                    "inference_latency_ms": None,
                     "net_pnl_after_costs": realized_pnl_str,
                     "status": "ACTIVE_PRODUCTION",
                     "metric_provenance": "MEASURED_EMPIRICAL"
@@ -1207,7 +1207,7 @@ class MLPerformanceEngine:
                     "directional_accuracy_pct": t_lgb_acc,
                     "brier_score": t_lgb_brier,
                     "return_mae_pct": 0.0,
-                    "inference_latency_ms": 0.9,
+                    "inference_latency_ms": None,
                     "net_pnl_after_costs": realized_pnl_str,
                     "status": "BENCHMARK",
                     "metric_provenance": "MEASURED_HOLDOUT" if t_lgb_auc_raw > 0 else "DATA_UNAVAILABLE"
@@ -1218,7 +1218,7 @@ class MLPerformanceEngine:
                     "directional_accuracy_pct": t_xgb_acc,
                     "brier_score": t_xgb_brier,
                     "return_mae_pct": 0.0,
-                    "inference_latency_ms": 1.3,
+                    "inference_latency_ms": None,
                     "net_pnl_after_costs": realized_pnl_str,
                     "status": "BENCHMARK",
                     "metric_provenance": "MEASURED_HOLDOUT" if t_xgb_auc_raw > 0 else "DATA_UNAVAILABLE"
@@ -1226,10 +1226,10 @@ class MLPerformanceEngine:
                 {
                     "model_variant": "Baseline (Random / Equal Weight)",
                     "architecture": "Uniform Random Class Prior",
-                    "directional_accuracy_pct": 50.0,
-                    "brier_score": t_base_brier if t_base_brier > 0 else 0.5000,
+                    "directional_accuracy_pct": None,
+                    "brier_score": t_base_brier if t_base_brier > 0 else None,
                     "return_mae_pct": 0.0,
-                    "inference_latency_ms": 0.01,
+                    "inference_latency_ms": None,
                     "net_pnl_after_costs": "₹0 (No Edge)",
                     "status": "BASELINE",
                     "metric_provenance": "THEORETICAL_PRIOR"
@@ -1237,10 +1237,10 @@ class MLPerformanceEngine:
                 {
                     "model_variant": "Non-ML Static Prior",
                     "architecture": "Historical Mode Prior",
-                    "directional_accuracy_pct": 50.0,
-                    "brier_score": t_base_brier if t_base_brier > 0 else 0.5000,
+                    "directional_accuracy_pct": None,
+                    "brier_score": t_base_brier if t_base_brier > 0 else None,
                     "return_mae_pct": 0.0,
-                    "inference_latency_ms": 0.01,
+                    "inference_latency_ms": None,
                     "net_pnl_after_costs": "DATA_UNAVAILABLE (HOLD_OUT_SIMULATION_REQUIRED)",
                     "status": "RULE_ONLY",
                     "metric_provenance": "DATA_UNAVAILABLE"
