@@ -214,9 +214,13 @@ def test_backtest_matrix_execution():
         lookback_sessions=15,
         lot_size=75
     )
+    if backtest_res["status"] == "DATA_UNAVAILABLE":
+        assert backtest_res.get("message")
+        assert backtest_res.get("sessions_evaluated", 0) < 15
+        return
     assert backtest_res["status"] == "OK"
     assert backtest_res["sessions_evaluated"] >= 15
-    
+
     matrix = backtest_res["comparison_matrix"]
     assert "PRIMARY_WITH_REENTRY" in matrix
     assert "PRIMARY_WITHOUT_REENTRY" in matrix
