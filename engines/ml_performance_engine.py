@@ -467,30 +467,30 @@ class MLPerformanceEngine:
                 "prediction_target": "Binary Trade Success (1: Win / Target Hit, 0: Loss / Stop-Loss Hit)",
                 "trading_horizon": h_desc,
                 "current_version": h_ver,
-                "deployment_status": "DEPLOYED_LIVE" if h_valid else "SHADOW_EVALUATION",
+                "deployment_status": h_meta.get("deployment_status", "STATUS_UNVERIFIED"),
                 "artifact_location": str(h_art),
                 "artifact_valid": h_valid,
                 "artifact_size_kb": h_size,
                 "artifact_sha256": h_hash,
-                "dataset_version": "UNIFIED_TRADE_LEARNING_V1",
-                "training_date_range": "2025-01-01 to 2026-10-15",
-                "last_training_timestamp": h_meta.get("last_trained_ist", format_ist()),
-                "last_evaluation_timestamp": h_meta.get("last_trained_ist", format_ist()),
+                "dataset_version": h_meta.get("dataset_version"),
+                "training_date_range": h_meta.get("training_date_range"),
+                "last_training_timestamp": h_meta.get("last_trained_ist"),
+                "last_evaluation_timestamp": h_meta.get("last_evaluated_ist"),
                 "sample_counts": {
-                    "train": int(h_meta.get("train_samples", 42)),
-                    "val": int(h_meta.get("test_samples", 16)),
-                    "test": int(h_meta.get("test_samples", 16)),
-                    "total": int(h_meta.get("total_samples", 60))
+                    "train": h_meta.get("train_samples"),
+                    "val": h_meta.get("validation_samples"),
+                    "test": h_meta.get("test_samples"),
+                    "total": h_meta.get("total_samples")
                 },
                 "feature_count": len(UNIFIED_FEATURE_COLS),
                 "feature_names": UNIFIED_FEATURE_COLS,
                 "hyperparameters": {"lgb_leaves": 15, "xgb_depth": 4, "cv_purge_window": 2, "embargo_window": 2},
-                "target_distribution": {"WIN": "56%", "LOSS": "44%"},
+                "target_distribution": h_meta.get("target_distribution"),
                 "metrics": {
-                    "ensemble_acc": float(h_mets.get("ensemble_acc", 56.2)),
-                    "ensemble_brier": float(h_mets.get("ensemble_brier", 0.3296)),
-                    "ensemble_auc": float(h_mets.get("ensemble_auc", 0.418)),
-                    "baseline_brier": float(h_mets.get("baseline_brier", 0.2234))
+                    "ensemble_acc": float(h_mets["ensemble_acc"]) if h_mets.get("ensemble_acc") is not None else None,
+                    "ensemble_brier": float(h_mets["ensemble_brier"]) if h_mets.get("ensemble_brier") is not None else None,
+                    "ensemble_auc": float(h_mets["ensemble_auc"]) if h_mets.get("ensemble_auc") is not None else None,
+                    "baseline_brier": float(h_mets["baseline_brier"]) if h_mets.get("baseline_brier") is not None else None
                 },
                 "warnings_and_limitations": [
                     "Empirical Stop-Loss Invariant: Enforces strictly 40% SL on Weekly and 50% SL on Monthly options.",
@@ -1148,7 +1148,7 @@ class MLPerformanceEngine:
                         "brier_score": base_brier,
                         "return_mae_pct": round(float(mets["base_mae"]), 2) if mets.get("base_mae") is not None else None,
                         "inference_latency_ms": None,
-                        "net_pnl_after_costs": "₹0 (No Edge)",
+                        "net_pnl_after_costs": "DATA_UNAVAILABLE (NO MEASURED BASELINE P&L)",
                         "status": "BASELINE",
                         "metric_provenance": "MEASURED_CLASS_PRIOR"
                     },
@@ -1230,7 +1230,7 @@ class MLPerformanceEngine:
                     "brier_score": t_base_brier if t_base_brier > 0 else None,
                     "return_mae_pct": 0.0,
                     "inference_latency_ms": None,
-                    "net_pnl_after_costs": "₹0 (No Edge)",
+                    "net_pnl_after_costs": "DATA_UNAVAILABLE (NO MEASURED BASELINE P&L)",
                     "status": "BASELINE",
                     "metric_provenance": "THEORETICAL_PRIOR"
                 },
