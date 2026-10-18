@@ -294,21 +294,24 @@ class NiftyForecastLearningEngine:
             }
         }
 
-        # 3. Controlled Promotion Gatekeeper
-        # Criteria: Candidate must outperform baseline Brier score and have >= Baseline Accuracy
+        # 3. Controlled Promotion Gatekeeper. Never invent a prior-model score.
         active_ver = self._active_metadata.get(f"{horizon}_active_version")
-        prod_brier = 0.50
+        prod_brier = None
         if active_ver:
             prod_meta = self._active_metadata.get(f"{horizon}_metadata", {})
-            prod_brier = float(prod_meta.get("metrics", {}).get("brier_score", 0.50))
+            raw_prod_brier = prod_meta.get("metrics", {}).get("brier_score")
+            if raw_prod_brier is not None and np.isfinite(float(raw_prod_brier)):
+                prod_brier = float(raw_prod_brier)
 
         is_better_than_baseline = avg_brier <= baseline_brier
-        is_competitive_with_prod = avg_brier <= (prod_brier + 0.02)
+        is_competitive_with_prod = (
+            not active_ver
+            or (prod_brier is not None and avg_brier <= (prod_brier + 0.02))
+        )
 
         if is_better_than_baseline and is_competitive_with_prod:
-            status_label = "PROMOTED_PRODUCTION"
-            # Archive previous model
-            if horizon in self._active_models:
+            status_label = "PROMOTED_INITIAL_BASELINE" if not active_ver else "PROMOTED_PRODUCTION"
+            if active_ver and horizon in self._active_models:
                 self._previous_models[horizon] = self._active_models[horizon]
                 self._active_metadata[f"{horizon}_previous_version"] = active_ver
 
@@ -319,23 +322,13 @@ class NiftyForecastLearningEngine:
                 "status": status_label,
                 "artifact_path": str(bundle_path),
                 "metrics": bundle["metrics"],
+                "sample_counts": {"total": len(df), "train": len(X_train), "validation": len(val_accs), "test": len(y_test)},
+                "evaluated_at": format_ist(),
                 "promoted_at": format_ist()
             }
         else:
-            # If no active model currently, promote as initial baseline
-            if not active_ver:
-                status_label = "PROMOTED_INITIAL_BASELINE"
-                self._active_models[horizon] = bundle
-                self._active_metadata[f"{horizon}_active_version"] = version_tag
-                self._active_metadata[f"{horizon}_metadata"] = {
-                    "active_version": version_tag,
-                    "status": status_label,
-                    "artifact_path": str(bundle_path),
-                    "metrics": bundle["metrics"],
-                    "promoted_at": format_ist()
-                }
-            else:
-                status_label = "RETAINED_PRODUCTION"
+            # A candidate cannot replace an active model without measured comparable metrics.
+            status_label = "CANDIDATE_REJECTED" if not active_ver else "RETAINED_PRODUCTION"
 
         # Save artifact bundle
         with open(bundle_path, "wb") as f:
