@@ -601,18 +601,20 @@ class StateEngine:
 
                         upd_str = row["updated_at"] or ""
                         if not upd_str:
-                            return df, 9999.0
+                            logger.warning(f"Missing update timestamp for {sym}; rejecting OHLCV data.")
+                            return None, 9999.0
                         try:
                             naive_dt = datetime.datetime.strptime(upd_str[:19], "%Y-%m-%d %H:%M:%S")
                             upd_dt = IST.localize(naive_dt) if hasattr(IST, "localize") else naive_dt.replace(tzinfo=now_dt.tzinfo)
                             diff_sec = (now_dt - upd_dt).total_seconds()
                             if diff_sec < -60.0:  # Future timestamp > 1 min in the future is invalid
                                 logger.warning(f"Future timestamp detected for {sym}: {upd_str}. Treating as invalid.")
-                                return df, 9999.0
+                                return None, 9999.0
                             age_hrs = max(0.0, diff_sec / 3600.0)
                         except Exception:
-                            # H-08: Malformed timestamp -> treat as invalid/stale, do NOT substitute 1.0 hr
-                            return df, 9999.0
+                            # H-08: Malformed timestamp -> reject data, do NOT return a usable dataframe with invalid age
+                            logger.warning(f"Malformed update timestamp for {sym}; rejecting OHLCV data.")
+                            return None, 9999.0
                         self._ohlcv_mem_cache[sym] = (df, upd_dt)
                         return df, age_hrs
                     except Exception as e:
@@ -621,7 +623,10 @@ class StateEngine:
 
     def get_ohlcv(self, symbol: str) -> Optional[pd.DataFrame]:
         """Convenience helper returning just the DataFrame for symbol or None."""
-        df, _ = self.get_ohlcv_df(symbol)
+        df, age_hours = self.get_ohlcv_df(symbol)
+        # Invalid timestamps/legacy blobs use the sentinel age; never expose them via this convenience API.
+        if df is None or age_hours >= 9999.0:
+            return None
         return df
 
     def get_ohlcv_stats(self) -> Dict[str, Any]:
