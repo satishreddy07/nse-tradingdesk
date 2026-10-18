@@ -948,7 +948,7 @@ class MLPerformanceEngine:
             "horizon": h_norm,
             "total_trades": total_trades,
             "win_rate_pct": win_rate,
-            "gross_pnl": round(gross_pnl, 2),
+            "gross_pnl": gross_pnl,
             "net_pnl": net_pnl,
             # Fees are stored as one total_costs field today; the schema has no measured
             # brokerage/slippage split. Do not invent component allocations.

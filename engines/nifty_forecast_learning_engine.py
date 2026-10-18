@@ -174,12 +174,12 @@ class NiftyForecastLearningEngine:
                 "samples": len(df),
                 "reason": "target_class contains missing or unsupported labels; expected only -1, 0, or 1."
             }
-        if len(np.unique(y_raw)) < 2:
+        if len(np.unique(y_raw)) < 3:
             return {
                 "status": "INSUFFICIENT_DATA",
                 "horizon": horizon,
                 "samples": len(df),
-                "reason": "Training labels contain only one observed direction class."
+                "reason": "Three-class forecast model requires observed bearish, flat, and bullish labels."
             }
         # Map valid target classes [-1, 0, 1] to [0, 1, 2] for multiclass estimators.
         y_cls = np.where(y_raw == -1.0, 0, np.where(y_raw == 0.0, 1, 2))
@@ -206,8 +206,8 @@ class NiftyForecastLearningEngine:
             X_va = fold_scaler.transform(X[val_idx])
             y_tr_c, y_tr_r = y_cls[train_idx], y_reg[train_idx]
             y_va_c, y_va_r = y_cls[val_idx], y_reg[val_idx]
-            if len(np.unique(y_tr_c)) < 2:
-                logger.warning("Skipping %s validation fold with a single training class.", horizon)
+            if len(np.unique(y_tr_c)) < 3:
+                logger.warning("Skipping %s validation fold without all three target classes.", horizon)
                 continue
 
             # Train Fold Models
