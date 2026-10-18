@@ -989,8 +989,10 @@ class NiftyAnalyticsEngine:
                 (f"Current Weekly Expiry ({weekly.get('expiry')}) carries ATM IV of {w_iv:.2f}% vs Current Monthly Expiry ({monthly.get('expiry')}) at {m_iv:.2f}%. " if iv_term_spread is not None else "Verified ATM IV is unavailable for one or both expiries; do not infer the term structure. ")
                 + (
                     f"Normal contango IV structure ({iv_term_spread:+.2f}%): favors selling front-week theta while holding monthly directional hedges (Calendar/Diagonal spreads)."
-                    if iv_term_spread >= -0.5 else
-                    f"Inverted backwardation IV structure ({iv_term_spread:+.2f}%): near-term event/expiry gamma risk is elevated — avoid unhedged short gamma in the weekly contract."
+                    if iv_term_spread is not None and iv_term_spread >= -0.5 else
+                    (f"Inverted backwardation IV structure ({iv_term_spread:+.2f}%): near-term event/expiry gamma risk is elevated — avoid unhedged short gamma in the weekly contract."
+                     if iv_term_spread is not None else
+                     "Term-structure interpretation unavailable because verified implied volatility is missing.")
                 )
             )
         })
