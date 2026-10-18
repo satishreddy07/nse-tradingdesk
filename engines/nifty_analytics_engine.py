@@ -825,7 +825,7 @@ class NiftyAnalyticsEngine:
         cal_exp = NSEMarketCalendar.get_active_options_expiries()
         t_years_gex = max(0.001, float(cal_exp.get("dte_weekly", 4.0)) / 365.0)
         sqrt_t_gex = math.sqrt(t_years_gex)
-        sig_gex = max(0.05, atm_iv / 100.0) if atm_iv is not None and np.isfinite(atm_iv) and atm_iv > 0 else None
+        sig_gex = (atm_iv / 100.0) if atm_iv is not None and np.isfinite(atm_iv) and atm_iv > 0 else None
         net_gex_cr = 0.0
 
         for s in active_slice:
@@ -916,7 +916,10 @@ class NiftyAnalyticsEngine:
                     else ("Upside Call Chasing (Negative Skew)" if iv_skew < -1.2 else "Balanced Volatility Smile"))
                 ),
                 "iv_data_quality": "VALID_CHAIN_IV" if valid_ivs else ("VALID_VIX_FALLBACK" if atm_iv is not None else "DATA_UNAVAILABLE"),
-                "gex_data_quality": "MODELLED_WITH_OBSERVED_IV" if sig_gex is not None else "DATA_UNAVAILABLE",
+                "gex_data_quality": (
+                    "MODELLED_WITH_OBSERVED_CHAIN_IV" if sig_gex is not None and valid_ivs
+                    else ("MODELLED_WITH_VIX_PROXY" if sig_gex is not None else "DATA_UNAVAILABLE")
+                ),
                 "gex_regime": gex_regime,
                 "net_near_oi_diff": near_pe_oi - near_ce_oi,
                 "net_near_chg_oi_diff": near_pe_chg - near_ce_chg,

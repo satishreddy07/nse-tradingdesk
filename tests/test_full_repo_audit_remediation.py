@@ -22,7 +22,7 @@ import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock
 
-from core.data_quality import validate_ohlcv_dataframe, check_data_freshness, IST, now_ist
+from core.data_quality import validate_ohlcv_dataframe, check_data_freshness, IST, now_ist, format_ist
 from core.market_calendar import NSEMarketCalendar
 from execution.state_engine import StateEngine, state_engine
 from engines.nifty_analytics_engine import NiftyAnalyticsEngine, CENTRAL_BANK_EVENTS_2026
@@ -591,6 +591,57 @@ def test_option_chain_rejects_nonfinite_iv_for_skew_and_gex(monkeypatch):
     assert result["volatility_and_gex"]["iv_skew"] is None
     assert result["volatility_and_gex"]["gex_regime"] == "DATA_UNAVAILABLE"
     assert result["volatility_and_gex"]["iv_data_quality"] == "DATA_UNAVAILABLE"
+
+
+def test_unified_ml_dataset_rejects_missing_feature_imputation(tmp_path):
+    """Incomplete feature payloads remain visible in storage but are never zero-imputed into training."""
+    from core.unified_ml_dataset import UNIFIED_FEATURE_COLS
+
+    ds = UnifiedMLDataset(db_path=str(tmp_path / "feature_quality.db"))
+    features = {col: 1.0 for col in UNIFIED_FEATURE_COLS}
+    features.pop("nifty_spot")
+    row_id = ds.record_signal_and_trade(
+        signal_id="SIG_MISSING_FEATURE",
+        trade_id="TRADE_MISSING_FEATURE",
+        instrument="NIFTY",
+        trading_horizon="WEEKLY",
+        strategy_name="TEST",
+        record_type="LIVE",
+        market_session="MORNING",
+        accept_reject_verdict="ACCEPTED",
+        decision_source="RULE_BASED",
+        features=features,
+        regime="MILD_BULLISH",
+        spot_at_entry=25000.0,
+        intended_entry=100.0,
+        intended_target=80.0,
+        intended_sl=140.0,
+        sl_threshold_pct=40.0,
+        quantity=1,
+        capital_at_risk=40.0,
+        actual_entry=100.0,
+    )
+    assert row_id > 0
+    with ds._get_connection() as conn:
+        row = conn.execute(
+            "SELECT features_json, iv_at_entry FROM unified_trade_learning_dataset WHERE id = ?",
+            (row_id,),
+        ).fetchone()
+        snapshot = json.loads(row["features_json"])
+        assert snapshot["nifty_spot"] is None
+        assert row["iv_at_entry"] is None
+    assert ds.record_trade_outcome(
+        trade_id="TRADE_MISSING_FEATURE", actual_exit=80.0, exit_reason="PROFIT_TARGET",
+        gross_pnl=20.0, net_pnl=18.0, total_costs=2.0
+    )
+    assert ds.get_dataset_for_horizon("WEEKLY").empty
+
+
+def test_format_ist_converts_timezone_aware_values():
+    """UTC timestamps must be converted to India time before appending the IST label."""
+    from datetime import timezone
+    utc_dt = datetime.datetime(2026, 10, 18, 0, 0, 0, tzinfo=timezone.utc)
+    assert format_ist(utc_dt) == "2026-10-18 05:30:00 IST"
 
 
 def test_data_quality_rejects_numeric_index():

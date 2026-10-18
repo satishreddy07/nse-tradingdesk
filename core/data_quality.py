@@ -21,6 +21,8 @@ def format_ist(dt: Optional[datetime.datetime] = None) -> str:
         dt = now_ist()
     elif dt.tzinfo is None:
         dt = IST.localize(dt)
+    else:
+        dt = dt.astimezone(IST)
     return dt.strftime("%Y-%m-%d %H:%M:%S IST")
 
 def validate_ohlcv_dataframe(

@@ -537,7 +537,7 @@ class MLPerformanceEngine:
             "deployment_status": "DEPLOYED_LIVE" if sq_valid else "PAPER_TRADING",
             "artifact_location": "system_kv_store['swing_quant_ml_bundle']",
             "artifact_valid": sq_valid,
-            "artifact_size_kb": 12.5,
+            "artifact_size_kb": None,
             "artifact_sha256": "INTERNAL_SQLITE_KV",
             "dataset_version": "QUANT_TRADE_DATASET_V1",
             "training_date_range": sq_meta.get("training_date_range"),
@@ -576,10 +576,10 @@ class MLPerformanceEngine:
             "deployment_status": "CODE_PATH_PRESENT_STATUS_UNVERIFIED",
             "artifact_location": "engines/institutional_engine.py & nifty_analytics_engine.py",
             "artifact_valid": False,
-            "artifact_size_kb": 85.0,
+            "artifact_size_kb": None,
             "artifact_sha256": "CODEBASE_NATIVE",
             "dataset_version": "MULTI_PILLAR_OHLCV_SERIES",
-            "training_date_range": "2024-01-01 to 2026-10-15",
+            "training_date_range": None,
             "last_training_timestamp": None,
             "last_evaluation_timestamp": None,
             "sample_counts": {},
@@ -811,21 +811,39 @@ class MLPerformanceEngine:
 
             # Stop-loss and 1-time re-entry matrix analysis
             sl_rows = conn.execute("""
-                SELECT sl_threshold_pct, re_entry_count, is_winner, target_hit_before_sl, net_pnl, exit_reason
+                SELECT sl_threshold_pct, re_entry_count, is_winner, target_hit_before_sl,
+                       net_pnl, exit_reason, rules_followed
                 FROM unified_trade_learning_dataset
+                WHERE status LIKE 'RESOLVED%'
             """).fetchall()
 
         sl_matrix = {
-            "sl_40_pct_stats": {"trades": 0, "hits": 0, "saved_drawdown": 0.0},
-            "sl_50_pct_stats": {"trades": 0, "hits": 0, "saved_drawdown": 0.0},
-            "re_entry_win_rate_pct": 62.5,
+            "sl_40_pct_stats": {"trades": 0, "hits": 0, "saved_drawdown": None},
+            "sl_50_pct_stats": {"trades": 0, "hits": 0, "saved_drawdown": None},
+            "re_entry_win_rate_pct": None,
             "re_entry_count": 0,
             "re_entry_net_pnl": 0.0,
             "max_re_entries_allowed": 1,
-            "stop_loss_discipline_pct": 100.0
+            "stop_loss_discipline_pct": None
         }
+        re_entry_resolved = [sr for sr in sl_rows if int(sr["re_entry_count"] or 0) > 0 and sr["is_winner"] is not None]
+        if re_entry_resolved:
+            sl_matrix["re_entry_win_rate_pct"] = round(
+                sum(1 for sr in re_entry_resolved if int(sr["is_winner"]) == 1) / len(re_entry_resolved) * 100.0, 1
+            )
+        discipline_rows = [sr for sr in sl_rows if sr["rules_followed"] is not None]
+        if discipline_rows:
+            sl_matrix["stop_loss_discipline_pct"] = round(
+                sum(1 for sr in discipline_rows if int(sr["rules_followed"]) == 1) / len(discipline_rows) * 100.0, 1
+            )
+
         for sr in sl_rows:
-            sl_pct = float(sr["sl_threshold_pct"] or 50.0)
+            try:
+                sl_pct = float(sr["sl_threshold_pct"])
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if not math.isfinite(sl_pct) or sl_pct <= 0:
+                continue
             re_cnt = int(sr["re_entry_count"] or 0)
             pnl = float(sr["net_pnl"] or 0.0)
             reason = str(sr["exit_reason"] or "")

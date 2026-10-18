@@ -287,7 +287,7 @@ def test_f33_no_ml_performance_placeholders():
     assert "max_drawdown_pct" in hor_stats
     # Drawdown must be calculated, not hardcoded to 8.4
     if hor_stats["total_trades"] == 0:
-        assert hor_stats["max_drawdown_pct"] == 0.0
+        assert hor_stats["max_drawdown_pct"] is None
 
     # 2. Market regime performance
     reg_stats = ml_performance_engine.get_market_regime_performance()

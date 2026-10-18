@@ -39,6 +39,15 @@ logger = logging.getLogger("UnifiedMLDataset")
 UNIFIED_DATASET_TABLE = "unified_trade_learning_dataset"
 
 # 32 Standardized Numerical ML Features for Multi-Horizon Learning
+def _finite_feature_value(value: Any) -> Optional[float]:
+    """Return a finite number or None; never turn missing/bad telemetry into a numeric default."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
 UNIFIED_FEATURE_COLS = [
     # Macro & Benchmark Dynamics
     "nifty_spot",
@@ -222,8 +231,12 @@ class UnifiedMLDataset:
         target_diff = abs(intended_target - intended_entry)
         rr = round(target_diff / risk_unit, 2)
 
-        feat_clean = {k: float(features.get(k, 0.0)) for k in UNIFIED_FEATURE_COLS}
-        feat_json = json.dumps(feat_clean)
+        supplied_features = features if isinstance(features, dict) else {}
+        feat_clean = {
+            key: _finite_feature_value(supplied_features.get(key))
+            for key in UNIFIED_FEATURE_COLS
+        }
+        feat_json = json.dumps(feat_clean, allow_nan=False)
         rat_json = json.dumps(rationale or {})
 
         entry_time_val = actual_entry_time or (now_ts if status == "ACTIVE" else None)
@@ -250,9 +263,9 @@ class UnifiedMLDataset:
                     signal_id, trade_id, instrument, trading_horizon, strategy_name,
                     record_type, market_session, status, accept_reject_verdict,
                     decision_source, feat_json, regime,
-                    float(features.get("regime_confidence", 0.8)),
-                    float(features.get("composite_score", 0.0)),
-                    float(features.get("iv_spot", 14.0)),
+                    _finite_feature_value(supplied_features.get("regime_confidence")),
+                    _finite_feature_value(supplied_features.get("composite_score")),
+                    _finite_feature_value(supplied_features.get("iv_spot")),
                     float(spot_at_entry),
                     float(strike), expiry_date, float(dte_days), float(sigma_distance),
                     float(intended_entry), float(intended_target), float(intended_sl),
@@ -540,15 +553,37 @@ class UnifiedMLDataset:
         if df.empty:
             return pd.DataFrame()
 
-        # Parse features_json into individual columns
-        feat_dicts = [json.loads(s) if s else {} for s in df["features_json"]]
-        feat_df = pd.DataFrame(feat_dicts)
-        for col in UNIFIED_FEATURE_COLS:
-            if col not in feat_df.columns:
-                feat_df[col] = 0.0
+        # Decode and validate complete finite entry-time snapshots. One corrupt row must not
+        # abort the query, and absent fields must not be silently filled with zero.
+        valid_records = []
+        valid_indices = []
+        for row_index, encoded in zip(df.index, df["features_json"]):
+            try:
+                decoded = json.loads(encoded) if encoded else None
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if not isinstance(decoded, dict):
+                continue
 
+            normalized = {}
+            valid = True
+            for col in UNIFIED_FEATURE_COLS:
+                value = _finite_feature_value(decoded.get(col))
+                if value is None:
+                    valid = False
+                    break
+                normalized[col] = value
+            if valid:
+                valid_indices.append(row_index)
+                valid_records.append(normalized)
+
+        if not valid_indices:
+            return pd.DataFrame()
+
+        df = df.loc[valid_indices].copy()
+        feat_df = pd.DataFrame(valid_records, index=valid_indices, columns=UNIFIED_FEATURE_COLS)
         drop_cols = ["features_json"] + [c for c in UNIFIED_FEATURE_COLS if c in df.columns]
-        combined = pd.concat([df.drop(columns=drop_cols, errors="ignore"), feat_df[UNIFIED_FEATURE_COLS]], axis=1)
+        combined = pd.concat([df.drop(columns=drop_cols, errors="ignore"), feat_df], axis=1)
         combined = combined.loc[:, ~combined.columns.duplicated()]
         return combined
 
