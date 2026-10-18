@@ -5411,7 +5411,10 @@ class NiftyAnalyticsEngine:
                 sign = 1.0 if action == "BUY" else -1.0
                 lots = qty / float(NIFTY_LOT_SIZE)
 
-                iv_val = float(leg.get("iv") or base_iv)
+                iv_raw = leg.get("iv") or base_iv
+                if iv_raw is None or float(iv_raw) <= 0:
+                    continue
+                iv_val = float(iv_raw)
                 sig = max(0.02, iv_val / 100.0)
 
                 d1 = (math.log(max(1e-4, spot) / max(1e-4, stk)) + (r + 0.5 * sig * sig) * t_years) / (sig * sqrt_t)
@@ -5476,14 +5479,14 @@ class NiftyAnalyticsEngine:
             monthly_chain = []
             spot_price = 0.0
 
-        base_iv = 12.0
+        base_iv_raw = None
         if opt_chain_data:
-            base_iv = float(
+            base_iv_raw = (
                 opt_chain_data.get("weekly", {}).get("atm_iv")
                 or opt_chain_data.get("monthly", {}).get("atm_iv")
                 or opt_chain_data.get("atm_iv")
-                or 12.0
             )
+        base_iv = float(base_iv_raw) if base_iv_raw is not None and float(base_iv_raw) > 0 else None
 
         weekly_ltp_map = {}
         monthly_ltp_map = {}
