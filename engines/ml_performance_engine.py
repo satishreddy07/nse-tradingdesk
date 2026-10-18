@@ -1139,12 +1139,16 @@ class MLPerformanceEngine:
             ) if base_acc_raw is not None else None
 
             # Standalone metrics from actual holdout measurements
-            lgb_acc_raw = mets.get("lgb_acc", mets.get("lgb_auc"))
-            xgb_acc_raw = mets.get("xgb_acc", mets.get("xgb_auc"))
+            lgb_acc_raw = mets.get("lgb_acc")
+            xgb_acc_raw = mets.get("xgb_acc")
+            lgb_auc_raw = mets.get("lgb_auc")
+            xgb_auc_raw = mets.get("xgb_auc")
             lgb_acc = (round(float(lgb_acc_raw) * 100.0, 1) if "lgb_acc" not in mets else round(float(lgb_acc_raw), 1)) if lgb_acc_raw is not None else None
             xgb_acc = (round(float(xgb_acc_raw) * 100.0, 1) if "xgb_acc" not in mets else round(float(xgb_acc_raw), 1)) if xgb_acc_raw is not None else None
-            lgb_brier = round(float(mets["lgb_brier"]), 4) if "lgb_brier" in mets else None
-            xgb_brier = round(float(mets["xgb_brier"]), 4) if "xgb_brier" in mets else None
+            lgb_brier = round(float(mets["lgb_brier"]), 4) if mets.get("lgb_brier") is not None else None
+            xgb_brier = round(float(mets["xgb_brier"]), 4) if mets.get("xgb_brier") is not None else None
+            lgb_auc = round(float(lgb_auc_raw), 3) if lgb_auc_raw is not None else None
+            xgb_auc = round(float(xgb_auc_raw), 3) if xgb_auc_raw is not None else None
 
             return {
                 "horizon": h_norm,
@@ -1164,24 +1168,26 @@ class MLPerformanceEngine:
                     {
                         "model_variant": "LightGBM Alone",
                         "architecture": "LightGBM Multi-class",
-                        "directional_accuracy_pct": lgb_acc if lgb_acc is not None else 0.0,
-                        "brier_score": lgb_brier if lgb_brier is not None else 0.0,
+                        "directional_accuracy_pct": lgb_acc,
+                        "brier_score": lgb_brier,
+                        "roc_auc": lgb_auc,
                         "return_mae_pct": round(float(mets["lgb_mae"]), 2) if mets.get("lgb_mae") is not None else None,
                         "inference_latency_ms": float(meta["lgb_latency_ms"]) if meta.get("lgb_latency_ms") is not None else None,
                         "net_pnl_after_costs": realized_pnl_str,
                         "status": "BENCHMARK",
-                        "metric_provenance": "MEASURED_HOLDOUT" if lgb_acc is not None else "DATA_UNAVAILABLE"
+                        "metric_provenance": "MEASURED_HOLDOUT" if lgb_acc is not None and lgb_brier is not None else "DATA_UNAVAILABLE"
                     },
                     {
                         "model_variant": "XGBoost Alone",
                         "architecture": "XGBoost Regressor + Classifier",
-                        "directional_accuracy_pct": xgb_acc if xgb_acc is not None else 0.0,
-                        "brier_score": xgb_brier if xgb_brier is not None else 0.0,
+                        "directional_accuracy_pct": xgb_acc,
+                        "brier_score": xgb_brier,
+                        "roc_auc": xgb_auc,
                         "return_mae_pct": round(float(mets["xgb_mae"]), 2) if mets.get("xgb_mae") is not None else None,
                         "inference_latency_ms": float(meta["xgb_latency_ms"]) if meta.get("xgb_latency_ms") is not None else None,
                         "net_pnl_after_costs": realized_pnl_str,
                         "status": "BENCHMARK",
-                        "metric_provenance": "MEASURED_HOLDOUT" if xgb_acc is not None else "DATA_UNAVAILABLE"
+                        "metric_provenance": "MEASURED_HOLDOUT" if xgb_acc is not None and xgb_brier is not None else "DATA_UNAVAILABLE"
                     },
                     {
                         "model_variant": "Non-ML Majority Baseline",
@@ -1192,7 +1198,7 @@ class MLPerformanceEngine:
                         "inference_latency_ms": None,
                         "net_pnl_after_costs": "DATA_UNAVAILABLE (NO MEASURED BASELINE P&L)",
                         "status": "BASELINE",
-                        "metric_provenance": "MEASURED_CLASS_PRIOR"
+                        "metric_provenance": "MEASURED_CLASS_PRIOR" if base_acc is not None and base_brier is not None else "DATA_UNAVAILABLE"
                     },
                     {
                         "model_variant": "Strategy Without ML",

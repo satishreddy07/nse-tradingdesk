@@ -119,6 +119,55 @@ class TestNiftyPredictionLedger:
             assert row["model_version"] == "prod_test_v1.0"
             assert row["status"] in ("PENDING", "RESOLVED")
 
+    def test_incomplete_features_and_unknown_labels_are_not_training_data(self, tmp_path):
+        """Missing feature values and unknown realized directions must never be zero/flat-imputed."""
+        ledger = NiftyPredictionLedger(db_path=str(tmp_path / "isolated_ledger.db"))
+        features = {col: 1.0 for col in NIFTY_FEATURE_COLS}
+        features.pop("global_score")
+        forecast_id = ledger.log_forecast(
+            horizon="T+1",
+            spot=25000.0,
+            composite_score=10.0,
+            verdict="MILD_BULLISH",
+            prob_up=0.5, prob_flat=0.25, prob_down=0.25,
+            expected_close=25010.0, expected_pts=10.0, expected_pct=0.04,
+            range_1sigma=(24900.0, 25100.0),
+            range_2sigma=(24800.0, 25200.0),
+            features=features,
+            prediction_date="2026-01-07",
+        )
+        with ledger._get_connection() as conn:
+            row = conn.execute(
+                f"SELECT data_quality_status, features_snapshot_json FROM {NIFTY_LEDGER_TABLE} WHERE forecast_id = ?",
+                (forecast_id,),
+            ).fetchone()
+            assert row["data_quality_status"] == "INVALID_FEATURE_SNAPSHOT"
+            snapshot = json.loads(row["features_snapshot_json"])
+            assert snapshot["global_score"] is None
+
+            # A complete snapshot with an unrecognized resolved label must also be excluded.
+            valid_features = {col: 1.0 for col in NIFTY_FEATURE_COLS}
+            valid_id = ledger.log_forecast(
+                horizon="T+1",
+                spot=25000.0,
+                composite_score=10.0,
+                verdict="MILD_BULLISH",
+                prob_up=0.5, prob_flat=0.25, prob_down=0.25,
+                expected_close=25010.0, expected_pts=10.0, expected_pct=0.04,
+                range_1sigma=(24900.0, 25100.0),
+                range_2sigma=(24800.0, 25200.0),
+                features=valid_features,
+                prediction_date="2026-01-08",
+            )
+            conn.execute(
+                f"UPDATE {NIFTY_LEDGER_TABLE} SET status='RESOLVED', realized_direction='UNKNOWN' WHERE forecast_id = ?",
+                (valid_id,),
+            )
+            conn.commit()
+
+        training = ledger.get_training_records(horizon="T+1", min_samples=1)
+        assert training.empty
+
     def test_outcome_resolution_directional_and_cones(self):
         """Tests outcome evaluation: directional hit, target hit, and cone containment."""
         test_date = "2026-01-06"
@@ -210,6 +259,18 @@ class TestSeparateHorizonTraining:
         splits_t5 = list(splitter_t5.split(df, labels))
         for train_idx, val_idx in splits_t5:
             assert (min(val_idx) - max(train_idx)) >= 5
+
+    def test_forecast_training_rejects_unknown_target_class(self, tmp_path):
+        engine = NiftyForecastLearningEngine(models_dir=tmp_path / "forecast_models")
+        df = pd.DataFrame({col: np.linspace(0.1, 1.5, 24) for col in NIFTY_FEATURE_COLS})
+        df["target_class"] = [-1, 0, 1] * 8
+        df["target_class"] = df["target_class"].astype(float)
+        df.loc[0, "target_class"] = 2
+        df["actual_return_pct"] = np.linspace(-1.0, 1.0, len(df))
+
+        result = engine.train_forecast_models("T+1", df=df)
+        assert result["status"] == "INSUFFICIENT_DATA"
+        assert "expected only -1, 0, or 1" in result["reason"]
 
     def test_train_forecast_models_t1_and_t5(self):
         """Forecast training must fail closed when verified empirical ledger rows are insufficient."""

@@ -644,6 +644,13 @@ class NiftyAnalyticsEngine:
         - 25-Delta / Near-OTM IV Skew & Net Dealer GEX profile
         - Strike-by-strike table (±12 strikes around ATM)
         """
+        def _positive_finite_iv(value: Any) -> Optional[float]:
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            return parsed if np.isfinite(parsed) and parsed > 0 else None
+
         strikes_data: List[Dict[str, Any]] = []
         for item in raw_rows:
             k = int(round(float(item.get("strikePrice") or 0)))
@@ -655,7 +662,7 @@ class NiftyAnalyticsEngine:
             ce_oi = int(ce.get("openInterest") or 0)
             ce_chg_oi = int(ce.get("changeinOpenInterest") or 0)
             ce_vol = int(ce.get("totalTradedVolume") or 0)
-            ce_iv = float(ce.get("impliedVolatility") or 0.0)
+            ce_iv = _positive_finite_iv(ce.get("impliedVolatility"))
             ce_ltp = float(ce.get("lastPrice") or 0.0)
             ce_chg = float(ce.get("change") or 0.0)
             ce_pchg = float(ce.get("pChange") or 0.0)
@@ -665,7 +672,7 @@ class NiftyAnalyticsEngine:
             pe_oi = int(pe.get("openInterest") or 0)
             pe_chg_oi = int(pe.get("changeinOpenInterest") or 0)
             pe_vol = int(pe.get("totalTradedVolume") or 0)
-            pe_iv = float(pe.get("impliedVolatility") or 0.0)
+            pe_iv = _positive_finite_iv(pe.get("impliedVolatility"))
             pe_ltp = float(pe.get("lastPrice") or 0.0)
             pe_chg = float(pe.get("change") or 0.0)
             pe_pchg = float(pe.get("pChange") or 0.0)
@@ -681,7 +688,7 @@ class NiftyAnalyticsEngine:
                 "ce_oi": ce_oi,
                 "ce_chg_oi": ce_chg_oi,
                 "ce_vol": ce_vol,
-                "ce_iv": round(ce_iv, 2),
+                "ce_iv": round(ce_iv, 2) if ce_iv is not None else None,
                 "ce_ltp": round(ce_ltp, 2),
                 "ce_chg": round(ce_chg, 2),
                 "ce_pchg": round(ce_pchg, 1),
@@ -690,7 +697,7 @@ class NiftyAnalyticsEngine:
                 "pe_oi": pe_oi,
                 "pe_chg_oi": pe_chg_oi,
                 "pe_vol": pe_vol,
-                "pe_iv": round(pe_iv, 2),
+                "pe_iv": round(pe_iv, 2) if pe_iv is not None else None,
                 "pe_ltp": round(pe_ltp, 2),
                 "pe_chg": round(pe_chg, 2),
                 "pe_pchg": round(pe_pchg, 1),
@@ -790,9 +797,9 @@ class NiftyAnalyticsEngine:
         fresh_put_wall = puts_by_chg[0]["strike"] if puts_by_chg else put_wall_1
 
         # 6. IV & Volatility Skew (OTM Put IV - OTM Call IV at ±3 strikes from ATM) (F-28)
-        atm_ce_iv = atm_row["ce_iv"]
-        atm_pe_iv = atm_row["pe_iv"]
-        valid_ivs = [v for v in (atm_ce_iv, atm_pe_iv) if v > 0]
+        atm_ce_iv = _positive_finite_iv(atm_row["ce_iv"])
+        atm_pe_iv = _positive_finite_iv(atm_row["pe_iv"])
+        valid_ivs = [v for v in (atm_ce_iv, atm_pe_iv) if v is not None]
         if valid_ivs:
             atm_iv = round(float(np.mean(valid_ivs)), 2)
         else:
@@ -805,16 +812,20 @@ class NiftyAnalyticsEngine:
 
         otm_pe_idx = max(0, atm_idx - 3)
         otm_ce_idx = min(len(strikes_data) - 1, atm_idx + 3)
-        otm_pe_iv = strikes_data[otm_pe_idx]["pe_iv"] or atm_pe_iv
-        otm_ce_iv = strikes_data[otm_ce_idx]["ce_iv"] or atm_ce_iv
-        iv_skew = round(otm_pe_iv - otm_ce_iv, 2) if otm_pe_iv > 0 and otm_ce_iv > 0 else None
+        otm_pe_iv = _positive_finite_iv(strikes_data[otm_pe_idx]["pe_iv"]) or atm_pe_iv
+        otm_ce_iv = _positive_finite_iv(strikes_data[otm_ce_idx]["ce_iv"]) or atm_ce_iv
+        iv_skew = (
+            round(otm_pe_iv - otm_ce_iv, 2)
+            if otm_pe_iv is not None and otm_ce_iv is not None
+            else None
+        )
 
         # 7. Canonical Dealer Dollar Gamma Exposure (GEX) via Black-Scholes Gamma (F-24)
         # GEX_k = S^2 * Gamma_k * (PE_OI - CE_OI) * lot_size / 10^7 (in Crore INR)
         cal_exp = NSEMarketCalendar.get_active_options_expiries()
         t_years_gex = max(0.001, float(cal_exp.get("dte_weekly", 4.0)) / 365.0)
         sqrt_t_gex = math.sqrt(t_years_gex)
-        sig_gex = max(0.05, atm_iv / 100.0) if atm_iv is not None and atm_iv > 0 else None
+        sig_gex = max(0.05, atm_iv / 100.0) if atm_iv is not None and np.isfinite(atm_iv) and atm_iv > 0 else None
         net_gex_cr = 0.0
 
         for s in active_slice:
@@ -826,8 +837,10 @@ class NiftyAnalyticsEngine:
             # Net dealer gamma: PE_OI generates positive dealer gamma, CE_OI generates negative dealer gamma
             net_gex_cr += (spot_price ** 2) * gamma_k * (float(s["pe_oi"]) - float(s["ce_oi"])) * NIFTY_LOT_SIZE / 1e7
 
-        net_gex_score = round(net_gex_cr, 2)
-        if net_gex_score > 5.0:
+        net_gex_score = round(net_gex_cr, 2) if sig_gex is not None else None
+        if net_gex_score is None:
+            gex_regime = "DATA_UNAVAILABLE"
+        elif net_gex_score > 5.0:
             gex_regime = "POSITIVE_GAMMA_PINNING"
         elif net_gex_score < -5.0:
             gex_regime = "NEGATIVE_GAMMA_VOLATILITY"
@@ -894,8 +907,8 @@ class NiftyAnalyticsEngine:
                 "atm_iv": atm_iv,
                 "atm_ce_iv": atm_ce_iv,
                 "atm_pe_iv": atm_pe_iv,
-                "otm_pe_iv": round(otm_pe_iv, 2),
-                "otm_ce_iv": round(otm_ce_iv, 2),
+                "otm_pe_iv": round(otm_pe_iv, 2) if otm_pe_iv is not None else None,
+                "otm_ce_iv": round(otm_ce_iv, 2) if otm_ce_iv is not None else None,
                 "iv_skew": iv_skew,
                 "iv_skew_interpretation": (
                     "DATA_UNAVAILABLE" if iv_skew is None else

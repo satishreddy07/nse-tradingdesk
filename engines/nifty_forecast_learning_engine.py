@@ -113,8 +113,6 @@ class NiftyForecastLearningEngine:
             logger.warning("No ledger rows have complete finite empirical features for %s.", horizon)
             return pd.DataFrame()
 
-        if "weight" not in usable.columns:
-            usable["weight"] = 2.5
         return usable
 
     def _generate_domain_prior_dataset(self, horizon: str, count: int = 80) -> pd.DataFrame:
@@ -166,9 +164,25 @@ class NiftyForecastLearningEngine:
                 "samples": len(df),
                 "reason": "Non-finite or missing empirical feature/label values; refusing imputation with synthetic defaults."
             }
-        # Map target classes [-1, 0, 1] to [0, 1, 2] for XGBoost / LightGBM multiclass
-        y_raw = df["target_class"].values
-        y_cls = np.array([0 if y == -1 else (1 if y == 0 else 2) for y in y_raw])
+        # Reject outcomes outside the explicit {-1, 0, 1} label contract instead of
+        # silently mapping every unknown value to the bullish class.
+        y_raw = pd.to_numeric(df["target_class"], errors="coerce").to_numpy(dtype=np.float64)
+        if not np.isfinite(y_raw).all() or not np.isin(y_raw, [-1.0, 0.0, 1.0]).all():
+            return {
+                "status": "INSUFFICIENT_DATA",
+                "horizon": horizon,
+                "samples": len(df),
+                "reason": "target_class contains missing or unsupported labels; expected only -1, 0, or 1."
+            }
+        if len(np.unique(y_raw)) < 2:
+            return {
+                "status": "INSUFFICIENT_DATA",
+                "horizon": horizon,
+                "samples": len(df),
+                "reason": "Training labels contain only one observed direction class."
+            }
+        # Map valid target classes [-1, 0, 1] to [0, 1, 2] for multiclass estimators.
+        y_cls = np.where(y_raw == -1.0, 0, np.where(y_raw == 0.0, 1, 2))
         y_reg = df["actual_return_pct"].values
 
         # 1. Purged & Embargoed Time-Series Cross-Validation
@@ -192,6 +206,9 @@ class NiftyForecastLearningEngine:
             X_va = fold_scaler.transform(X[val_idx])
             y_tr_c, y_tr_r = y_cls[train_idx], y_reg[train_idx]
             y_va_c, y_va_r = y_cls[val_idx], y_reg[val_idx]
+            if len(np.unique(y_tr_c)) < 2:
+                logger.warning("Skipping %s validation fold with a single training class.", horizon)
+                continue
 
             # Train Fold Models
             lgb_fold = lgb.LGBMClassifier(n_estimators=30, max_depth=3, learning_rate=0.08, verbose=-1, random_state=42)

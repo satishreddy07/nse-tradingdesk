@@ -546,6 +546,53 @@ def test_h08_state_engine_rejects_pickle_and_future_timestamp(tmp_path):
 
 
 
+def test_tree_model_rejects_nonbinary_targets(tmp_path):
+    """Invalid target values must not be truncated to 0/1 or promoted."""
+    from engines.tree_quant_ml_engine import TreeQuantMLEngine
+    from core.unified_ml_dataset import UNIFIED_FEATURE_COLS
+
+    model = TreeQuantMLEngine(models_dir=tmp_path / "tree_models")
+    df = pd.DataFrame({col: np.linspace(0.1, 1.2, 12) for col in UNIFIED_FEATURE_COLS})
+    df["is_winner"] = [0, 1, 0, 1, 2, 0, 1, 0, 1, 0, 1, 0]
+    result = model.train_horizon_models("WEEKLY", df=df)
+    assert result["status"] == "INSUFFICIENT_DATA"
+    assert result["is_promoted"] is False
+    assert result["metric_provenance"] == "DATA_UNAVAILABLE"
+    assert "binary values" in result["reason"]
+
+
+def test_option_chain_rejects_nonfinite_iv_for_skew_and_gex(monkeypatch):
+    """NaN/Infinity IV must be unavailable, not a numeric skew or neutral-gamma regime."""
+    monkeypatch.setattr(
+        NiftyAnalyticsEngine,
+        "get_india_vix",
+        staticmethod(lambda: {"current_vix": float("inf")}),
+    )
+    raw_rows = []
+    for strike in (24900, 24950, 25000, 25050, 25100):
+        raw_rows.append({
+            "strikePrice": strike,
+            "CE": {
+                "openInterest": 100, "changeinOpenInterest": 1, "totalTradedVolume": 10,
+                "impliedVolatility": float("inf"), "lastPrice": 100, "change": 0, "pChange": 0,
+                "totalBuyQuantity": 20, "totalSellQuantity": 20
+            },
+            "PE": {
+                "openInterest": 120, "changeinOpenInterest": 1, "totalTradedVolume": 10,
+                "impliedVolatility": float("nan"), "lastPrice": 100, "change": 0, "pChange": 0,
+                "totalBuyQuantity": 20, "totalSellQuantity": 20
+            }
+        })
+    result = NiftyAnalyticsEngine._analyze_single_expiry_chain(
+        raw_rows=raw_rows, spot_price=25000.0, expiry_label="TEST", nse_timestamp="2026-10-18"
+    )
+    assert result["status"] == "OK"
+    assert result["volatility_and_gex"]["atm_iv"] is None
+    assert result["volatility_and_gex"]["iv_skew"] is None
+    assert result["volatility_and_gex"]["gex_regime"] == "DATA_UNAVAILABLE"
+    assert result["volatility_and_gex"]["iv_data_quality"] == "DATA_UNAVAILABLE"
+
+
 def test_data_quality_rejects_numeric_index():
     """Numeric row numbers must never be accepted as market-bar timestamps."""
     df = pd.DataFrame({

@@ -209,8 +209,24 @@ class NiftyPredictionLedger:
         else:
             direction = "FLAT"
 
-        feat_clean = {k: float(features.get(k, 0.0)) for k in NIFTY_FEATURE_COLS}
-        feat_json = json.dumps(feat_clean)
+        supplied_features = features if isinstance(features, dict) else {}
+        feat_clean: Dict[str, Optional[float]] = {}
+        features_verified = True
+        for key in NIFTY_FEATURE_COLS:
+            raw_value = supplied_features.get(key)
+            try:
+                parsed_value = float(raw_value)
+            except (TypeError, ValueError, OverflowError):
+                parsed_value = float("nan")
+            if not math.isfinite(parsed_value):
+                feat_clean[key] = None
+                features_verified = False
+            else:
+                feat_clean[key] = parsed_value
+        if not features_verified:
+            # Keep the forecast record for transparency, but exclude incomplete snapshots from training.
+            data_quality_status = "INVALID_FEATURE_SNAPSHOT"
+        feat_json = json.dumps(feat_clean, allow_nan=False)
         basis_json = json.dumps(basis_breakdown or {})
 
         with self._lock:
@@ -489,32 +505,47 @@ class NiftyPredictionLedger:
                    target_date, model_version, spot_at_prediction, composite_score,
                    verdict, predicted_direction, prob_up, prob_flat, prob_down,
                    expected_pts, expected_pct, expected_close, range_1sigma_low, range_1sigma_high,
-                   features_snapshot_json, status, actual_close, actual_return_pct,
+                   features_snapshot_json, status, data_quality_status, actual_close, actual_return_pct,
                    realized_direction, direction_correct, range_1sigma_hit, target_hit,
                    prediction_error_pts
             FROM {NIFTY_LEDGER_TABLE}
-            WHERE horizon = '{horizon}' AND status = 'RESOLVED'
+            WHERE horizon = ? AND status = 'RESOLVED' AND data_quality_status = 'VERIFIED'
         """
+        params: List[Any] = [horizon]
         if cutoff_date:
-            sql += f" AND prediction_date <= '{cutoff_date}'"
+            sql += " AND prediction_date <= ?"
+            params.append(cutoff_date)
         sql += " ORDER BY prediction_date ASC"
 
         with self._lock:
             with self._get_connection() as conn:
-                df = pd.read_sql(sql, conn)
+                df = pd.read_sql(sql, conn, params=params)
 
         if df.empty or len(df) < min_samples:
             return pd.DataFrame()
 
-        # Unpack features_snapshot_json into individual columns
+        # Expand feature snapshots without imputing absent/malformed fields to zero.
         feat_dicts = [json.loads(s) if s else {} for s in df["features_snapshot_json"]]
+        feat_frame = pd.DataFrame(feat_dicts, index=df.index)
         for col in NIFTY_FEATURE_COLS:
-            df[col] = [float(fd.get(col, 0.0)) for fd in feat_dicts]
+            if col not in feat_frame.columns:
+                feat_frame[col] = np.nan
+        feature_values = feat_frame[NIFTY_FEATURE_COLS].apply(pd.to_numeric, errors="coerce")
+        feature_valid = np.isfinite(feature_values.to_numpy(dtype=np.float64)).all(axis=1)
 
-        # Target classification label: 1 (BULLISH), 0 (FLAT), -1 (BEARISH)
+        # Unknown/missing realized directions are not valid FLAT labels.
         dir_map = {"BULLISH": 1, "FLAT": 0, "BEARISH": -1}
-        df["target_class"] = df["realized_direction"].map(dir_map).fillna(0).astype(int)
+        target_values = df["realized_direction"].map(dir_map)
+        label_valid = target_values.notna().to_numpy()
+        valid_rows = feature_valid & label_valid
+        df = df.loc[valid_rows].copy()
+        feature_values = feature_values.loc[valid_rows].copy()
+        target_values = target_values.loc[valid_rows]
+        if len(df) < min_samples:
+            return pd.DataFrame()
 
+        df[NIFTY_FEATURE_COLS] = feature_values.astype(np.float64)
+        df["target_class"] = target_values.astype(int)
         return df
 
     # =========================================================================

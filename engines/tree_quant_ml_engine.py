@@ -164,6 +164,28 @@ class TreeQuantMLEngine:
                 "metric_provenance": "DATA_UNAVAILABLE"
             }
         df = df[df[target_col].notnull()].copy()
+        target_numeric = pd.to_numeric(df[target_col], errors="coerce")
+        target_values = target_numeric.to_numpy(dtype=np.float64)
+        if (
+            df.empty
+            or not np.isfinite(target_values).all()
+            or not np.isin(target_values, [0.0, 1.0]).all()
+        ):
+            return {
+                "status": "INSUFFICIENT_DATA",
+                "is_promoted": False,
+                "samples": len(df),
+                "reason": "Target labels must be observed binary values {0, 1}; invalid labels were rejected without truncation.",
+                "metrics": {
+                    "ensemble_brier": None,
+                    "baseline_brier": None,
+                    "ensemble_auc": None,
+                    "lgb_brier": None,
+                    "xgb_brier": None
+                },
+                "metric_provenance": "DATA_UNAVAILABLE"
+            }
+        df[target_col] = target_numeric.astype(int)
 
         df = df.loc[:, ~df.columns.duplicated()].copy()
         feature_cols = [c for c in UNIFIED_FEATURE_COLS if c in df.columns]
@@ -197,11 +219,11 @@ class TreeQuantMLEngine:
         X_test, y_test = X[split_idx + purge_gap:], y[split_idx + purge_gap:]
 
         # F-6.2: Never reuse training data as test data. Block promotion on insufficient out-of-sample data.
-        if len(X_test) < 2 or len(np.unique(y_train)) < 2:
+        if len(X_test) < 2 or len(np.unique(y_train)) < 2 or len(np.unique(y_test)) < 2:
             return {
                 "status": "INSUFFICIENT_DATA",
                 "is_promoted": False,
-                "reason": "Insufficient out-of-sample test samples or single-class data.",
+                "reason": "Insufficient out-of-sample samples or a single-class train/test partition; AUC and promotion cannot be validated.",
                 "samples": len(df),
                 "horizon": horizon,
                 "metrics": {
@@ -253,8 +275,8 @@ class TreeQuantMLEngine:
         )
 
         lgb_preds_test = lgb_model.predict(X_test_scaled)
-        lgb_brier = float(brier_score_loss(y_test, lgb_preds_test)) if len(y_test) > 1 else 0.25
-        lgb_auc = float(roc_auc_score(y_test, lgb_preds_test)) if len(np.unique(y_test)) > 1 else 0.50
+        lgb_brier = float(brier_score_loss(y_test, lgb_preds_test))
+        lgb_auc = float(roc_auc_score(y_test, lgb_preds_test))
 
         # ---------------------------------------------------------------------
         # B. TRAIN XGBOOST
@@ -285,20 +307,20 @@ class TreeQuantMLEngine:
         )
 
         xgb_preds_test = xgb_model.predict(dtest)
-        xgb_brier = float(brier_score_loss(y_test, xgb_preds_test)) if len(y_test) > 1 else 0.25
-        xgb_auc = float(roc_auc_score(y_test, xgb_preds_test)) if len(np.unique(y_test)) > 1 else 0.50
+        xgb_brier = float(brier_score_loss(y_test, xgb_preds_test))
+        xgb_auc = float(roc_auc_score(y_test, xgb_preds_test))
 
         # ---------------------------------------------------------------------
         # C. ENSEMBLE PROBABILITY BLEND (Finding 6.3: 50/50 model blend)
         # ---------------------------------------------------------------------
         ensemble_preds_test = (lgb_preds_test * 0.5) + (xgb_preds_test * 0.5)
-        ensemble_brier = float(brier_score_loss(y_test, ensemble_preds_test)) if len(y_test) > 1 else 0.25
-        ensemble_auc = float(roc_auc_score(y_test, ensemble_preds_test)) if len(np.unique(y_test)) > 1 else 0.50
+        ensemble_brier = float(brier_score_loss(y_test, ensemble_preds_test))
+        ensemble_auc = float(roc_auc_score(y_test, ensemble_preds_test))
         ensemble_acc = float(accuracy_score(y_test, (ensemble_preds_test >= 0.5).astype(int)))
 
         # Baseline: Non-ML Zero-Intelligence Majority Class Rule
         baseline_pred = float(np.mean(y_train))
-        baseline_brier = float(np.mean((y_test - baseline_pred) ** 2)) if len(y_test) > 1 else 0.25
+        baseline_brier = float(np.mean((y_test - baseline_pred) ** 2))
 
         # Feature Importance (Gain & Split)
         lgb_importance_split = lgb_model.feature_importance(importance_type="split")
