@@ -118,45 +118,12 @@ class NiftyForecastLearningEngine:
         return usable
 
     def _generate_domain_prior_dataset(self, horizon: str, count: int = 80) -> pd.DataFrame:
-        """Generates deterministic prior domain dataset for cold-start bootstrapping."""
-        dir_thresh = 0.08 if horizon == "T+1" else 0.25
-        cycle_patterns = [1.2, -1.1, 0.0, 1.5, -1.4, 0.1, 0.9, -0.9, 0.0, 1.8, -1.6, 0.0]
-        rows = []
-        for i in range(count):
-            mult = cycle_patterns[i % len(cycle_patterns)]
-            base_mag = 12.0 + (i % 20) * 1.5
-            comp = round(mult * base_mag, 1)
-            drift = (comp / 100.0) * (0.6 if horizon == "T+1" else 1.8)
-            ret_fwd = round(drift, 2)
-            tc = 1 if ret_fwd >= dir_thresh else (-1 if ret_fwd <= -dir_thresh else 0)
-            rows.append({
-                "prediction_date": f"2026-01-{(i%28)+1:02d}",
-                "spot_price": 25000.0 + i * 10,
-                "composite_score": comp,
-                "composite_score_t5": round(comp * 1.05, 1),
-                "technical_score": round(comp * 0.9, 1),
-                "breadth_score": round(comp * 0.8, 1),
-                "sectoral_score": round(comp * 0.7, 1),
-                "global_score": round(comp * 0.6, 1),
-                "macro_score": round(comp * 0.5, 1),
-                "news_and_deriv_score": round(comp * 0.4, 1),
-                "institutional_score": round(comp * 0.5, 1),
-                "vix_spot": 14.0,
-                "near_atm_pcr": 1.1,
-                "chg_oi_pcr": 1.05,
-                "dist_to_ema20_pct": round(comp * 0.04, 2),
-                "dist_to_ema50_pct": round(comp * 0.08, 2),
-                "crude_oil_ret_1d": 0.1,
-                "crude_oil_ret_5d": 0.5,
-                "fii_fut_long_pct": round(50.0 + comp * 0.15, 1),
-                "sp500_ret_1d": round(comp * 0.01, 2),
-                "nifty_ret_5d": round(comp * 0.03, 2),
-                "actual_return_pct": ret_fwd,
-                "target_class": tc,
-                "realized_direction": "BULLISH" if tc == 1 else ("BEARISH" if tc == -1 else "FLAT"),
-                "weight": 1.0
-            })
-        return pd.DataFrame(rows)
+        """Synthetic domain priors are disabled; production training requires empirical observations."""
+        logger.warning(
+            "Synthetic domain-prior generation is disabled for %s; provide verified empirical records.",
+            horizon
+        )
+        return pd.DataFrame()
 
     # =========================================================================
     # 2. MODEL TRAINING & CROSS-VALIDATION
@@ -182,7 +149,23 @@ class NiftyForecastLearningEngine:
         if len(df) < 15:
             return {"status": "INSUFFICIENT_DATA", "horizon": horizon, "samples": len(df)}
 
-        X = df[NIFTY_FEATURE_COLS].values
+        missing_features = [col for col in NIFTY_FEATURE_COLS if col not in df.columns]
+        if missing_features or "target_class" not in df.columns or "actual_return_pct" not in df.columns:
+            return {
+                "status": "INSUFFICIENT_DATA",
+                "horizon": horizon,
+                "samples": len(df),
+                "reason": f"Empirical dataset schema incomplete: {missing_features}"
+            }
+        X = df[NIFTY_FEATURE_COLS].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float64)
+        y_check = df[["target_class", "actual_return_pct"]].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float64)
+        if not np.isfinite(X).all() or not np.isfinite(y_check).all():
+            return {
+                "status": "INSUFFICIENT_DATA",
+                "horizon": horizon,
+                "samples": len(df),
+                "reason": "Non-finite or missing empirical feature/label values; refusing imputation with synthetic defaults."
+            }
         # Map target classes [-1, 0, 1] to [0, 1, 2] for XGBoost / LightGBM multiclass
         y_raw = df["target_class"].values
         y_cls = np.array([0 if y == -1 else (1 if y == 0 else 2) for y in y_raw])
@@ -261,11 +244,19 @@ class NiftyForecastLearningEngine:
             base_brier = float(np.mean(np.sum((p_base - y_one_hot) ** 2, axis=1)))
             base_briers.append(base_brier)
 
-        avg_acc = float(np.mean(val_accs)) if val_accs else 0.55
-        avg_brier = float(np.mean(val_briers)) if val_briers else 0.35
-        avg_mae = float(np.mean(val_maes)) if val_maes else 0.40
-        baseline_acc = float(np.mean(base_accs)) if base_accs else 0.45
-        baseline_brier = float(np.mean(base_briers)) if base_briers else 0.48
+        if not val_accs or not val_briers or not val_maes or not base_accs or not base_briers:
+            return {
+                "status": "INSUFFICIENT_DATA",
+                "horizon": horizon,
+                "samples": len(df),
+                "reason": "No valid purged out-of-sample folds were available; no fallback metrics are fabricated."
+            }
+
+        avg_acc = float(np.mean(val_accs))
+        avg_brier = float(np.mean(val_briers))
+        avg_mae = float(np.mean(val_maes))
+        baseline_acc = float(np.mean(base_accs))
+        baseline_brier = float(np.mean(base_briers))
 
         # 2. Fit Full Dataset Models for Production Candidate
         final_scaler = StandardScaler()
