@@ -271,6 +271,16 @@ def test_intraday_trades_based_on_intraday_analysis():
     assert "intraday_analysis" in deploy_res
 
 
+def test_intraday_sigma_rejects_invalid_expiry_instead_of_using_calendar_fallback():
+    """A malformed explicit expiry must not silently become the calendar's next expiry."""
+    with pytest.raises(ValueError, match="Explicit option expiry could not be parsed"):
+        IntradayOptionsStrategyEngine.calculate_sigma_strikes(
+            spot=22600.0,
+            iv_pct=13.5,
+            expiry_date="not-an-expiry",
+        )
+
+
 def test_intraday_everyday_0dte_and_non_0dte_confidence():
     """Verify that intraday trades support 0DTE and non-0DTE cycles and execute based on daytime confidence."""
     # 1. Test 0DTE calculation

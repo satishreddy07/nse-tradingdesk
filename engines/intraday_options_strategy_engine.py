@@ -463,55 +463,90 @@ class IntradayOptionsStrategyEngine:
         Rounds to eligible listed strikes (multiple of 50 for Nifty) and records all inputs.
         Do not hardcode sigma distances.
         """
-        if spot <= 0:
+        try:
+            spot = float(spot)
+        except (TypeError, ValueError, OverflowError):
+            spot = float("nan")
+        if not math.isfinite(spot) or spot <= 0:
             try:
                 from engines.nifty_analytics_engine import nifty_analytics_engine
-                spot = float(nifty_analytics_engine.get_live_nifty_spot().get("price") or 0.0)
+                live_spot = nifty_analytics_engine.get_live_nifty_spot().get("price")
+                spot = float(live_spot) if live_spot is not None else float("nan")
             except Exception:
-                pass
-            if spot <= 0:
-                with state_engine._lock:
-                    with state_engine._get_connection() as conn:
-                        row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
-                        if row:
-                            spot = float(row[0])
-            if spot <= 0:
+                spot = float("nan")
+            if not math.isfinite(spot) or spot <= 0:
+                try:
+                    with state_engine._lock:
+                        with state_engine._get_connection() as conn:
+                            row = conn.execute("SELECT spot_at_prediction FROM nifty_predictions_log WHERE spot_at_prediction > 0 ORDER BY id DESC LIMIT 1").fetchone()
+                            if row:
+                                spot = float(row[0])
+                except (TypeError, ValueError, OverflowError):
+                    spot = float("nan")
+            if not math.isfinite(spot) or spot <= 0:
                 raise RuntimeError("Live Nifty Spot Price unavailable for intraday strike calculation.")
-        if iv_pct <= 0:
+
+        try:
+            iv_pct = float(iv_pct)
+        except (TypeError, ValueError, OverflowError):
+            iv_pct = float("nan")
+        if not math.isfinite(iv_pct) or iv_pct <= 0:
             try:
                 from engines.nifty_analytics_engine import nifty_analytics_engine
                 vix_data = nifty_analytics_engine.get_india_vix()
-                if vix_data and vix_data.get("current_vix", 0) > 0:
-                    iv_pct = float(vix_data["current_vix"])
+                raw_vix = vix_data.get("current_vix") if isinstance(vix_data, dict) else None
+                candidate_iv = float(raw_vix) if raw_vix is not None else float("nan")
+                if math.isfinite(candidate_iv) and candidate_iv > 0:
+                    iv_pct = candidate_iv
+            except (TypeError, ValueError, OverflowError):
+                pass
             except Exception:
                 pass
-        if not np.isfinite(iv_pct) or iv_pct <= 0:
+        if not math.isfinite(iv_pct) or iv_pct <= 0:
             raise ValueError("Verified implied volatility is unavailable; fixed-IV substitution is prohibited for actionable strike calculations.")
+
+        if int(strike_step) <= 0:
+            raise ValueError("strike_step must be a positive listed-strike increment.")
 
         now_dt = now_ist()
         today = now_dt.date()
 
         # Determine DTE and expiry cycle if not directly given
         resolved_dte = dte
-        if resolved_dte is None and expiry_date:
+        if resolved_dte is not None:
+            try:
+                numeric_dte = float(resolved_dte)
+            except (TypeError, ValueError, OverflowError):
+                raise ValueError("DTE must be a finite non-negative integer.")
+            if not math.isfinite(numeric_dte) or numeric_dte < 0 or not numeric_dte.is_integer():
+                raise ValueError("DTE must be a finite non-negative integer.")
+            resolved_dte = int(numeric_dte)
+        elif expiry_date:
+            exp_d = None
             for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
                 try:
-                    exp_d = datetime.datetime.strptime(expiry_date.strip(), fmt).date()
-                    resolved_dte = max(0, (exp_d - today).days)
+                    exp_d = datetime.datetime.strptime(str(expiry_date).strip(), fmt).date()
                     break
-                except Exception:
-                    pass
+                except ValueError:
+                    continue
+            if exp_d is None:
+                raise ValueError(f"Explicit option expiry could not be parsed: {expiry_date!r}")
+            if exp_d < today:
+                raise ValueError(f"Explicit option expiry is already in the past: {expiry_date!r}")
+            resolved_dte = (exp_d - today).days
 
         if resolved_dte is not None:
             is_zero_dte = (resolved_dte == 0)
             expiry_cycle = "0DTE" if is_zero_dte else f"{resolved_dte}DTE_INTRADAY"
             hours_rem = max(0.5, 15.5 - (now_dt.hour + now_dt.minute / 60.0))
-            if is_zero_dte:
-                t_years = max(0.0008, hours_rem / (365.0 * 24.0))
-            else:
-                t_years = max(0.0027, (resolved_dte * 24.0 + hours_rem) / (365.0 * 24.0))
-        elif time_to_expiry_years is not None and time_to_expiry_years > 0:
-            t_years = max(0.0008, time_to_expiry_years)
+            t_years = (resolved_dte * 24.0 + hours_rem) / (365.0 * 24.0)
+        elif time_to_expiry_years is not None:
+            try:
+                t_years = float(time_to_expiry_years)
+            except (TypeError, ValueError, OverflowError):
+                raise ValueError("time_to_expiry_years must be finite and positive.")
+            if not math.isfinite(t_years) or t_years <= 0:
+                raise ValueError("time_to_expiry_years must be finite and positive.")
             is_zero_dte = (t_years < 0.002)
             resolved_dte = 0 if is_zero_dte else int(round(t_years * 365.0))
             expiry_cycle = "0DTE" if is_zero_dte else f"{resolved_dte}DTE_INTRADAY"
@@ -1683,6 +1718,26 @@ class IntradayOptionsStrategyEngine:
 
         from engines.nifty_analytics_engine import nifty_analytics_engine
         oc_data = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
+        weekly_data = oc_data.get("weekly", {})
+        if (
+            oc_data.get("status") != "OK"
+            or oc_data.get("data_quality") != "VALID_PROVIDER_TIMESTAMP"
+            or oc_data.get("is_stale") is not False
+            or oc_data.get("trading_allowed") is not True
+            or weekly_data.get("status") != "OK"
+            or weekly_data.get("data_quality") != "VALID_PROVIDER_TIMESTAMP"
+            or weekly_data.get("is_stale") is not False
+            or weekly_data.get("trading_allowed") is not True
+        ):
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "reason": "Intraday SL/re-entry state left unchanged because NIFTY option-chain quotes are stale, unverified, or outside the live session.",
+                "active_legs": len(active_trade_rows),
+                "data_quality": oc_data.get("data_quality"),
+                "weekly_data_quality": weekly_data.get("data_quality"),
+                "timestamp_ist": format_ist()
+            }
+
         strikes_lookup = {}
         if oc_data.get("status") == "OK":
             w_strikes = (
