@@ -16,5 +16,5 @@ httpx==0.28.1
 scikit-learn==1.9.1
 joblib==1.6.0
 lightgbm==4.7.0
-xgboost==3.4.1
+xgboost>=2.1.4,<3.3.0
 pytest>=8.0.0
