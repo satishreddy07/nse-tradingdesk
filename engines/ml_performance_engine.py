@@ -359,8 +359,12 @@ class MLPerformanceEngine:
             perf_summary[m_id] = {
                 "primary_metric": "Brier Score" if "brier_score" in mets or "ensemble_brier" in mets else "Win Rate",
                 "score": mets.get("brier_score", mets.get("ensemble_brier", mets.get("directional_accuracy", mets.get("empirical_win_rate_pct", "PENDING")))),
-                "sample_count": m.get("sample_counts", {}).get("total", 0),
-                "status": "IMPROVED" if mets.get("brier_score", 0.5) <= mets.get("baseline_brier", 0.5) else "NEUTRAL"
+                "sample_count": m.get("sample_counts", {}).get("total"),
+                "status": (
+                    "DATA_UNAVAILABLE"
+                    if mets.get("brier_score") is None or mets.get("baseline_brier") is None
+                    else ("IMPROVED" if float(mets["brier_score"]) <= float(mets["baseline_brier"]) else "NEUTRAL")
+                )
             }
 
         return {
@@ -1260,7 +1264,7 @@ class MLPerformanceEngine:
                     "model_variant": "Baseline (Random / Equal Weight)",
                     "architecture": "Uniform Random Class Prior",
                     "directional_accuracy_pct": None,
-                    "brier_score": t_base_brier if t_base_brier > 0 else None,
+                    "brier_score": t_base_brier if t_base_brier is not None and t_base_brier > 0 else None,
                     "return_mae_pct": None,
                     "inference_latency_ms": None,
                     "net_pnl_after_costs": "DATA_UNAVAILABLE (NO MEASURED BASELINE P&L)",
@@ -1293,7 +1297,7 @@ class MLPerformanceEngine:
 
         for m in reg:
             m_id = m["model_id"]
-            total_samples = m.get("sample_counts", {}).get("total", 0)
+            total_samples = m.get("sample_counts", {}).get("total") or 0
             if total_samples >= 30:
                 psi = 0.042 if "t1" in m_id else (0.078 if "t5" in m_id else 0.035)
                 status_tag = "HEALTHY" if psi < 0.1 else ("DRIFT_WARNING" if psi < 0.25 else "CRITICAL_DRIFT")
