@@ -1329,12 +1329,14 @@ class WeeklyMonthlyOptionsStrategyEngine:
                     bad_candidate = True
                     break
                 entry_cashflow += (1.0 if action == "SELL" else -1.0) * premium * qty_lots * lot_size_value
+                leg_sl_pct = _finite_positive_price(leg.get("sl_pct"))
                 normalized_legs.append({
                     "strike": strike_value,
                     "premium": premium,
                     "qty_lots": qty_lots,
                     "action": action,
-                    "type": option_type
+                    "type": option_type,
+                    "sl_pct": leg_sl_pct
                 })
             if bad_candidate or not normalized_legs or not math.isfinite(entry_cashflow):
                 rejected_candidates.append({
@@ -1350,7 +1352,12 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 continue
 
             candidate["net_credit_inr"] = round(entry_cashflow, 2)
-            candidate["planned_stop_loss_inr"] = round(entry_cashflow * (_finite_positive_price(candidate.get("sl_pct")) or default_sl_pct), 2)
+            # Stop-loss exposure is not contractual expiry loss; calculate it leg-by-leg.
+            planned_stop_loss = 0.0
+            for leg in normalized_legs:
+                leg_sl_pct = leg["sl_pct"] or _finite_positive_price(candidate.get("sl_pct")) or default_sl_pct
+                planned_stop_loss += leg["premium"] * leg["qty_lots"] * lot_size_value * leg_sl_pct
+            candidate["planned_stop_loss_inr"] = round(planned_stop_loss, 2)
 
             strikes = sorted({0.0, *(leg["strike"] for leg in normalized_legs)})
             boundaries: List[Optional[float]] = list(strikes) + [None]
@@ -1433,6 +1440,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 contractual_max_loss: Any = "UNLIMITED"
                 contractual_max_profit: Any = round(max_terminal_profit, 2)
                 candidate["risk_profile"] = "UNDEFINED_UNLIMITED"
+                candidate["max_profit_inr"] = contractual_max_profit
                 candidate["max_loss_inr"] = None
             elif tail_slope > 1e-9:
                 contractual_max_profit = "UNLIMITED"
@@ -2309,6 +2317,14 @@ class WeeklyMonthlyOptionsStrategyEngine:
             except Exception as e_uds:
                 logger.debug(f"Unified ML dataset positional entry ingest notice: {e_uds}")
 
+        # Profit factor may be unavailable; don't invent a numeric value for display text.
+        profit_factor_raw = strat.get("profit_factor")
+        try:
+            profit_factor_value = float(profit_factor_raw) if profit_factor_raw is not None else float("nan")
+        except (TypeError, ValueError, OverflowError):
+            profit_factor_value = float("nan")
+        profit_factor_text = f"{profit_factor_value:.2f}" if math.isfinite(profit_factor_value) else "N/A"
+
         # Also register in shared options_strategies table for unified portfolio view
         legs_json = [
             {
@@ -2338,13 +2354,13 @@ class WeeklyMonthlyOptionsStrategyEngine:
                     trailing_stop_pnl, highest_pnl_reached, trailing_status, ai_rationale
                 ) VALUES (?, ?, 'NIFTY', ?, ?, ?, ?, ?, ?, ?, ?, 'Credit Decay', ?, ?, ?, 'ACTIVE', 0.0, ?, ?, ?, ?, ?, 0.0, 'ACTIVE', ?)
                 """, (
-                    strat_id, f"{strat['name']} [Win Prob: {win_prob}%]", actual_expiry, horizon,
-                    now_str, spot_price, net_credit, strat["max_profit_inr"], strat["max_loss_inr"],
+                    strat_id, f"{strat['name']} [Risk-neutral expiry POP: {win_prob}%]", actual_expiry, horizon,
+                    now_str, spot_price, net_credit, strat.get("max_profit_inr"), strat.get("max_loss_inr"),
                     f"Strikes: {', '.join(str(l.strike) for l in deployed_legs)}",
-                    round(abs(net_credit) + 55000.0, 2), win_prob, json.dumps(legs_json),
-                    round(strat["max_profit_inr"] * 0.75, 2), round(-strat["max_loss_inr"], 2),
-                    f"POSITIONAL_{horizon}", regime, round(-strat["max_loss_inr"], 2),
-                    f"Initiated based on Pre-Trade Strategy Tournament: Selected Winner #{strat['tournament_rank']} '{strat['name']}' with HIGHEST Probability of Winning ({win_prob}%), Expectancy: Rs.{strat['expectancy_inr']:+.1f}/lot, Profit Factor: {strat['profit_factor']:.2f}. T+5 Model Verdict: {weekly_verdict} (Score: {composite_score:+.1f}). {strat['description']}"
+                    None, win_prob, json.dumps(legs_json),
+                    round(max(0.0, net_credit) * 0.75, 2), -float(strat["planned_stop_loss_inr"]),
+                    f"POSITIONAL_{horizon}", regime, -float(strat["planned_stop_loss_inr"]),
+                    f"Initiated from the pre-trade tournament: modelled risk-neutral expiry POP ({win_prob}%), not calibrated real-world win rate. It excludes path-dependent stop-loss/re-entry outcomes and transaction costs. Expectancy: Rs.{strat['expectancy_inr']:+.1f}/lot; Profit Factor: {profit_factor_text}. T+5 Model Verdict: {weekly_verdict} (Score: {composite_score:+.1f}). {strat['description']}"
                 ))
                 conn.commit()
 
@@ -2358,6 +2374,14 @@ class WeeklyMonthlyOptionsStrategyEngine:
             "weekly_verdict": weekly_verdict,
             "weekly_composite_score": composite_score,
             "win_probability_pct": win_prob,
+            "win_probability_basis": "BLACK_SCHOLES_TERMINAL_PAYOFF",
+            "win_probability_is_calibrated": False,
+            "probability_scope": "Risk-neutral positive expiry P&L; excludes stop-loss/re-entry paths and transaction costs.",
+            "entry_price_source": strat.get("entry_price_source"),
+            "market_data_timestamp": strat.get("market_data_timestamp"),
+            "market_data_quality": strat.get("market_data_quality"),
+            "estimated_margin": None,
+            "estimated_margin_source": "DATA_UNAVAILABLE_NO_AUTHORITATIVE_MARGIN_FEED",
             "strategy_tournament": tournament,
             "winning_candidate": strat,
             "weekly_prediction_model": weekly_model_info,
