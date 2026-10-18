@@ -1106,19 +1106,30 @@ class MLPerformanceEngine:
             eval_window = f"Walk-Forward Purged Time-Series Test ({sample_count} sessions)" if sample_count > 0 else "Dynamic Out-Of-Sample Evaluation"
 
             # Production model dynamic metrics
-            prod_acc_raw = float(mets.get("val_accuracy", mets.get("directional_accuracy", 0.0)))
-            prod_acc = round(prod_acc_raw * 100.0, 1) if 0.0 < prod_acc_raw <= 1.0 else round(prod_acc_raw, 1)
-            prod_brier = round(float(mets.get("brier_score", mets.get("ensemble_brier", 0.0))), 4)
-            prod_mae = round(float(mets.get("val_mae", mets.get("return_mae", 0.0))), 2)
+            prod_acc_raw = mets.get("val_accuracy", mets.get("directional_accuracy"))
+            prod_acc = (
+                round(float(prod_acc_raw) * 100.0, 1) if 0.0 < float(prod_acc_raw) <= 1.0
+                else round(float(prod_acc_raw), 1)
+            ) if prod_acc_raw is not None else None
+            prod_brier_raw = mets.get("brier_score", mets.get("ensemble_brier"))
+            prod_brier = round(float(prod_brier_raw), 4) if prod_brier_raw is not None else None
+            prod_mae_raw = mets.get("val_mae", mets.get("return_mae"))
+            prod_mae = round(float(prod_mae_raw), 2) if prod_mae_raw is not None else None
 
             # Baseline dynamic metrics
-            base_brier = round(float(mets.get("baseline_brier", 0.0)), 4)
-            base_acc_raw = float(mets.get("baseline_accuracy", 0.0))
-            base_acc = round(base_acc_raw * 100.0, 1) if 0.0 < base_acc_raw <= 1.0 else round(base_acc_raw, 1)
+            base_brier_raw = mets.get("baseline_brier")
+            base_brier = round(float(base_brier_raw), 4) if base_brier_raw is not None else None
+            base_acc_raw = mets.get("baseline_accuracy")
+            base_acc = (
+                round(float(base_acc_raw) * 100.0, 1) if 0.0 < float(base_acc_raw) <= 1.0
+                else round(float(base_acc_raw), 1)
+            ) if base_acc_raw is not None else None
 
             # Standalone metrics from actual holdout measurements
-            lgb_acc = round(float(mets.get("lgb_acc") or (mets.get("lgb_auc", 0.0) * 100.0)), 1) if ("lgb_acc" in mets or "lgb_auc" in mets) else None
-            xgb_acc = round(float(mets.get("xgb_acc") or (mets.get("xgb_auc", 0.0) * 100.0)), 1) if ("xgb_acc" in mets or "xgb_auc" in mets) else None
+            lgb_acc_raw = mets.get("lgb_acc", mets.get("lgb_auc"))
+            xgb_acc_raw = mets.get("xgb_acc", mets.get("xgb_auc"))
+            lgb_acc = (round(float(lgb_acc_raw) * 100.0, 1) if "lgb_acc" not in mets else round(float(lgb_acc_raw), 1)) if lgb_acc_raw is not None else None
+            xgb_acc = (round(float(xgb_acc_raw) * 100.0, 1) if "xgb_acc" not in mets else round(float(xgb_acc_raw), 1)) if xgb_acc_raw is not None else None
             lgb_brier = round(float(mets["lgb_brier"]), 4) if "lgb_brier" in mets else None
             xgb_brier = round(float(mets["xgb_brier"]), 4) if "xgb_brier" in mets else None
 
@@ -1135,14 +1146,14 @@ class MLPerformanceEngine:
                         "inference_latency_ms": float(meta["inference_latency_ms"]) if meta.get("inference_latency_ms") is not None else None,
                         "net_pnl_after_costs": realized_pnl_str,
                         "status": "ACTIVE_PRODUCTION",
-                        "metric_provenance": "MEASURED_EMPIRICAL"
+                        "metric_provenance": "MEASURED_EMPIRICAL" if prod_acc is not None and prod_brier is not None and prod_mae is not None else "DATA_UNAVAILABLE"
                     },
                     {
                         "model_variant": "LightGBM Alone",
                         "architecture": "LightGBM Multi-class",
                         "directional_accuracy_pct": lgb_acc if lgb_acc is not None else 0.0,
                         "brier_score": lgb_brier if lgb_brier is not None else 0.0,
-                        "return_mae_pct": round(float(mets.get("lgb_mae", 0.0)), 2) if "lgb_mae" in mets else 0.0,
+                        "return_mae_pct": round(float(mets["lgb_mae"]), 2) if mets.get("lgb_mae") is not None else None,
                         "inference_latency_ms": float(meta["lgb_latency_ms"]) if meta.get("lgb_latency_ms") is not None else None,
                         "net_pnl_after_costs": realized_pnl_str,
                         "status": "BENCHMARK",
@@ -1153,7 +1164,7 @@ class MLPerformanceEngine:
                         "architecture": "XGBoost Regressor + Classifier",
                         "directional_accuracy_pct": xgb_acc if xgb_acc is not None else 0.0,
                         "brier_score": xgb_brier if xgb_brier is not None else 0.0,
-                        "return_mae_pct": round(float(mets.get("xgb_mae", 0.0)), 2) if "xgb_mae" in mets else 0.0,
+                        "return_mae_pct": round(float(mets["xgb_mae"]), 2) if mets.get("xgb_mae") is not None else None,
                         "inference_latency_ms": float(meta["xgb_latency_ms"]) if meta.get("xgb_latency_ms") is not None else None,
                         "net_pnl_after_costs": realized_pnl_str,
                         "status": "BENCHMARK",
@@ -1173,9 +1184,9 @@ class MLPerformanceEngine:
                     {
                         "model_variant": "Strategy Without ML",
                         "architecture": "Pure Moving Average / Pivot Crossover",
-                        "directional_accuracy_pct": round(float(mets.get("rule_only_acc", 0.0)), 1) if "rule_only_acc" in mets else 0.0,
-                        "brier_score": round(float(mets.get("rule_only_brier", 0.0)), 4) if "rule_only_brier" in mets else 0.0,
-                        "return_mae_pct": round(float(mets.get("rule_only_mae", 0.0)), 2) if "rule_only_mae" in mets else 0.0,
+                        "directional_accuracy_pct": round(float(mets["rule_only_acc"]), 1) if mets.get("rule_only_acc") is not None else None,
+                        "brier_score": round(float(mets["rule_only_brier"]), 4) if mets.get("rule_only_brier") is not None else None,
+                        "return_mae_pct": round(float(mets["rule_only_mae"]), 2) if mets.get("rule_only_mae") is not None else None,
                         "inference_latency_ms": None,
                         "net_pnl_after_costs": meta.get("rule_only_pnl") or "DATA_UNAVAILABLE (HOLD_OUT_SIMULATION_REQUIRED)",
                         "status": "RULE_ONLY",
