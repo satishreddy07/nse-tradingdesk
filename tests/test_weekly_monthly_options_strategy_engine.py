@@ -366,7 +366,7 @@ def test_tournament_uses_observed_chain_prices_and_labels_expiry_pop():
         assert candidate["probability_method"] == "BLACK_SCHOLES_TERMINAL_PAYOFF"
         assert all(leg["premium"] > 0 for leg in candidate["legs"])
         assert 0.0 <= candidate["risk_neutral_expiry_pop_pct"] <= 100.0
-        assert np.isfinite(candidate["expectancy_inr"])
+        assert math.isfinite(candidate["expectancy_inr"])
 
 
 def test_pre_trade_strategy_tournament_highest_win_probability():
@@ -386,7 +386,7 @@ def test_pre_trade_strategy_tournament_highest_win_probability():
     max_p_win = max(c["p_win_pct"] for c in tourn_bull["candidates_ranked"])
     assert winner["p_win_pct"] == max_p_win
     assert winner["tournament_rank"] == 1
-    assert np.isfinite(winner["expectancy_inr"])
+    assert math.isfinite(winner["expectancy_inr"])
     assert winner["probability_method"] == "BLACK_SCHOLES_TERMINAL_PAYOFF"
     assert winner["probability_is_calibrated"] is False
     assert 0.0 <= winner["p_win_pct"] <= 100.0
