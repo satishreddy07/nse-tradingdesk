@@ -1770,10 +1770,20 @@ class NiftyAnalyticsEngine:
         except Exception as mle:
             logger.debug(f"Intraday ML load notice: {mle}")
 
+        dashboard_status = "OK" if latest else "DATA_UNAVAILABLE"
+        if latest:
+            dashboard_reason = None
+        elif market_open:
+            dashboard_reason = "Pre-market session. First intraday option snapshot scheduled at 09:30 AM IST."
+        else:
+            dashboard_reason = f"Market is closed. No intraday option snapshots recorded for session date {session_date}."
+
         res = {
-            "status": "OK" if latest else "EMPTY",
+            "status": dashboard_status,
+            "reason": dashboard_reason,
+            "as_of": format_ist(),
             "session_date": session_date,
-            "expiry_date": latest.get("expiry_date", "--"),
+            "expiry_date": latest.get("expiry_date", "--") if latest else "--",
             "interval_mode": interval_mode,
             "interval_rationale": mode_rationale,
             "available_intervals": ["15m", "30m", "50m"],
@@ -2312,56 +2322,93 @@ class NiftyAnalyticsEngine:
         latest_cash = cash_history[0] if cash_history else {}
         latest_oi = oi_history[0] if oi_history else {}
 
-        fii_net_cr = float(latest_cash.get("fii_net") or 0.0)
-        dii_net_cr = float(latest_cash.get("dii_net") or 0.0)
-        tot_net_cr = round(fii_net_cr + dii_net_cr, 2)
+        fii_net_cr = float(latest_cash.get("fii_net") or 0.0) if cash_history else 0.0
+        dii_net_cr = float(latest_cash.get("dii_net") or 0.0) if cash_history else 0.0
+        tot_net_cr = round(fii_net_cr + dii_net_cr, 2) if cash_history else 0.0
 
-        fii_long_pct = float(latest_oi.get("fii_fut_long_pct") or 10.0)
-        fii_net_contracts = int(latest_oi.get("fii_fut_net") or 0)
+        # Calculate Cash Institutional Flow Score (-40 to +40)
+        cash_score = np.clip((tot_net_cr / 2000.0) * 35.0, -40.0, 40.0) if cash_history else 0.0
 
-        # Calculate Institutional Flow Score (-100 to +100)
-        cash_score = np.clip((tot_net_cr / 2000.0) * 35.0, -40.0, 40.0)
+        raw_fii_long = latest_oi.get("fii_fut_long_pct") if oi_history else None
+        raw_client_long = latest_oi.get("client_fut_long_pct") if oi_history else None
 
-        # If FII long ratio is < 15%, extreme short clustering creates short-covering squeeze upside!
-        if fii_long_pct <= 12.0:
-            deriv_inst_score = 30.0  # Contrarian Bullish Squeeze trigger
-            oi_regime = "EXTREME_BEARISH_CLUSTERING_SHORT_SQUEEZE_ALERT"
-        elif fii_long_pct <= 25.0:
-            deriv_inst_score = 10.0
-            oi_regime = "HEAVILY_SHORT_INDEX_FUTURES"
-        elif fii_long_pct >= 70.0:
-            deriv_inst_score = -20.0
-            oi_regime = "OVERBOUGHT_EUPHORIA_PROFIT_BOOKING_RISK"
+        if raw_fii_long is not None:
+            fii_long_pct = float(raw_fii_long)
+            fii_net_contracts = int(latest_oi.get("fii_fut_net") or 0)
+            if fii_long_pct <= 12.0:
+                deriv_inst_score = 30.0  # Contrarian Bullish Squeeze trigger
+                oi_regime = "EXTREME_BEARISH_CLUSTERING_SHORT_SQUEEZE_ALERT"
+            elif fii_long_pct <= 25.0:
+                deriv_inst_score = 10.0
+                oi_regime = "HEAVILY_SHORT_INDEX_FUTURES"
+            elif fii_long_pct >= 70.0:
+                deriv_inst_score = -20.0
+                oi_regime = "OVERBOUGHT_EUPHORIA_PROFIT_BOOKING_RISK"
+            else:
+                deriv_inst_score = (fii_long_pct - 50.0) * 0.5
+                oi_regime = "BALANCED_INSTITUTIONAL_POSITIONING"
+            oi_status = "AVAILABLE"
+            oi_reason = None
         else:
-            deriv_inst_score = (fii_long_pct - 50.0) * 0.5
-            oi_regime = "BALANCED_INSTITUTIONAL_POSITIONING"
+            fii_long_pct = None
+            fii_net_contracts = None
+            deriv_inst_score = 0.0
+            oi_regime = "DATA_UNAVAILABLE"
+            oi_status = "DATA_UNAVAILABLE"
+            oi_reason = "No historical participant OI files ingested yet from NSE archives"
+
+        client_long_pct = float(raw_client_long) if raw_client_long is not None else None
 
         inst_flow_score = float(np.clip(round(cash_score + deriv_inst_score, 1), -100.0, 100.0))
 
+        if cash_history and oi_history:
+            overall_status = "OK"
+            overall_reason = None
+        elif cash_history:
+            overall_status = "PARTIAL"
+            overall_reason = "Cash market turnover available; Participant OI history unavailable"
+        elif oi_history:
+            overall_status = "PARTIAL"
+            overall_reason = "Participant OI history available; Cash market turnover unavailable"
+        else:
+            overall_status = "DATA_UNAVAILABLE"
+            overall_reason = "Neither FII/DII cash turnover nor participant OI history available in database"
+
+        as_of_date = latest_cash.get("trade_date") or latest_oi.get("trade_date") or format_ist()
+
         return {
-            "status": "OK",
+            "status": overall_status,
+            "reason": overall_reason,
+            "as_of": as_of_date,
+            "timestamp_ist": format_ist(),
             "latest_cash": {
+                "status": "AVAILABLE" if cash_history else "DATA_UNAVAILABLE",
+                "reason": None if cash_history else "FII/DII cash turnover data unavailable",
                 "date": latest_cash.get("trade_date", "--"),
-                "fii_buy": float(latest_cash.get("fii_buy") or 0.0),
-                "fii_sell": float(latest_cash.get("fii_sell") or 0.0),
+                "as_of": latest_cash.get("trade_date", "--"),
+                "fii_buy": float(latest_cash.get("fii_buy") or 0.0) if cash_history else 0.0,
+                "fii_sell": float(latest_cash.get("fii_sell") or 0.0) if cash_history else 0.0,
                 "fii_net": fii_net_cr,
-                "dii_buy": float(latest_cash.get("dii_buy") or 0.0),
-                "dii_sell": float(latest_cash.get("dii_sell") or 0.0),
+                "dii_buy": float(latest_cash.get("dii_buy") or 0.0) if cash_history else 0.0,
+                "dii_sell": float(latest_cash.get("dii_sell") or 0.0) if cash_history else 0.0,
                 "dii_net": dii_net_cr,
                 "total_net": tot_net_cr,
             },
             "latest_oi": {
+                "status": oi_status,
+                "reason": oi_reason,
                 "date": latest_oi.get("trade_date", "--"),
-                "fii_fut_long": int(latest_oi.get("fii_fut_long") or 0),
-                "fii_fut_short": int(latest_oi.get("fii_fut_short") or 0),
+                "as_of": latest_oi.get("trade_date", "--"),
+                "fii_fut_long": int(latest_oi.get("fii_fut_long") or 0) if oi_history else None,
+                "fii_fut_short": int(latest_oi.get("fii_fut_short") or 0) if oi_history else None,
                 "fii_fut_net": fii_net_contracts,
                 "fii_fut_long_pct": fii_long_pct,
-                "fii_opt_ce_net": int(latest_oi.get("fii_opt_ce_net") or 0),
-                "fii_opt_pe_net": int(latest_oi.get("fii_opt_pe_net") or 0),
-                "dii_fut_net": int(latest_oi.get("dii_fut_net") or 0),
-                "pro_fut_net": int(latest_oi.get("pro_fut_net") or 0),
-                "client_fut_net": int(latest_oi.get("client_fut_net") or 0),
-                "client_fut_long_pct": float(latest_oi.get("client_fut_long_pct") or 50.0),
+                "fii_opt_ce_net": int(latest_oi.get("fii_opt_ce_net") or 0) if oi_history else None,
+                "fii_opt_pe_net": int(latest_oi.get("fii_opt_pe_net") or 0) if oi_history else None,
+                "dii_fut_net": int(latest_oi.get("dii_fut_net") or 0) if oi_history else None,
+                "pro_fut_net": int(latest_oi.get("pro_fut_net") or 0) if oi_history else None,
+                "client_fut_net": int(latest_oi.get("client_fut_net") or 0) if oi_history else None,
+                "client_fut_long_pct": client_long_pct,
                 "oi_regime": oi_regime,
             },
             "flow_score": inst_flow_score,
@@ -2675,9 +2722,11 @@ class NiftyAnalyticsEngine:
 
         return {
             "status": "DATA_UNAVAILABLE",
+            "reason": "Data unavailable: Failed scraping live Moneycontrol economic calendar feed (network timeout or blocked)",
             "source": "Moneycontrol Economic Calendar",
             "url": url,
             "date": now_ist().strftime("%A, %B %d, %Y"),
+            "as_of": format_ist(),
             "total_high_impact": 0,
             "reported_count": 0,
             "upcoming_count": 0,
@@ -3612,9 +3661,12 @@ class NiftyAnalyticsEngine:
                     "ret_1d": None,
                     "ret_5d": None,
                     "ema20": None,
+                    "status": "DATA_UNAVAILABLE",
+                    "reason": f"Feed endpoint for {m_name} ({m_tk}) returned no price or market closed",
                     "impact_on_nifty": "UNAVAILABLE",
                     "signal_score": 0.0,
                     "note": f"{m_name} data temporarily unavailable",
+                    "as_of": format_ist(),
                 })
                 continue
 
@@ -3668,9 +3720,12 @@ class NiftyAnalyticsEngine:
                 "ret_1d": round(r1, 2),
                 "ret_5d": round(r5, 2),
                 "ema20": round(e20_val, 2),
+                "status": "AVAILABLE",
                 "impact_on_nifty": impact_tag,
                 "signal_score": round(sig, 1),
+                "reason": None,
                 "note": m_note,
+                "as_of": format_ist(),
             })
         if total_macro_w > 0:
             macro_score = float(np.clip(round(macro_score / total_macro_w, 1), -100.0, 100.0))
@@ -6985,7 +7040,10 @@ class NiftyAnalyticsEngine:
                     if ohlcv_row and ohlcv_row["close"]:
                         return {
                             "price": float(ohlcv_row["close"]),
+                            "status": "OK",
+                            "reason": None,
                             "timestamp": str(ohlcv_row["updated_at"] or ts_now),
+                            "as_of": str(ohlcv_row["updated_at"] or ts_now),
                             "source": "OHLCV_MASTER_ANCHOR",
                             "is_live": False,
                             "is_stale": True,
@@ -6996,7 +7054,19 @@ class NiftyAnalyticsEngine:
                         }
         except Exception:
             pass
-        return {"price": 0.0, "status": "DATA_UNAVAILABLE", "timestamp": ts_now, "source": "UNAVAILABLE", "is_live": False, "is_stale": True, "market_status": mkt_state_str, "session_phase": mkt_phase, "age_seconds": None}
+        return {
+            "price": 0.0,
+            "status": "DATA_UNAVAILABLE",
+            "reason": "Live Yahoo Finance endpoint unreachable and no cached quote found in ohlcv_master_store",
+            "timestamp": ts_now,
+            "as_of": ts_now,
+            "source": "UNAVAILABLE",
+            "is_live": False,
+            "is_stale": True,
+            "market_status": mkt_state_str,
+            "session_phase": mkt_phase,
+            "age_seconds": None
+        }
 
     @classmethod
     def get_india_vix(cls) -> Dict[str, Any]:
@@ -7027,10 +7097,13 @@ class NiftyAnalyticsEngine:
                             is_stale = False
 
                         return {
+                            "status": "AVAILABLE",
+                            "reason": None,
                             "current_vix": vix_val,
                             "change_pct": float(row["change_pct"] or 0.0),
                             "date": date_str,
                             "updated_at": upd_str,
+                            "as_of": upd_str or date_str,
                             "age_seconds": round(age_sec, 1) if age_sec is not None else None,
                             "is_stale": is_stale,
                             "source": "OHLCV_MASTER_STORE",
@@ -7041,10 +7114,12 @@ class NiftyAnalyticsEngine:
 
         return {
             "status": "DATA_UNAVAILABLE",
+            "reason": "India VIX quote (^INDIAVIX) not found in master store cache or live feed",
             "current_vix": None,
             "vix_available": False,
             "change_pct": 0.0,
             "date": format_ist(),
+            "as_of": format_ist(),
             "source": "UNAVAILABLE"
         }
 
@@ -7246,7 +7321,9 @@ class NiftyAnalyticsEngine:
             logger.error(f"Error fetching Nifty minute chart ({interval}): {e}", exc_info=True)
             return {
                 "status": "DATA_UNAVAILABLE",
+                "reason": f"Failed to fetch {interval} chart for Nifty from Yahoo Finance: {str(e)}",
                 "message": f"Data unavailable: Failed to fetch {interval} chart for Nifty: {str(e)}",
+                "as_of": format_ist(),
                 "candles": []
             }
 

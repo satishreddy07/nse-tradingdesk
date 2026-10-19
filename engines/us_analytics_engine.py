@@ -393,6 +393,8 @@ class USAnalyticsEngine:
                     "trend": m.get("trend", "NEUTRAL"),
                     "impulse_score": impulse,
                     "status": "AVAILABLE",
+                    "reason": None,
+                    "as_of": format_ist(),
                 })
             else:
                 bench_rows.append({
@@ -408,6 +410,8 @@ class USAnalyticsEngine:
                     "trend": "UNAVAILABLE",
                     "impulse_score": 0.0,
                     "status": "UNAVAILABLE",
+                    "reason": f"Yahoo Finance quote for {name} ({tk}) unavailable or US market closed",
+                    "as_of": format_ist(),
                 })
         us_tech_score = float(np.clip(round(weighted_tech_sum / max(0.01, total_tech_w), 1), -100.0, 100.0)) if total_tech_w > 0 else 0.0
 
@@ -435,7 +439,7 @@ class USAnalyticsEngine:
             breadth_dispersion = 0.0
             dispersion_regime = "UNAVAILABLE"
             dispersion_sig = 0.0
-            dispersion_note = "RSP/SPY breadth dispersion data temporarily unavailable"
+            dispersion_note = "RSP/SPY breadth dispersion data temporarily unavailable (US market closed or quotes pending)"
 
         # 2. 11 SPDR Sector ETFs Analysis
         sector_rows = []
@@ -470,6 +474,8 @@ class USAnalyticsEngine:
                     "ret_5d": sm.get("ret_5d", 0.0),
                     "trend": sm.get("trend", "NEUTRAL"),
                     "status": "AVAILABLE",
+                    "reason": None,
+                    "as_of": format_ist(),
                 })
             else:
                 sector_rows.append({
@@ -481,6 +487,8 @@ class USAnalyticsEngine:
                     "ret_5d": None,
                     "trend": "UNAVAILABLE",
                     "status": "UNAVAILABLE",
+                    "reason": f"Yahoo Finance quote for {name} ({tk}) unavailable or US market closed",
+                    "as_of": format_ist(),
                 })
 
         sec_total = max(1, sec_valid_count)

@@ -1651,13 +1651,17 @@ class WeeklyMonthlyOptionsStrategyEngine:
             rationale = f"Weekly Prediction Model (T+5): Structural consolidation & range-bound pinning (Score: {composite_score_t5:+.1f}, P_flat: {t5_probs['p_flat']:.2f})"
 
         return {
+            "status": "OK" if spot_price > 0 else "DATA_UNAVAILABLE",
+            "reason": None if spot_price > 0 else "Nifty spot price and weekly predictions data unavailable",
             "regime": regime,
             "weekly_composite_score": composite_score_t5,
             "t5_verdict": t5_verdict,
             "rationale": rationale,
             "spot_price": spot_price,
             "probabilities": t5_probs,
-            "decision_source": "WEEKLY_PREDICTION_MODEL_T5"
+            "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
+            "timestamp_ist": format_ist(),
+            "as_of": format_ist()
         }
 
     # =========================================================================

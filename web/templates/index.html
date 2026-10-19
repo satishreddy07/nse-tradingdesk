@@ -7244,11 +7244,19 @@
 
       const expBadge = document.getElementById('intra-expiry-badge');
       if (expBadge) {
-        expBadge.innerText = `⚡ Active Weekly Expiry: ${data.expiry_date || latest.expiry_date || '--'} • ${data.snapshots_count || 0} Slots Recorded Today`;
+        if ((data.status === 'DATA_UNAVAILABLE' || data.status === 'EMPTY' || !data.latest_snapshot) && data.reason) {
+          expBadge.innerText = `⚡ ${data.reason}`;
+        } else {
+          expBadge.innerText = `⚡ Active Weekly Expiry: ${data.expiry_date || latest.expiry_date || '--'} • ${data.snapshots_count || 0} Slots Recorded Today`;
+        }
       }
       const sessLbl = document.getElementById('intra-session-date-label');
       if (sessLbl) {
-        sessLbl.innerText = `Session: ${data.session_date || '--'} • Weekly Expiry: ${data.expiry_date || '--'}`;
+        if ((data.status === 'DATA_UNAVAILABLE' || data.status === 'EMPTY' || !data.latest_snapshot) && data.reason) {
+          sessLbl.innerText = `Session: ${data.session_date || '--'} • ${data.reason}`;
+        } else {
+          sessLbl.innerText = `Session: ${data.session_date || '--'} • Weekly Expiry: ${data.expiry_date || '--'}`;
+        }
       }
 
       const synced = data.live_synced_metrics || {};
@@ -7843,14 +7851,22 @@
           document.getElementById('us-dispersion-val').className = `text-base sm:text-lg font-extrabold ${dispVal > 0.2 ? 'text-emerald-400' : (dispVal < -0.3 ? 'text-rose-400' : 'text-white')}`;
         }
       }
-      if (document.getElementById('us-dispersion-note')) document.getElementById('us-dispersion-note').innerText = usBreadth.dispersion_note || '--';
+      if (document.getElementById('us-dispersion-note')) {
+        const dNote = usBreadth.dispersion_note || usBreadth.reason || 'RSP/SPY breadth dispersion data temporarily unavailable (US market closed or quotes pending)';
+        document.getElementById('us-dispersion-note').innerText = dNote;
+        document.getElementById('us-dispersion-note').title = dNote;
+      }
       if (document.getElementById('us-sector-adv-ratio')) document.getElementById('us-sector-adv-ratio').innerText = `${usBreadth.sector_advances || 0} Adv / ${usBreadth.sector_declines || 0} Dec`;
 
       // Card 3: Volatility Surface
       if (document.getElementById('us-vix-regime-tag')) document.getElementById('us-vix-regime-tag').innerText = (usVol.regime || 'UNAVAILABLE').replace('_', ' ');
       if (document.getElementById('us-vix-spot')) document.getElementById('us-vix-spot').innerText = (usVol.vix_spot !== null && usVol.vix_spot !== undefined && Number(usVol.vix_spot) > 0) ? Number(usVol.vix_spot).toFixed(2) : 'N/A';
       if (document.getElementById('us-vix-9d')) document.getElementById('us-vix-9d').innerText = (usVol.vix_9d !== null && usVol.vix_9d !== undefined && Number(usVol.vix_9d) > 0) ? Number(usVol.vix_9d).toFixed(2) : 'N/A';
-      if (document.getElementById('us-vix-note')) document.getElementById('us-vix-note').innerText = usVol.note || '--';
+      if (document.getElementById('us-vix-note')) {
+        const vNote = usVol.note || usVol.reason || (usVol.regime === 'UNAVAILABLE' ? 'US Volatility surface data temporarily unavailable (US market closed)' : '--');
+        document.getElementById('us-vix-note').innerText = vNote;
+        document.getElementById('us-vix-note').title = vNote;
+      }
       if (document.getElementById('us-10y-val')) document.getElementById('us-10y-val').innerText = (usMacro.us_10y_yield !== null && usMacro.us_10y_yield !== undefined && Number(usMacro.us_10y_yield) > 0) ? `${Number(usMacro.us_10y_yield).toFixed(2)}%` : 'N/A';
 
       // Card 4: Live Futures & Fair Gap
@@ -8060,15 +8076,24 @@
             badgeCls = 'bg-rose-500/20 text-rose-300 border-rose-500/40 font-bold';
           }
           const badgeText = (!isAvail || tr === 'UNAVAILABLE') ? 'NOT AVAILABLE' : tr.replace(/_/g, ' ');
+          const reasonText = (!isAvail || tr === 'UNAVAILABLE') ? (item.reason || item.note || '') : '';
+          const reasonHtml = reasonText ? `<div class="text-[9px] text-slate-400 font-normal mt-0.5 max-w-[210px] truncate ml-auto" title="${escapeHtml(reasonText)}">${escapeHtml(reasonText)}</div>` : '';
+          const itemReasonSub = (!isAvail && item.reason) ? `<div class="text-[9px] text-slate-500 font-mono font-normal truncate max-w-[180px]" title="${escapeHtml(item.reason)}">${escapeHtml(item.reason)}</div>` : '';
 
           return `
             <tr class="hover:bg-slate-800/40 transition">
-              <td class="p-2.5 font-bold text-white whitespace-nowrap">${item.name} <span class="text-[10px] text-slate-500">[${item.group}]</span></td>
+              <td class="p-2.5 font-bold text-white whitespace-nowrap">
+                <div>${item.name} <span class="text-[10px] text-slate-500">[${item.group}]</span></div>
+                ${itemReasonSub}
+              </td>
               <td class="p-2.5 font-bold text-cyan-300 whitespace-nowrap">${ltpStr}</td>
               <td class="p-2.5 whitespace-nowrap">${r1Str}</td>
               <td class="p-2.5 whitespace-nowrap">${r5Str}</td>
               <td class="p-2.5 text-slate-400 whitespace-nowrap">${emaStr}</td>
-              <td class="p-2.5 pr-4 text-right whitespace-nowrap"><span class="px-2.5 py-0.5 rounded text-[10px] border whitespace-nowrap inline-flex items-center justify-center ${badgeCls}">${badgeText}</span></td>
+              <td class="p-2.5 pr-4 text-right whitespace-nowrap">
+                <span class="px-2.5 py-0.5 rounded text-[10px] border whitespace-nowrap inline-flex items-center justify-center ${badgeCls}">${badgeText}</span>
+                ${reasonHtml}
+              </td>
             </tr>
           `;
         }).join('');
