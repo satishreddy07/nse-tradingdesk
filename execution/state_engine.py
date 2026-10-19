@@ -420,6 +420,36 @@ class StateEngine:
                 """)
 
                 conn.commit()
+
+                # Automatic schema migrations for Portfolio 3 hybrid squeeze columns
+                for col, col_def in [
+                    ("trigger_high", "REAL"),
+                    ("base_low", "REAL"),
+                    ("days_tracked", "INTEGER DEFAULT 0"),
+                    ("atr5", "REAL DEFAULT 0"),
+                    ("atr20", "REAL DEFAULT 0"),
+                    ("vol_fade_passed", "INTEGER DEFAULT 1")
+                ]:
+                    try:
+                        cursor.execute(f"ALTER TABLE p3_prebreakout_watchlist ADD COLUMN {col} {col_def}")
+                    except Exception:
+                        pass
+
+                for col, col_def in [
+                    ("risk", "REAL DEFAULT 0"),
+                    ("target_p1", "REAL DEFAULT 0"),
+                    ("p1_filled", "INTEGER DEFAULT 0"),
+                    ("p2_active", "INTEGER DEFAULT 1"),
+                    ("net_ret_pct", "REAL DEFAULT 0"),
+                    ("r_multiple", "REAL DEFAULT 0"),
+                    ("friction_pct", "REAL DEFAULT 0.30")
+                ]:
+                    try:
+                        cursor.execute(f"ALTER TABLE p3_position_legs ADD COLUMN {col} {col_def}")
+                    except Exception:
+                        pass
+                conn.commit()
+
                 logger.info("Single Master File Database schemas verified and ready.")
 
     # --------------------------------------------------------------------------

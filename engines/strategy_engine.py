@@ -62,6 +62,8 @@ from engines.institutional_engine import (
     get_stock_sector
 )
 from execution.state_engine import state_engine
+from bs4 import BeautifulSoup
+from engines.portfolio3_engine import get_chartink_universe, SCAN_CLAUSE, FRICTION_PCT
 
 logger = logging.getLogger("Portfolio3StrategyEngine")
 
@@ -102,17 +104,21 @@ def evaluate_prebreakout_coil(
     symbol: str,
     vdu_min: float = 0.0,
     vdu_max: float = 0.80,
-    ema20_dist_max_pct: float = 3.8,
-    range_contraction_max_pct: float = 3.2
+    ema20_dist_max_pct: float = 4.0,
+    range_contraction_max_pct: float = 3.5,
+    atr_squeeze_max: float = 0.80,
+    enforce_vol_fade: bool = True
 ) -> Optional[Dict[str, Any]]:
     """
-    Evaluates whether a stock meets the 4 core Pre-Breakout Coil rules on completed T-1 daily bar:
-    1. Volume Dry-Up (VDU): T-1 Volume <= 0.5x to 0.8x of 20-day SMA volume.
-    2. 20 EMA Proximity: Close within +/- 3.8% of 20-day EMA.
-    3. Price Range Contraction: T-1 daily high-low range <= 3.2% of Close.
-    4. Trend Filter: Close >= 20 EMA, and 20 EMA > 50 SMA.
+    Evaluates whether a stock meets the 6 core Pre-Breakout Hybrid Squeeze rules on completed T-1 daily bar:
+    1. Primary Uptrend: EMA20 > SMA50 and Close >= EMA20 * 0.98
+    2. Mean-Reversion Anchor: |Close - EMA20| / EMA20 <= 0.04 (4.0%)
+    3. Daily Range Contraction: (High - Low) / Low <= 0.035 (3.5% maximum range)
+    4. Volume Dry-Up (VDU): Volume <= 0.80 * Vol_SMA20
+    5. 3-Day Progressive Volume Fade: Volume_{T-3} > Volume_{T-2} > Volume_{T-1}
+    6. Dynamic Volatility Squeeze: ATR5 / ATR20 <= 0.80
     """
-    if df is None or len(df) < 55:
+    if df is None or len(df) < 50:
         return None
 
     # Determine T-1 index: ensure we evaluate the latest completed daily bar
@@ -124,7 +130,7 @@ def evaluate_prebreakout_coil(
         and now.time() < datetime.time(15, 30)
     )
 
-    t1_idx = -2 if (is_today_partial and len(df) >= 56) else -1
+    t1_idx = -2 if (is_today_partial and len(df) >= 51) else -1
     t1_date = df.index[t1_idx]
     t1_date_str = t1_date.strftime("%Y-%m-%d") if hasattr(t1_date, "strftime") else str(t1_date)[:10]
 
@@ -136,7 +142,7 @@ def evaluate_prebreakout_coil(
     n_bars = len(close_arr)
     eval_pos = n_bars + t1_idx if t1_idx < 0 else t1_idx
 
-    if eval_pos < 50:
+    if eval_pos < 25:
         return None
 
     c_t1 = float(close_arr[eval_pos])
@@ -155,7 +161,7 @@ def evaluate_prebreakout_coil(
 
     # Volume Dry-Up (VDU)
     vdu_ratio = round(v_t1 / avg_vol_20, 3)
-    vdu_passed = (vdu_min <= vdu_ratio <= vdu_max)
+    vdu_passed = (vdu_ratio <= vdu_max)
 
     # 2. 20 EMA and 50 SMA ending at T-1
     ema20_series = _fast_ewm_array(close_arr[: eval_pos + 1], span=20)
@@ -164,17 +170,51 @@ def evaluate_prebreakout_coil(
     close_50_slice = close_arr[max(0, eval_pos - 49) : eval_pos + 1]
     sma50_t1 = float(np.mean(close_50_slice)) if len(close_50_slice) >= 30 else ema20_t1
 
+    # 1. Primary Uptrend: EMA20 > SMA50 and Close >= EMA20 * 0.98
+    uptrend_passed = (ema20_t1 > sma50_t1) and (c_t1 >= ema20_t1 * 0.98)
+
+    # 2. Mean-Reversion Anchor: |Close - EMA20| / EMA20 <= 0.04
     ema20_dist_pct = round(abs(c_t1 - ema20_t1) / ema20_t1 * 100.0, 2)
-    ema20_prox_passed = (ema20_dist_pct <= ema20_dist_max_pct)
+    ema20_prox_passed = (abs(c_t1 - ema20_t1) / ema20_t1 <= (ema20_dist_max_pct / 100.0))
 
-    # 3. Price Range Contraction
-    range_contraction_pct = round(((h_t1 - l_t1) / c_t1) * 100.0, 2)
-    range_contraction_passed = (range_contraction_pct <= range_contraction_max_pct)
+    # 3. Price Range Contraction: (High - Low) / Low <= 0.035
+    range_contraction_ratio = (h_t1 - l_t1) / l_t1
+    range_contraction_pct = round(range_contraction_ratio * 100.0, 2)
+    range_contraction_passed = (range_contraction_ratio <= (range_contraction_max_pct / 100.0))
 
-    # 4. Trend Filter: Close >= 20 EMA and 20 EMA > 50 SMA
-    trend_filter_passed = (c_t1 >= ema20_t1) and (ema20_t1 > sma50_t1)
+    # 5. 3-Day Progressive Volume Fade: Volume_{T-3} > Volume_{T-2} > Volume_{T-1}
+    vol_fade_passed = True
+    if enforce_vol_fade and eval_pos >= 2:
+        v_prev1 = float(vol_arr[eval_pos - 1])
+        v_prev2 = float(vol_arr[eval_pos - 2])
+        vol_fade_passed = (v_t1 < v_prev1) and (v_prev1 < v_prev2)
+    elif enforce_vol_fade:
+        vol_fade_passed = False
 
-    all_passed = (vdu_passed and ema20_prox_passed and range_contraction_passed and trend_filter_passed)
+    # 6. Dynamic Volatility Squeeze: ATR5 / ATR20 <= 0.80
+    tr_list = []
+    start_tr = max(1, eval_pos - 25)
+    for i in range(start_tr, eval_pos + 1):
+        tr = max(
+            high_arr[i] - low_arr[i],
+            abs(high_arr[i] - close_arr[i - 1]),
+            abs(low_arr[i] - close_arr[i - 1])
+        )
+        tr_list.append(tr)
+
+    atr5 = float(np.mean(tr_list[-5:])) if len(tr_list) >= 5 else 1.0
+    atr20 = float(np.mean(tr_list[-20:])) if len(tr_list) >= 20 else (atr5 if atr5 > 0 else 1.0)
+    atr_squeeze_ratio = round(atr5 / atr20, 3) if atr20 > 0 else 1.0
+    atr_squeeze_passed = (atr_squeeze_ratio <= atr_squeeze_max)
+
+    all_passed = (
+        uptrend_passed
+        and ema20_prox_passed
+        and range_contraction_passed
+        and vdu_passed
+        and vol_fade_passed
+        and atr_squeeze_passed
+    )
 
     if not all_passed:
         return None
@@ -183,19 +223,25 @@ def evaluate_prebreakout_coil(
     ema10_series = _fast_ewm_array(close_arr[: eval_pos + 1], span=10)
     ema10_t1 = float(ema10_series[-1]) if len(ema10_series) > 0 else c_t1
 
-    # Initial Stop-Loss strictly anchored at T-1 Low * 0.998 (0.2% buffer)
-    initial_sl = round(l_t1 * 0.998, 2)
-    breakout_trigger_price = round(h_t1, 2)
-    risk_per_share = round(breakout_trigger_price - initial_sl, 2)
+    # Initial Stop-Loss strictly anchored at Base Low * 0.998 (0.2% buffer)
+    trigger_high = round(h_t1, 2)
+    base_low = round(l_t1, 2)
+    initial_sl = round(base_low * 0.998, 2)
+    entry_est = round(trigger_high * 1.001, 2)
+    risk_per_share = round(entry_est - initial_sl, 2)
+    target_p1 = round(entry_est + (2.0 * risk_per_share), 2)
 
     return {
         "symbol": symbol.replace(".NS", "").replace(".BO", "").strip().upper(),
         "t_minus_1_date": t1_date_str,
         "t_minus_1_close": round(c_t1, 2),
-        "t_minus_1_high": breakout_trigger_price,
-        "t_minus_1_low": round(l_t1, 2),
+        "t_minus_1_high": trigger_high,
+        "t_minus_1_low": base_low,
+        "trigger_high": trigger_high,
+        "base_low": base_low,
         "initial_sl": initial_sl,
         "risk_per_share": risk_per_share,
+        "target_p1": target_p1,
         "vdu_ratio": vdu_ratio,
         "avg_vol_20": round(avg_vol_20, 0),
         "ema20": round(ema20_t1, 2),
@@ -203,6 +249,11 @@ def evaluate_prebreakout_coil(
         "ema10": round(ema10_t1, 2),
         "ema20_dist_pct": ema20_dist_pct,
         "range_contraction_pct": range_contraction_pct,
+        "atr5": round(atr5, 2),
+        "atr20": round(atr20, 2),
+        "atr_squeeze_ratio": atr_squeeze_ratio,
+        "vol_fade_passed": 1 if vol_fade_passed else 0,
+        "days_tracked": 0,
         "status": "WATCHING"
     }
 
@@ -350,12 +401,21 @@ class Portfolio3StrategyEngine:
         start_t = time.time()
         logger.info("🔍 [Portfolio 3] Starting EOD Pre-Breakout Coil Watchlist Ingestion...")
 
-        # If universe is not provided, fetch from state_engine master OHLCV or Chartink/Nifty
+        # If universe is not provided, fetch from Chartink screener
         symbols_to_scan = universe
         if not symbols_to_scan:
             try:
+                symbols_to_scan = get_chartink_universe()
+                if symbols_to_scan:
+                    logger.info(f"✓ Retrieved {len(symbols_to_scan)} fundamental stocks from Chartink screener.")
+            except Exception as ce:
+                logger.warning(f"Chartink fetch failed ({ce}), falling back to master metadata...")
+                symbols_to_scan = []
+
+        if not symbols_to_scan:
+            try:
                 meta_list = state_engine.get_all_ohlcv_metadata(limit=800)
-                symbols_to_scan = [m["symbol"] for m in meta_list if m.get("bars_count", 0) >= 55]
+                symbols_to_scan = [m["symbol"] for m in meta_list if m.get("bars_count", 0) >= 50]
             except Exception:
                 symbols_to_scan = []
 
@@ -380,7 +440,7 @@ class Portfolio3StrategyEngine:
             clean_sym = sym.replace(".NS", "").replace(".BO", "").strip().upper()
             try:
                 df = self.get_stock_daily_df(clean_sym)
-                if df is None or len(df) < 55:
+                if df is None or len(df) < 50:
                     continue
 
                 coil = evaluate_prebreakout_coil(df, clean_sym)
@@ -398,13 +458,16 @@ class Portfolio3StrategyEngine:
                     conn.execute("""
                     INSERT INTO p3_prebreakout_watchlist (
                         symbol, scan_date, t_minus_1_date, t_minus_1_close, t_minus_1_high,
-                        t_minus_1_low, initial_sl, t_minus_1_range_pct, vdu_ratio,
-                        ema20, ema50, ema20_dist_pct, avg_vol_20, status, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'WATCHING', ?, ?)
+                        t_minus_1_low, trigger_high, base_low, initial_sl, t_minus_1_range_pct, vdu_ratio,
+                        ema20, ema50, ema20_dist_pct, avg_vol_20, atr5, atr20, vol_fade_passed,
+                        days_tracked, status, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'WATCHING', ?, ?)
                     ON CONFLICT(symbol, scan_date) DO UPDATE SET
                         t_minus_1_close = excluded.t_minus_1_close,
                         t_minus_1_high = excluded.t_minus_1_high,
                         t_minus_1_low = excluded.t_minus_1_low,
+                        trigger_high = excluded.trigger_high,
+                        base_low = excluded.base_low,
                         initial_sl = excluded.initial_sl,
                         t_minus_1_range_pct = excluded.t_minus_1_range_pct,
                         vdu_ratio = excluded.vdu_ratio,
@@ -412,12 +475,16 @@ class Portfolio3StrategyEngine:
                         ema50 = excluded.ema50,
                         ema20_dist_pct = excluded.ema20_dist_pct,
                         avg_vol_20 = excluded.avg_vol_20,
+                        atr5 = excluded.atr5,
+                        atr20 = excluded.atr20,
+                        vol_fade_passed = excluded.vol_fade_passed,
                         updated_at = excluded.updated_at
                     """, (
                         c["symbol"], scan_date_str, c["t_minus_1_date"], c["t_minus_1_close"],
-                        c["t_minus_1_high"], c["t_minus_1_low"], c["initial_sl"],
-                        c["range_contraction_pct"], c["vdu_ratio"], c["ema20"], c["ema50"],
-                        c["ema20_dist_pct"], c["avg_vol_20"], now_str, now_str
+                        c["t_minus_1_high"], c["t_minus_1_low"], c["trigger_high"], c["base_low"],
+                        c["initial_sl"], c["range_contraction_pct"], c["vdu_ratio"], c["ema20"],
+                        c["ema50"], c["ema20_dist_pct"], c["avg_vol_20"], c.get("atr5", 0.0),
+                        c.get("atr20", 0.0), c.get("vol_fade_passed", 1), now_str, now_str
                     ))
                     inserted_count += 1
                 except Exception as db_err:
@@ -561,43 +628,98 @@ class Portfolio3StrategyEngine:
         now_dt: Optional[datetime.datetime] = None
     ) -> Dict[str, Any]:
         """
-        Evaluates live entry condition and volume confirmation filter for a watchlist item:
-        - Entry Condition: LTP > T-1 High.
-        - Volume Confirmation: Time-adjusted volume pacing >= 3.12x.
+        Evaluates live entry condition, volume confirmation, invalidation, and rolling inside bar:
+        - Trigger Condition: Price crosses Trigger High * 1.001 with volume pacing >= 3.12x Vol_SMA20.
+        - Entry Execution: Entry Price = max(Trigger High * 1.001, Open, LTP).
+        - Initial Stop-Loss (1R): Stop = Base Low * 0.998.
+        - Risk Denominator (1R): Risk = Entry Price - Stop.
+        - Invalidation: Discard immediately if price closes below 20 EMA, volume expands without breaking high, or 2 sessions pass.
+        - Rolling Inside Bar: If volume <= 0.80x and price holds 20 EMA on Day 1, roll Trigger High and keep tracking.
         """
         if now_dt is None:
             now_dt = now_ist()
 
         sym = watch_item["symbol"]
-        trigger_price = float(watch_item["t_minus_1_high"])
-        initial_sl = float(watch_item["initial_sl"])
-        avg_vol_20 = float(watch_item["avg_vol_20"])
+        trigger_high = float(watch_item.get("trigger_high") or watch_item.get("t_minus_1_high") or 0.0)
+        base_low = float(watch_item.get("base_low") or watch_item.get("t_minus_1_low") or 0.0)
+        avg_vol_20 = float(watch_item.get("avg_vol_20") or 1.0)
+        days_tracked = int(watch_item.get("days_tracked") or 0)
+        ema20 = float(watch_item.get("ema20") or 0.0)
 
         ltp = float(quote_data.get("ltp") or 0.0)
         day_high = float(quote_data.get("high") or ltp)
+        day_low = float(quote_data.get("low") or ltp)
+        open_px = float(quote_data.get("open") or quote_data.get("open_price") or ltp)
         live_vol = float(quote_data.get("volume") or 0.0)
 
-        price_crossed = (ltp > trigger_price) or (day_high > trigger_price)
+        trigger_level = round(trigger_high * 1.001, 2)
+        price_crossed = (ltp >= trigger_level) or (day_high >= trigger_level) or (ltp > trigger_high)
         pacing = calculate_volume_pacing(live_vol, avg_vol_20, now_dt)
         volume_confirmed = (pacing >= self.volume_pacing_threshold)
 
         should_enter = price_crossed and volume_confirmed
 
+        entry_price = round(max(trigger_level, open_px, ltp), 2)
+        initial_sl = round(base_low * 0.998, 2)
+        risk_per_share = round(max(0.01, entry_price - initial_sl), 2)
+        target_p1 = round(entry_price + (2.0 * risk_per_share), 2)
+
+        # Invalidation & Inside Bar Rolling
+        is_invalidated = False
+        invalidation_reason = ""
+        is_inside_bar_roll = False
+        new_trigger_high = trigger_high
+        new_base_low = base_low
+        next_days_tracked = days_tracked
+
+        if not should_enter:
+            if ema20 > 0 and ltp < ema20:
+                is_invalidated = True
+                invalidation_reason = "CLOSED_BELOW_20EMA"
+            elif avg_vol_20 > 0 and live_vol > avg_vol_20 and day_high <= trigger_high:
+                is_invalidated = True
+                invalidation_reason = "VOLUME_EXPANSION_WITHOUT_BREAKOUT"
+            elif days_tracked >= 2:
+                is_invalidated = True
+                invalidation_reason = "MAX_SESSIONS_EXPIRED"
+            elif not price_crossed and avg_vol_20 > 0 and live_vol <= avg_vol_20 * 0.80 and (ema20 == 0 or ltp >= ema20):
+                is_inside_bar_roll = True
+                next_days_tracked = days_tracked + 1
+                new_trigger_high = round(max(trigger_high, day_high), 2)
+                new_base_low = round(min(base_low, day_low), 2)
+
         return {
             "symbol": sym,
             "ltp": ltp,
-            "trigger_price": trigger_price,
+            "open": open_px,
+            "day_high": day_high,
+            "day_low": day_low,
+            "trigger_high": trigger_high,
+            "trigger_level": trigger_level,
+            "trigger_price": trigger_high,
+            "base_low": base_low,
+            "entry_price": entry_price,
             "initial_sl": initial_sl,
-            "risk_per_share": round(trigger_price - initial_sl, 2),
+            "risk_per_share": risk_per_share,
+            "target_p1": target_p1,
             "live_volume": live_vol,
             "avg_vol_20": avg_vol_20,
             "volume_pacing": pacing,
             "price_crossed": price_crossed,
             "volume_confirmed": volume_confirmed,
             "should_enter": should_enter,
+            "is_invalidated": is_invalidated,
+            "invalidation_reason": invalidation_reason,
+            "is_inside_bar_roll": is_inside_bar_roll,
+            "new_trigger_high": new_trigger_high,
+            "new_base_low": new_base_low,
+            "next_days_tracked": next_days_tracked,
+            "days_tracked": days_tracked,
             "reason": (
                 "CONFIRMED_BREAKOUT" if should_enter else
-                ("UNCONFIRMED_VOLUME_PACE" if price_crossed and not volume_confirmed else "PRICE_NOT_TRIGGERED")
+                ("UNCONFIRMED_VOLUME_PACE" if price_crossed and not volume_confirmed else
+                 ("INVALIDATED_" + invalidation_reason if is_invalidated else
+                  ("INSIDE_BAR_ROLL" if is_inside_bar_roll else "PRICE_NOT_TRIGGERED")))
             )
         }
 
@@ -656,8 +778,10 @@ class Portfolio3StrategyEngine:
         6. Sends Telegram trade alert.
         """
         sym = eval_result["symbol"]
-        entry_price = float(eval_result["ltp"])
+        entry_price = float(eval_result.get("entry_price") or eval_result["ltp"])
         initial_sl = float(eval_result["initial_sl"])
+        risk_per_share = float(eval_result.get("risk_per_share") or (entry_price - initial_sl))
+        target_2r = float(eval_result.get("target_p1") or round(entry_price + (self.target_r * risk_per_share), 2))
 
         # Check slot availability
         active_positions = state_engine.get_active_positions(portfolio_type=self.portfolio_type)
@@ -681,9 +805,6 @@ class Portfolio3StrategyEngine:
         leg1_qty = total_qty // 2
         leg2_qty = total_qty - leg1_qty
 
-        # Target 1 = Entry + 2.0R
-        target_2r = round(entry_price + (self.target_r * risk_per_share), 2)
-
         now_dt = now_ist()
         now_str = format_ist(now_dt)
         entry_date_str = now_dt.strftime("%Y-%m-%d")
@@ -701,7 +822,7 @@ class Portfolio3StrategyEngine:
             target_2=0.0,
             triggered_from="P3_PRE_BREAKOUT_COIL",
             notes=f"P3 Split Exit: Leg 1 ({leg1_qty} shs) @ +2R ₹{target_2r:.2f}, Leg 2 ({leg2_qty} shs) 10 EMA Runner",
-            sl_reason="INITIAL_SL_T1_LOW",
+            sl_reason="INITIAL_SL_BASE_LOW",
             sector=sector,
             portfolio_type=self.portfolio_type,
             entry_reason="PRE_BREAKOUT_COIL_CONFIRMED_3.12X_PACING",
@@ -720,19 +841,22 @@ class Portfolio3StrategyEngine:
                 symbol, portfolio_type, entry_date, entry_time, entry_price, total_quantity,
                 initial_sl, risk_per_share, risk_capital, leg1_qty, leg1_target_price,
                 leg1_status, leg2_qty, leg2_status, leg2_current_sl, leg2_trailing_ema10,
-                overall_status, current_price, highest_price, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, 'OPEN', ?, ?, 'OPEN', ?, ?, ?, ?)
+                overall_status, current_price, highest_price, risk, target_p1, p1_filled,
+                p2_active, friction_pct, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, 'OPEN', ?, ?, 'OPEN', ?, ?, ?, ?, 0, 1, ?, ?, ?)
             ON CONFLICT(symbol, entry_date) DO UPDATE SET
                 entry_price = excluded.entry_price,
                 total_quantity = excluded.total_quantity,
                 leg1_qty = excluded.leg1_qty,
                 leg2_qty = excluded.leg2_qty,
+                risk = excluded.risk,
+                target_p1 = excluded.target_p1,
                 updated_at = excluded.updated_at
             """, (
                 sym, self.portfolio_type, entry_date_str, entry_time_str, entry_price, total_qty,
                 initial_sl, risk_per_share, risk_capital, leg1_qty, target_2r,
                 leg2_qty, initial_sl, initial_sl,
-                entry_price, entry_price, now_str, now_str
+                entry_price, entry_price, risk_per_share, target_2r, FRICTION_PCT, now_str, now_str
             ))
 
             # Update watchlist status to 'TRIGGERED'
@@ -805,13 +929,17 @@ class Portfolio3StrategyEngine:
         bypass_gate: bool = False
     ) -> List[Dict[str, Any]]:
         """
-        Automated Split Exit Strategy:
-        Monitors active positions in Portfolio 3:
-        1. Checks Initial SL: if LTP <= Initial SL before Target 1, closes entire position (-1.0R).
-        2. Checks Leg 1 Target (+2.0R): if High >= Target, books 50% profit, records partial exit,
-           and ratchets Leg 2 stop to at least Breakeven.
-        3. Checks Leg 2 Runner: calculates daily 10 EMA. If 10 EMA > current SL, ratchets SL upward.
-           If LTP <= trailing SL or daily Close drops below 10 EMA, exits remaining 50% runner.
+        Path-Dependent Split-Exit Engine:
+        Splits positions 50% / 50% upon entry:
+        1. Pre-Target Stop-Out: If daily Low <= Stop-Loss before High >= Target_+2R,
+           liquidate both Part 1 and Part 2 at Stop-Loss (full -1.0R loss).
+        2. Target Reached: If daily High >= Entry + (2.0 * Risk):
+           - Part 1 (50% qty) books profit at +2.0R.
+           - Stop-Loss for Part 2 is raised to Breakeven (Entry Price).
+        3. Runner Trailing: Part 2 trails dynamically day-by-day and exits when daily
+           Close < EMA10 or when the breakeven stop is breached.
+        4. Friction Deduction: Automatically subtract 0.30% round-trip charges
+           (brokerage, STT, exchange fees, slippage) from the blended net percentage return.
         """
         start_t = time.time()
         active_positions = state_engine.get_active_positions(portfolio_type=self.portfolio_type)
@@ -873,12 +1001,15 @@ class Portfolio3StrategyEngine:
                     continue
 
                 # -------------------------------------------------------------
-                # SCENARIO A: INITIAL STOP-LOSS HIT (Before Target 1)
+                # SCENARIO A: PRE-TARGET STOP-OUT (Before Target 1)
                 # -------------------------------------------------------------
-                if not t1_hit and c <= current_sl:
+                # If daily Low <= Stop-Loss before High >= Target_+2R,
+                # liquidate both Part 1 and Part 2 at Stop-Loss (full -1.0R loss).
+                if not t1_hit and (l <= current_sl or c <= current_sl):
+                    stop_exit_price = current_sl
                     closed = state_engine.close_position(
                         sym,
-                        exit_price=c,
+                        exit_price=stop_exit_price,
                         exit_reason="INITIAL_SL",
                         portfolio_type=self.portfolio_type,
                         bypass_gate=bypass_gate
@@ -886,37 +1017,52 @@ class Portfolio3StrategyEngine:
                     if closed:
                         closed_events.append(closed)
 
-                    realized_loss = closed.get("pnl", 0.0) if closed else round((c - entry_px) * qty, 2)
+                    leg1_loss = round((stop_exit_price - entry_px) * (qty // 2), 2)
+                    leg2_loss = round((stop_exit_price - entry_px) * (qty - (qty // 2)), 2)
+                    total_loss = closed.get("pnl", 0.0) if closed else round((stop_exit_price - entry_px) * qty, 2)
+
+                    p1_ret = (stop_exit_price - entry_px) / entry_px * 100.0 if entry_px > 0 else 0.0
+                    p2_ret = (stop_exit_price - entry_px) / entry_px * 100.0 if entry_px > 0 else 0.0
+                    net_ret = round((0.5 * p1_ret) + (0.5 * p2_ret) - FRICTION_PCT, 2)
+                    r_mult = -1.0
 
                     # Update p3_position_legs
                     with self._get_connection() as conn:
                         conn.execute("""
                         UPDATE p3_position_legs
-                        SET leg1_status = 'STOPPED_OUT', leg1_exit_price = ?, leg1_exit_date = ?,
-                            leg2_status = 'STOPPED_OUT', leg2_exit_price = ?, leg2_exit_date = ?,
-                            overall_status = 'CLOSED', total_realized_pnl = ?, updated_at = ?
+                        SET leg1_status = 'STOPPED_OUT', leg1_exit_price = ?, leg1_exit_date = ?, leg1_pnl = ?,
+                            leg2_status = 'STOPPED_OUT', leg2_exit_price = ?, leg2_exit_date = ?, leg2_pnl = ?,
+                            p1_filled = 1, p2_active = 0, overall_status = 'CLOSED',
+                            total_realized_pnl = ?, net_ret_pct = ?, r_multiple = ?, updated_at = ?
                         WHERE symbol = ? AND overall_status IN ('OPEN', 'PARTIAL_CLOSED')
-                        """, (c, now_str, c, now_str, realized_loss, now_str, sym))
+                        """, (
+                            stop_exit_price, now_str, leg1_loss,
+                            stop_exit_price, now_str, leg2_loss,
+                            total_loss, net_ret, r_mult, now_str, sym
+                        ))
                         conn.commit()
 
-                    logger.info(f"🛑 [P3 Full Stop Hit] {sym} closed at Initial SL ₹{c:.2f} (Loss: ₹{realized_loss:.2f}).")
+                    logger.info(f"🛑 [P3 Pre-Target Stop Hit] {sym} closed at Initial SL ₹{stop_exit_price:.2f} (Loss: ₹{total_loss:.2f}, -1.0R).")
                     telegram_vault.send_alert_and_sync(
                         title=f"🛑 P3 INITIAL STOP HIT: {sym}",
-                        message=f"Closed entire position in <b>{sym}</b> @ ₹{c:.2f}. PnL: -₹{abs(closed.get('pnl', 0.0)):.2f}.",
+                        message=f"Closed entire position in <b>{sym}</b> @ ₹{stop_exit_price:.2f}. PnL: -₹{abs(total_loss):.2f} (-1.0R, net return: {net_ret}%).",
                         sync_db=True
                     )
                     continue
 
                 # -------------------------------------------------------------
-                # SCENARIO B: LEG 1 TARGET HIT (+2.0R)
+                # SCENARIO B: TARGET REACHED (+2.0R)
                 # -------------------------------------------------------------
+                # If daily High >= Entry + (2.0 * Risk):
+                # - Part 1 (50% qty) books profit at +2.0R.
+                # - Stop-Loss for Part 2 is raised to Breakeven (Entry Price).
                 if not t1_hit and h >= target_1:
                     leg1_qty = qty // 2
-                    pnl_leg1 = round((target_1 - entry_px) * leg1_qty, 2)
                     rem_qty = qty - leg1_qty
+                    pnl_leg1 = round((target_1 - entry_px) * leg1_qty, 2)
 
-                    # Move stop loss to Breakeven (entry_px) or 10 EMA (whichever is higher)
-                    new_sl_leg2 = round(max(entry_px, ema10_val), 2)
+                    # Move stop loss to Breakeven (entry_px)
+                    new_sl_leg2 = round(entry_px, 2)
 
                     # Update unified active_positions
                     with state_engine._lock:
@@ -924,7 +1070,7 @@ class Portfolio3StrategyEngine:
                             conn.execute("""
                             UPDATE active_positions
                             SET quantity = ?, stop_loss = ?, t1_hit = 1, t1_pnl = ?,
-                                sl_reason = 'BREAKEVEN_OR_10EMA', updated_at = ?
+                                sl_reason = 'BREAKEVEN_STOP', updated_at = ?
                             WHERE symbol = ? AND portfolio_type = ?
                             """, (rem_qty, new_sl_leg2, pnl_leg1, now_str, sym, self.portfolio_type))
 
@@ -933,32 +1079,36 @@ class Portfolio3StrategyEngine:
                         conn.execute("""
                         UPDATE p3_position_legs
                         SET leg1_status = 'TARGET_HIT', leg1_exit_price = ?, leg1_exit_date = ?, leg1_pnl = ?,
-                            leg2_current_sl = ?, leg2_trailing_ema10 = ?, overall_status = 'PARTIAL_CLOSED',
+                            p1_filled = 1, leg2_current_sl = ?, leg2_trailing_ema10 = ?, overall_status = 'PARTIAL_CLOSED',
                             total_realized_pnl = ?, updated_at = ?
                         WHERE symbol = ? AND overall_status = 'OPEN'
                         """, (target_1, now_str, pnl_leg1, new_sl_leg2, ema10_val, pnl_leg1, now_str, sym))
                         conn.commit()
 
                     logger.info(
-                        f"🎯 [P3 Leg 1 Target Hit] {sym}: Booked 50% ({leg1_qty} shs) @ +2R ₹{target_1:.2f} "
-                        f"(PnL: +₹{pnl_leg1:.2f}). Leg 2 stop ratcheted to ₹{new_sl_leg2:.2f}."
+                        f"🎯 [P3 Part 1 Target Hit] {sym}: Booked 50% ({leg1_qty} shs) @ +2R ₹{target_1:.2f} "
+                        f"(PnL: +₹{pnl_leg1:.2f}). Part 2 stop ratcheted to Breakeven ₹{new_sl_leg2:.2f}."
                     )
                     telegram_vault.send_alert_and_sync(
                         title=f"🎯 P3 TARGET 1 HIT (+2.0R): {sym}",
                         message=(
                             f"Locked in 50% profit on <b>{sym}</b> @ <b>₹{target_1:.2f}</b> (PnL: +₹{pnl_leg1:,.2f}).\n"
-                            f"Remaining {rem_qty} shares trailing stop ratcheted to <b>₹{new_sl_leg2:.2f}</b> (10 EMA / Breakeven)."
+                            f"Remaining {rem_qty} shares stop ratcheted to Breakeven (<b>₹{new_sl_leg2:.2f}</b>)."
                         ),
                         sync_db=True
                     )
                     t1_hit = 1
                     current_sl = new_sl_leg2
+                    qty = rem_qty
+                    continue
 
                 # -------------------------------------------------------------
-                # SCENARIO C: LEG 2 RUNNER TRAILING WITH 10 EMA
+                # SCENARIO C: RUNNER TRAILING WITH 10 EMA / BREAKEVEN
                 # -------------------------------------------------------------
-                if t1_hit:
-                    # Ratchet trailing stop upward only
+                # Runner Trailing: Part 2 trails dynamically day-by-day and exits when
+                # daily Close < EMA10 or when the breakeven stop is breached.
+                elif t1_hit:
+                    # Trailing stop can follow 10 EMA if 10 EMA > Breakeven
                     ratchet_sl = round(max(current_sl, ema10_val), 2)
                     if ratchet_sl > current_sl:
                         state_engine.update_position_price(
@@ -978,33 +1128,51 @@ class Portfolio3StrategyEngine:
                         logger.info(f"📈 [P3 Trailing Stop Ratcheted] {sym}: Raised to ₹{ratchet_sl:.2f} (10 EMA).")
                         current_sl = ratchet_sl
 
-                    # Check exit for Leg 2 runner
-                    if c <= current_sl:
+                    breakeven_breached = (l <= current_sl)
+                    ema10_violated = (c < ema10_val)
+
+                    if breakeven_breached or ema10_violated:
+                        p2_exit_px = current_sl if breakeven_breached else c
+                        exit_reason = "BREAKEVEN_STOP" if breakeven_breached else "10EMA_TRAILING_STOP"
                         closed = state_engine.close_position(
                             sym,
-                            exit_price=c,
-                            exit_reason="10EMA_TRAILING_STOP",
+                            exit_price=p2_exit_px,
+                            exit_reason=exit_reason,
                             portfolio_type=self.portfolio_type,
                             bypass_gate=bypass_gate
                         )
                         if closed:
                             closed_events.append(closed)
 
-                        total_leg2_pnl = round((c - entry_px) * qty, 2)
+                        total_leg2_pnl = round((p2_exit_px - entry_px) * qty, 2)
+                        p1_exit_p = float(leg_info.get("leg1_exit_price") or target_1) if leg_info else target_1
+                        risk_val = float(leg_info.get("risk_per_share") or leg_info.get("risk") or (target_1 - entry_px) / 2.0) if leg_info else (target_1 - entry_px) / 2.0
+                        if risk_val <= 0:
+                            risk_val = 1.0
+
+                        p1_r = (p1_exit_p - entry_px) / risk_val
+                        p2_r = (p2_exit_px - entry_px) / risk_val
+                        r_mult = round((0.5 * p1_r) + (0.5 * p2_r), 2)
+
+                        p1_ret = (p1_exit_p - entry_px) / entry_px * 100.0 if entry_px > 0 else 0.0
+                        p2_ret = (p2_exit_px - entry_px) / entry_px * 100.0 if entry_px > 0 else 0.0
+                        net_ret = round((0.5 * p1_ret) + (0.5 * p2_ret) - FRICTION_PCT, 2)
+
                         with self._get_connection() as conn:
                             conn.execute("""
                             UPDATE p3_position_legs
                             SET leg2_status = 'TRAILED_OUT', leg2_exit_price = ?, leg2_exit_date = ?,
-                                leg2_pnl = ?, overall_status = 'CLOSED',
-                                total_realized_pnl = total_realized_pnl + ?, updated_at = ?
+                                leg2_pnl = ?, p2_active = 0, overall_status = 'CLOSED',
+                                total_realized_pnl = total_realized_pnl + ?,
+                                net_ret_pct = ?, r_multiple = ?, updated_at = ?
                             WHERE symbol = ? AND overall_status = 'PARTIAL_CLOSED'
-                            """, (c, now_str, total_leg2_pnl, total_leg2_pnl, now_str, sym))
+                            """, (p2_exit_px, now_str, total_leg2_pnl, total_leg2_pnl, net_ret, r_mult, now_str, sym))
                             conn.commit()
 
-                        logger.info(f"🏁 [P3 Runner Exited] {sym} closed @ ₹{c:.2f} on 10 EMA trailing stop (Runner PnL: +₹{total_leg2_pnl:.2f}).")
+                        logger.info(f"🏁 [P3 Runner Exited] {sym} closed @ ₹{p2_exit_px:.2f} ({exit_reason}, Net Ret: {net_ret}%, {r_mult}R).")
                         telegram_vault.send_alert_and_sync(
-                            title=f"🏁 P3 RUNNER EXITED (10 EMA): {sym}",
-                            message=f"Closed runner in <b>{sym}</b> @ ₹{c:.2f}. Runner PnL: +₹{total_leg2_pnl:,.2f}.",
+                            title=f"🏁 P3 RUNNER EXITED: {sym}",
+                            message=f"Closed runner in <b>{sym}</b> @ ₹{p2_exit_px:.2f}. Runner PnL: +₹{total_leg2_pnl:,.2f} ({r_mult}R, Net Return: {net_ret}%).",
                             sync_db=True
                         )
             except Exception as pos_err:
@@ -1079,6 +1247,38 @@ class Portfolio3StrategyEngine:
                 order_res = self.execute_breakout_order(eval_res, bypass_gate=bypass_gate)
                 if order_res:
                     executed_orders.append(order_res)
+            elif eval_res.get("is_invalidated"):
+                with self._get_connection() as conn:
+                    conn.execute(
+                        "UPDATE p3_prebreakout_watchlist SET status = 'INVALIDATED', updated_at = ? WHERE symbol = ? AND status = 'WATCHING'",
+                        (now_str, sym)
+                    )
+                    conn.commit()
+                logger.info(f"🚫 [P3 Candidate Invalidated] {sym}: {eval_res.get('invalidation_reason')}")
+            elif eval_res.get("is_inside_bar_roll"):
+                if eval_res.get("next_days_tracked", 0) >= 2:
+                    with self._get_connection() as conn:
+                        conn.execute(
+                            "UPDATE p3_prebreakout_watchlist SET status = 'EXPIRED', updated_at = ? WHERE symbol = ? AND status = 'WATCHING'",
+                            (now_str, sym)
+                        )
+                        conn.commit()
+                    logger.info(f"⌛ [P3 Candidate Expired] {sym}: Tracked 2 sessions without triggering.")
+                else:
+                    with self._get_connection() as conn:
+                        conn.execute("""
+                            UPDATE p3_prebreakout_watchlist
+                            SET trigger_high = ?, base_low = ?, days_tracked = ?, updated_at = ?
+                            WHERE symbol = ? AND status = 'WATCHING'
+                        """, (
+                            eval_res["new_trigger_high"],
+                            eval_res["new_base_low"],
+                            eval_res["next_days_tracked"],
+                            now_str,
+                            sym
+                        ))
+                        conn.commit()
+                    logger.info(f"🔄 [P3 Inside Bar Roll] {sym}: High rolled to {eval_res['new_trigger_high']}, Low to {eval_res['new_base_low']}, Day={eval_res['next_days_tracked']}.")
 
         # 5. Reconcile open positions and split exits
         closed_trades = self.reconcile_open_positions(bypass_gate=bypass_gate)

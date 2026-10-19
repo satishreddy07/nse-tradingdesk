@@ -42,32 +42,48 @@ def generate_synthetic_coil_df(
     vdu_ratio: float = 0.65,
     range_contraction_pct: float = 2.5,
     ema20_dist_pct: float = 1.0,
-    uptrend: bool = True
+    uptrend: bool = True,
+    vol_fade: bool = True,
+    atr_squeeze: bool = True
 ) -> pd.DataFrame:
-    """Generates synthetic daily OHLCV dataframe configured for coil testing."""
+    """Generates synthetic daily OHLCV dataframe configured for hybrid squeeze coil testing."""
     dates = pd.date_range("2026-01-01", periods=n_bars, freq="B")
     opens, highs, lows, closes, vols = [], [], [], [], []
 
     current_p = base_price
     for i in range(n_bars):
+        drift = 0.3 if uptrend else -0.3
+        current_p = max(20.0, current_p + drift)
+        c = current_p
+
+        if atr_squeeze and i < n_bars - 5:
+            half_range = 2.5
+        elif not atr_squeeze:
+            half_range = 1.5
+        else:
+            half_range = 0.8
+
         if i == n_bars - 1:
             # T-1 Bar (Coil Candidate Bar)
-            c = current_p
-            # Range contraction: (H - L) / C = range_contraction_pct / 100
             half_range = (c * (range_contraction_pct / 100.0)) / 2.0
             h = c + half_range
             l = c - half_range
             o = c - (half_range * 0.2)
-            # Volume: 20-day SMA is 1,000,000, so v_t1 = 1,000,000 * vdu_ratio
             v = 1000000.0 * vdu_ratio
+        elif i == n_bars - 2 and vol_fade:
+            h = c + half_range
+            l = c - half_range
+            o = c - (half_range * 0.2)
+            v = 1200000.0  # T-2
+        elif i == n_bars - 3 and vol_fade:
+            h = c + half_range
+            l = c - half_range
+            o = c - (half_range * 0.2)
+            v = 1500000.0  # T-3 (1.5M > 1.2M > T-1 Volume)
         else:
-            # History: steady uptrend or downtrend
-            drift = 0.3 if uptrend else -0.3
-            current_p = max(20.0, current_p + drift)
-            c = current_p
-            h = c + 1.5
-            l = c - 1.5
-            o = c - 0.2
+            h = c + half_range
+            l = c - half_range
+            o = c - (half_range * 0.2)
             v = 1000000.0
 
         opens.append(o)
@@ -91,19 +107,21 @@ def generate_synthetic_coil_df(
 # ------------------------------------------------------------------------------
 
 def test_evaluate_prebreakout_coil_valid():
-    """Test that a stock meeting all 4 rules is identified as a valid coil candidate."""
+    """Test that a stock meeting all 6 rules is identified as a valid coil candidate."""
     df = generate_synthetic_coil_df(n_bars=70, vdu_ratio=0.65, range_contraction_pct=2.5, uptrend=True)
     res = evaluate_prebreakout_coil(df, "TESTCOIL")
 
     assert res is not None
     assert res["symbol"] == "TESTCOIL"
     assert res["vdu_ratio"] <= 0.80
-    assert res["range_contraction_pct"] <= 3.2
-    assert res["ema20_dist_pct"] <= 3.8
-    assert res["t_minus_1_close"] >= res["ema20"]
+    assert res["range_contraction_pct"] <= 3.5
+    assert res["ema20_dist_pct"] <= 4.0
+    assert res["t_minus_1_close"] >= res["ema20"] * 0.98
     assert res["ema20"] > res["ema50"]
-    # Check stop loss anchored at T-1 Low * 0.998
-    expected_sl = round(res["t_minus_1_low"] * 0.998, 2)
+    assert res["vol_fade_passed"] == 1
+    assert res["atr_squeeze_ratio"] <= 0.80
+    # Check stop loss anchored at Base Low * 0.998
+    expected_sl = round(res["base_low"] * 0.998, 2)
     assert res["initial_sl"] == expected_sl
     assert res["risk_per_share"] > 0.0
 
@@ -116,7 +134,7 @@ def test_evaluate_prebreakout_coil_fails_vdu():
 
 
 def test_evaluate_prebreakout_coil_fails_range_contraction():
-    """Test that wide range (> 3.2%) fails range contraction filter."""
+    """Test that wide range (> 3.5%) fails range contraction filter."""
     df = generate_synthetic_coil_df(n_bars=70, vdu_ratio=0.60, range_contraction_pct=5.5, uptrend=True)
     res = evaluate_prebreakout_coil(df, "FAIL_RANGE")
     assert res is None
@@ -126,6 +144,20 @@ def test_evaluate_prebreakout_coil_fails_downtrend():
     """Test that downtrend (20 EMA <= 50 SMA) is blocked by trend filter."""
     df = generate_synthetic_coil_df(n_bars=70, vdu_ratio=0.60, range_contraction_pct=2.0, uptrend=False)
     res = evaluate_prebreakout_coil(df, "FAIL_TREND")
+    assert res is None
+
+
+def test_evaluate_prebreakout_coil_fails_vol_fade():
+    """Test that failure of 3-day progressive volume fade disqualifies candidate."""
+    df = generate_synthetic_coil_df(n_bars=70, vdu_ratio=0.65, range_contraction_pct=2.0, uptrend=True, vol_fade=False)
+    res = evaluate_prebreakout_coil(df, "FAIL_VOL_FADE")
+    assert res is None
+
+
+def test_evaluate_prebreakout_coil_fails_atr_squeeze():
+    """Test that absence of dynamic volatility squeeze (ATR5/ATR20 > 0.80) fails setup."""
+    df = generate_synthetic_coil_df(n_bars=70, vdu_ratio=0.65, range_contraction_pct=2.0, uptrend=True, atr_squeeze=False)
+    res = evaluate_prebreakout_coil(df, "FAIL_ATR_SQUEEZE")
     assert res is None
 
 
@@ -367,3 +399,109 @@ def test_initial_stop_hit_before_target():
             assert leg_row["leg2_status"] == "STOPPED_OUT"
     finally:
         portfolio3_strategy_engine.get_stock_daily_df = orig_fetch
+
+
+def test_evaluate_breakout_inside_bar_rolling():
+    """Test rolling inside bar when volume remains <= 0.80x and price holds 20 EMA."""
+    watch_item = {
+        "symbol": "ROLLING_STK",
+        "trigger_high": 100.0,
+        "base_low": 96.0,
+        "avg_vol_20": 1000000.0,
+        "ema20": 95.0,
+        "days_tracked": 0
+    }
+    quote_data = {
+        "ltp": 99.0, # Does not trigger (trigger is 100 * 1.001 = 100.1)
+        "high": 99.5,
+        "low": 96.5,
+        "volume": 600000.0 # 0.60x <= 0.80x
+    }
+    res = portfolio3_strategy_engine.evaluate_breakout_candidate(watch_item, quote_data)
+    assert res["should_enter"] is False
+    assert res["is_inside_bar_roll"] is True
+    assert res["next_days_tracked"] == 1
+    assert res["new_trigger_high"] == 100.0
+    assert res["new_base_low"] == 96.0
+
+
+def test_evaluate_breakout_invalidation_below_20ema():
+    """Test invalidation when price closes below 20 EMA."""
+    watch_item = {
+        "symbol": "INVALID_STK",
+        "trigger_high": 100.0,
+        "base_low": 96.0,
+        "avg_vol_20": 1000000.0,
+        "ema20": 95.0,
+        "days_tracked": 0
+    }
+    quote_data = {
+        "ltp": 94.0, # Below 20 EMA
+        "high": 97.0,
+        "low": 93.5,
+        "volume": 500000.0
+    }
+    res = portfolio3_strategy_engine.evaluate_breakout_candidate(watch_item, quote_data)
+    assert res["should_enter"] is False
+    assert res["is_invalidated"] is True
+    assert res["invalidation_reason"] == "CLOSED_BELOW_20EMA"
+
+
+def test_friction_deduction_and_split_exit_r_multiple():
+    """Verify that 0.30% round-trip friction is subtracted and R-multiple is accurately computed."""
+    sym = "TEST_FRICTION"
+    with state_engine._lock:
+        with state_engine._get_connection() as conn:
+            conn.execute("DELETE FROM active_positions WHERE symbol = ? AND portfolio_type = ?", (sym, PORTFOLIO_TYPE))
+            conn.execute("DELETE FROM trade_history WHERE symbol = ? AND portfolio_type = ?", (sym, PORTFOLIO_TYPE))
+            conn.execute("DELETE FROM p3_position_legs WHERE symbol = ?", (sym,))
+
+    eval_result = {
+        "symbol": sym,
+        "ltp": 100.0,
+        "initial_sl": 95.0, # 1R = 5.0
+        "volume_pacing": 3.50
+    }
+    order_res = portfolio3_strategy_engine.execute_breakout_order(eval_result, bypass_gate=True)
+    assert order_res is not None
+
+    # Part 1 target reaches 110.0 (+2R)
+    mock_df_t1 = pd.DataFrame({
+        "Open": [100.0, 102.0],
+        "High": [105.0, 110.5],
+        "Low": [98.0, 101.0],
+        "Close": [104.0, 110.0],
+        "Volume": [1000000.0, 1500000.0]
+    }, index=pd.date_range("2026-04-14", periods=2, freq="B"))
+
+    orig_fetch = portfolio3_strategy_engine.get_stock_daily_df
+    portfolio3_strategy_engine.get_stock_daily_df = lambda s: mock_df_t1
+
+    try:
+        portfolio3_strategy_engine.reconcile_open_positions(bypass_gate=True)
+
+        # Part 2 runner trailed out at 105.0 (+1R)
+        mock_df_exit = pd.DataFrame({
+            "Open": [100.0, 102.0, 107.0],
+            "High": [105.0, 110.5, 108.0],
+            "Low": [98.0, 101.0, 104.0],
+            "Close": [104.0, 110.0, 105.0],
+            "Volume": [1000000.0, 1500000.0, 1200000.0]
+        }, index=pd.date_range("2026-04-14", periods=3, freq="B"))
+
+        portfolio3_strategy_engine.get_stock_daily_df = lambda s: mock_df_exit
+        portfolio3_strategy_engine.reconcile_open_positions(bypass_gate=True)
+
+        with portfolio3_strategy_engine._get_connection() as conn:
+            leg_row = conn.execute("SELECT * FROM p3_position_legs WHERE symbol = ?", (sym,)).fetchone()
+            assert leg_row["overall_status"] == "CLOSED"
+            # Part 1 return: (110 - 100) / 100 = 10%
+            # Part 2 return: (105 - 100) / 100 = 5%
+            # Blended gross return: 0.5 * 10 + 0.5 * 5 = 7.5%
+            # Net return after 0.30% friction: 7.5% - 0.30% = 7.20%
+            assert abs(leg_row["net_ret_pct"] - 7.20) < 0.05
+            # Part 1 R: +2.0R, Part 2 R: +1.0R -> blended R: 0.5 * 2.0 + 0.5 * 1.0 = +1.5R
+            assert abs(leg_row["r_multiple"] - 1.50) < 0.05
+    finally:
+        portfolio3_strategy_engine.get_stock_daily_df = orig_fetch
+
