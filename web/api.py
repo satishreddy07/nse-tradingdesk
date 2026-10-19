@@ -53,6 +53,10 @@ from engines.nifty500_engine import (
     get_nifty500_status, get_live_compounded_equity,
     PORTFOLIO_TYPE as P2_TYPE
 )
+from engines.strategy_engine import (
+    portfolio3_strategy_engine,
+    PORTFOLIO_TYPE as P3_TYPE
+)
 from engines.custom_screener_engine import custom_screener_engine
 from engines.screener_comparison_engine import screener_comparison_engine
 from execution.state_engine import state_engine
@@ -291,7 +295,9 @@ def get_portfolio_summary(portfolio_type: str):
     stats = state_engine.get_portfolio_stats(portfolio_type=p_type)
     can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
 
-    if p_type == P2_TYPE:
+    if p_type == P3_TYPE:
+        return portfolio3_strategy_engine.get_portfolio_summary()
+    elif p_type == P2_TYPE:
         curr_eq, tot_eq, active_count = get_live_compounded_equity()
         p2_state = get_nifty500_status()
         return {
@@ -381,6 +387,49 @@ def get_portfolio_history(portfolio_type: str, limit: int = 200):
 def get_portfolio_signals(portfolio_type: str):
     p_type = state_engine._normalize_portfolio_type(portfolio_type)
     return state_engine.get_latest_signals(portfolio_type=p_type)
+
+
+# --------------------------------------------------------------------------
+# PORTFOLIO 3: PRE-BREAKOUT COILS & SPLIT EXIT ROUTES
+# --------------------------------------------------------------------------
+@app.get("/api/portfolio/PORTFOLIO_3/watchlist")
+def get_portfolio3_watchlist():
+    """Returns active pre-breakout coil watchlist candidates for Portfolio 3."""
+    return portfolio3_strategy_engine.get_active_watchlist()
+
+
+@app.get("/api/portfolio/PORTFOLIO_3/legs")
+def get_portfolio3_legs():
+    """Returns active and recent dual-leg tracking records for Portfolio 3."""
+    with portfolio3_strategy_engine._get_connection() as conn:
+        rows = conn.execute("SELECT * FROM p3_position_legs ORDER BY id DESC LIMIT 100").fetchall()
+        return [dict(r) for r in rows]
+
+
+@app.post("/api/portfolio/PORTFOLIO_3/scan-watchlist")
+def trigger_portfolio3_watchlist_scan(background_tasks: BackgroundTasks):
+    """Manually triggers EOD Pre-Breakout Coil Watchlist Ingestion for Portfolio 3."""
+    def _worker():
+        portfolio3_strategy_engine.ingest_prebreakout_watchlist(sync_cloud=True)
+    background_tasks.add_task(_worker)
+    return {"status": "TRIGGERED", "message": "Portfolio 3 Watchlist Ingestion triggered in background."}
+
+
+@app.post("/api/portfolio/PORTFOLIO_3/trigger-intraday")
+def trigger_portfolio3_intraday_cycle(bypass_window: bool = False, bypass_gate: bool = False):
+    """Manually triggers Intraday Breakout Validation & Volume Confirmation for Portfolio 3."""
+    res = portfolio3_strategy_engine.run_intraday_breakout_cycle(
+        bypass_window=bypass_window,
+        bypass_gate=bypass_gate
+    )
+    return res
+
+
+@app.post("/api/portfolio/PORTFOLIO_3/reconcile")
+def trigger_portfolio3_reconcile(bypass_gate: bool = False):
+    """Manually triggers automated split exit reconciliation for Portfolio 3."""
+    closed = portfolio3_strategy_engine.reconcile_open_positions(bypass_gate=bypass_gate)
+    return {"status": "SUCCESS", "closed_trades": closed}
 
 
 class RefreshPricesRequest(BaseModel):

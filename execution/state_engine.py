@@ -87,7 +87,9 @@ class StateEngine:
         if not p_type:
             return "INSTITUTIONAL_6PILLAR"
         p = str(p_type).strip().upper()
-        if "NIFTY" in p:
+        if "PORTFOLIO_3" in p or "P3" in p or "BREAKOUT" in p or "COIL" in p:
+            return "PORTFOLIO_3_PRE_BREAKOUT"
+        if "NIFTY" in p or "P2" in p:
             return "NIFTY500_MOMENTUM"
         return "INSTITUTIONAL_6PILLAR"
 
@@ -355,6 +357,67 @@ class StateEngine:
                             ))
                 except Exception:
                     pass
+
+                # 8. Portfolio 3: Pre-Breakout Watchlist & Split Exit Position Legs
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS p3_prebreakout_watchlist (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    scan_date TEXT NOT NULL,
+                    t_minus_1_date TEXT,
+                    t_minus_1_close REAL NOT NULL,
+                    t_minus_1_high REAL NOT NULL,
+                    t_minus_1_low REAL NOT NULL,
+                    initial_sl REAL NOT NULL,
+                    t_minus_1_range_pct REAL NOT NULL,
+                    vdu_ratio REAL NOT NULL,
+                    ema20 REAL NOT NULL,
+                    ema50 REAL NOT NULL,
+                    ema20_dist_pct REAL NOT NULL,
+                    avg_vol_20 REAL NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'WATCHING',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(symbol, scan_date)
+                );
+                """)
+
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS p3_position_legs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    portfolio_type TEXT NOT NULL DEFAULT 'PORTFOLIO_3_PRE_BREAKOUT',
+                    entry_date TEXT NOT NULL,
+                    entry_time TEXT NOT NULL,
+                    entry_price REAL NOT NULL,
+                    total_quantity INTEGER NOT NULL,
+                    initial_sl REAL NOT NULL,
+                    risk_per_share REAL NOT NULL,
+                    risk_capital REAL NOT NULL,
+                    leg1_qty INTEGER NOT NULL,
+                    leg1_target_price REAL NOT NULL,
+                    leg1_status TEXT NOT NULL DEFAULT 'OPEN',
+                    leg1_exit_price REAL,
+                    leg1_exit_date TEXT,
+                    leg1_pnl REAL DEFAULT 0.0,
+                    leg2_qty INTEGER NOT NULL,
+                    leg2_status TEXT NOT NULL DEFAULT 'OPEN',
+                    leg2_current_sl REAL NOT NULL,
+                    leg2_trailing_ema10 REAL,
+                    leg2_exit_price REAL,
+                    leg2_exit_date TEXT,
+                    leg2_pnl REAL DEFAULT 0.0,
+                    overall_status TEXT NOT NULL DEFAULT 'OPEN',
+                    current_price REAL,
+                    highest_price REAL,
+                    total_realized_pnl REAL DEFAULT 0.0,
+                    unrealized_pnl REAL DEFAULT 0.0,
+                    notes TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(symbol, entry_date)
+                );
+                """)
 
                 conn.commit()
                 logger.info("Single Master File Database schemas verified and ready.")
@@ -1709,12 +1772,22 @@ class StateEngine:
         F-39: Separates closed trade stats from active positions (no double-counting booked T1 as closed wins),
         computes real peak-to-trough max drawdown, avoids 999.0 sentinels, and queries full history.
         """
-        from core.config import P1_BASE_CAPITAL, P2_BASE_CAPITAL, P1_MAX_SLOTS, P2_MAX_SLOTS
+        from core.config import (
+            P1_BASE_CAPITAL, P2_BASE_CAPITAL, P3_BASE_CAPITAL,
+            P1_MAX_SLOTS, P2_MAX_SLOTS, P3_MAX_SLOTS
+        )
 
         if isinstance(base_capital, str):
             portfolio_type = base_capital
             p_check = self._normalize_portfolio_type(portfolio_type)
-            base_capital = P2_BASE_CAPITAL if "NIFTY" in p_check else P1_BASE_CAPITAL
+            if "PORTFOLIO_3" in p_check:
+                base_capital = P3_BASE_CAPITAL
+            elif "NIFTY" in p_check:
+                base_capital = P2_BASE_CAPITAL
+            else:
+                base_capital = P1_BASE_CAPITAL
+        elif portfolio_type and "PORTFOLIO_3" in str(portfolio_type).upper() and base_capital == 500000.0:
+            base_capital = P3_BASE_CAPITAL
         elif portfolio_type and "NIFTY" in str(portfolio_type).upper() and base_capital == 500000.0:
             base_capital = P2_BASE_CAPITAL
 
@@ -1753,8 +1826,12 @@ class StateEngine:
         closed_realized_pnl = sum(float(t.get("pnl") or 0.0) for t in history)
         total_realized_pnl = round(closed_realized_pnl + active_t1_pnl, 2)
 
-        is_p2 = p_type and "NIFTY" in p_type
-        max_slots = P2_MAX_SLOTS if is_p2 else P1_MAX_SLOTS
+        if p_type and "PORTFOLIO_3" in p_type:
+            max_slots = P3_MAX_SLOTS
+        elif p_type and "NIFTY" in p_type:
+            max_slots = P2_MAX_SLOTS
+        else:
+            max_slots = P1_MAX_SLOTS
         slots_used = len(active)
         slots_available = max(0, max_slots - slots_used)
         available_cash = round(max(0.0, base_capital + total_realized_pnl - total_invested), 2)

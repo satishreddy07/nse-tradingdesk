@@ -225,6 +225,13 @@ def scheduled_live_price_stream_job():
                     intraday_analytics_engine.check_intraday_wall_breach_and_alert(spot_val, cw, pw)
             except Exception as we:
                 logger.debug(f"Wall breach check notice: {we}")
+
+            # 6. Reconcile open positions and 10 EMA trailing exits for Portfolio 3
+            try:
+                from engines.strategy_engine import portfolio3_strategy_engine
+                portfolio3_strategy_engine.reconcile_open_positions()
+            except Exception as p3e:
+                logger.debug(f"5m Portfolio 3 position reconciliation notice: {p3e}")
         except Exception as e:
             logger.warning(f"5m option chain sync & auto-trade warning: {e}")
 
@@ -919,6 +926,50 @@ def scheduled_prospective_paper_trading_job():
         logger.warning(f"Prospective paper-trading post-market run notice: {e}")
 
 
+def scheduled_p3_intraday_breakout_job():
+    """
+    Every 30 Minutes during 09:15 - 10:15 IST (at 09:45 and 10:15 IST Mon-Fri):
+    Portfolio 3 Intraday Breakout Validation & Volume Confirmation Execution.
+    """
+    curr = now_ist()
+    if not NSEMarketCalendar.is_trading_day(curr.date()):
+        return
+    try:
+        from engines.strategy_engine import portfolio3_strategy_engine
+        logger.info(f"⏰ [P3 Breakout Check] Running intraday trigger & volume pacing scan at {format_ist(curr)}...")
+        execution_queue.submit_task(
+            task_fn=portfolio3_strategy_engine.run_intraday_breakout_cycle,
+            task_name="Portfolio 3 Intraday Breakout Validation",
+            task_type="P3_BREAKOUT_SCAN",
+            kwargs={"bypass_window": False, "bypass_gate": False},
+            deduplicate=True
+        )
+    except Exception as e:
+        logger.warning(f"Portfolio 3 intraday breakout job error: {e}")
+
+
+def scheduled_p3_eod_watchlist_job():
+    """
+    16:05 PM IST Mon-Fri Post-Market Job:
+    Portfolio 3 EOD Pre-Breakout Coil Watchlist Ingestion for next trading day.
+    """
+    curr = now_ist()
+    if not NSEMarketCalendar.is_trading_day(curr.date()):
+        return
+    try:
+        from engines.strategy_engine import portfolio3_strategy_engine
+        logger.info(f"⏰ [P3 EOD Watchlist] Ingesting pre-breakout coils for next session at {format_ist(curr)}...")
+        execution_queue.submit_task(
+            task_fn=portfolio3_strategy_engine.ingest_prebreakout_watchlist,
+            task_name="Portfolio 3 EOD Watchlist Ingestion",
+            task_type="P3_EOD_WATCHLIST",
+            kwargs={"sync_cloud": True},
+            deduplicate=True
+        )
+    except Exception as e:
+        logger.warning(f"Portfolio 3 EOD watchlist ingestion error: {e}")
+
+
 def start_scheduler():
     """Initializes and starts the BackgroundScheduler with IST triggers & Render Anti-Sleep Guard."""
     global _scheduler
@@ -1139,6 +1190,34 @@ def start_scheduler():
             trigger=CronTrigger(day_of_week="mon-fri", hour=15, minute=45, timezone=IST),
             id="job_prospective_paper_trading_1545",
             name="15:45 PM Post-Market Prospective Paper-Trading Lifecycle Run",
+            replace_existing=True,
+            misfire_grace_time=600
+        )
+
+        # Job 8: Portfolio 3 Intraday Breakout Validation (Mon-Fri, 09:45 & 10:15 IST)
+        _scheduler.add_job(
+            scheduled_p3_intraday_breakout_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=9, minute=45, timezone=IST),
+            id="job_p3_breakout_0945",
+            name="09:45 AM Portfolio 3 Intraday Breakout Validation",
+            replace_existing=True,
+            misfire_grace_time=180
+        )
+        _scheduler.add_job(
+            scheduled_p3_intraday_breakout_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=10, minute=15, timezone=IST),
+            id="job_p3_breakout_1015",
+            name="10:15 AM Portfolio 3 Intraday Breakout Validation",
+            replace_existing=True,
+            misfire_grace_time=180
+        )
+
+        # Job 9: Portfolio 3 EOD Pre-Breakout Watchlist Ingestion (Mon-Fri, 16:05 IST)
+        _scheduler.add_job(
+            scheduled_p3_eod_watchlist_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=16, minute=5, timezone=IST),
+            id="job_p3_eod_watchlist_1605",
+            name="16:05 PM Portfolio 3 EOD Pre-Breakout Coil Watchlist Ingestion",
             replace_existing=True,
             misfire_grace_time=600
         )

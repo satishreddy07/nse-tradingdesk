@@ -49,6 +49,14 @@ P2_RISK_PER_TRADE = float(os.environ.get("P2_RISK_PER_TRADE", 0.015)) # 1.5% dyn
 P2_MAX_SLOTS = int(os.environ.get("P2_MAX_SLOTS", 10))                # 10 maximum concurrent slots
 P2_STOP_ATR_MULT = float(os.environ.get("P2_STOP_ATR_MULT", 2.0))     # 2.0x ATR Wilder stop
 
+# Portfolio 3: Pre-Breakout Coil & Intraday Volume Confirmation Engine
+P3_BASE_CAPITAL = float(os.environ.get("P3_BASE_CAPITAL", 200000.0))  # ₹2,00,000
+P3_RISK_PER_TRADE = float(os.environ.get("P3_RISK_PER_TRADE", 0.010)) # 1.0% fixed risk model per trade
+P3_MAX_SLOTS = int(os.environ.get("P3_MAX_SLOTS", 10))               # 10 maximum concurrent slots
+P3_ALLOCATION_CAP_PCT = float(os.environ.get("P3_ALLOCATION_CAP_PCT", 0.20)) # 20% max allocation per stock
+P3_TARGET_R = float(os.environ.get("P3_TARGET_R", 2.0))              # +2.0R first half profit target
+P3_VOLUME_PACING_THRESHOLD = float(os.environ.get("P3_VOLUME_PACING_THRESHOLD", 3.12)) # 3.12x volume pacing confirmation
+
 # Risk Controls & Capital Allocation Gates (F-38)
 MAX_POSITION_CAP_PCT = float(os.environ.get("MAX_POSITION_CAP_PCT", 0.20)) # 20% max capital per position
 MAX_SECTOR_POSITIONS = int(os.environ.get("MAX_SECTOR_POSITIONS", 3))       # Max 3 positions in single sector
