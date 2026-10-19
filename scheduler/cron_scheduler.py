@@ -590,7 +590,7 @@ def scheduled_nifty_intraday_50min_job(slot_label: Optional[str] = None):
             )
         except Exception:
             pass
-        if slot_label in ("09:30", "12:00", "15:20", "15:30", None):
+        if slot_label in ("09:30", "12:00", "15:20", "15:30"):
             nifty_analytics_engine.compute_nifty_predictions(force_refresh=False)
     except Exception as e:
         logger.warning(f"Intraday option snapshot job warning: {e}")
@@ -659,10 +659,13 @@ def _intraday_collector_watchdog():
                         pass
 
                     # Watchdog Scheduled Scans Catch-Up:
-                    # 08:45 AM Pre-Market Prediction Catch-Up (08:45 to 15:30 IST)
+                    # 08:45 AM Pre-Market Prediction Catch-Up (08:45 to 08:58 AM IST ONLY, strictly before market open)
                     today_str = dt_now.strftime("%Y-%m-%d")
-                    is_pred_locked = bool(state_engine.get_kv(f"nifty_prediction_locked_{today_str}"))
-                    if not is_pred_locked and mins >= 525:  # 525 mins = 08:45 AM IST
+                    is_pred_locked = bool(
+                        state_engine.get_kv(f"nifty_prediction_locked_{today_str}")
+                        or state_engine.get_kv("latest_nifty_predictions")
+                    )
+                    if not is_pred_locked and (525 <= mins < 538):  # 525 mins = 08:45 AM, 538 mins = 08:58 AM IST
                         logger.info(f"🛡️ [Watchdog Catch-Up] 08:45 AM pre-market prediction pending for {today_str}. Running now...")
                         scheduled_premarket_nifty_prediction_job()
 
@@ -1234,9 +1237,12 @@ def start_scheduler():
             if NSEMarketCalendar.is_trading_day(curr_ist.date()):
                 today_str = curr_ist.strftime("%Y-%m-%d")
                 mins_now = curr_ist.hour * 60 + curr_ist.minute
-                is_pred_locked = bool(state_engine.get_kv(f"nifty_prediction_locked_{today_str}"))
-                if not is_pred_locked and mins_now >= 525:  # >= 08:45 AM IST
-                    logger.info(f"🛡️ [Cold Boot Catch-Up] Container started >= 08:45 AM ({curr_ist.strftime('%H:%M:%S')} IST). Dispatching pre-market prediction...")
+                is_pred_locked = bool(
+                    state_engine.get_kv(f"nifty_prediction_locked_{today_str}")
+                    or state_engine.get_kv("latest_nifty_predictions")
+                )
+                if not is_pred_locked and (525 <= mins_now < 538):  # 08:45 to 08:58 AM IST
+                    logger.info(f"🛡️ [Cold Boot Catch-Up] Container started in pre-market window ({curr_ist.strftime('%H:%M:%S')} IST). Dispatching pre-market prediction...")
                     threading.Thread(target=scheduled_premarket_nifty_prediction_job, daemon=True, name="ColdBootPrediction").start()
         except Exception as e:
             logger.debug(f"Cold boot prediction check error: {e}")

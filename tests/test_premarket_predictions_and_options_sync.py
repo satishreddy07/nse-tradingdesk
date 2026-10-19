@@ -301,4 +301,32 @@ def test_strictly_completed_session_cutoff():
         assert last_completed == prev_td
 
 
+def test_forward_testing_ledger_immutability_and_non_repainting():
+    """
+    Verifies that existing recorded predictions in nifty_predictions_log are immutable:
+    recomputation must NEVER overwrite t1_verdict, t5_verdict, or composite_score with retroactive data.
+    """
+    test_date = "2026-10-19"
+    with state_engine._lock:
+        with state_engine._get_connection() as conn:
+            row = conn.execute(
+                "SELECT t1_verdict, t5_verdict, composite_score, t1_validated FROM nifty_predictions_log WHERE prediction_date = ?",
+                (test_date,)
+            ).fetchone()
+            assert row is not None, "2026-10-19 entry should exist"
+            assert row[0] == "RANGE-BOUND / CONSOLIDATION"
+            assert row[1] == "MODERATELY BEARISH"
+            assert row[2] == 0.7
+            assert row[3] == "DIRECTION_MISS"
+
+    # Test that _load_prediction_from_db returns the locked dictionary
+    restored = nifty_analytics_engine._load_prediction_from_db(test_date)
+    assert restored is not None
+    assert restored["status"] == "OK"
+    assert restored["t1_forecast"]["verdict"] == "RANGE-BOUND / CONSOLIDATION"
+    assert restored["t5_forecast"]["verdict"] == "MODERATELY BEARISH"
+    assert restored["composite_score"] == 0.7
+
+
+
 

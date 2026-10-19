@@ -961,6 +961,12 @@ def lock_premarket_forecast():
     today_str = now_dt.strftime("%Y-%m-%d")
     locked_key = f"nifty_prediction_locked_{today_str}"
     existing_lock = state_engine.get_kv(locked_key)
+    if not existing_lock or not isinstance(existing_lock, dict):
+        cand_pred = state_engine.get_kv("latest_nifty_predictions")
+        if cand_pred and isinstance(cand_pred, dict) and cand_pred.get("prediction_date") == today_str:
+            existing_lock = cand_pred
+    if not existing_lock or not isinstance(existing_lock, dict):
+        existing_lock = nifty_analytics_engine._load_prediction_from_db(today_str)
 
     is_contaminated = False
     if existing_lock and isinstance(existing_lock, dict):

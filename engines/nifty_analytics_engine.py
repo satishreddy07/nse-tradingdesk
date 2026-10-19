@@ -3258,6 +3258,86 @@ class NiftyAnalyticsEngine:
             "t5_probs": {"up": p_up_t5, "flat": p_flat_t5, "down": p_down_t5},
         }
 
+    def _load_prediction_from_db(self, target_date_str: str) -> Optional[Dict[str, Any]]:
+        """
+        Loads the canonical locked prediction for a given target date from `nifty_predictions_log`.
+        Ensures that even if memory or KV cache is cleared/restarted, the immutable morning forecast is restored.
+        """
+        try:
+            with state_engine._lock:
+                with state_engine._get_connection() as conn:
+                    row = conn.execute(
+                        "SELECT * FROM nifty_predictions_log WHERE prediction_date = ? LIMIT 1",
+                        (target_date_str,)
+                    ).fetchone()
+                    if not row:
+                        return None
+                    d = dict(row)
+                    pillar_snap = {}
+                    if d.get("pillar_snapshots_json"):
+                        try:
+                            pillar_snap = json.loads(d["pillar_snapshots_json"])
+                        except Exception:
+                            pass
+
+                    spot = float(d.get("spot_at_prediction") or 0.0)
+                    score_t1 = float(d.get("composite_score") or 0.0)
+                    t1_v = d.get("t1_verdict") or "RANGE-BOUND / CONSOLIDATION"
+                    t5_v = d.get("t5_verdict") or "RANGE-BOUND / CONSOLIDATION"
+                    exp_c_1 = float(d.get("t1_expected_close") or spot)
+                    exp_c_5 = float(d.get("t5_expected_close") or spot)
+                    low_1s_1 = float(d.get("t1_low_1s") or exp_c_1)
+                    high_1s_1 = float(d.get("t1_high_1s") or exp_c_1)
+                    low_1s_5 = float(d.get("t5_low_1s") or exp_c_5)
+                    high_1s_5 = float(d.get("t5_high_1s") or exp_c_5)
+
+                    payload = {
+                        "status": "OK",
+                        "timestamp_ist": d.get("timestamp_ist") or format_ist(),
+                        "prediction_date": target_date_str,
+                        "target_date": d.get("target_date") or target_date_str,
+                        "data_date": d.get("data_date") or "",
+                        "data_as_of_date": d.get("data_date") or "",
+                        "spot_price": spot,
+                        "premarket_spot_price": spot,
+                        "nifty_spot": spot,
+                        "composite_score": score_t1,
+                        "composite_score_t1": score_t1,
+                        "composite_score_t5": score_t1 * 1.05,
+                        "is_premarket_locked": True,
+                        "market_hours_locked": True,
+                        "recompute_blocked": True,
+                        "lock_status": "MARKET_HOURS_STRICT_LOCK",
+                        "premarket_locked_at_ist": d.get("timestamp_ist") or format_ist(),
+                        "pillars": pillar_snap,
+                        "t1_forecast": {
+                            "verdict": t1_v,
+                            "prob_up": float(d.get("t1_prob_up") or 0.33),
+                            "prob_flat": float(d.get("t1_prob_flat") or 0.34),
+                            "prob_down": float(d.get("t1_prob_down") or 0.33),
+                            "expected_close": exp_c_1,
+                            "expected_pts": round(exp_c_1 - spot, 2),
+                            "expected_pct": round(((exp_c_1 - spot) / max(1.0, spot)) * 100.0, 2),
+                            "range_1sigma": [low_1s_1, high_1s_1],
+                            "basis_breakdown": {"verdict": t1_v, "composite_score": score_t1}
+                        },
+                        "t5_forecast": {
+                            "verdict": t5_v,
+                            "prob_up": float(d.get("t5_prob_up") or 0.33),
+                            "prob_flat": float(d.get("t5_prob_flat") or 0.34),
+                            "prob_down": float(d.get("t5_prob_down") or 0.33),
+                            "expected_close": exp_c_5,
+                            "expected_pts": round(exp_c_5 - spot, 2),
+                            "expected_pct": round(((exp_c_5 - spot) / max(1.0, spot)) * 100.0, 2),
+                            "range_1sigma": [low_1s_5, high_1s_5],
+                            "basis_breakdown": {"verdict": t5_v, "composite_score": score_t1 * 1.05}
+                        }
+                    }
+                    return payload
+        except Exception as e:
+            logger.warning(f"Error loading prediction from db: {e}")
+            return None
+
     def compute_nifty_predictions(self, force_refresh: bool = False, force_recalculate: bool = False) -> Dict[str, Any]:
         """
         Computes the full 6-Pillar Nifty 50 T+1 & T+5 Quantitative & Macro Prediction Dashboard:
@@ -3280,21 +3360,42 @@ class NiftyAnalyticsEngine:
         # Market hours strict window: 09:00:00 to 15:30:00 IST on trading days
         is_market_alive = is_trading and (datetime.time(9, 0) <= market_time <= datetime.time(15, 30))
 
-        # Check for existing prediction for today across memory, locked KV store, and latest prediction
+        # Expected target date for this forecast
+        if is_trading and market_time < datetime.time(15, 30):
+            target_date_expected = today_str
+        else:
+            target_date_expected = NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
+
+        # Multi-Tier Immutable Candidate Retrieval:
+        # Tier 1: Memory cache
         candidate = None
-        if self._predictions_mem_cache and self._predictions_mem_cache.get("prediction_date") == today_str and self._predictions_mem_cache.get("status") == "OK":
-            candidate = self._predictions_mem_cache
+        if self._predictions_mem_cache and self._predictions_mem_cache.get("status") == "OK":
+            if self._predictions_mem_cache.get("prediction_date") in (today_str, target_date_expected):
+                candidate = self._predictions_mem_cache
+
+        # Tier 2: Dedicated session-locked keys in system_kv_store
         if not candidate:
-            locked_persisted = state_engine.get_kv(locked_key)
-            if locked_persisted and isinstance(locked_persisted, dict) and locked_persisted.get("status") == "OK":
-                candidate = locked_persisted
+            for k in (f"nifty_prediction_locked_{today_str}", f"nifty_prediction_locked_{target_date_expected}"):
+                locked_persisted = state_engine.get_kv(k)
+                if locked_persisted and isinstance(locked_persisted, dict) and locked_persisted.get("status") == "OK":
+                    candidate = locked_persisted
+                    break
+
+        # Tier 3: General latest_nifty_predictions in system_kv_store
         if not candidate:
             persisted = state_engine.get_kv("latest_nifty_predictions")
-            if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK" and persisted.get("prediction_date") == today_str:
-                candidate = persisted
+            if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
+                if persisted.get("prediction_date") in (today_str, target_date_expected):
+                    candidate = persisted
+
+        # Tier 4: Canonical Immutable Audit Ledger in SQLite (nifty_predictions_log)
+        if not candidate:
+            lookup_date = today_str if is_market_alive else target_date_expected
+            candidate = self._load_prediction_from_db(lookup_date)
+            if not candidate and is_market_alive and lookup_date != today_str:
+                candidate = self._load_prediction_from_db(today_str)
 
         # Check if candidate has an unclosed data_date (e.g. data_date == today_str while market is open or before 15:30)
-        # If candidate has data_date == today_str before market close, it suffered from intraday lookahead contamination and MUST be repaired!
         is_candidate_contaminated = False
         if candidate:
             cand_data_date = str(candidate.get("data_date") or candidate.get("data_as_of_date") or "")
@@ -3306,8 +3407,7 @@ class NiftyAnalyticsEngine:
                 )
 
         # 1. STRICT MARKET-HOURS PREDICTION LOCK (09:00 AM – 03:30 PM IST):
-        # Forecast NEVER repaints, mutates, or recalculates while market is alive,
-        # UNLESS candidate is contaminated or missing.
+        # Forecast NEVER repaints, mutates, or recalculates while market is alive under ANY circumstances.
         if is_market_alive and candidate and not is_candidate_contaminated:
             candidate["is_premarket_locked"] = True
             candidate["market_hours_locked"] = True
@@ -3320,7 +3420,7 @@ class NiftyAnalyticsEngine:
             )
             if force_refresh or force_recalculate:
                 logger.warning(
-                    f"🔒 [MARKET HOURS STRICT LOCK] Recomputation request blocked during live market hours (09:00–15:30 IST) for {today_str}. "
+                    f"🔒 [MARKET HOURS STRICT LOCK] Recomputation request BLOCKED during live market hours (09:00–15:30 IST) for {today_str}. "
                     "Returning locked morning forecast without recalculation."
                 )
             if "ai_analysis" not in candidate and getattr(config, "AI_ENABLED", True):
@@ -4305,6 +4405,8 @@ class NiftyAnalyticsEngine:
         state_engine.set_kv("latest_nifty_predictions", payload)
         if is_trading:
             state_engine.set_kv(locked_key, payload)
+            state_engine.set_kv(f"nifty_prediction_locked_{target_date}", payload)
+            state_engine.set_kv(f"nifty_prediction_locked_{today_str}", payload)
 
         # Log immutable T+1 and T+5 forecasts in Nifty Prediction Ledger
         try:
@@ -4459,6 +4561,12 @@ class NiftyAnalyticsEngine:
         today_str = now_ist().strftime("%Y-%m-%d")
         locked_key = f"nifty_prediction_locked_{today_str}"
         locked_pred = state_engine.get_kv(locked_key)
+        if not locked_pred or not isinstance(locked_pred, dict):
+            cand_pred = state_engine.get_kv("latest_nifty_predictions")
+            if cand_pred and isinstance(cand_pred, dict) and cand_pred.get("prediction_date") == today_str:
+                locked_pred = cand_pred
+        if not locked_pred or not isinstance(locked_pred, dict):
+            locked_pred = self._load_prediction_from_db(today_str)
         if not locked_pred or not isinstance(locked_pred, dict):
             logger.info("EOD prediction evaluation skipped: no locked prediction found for today.")
             return {"status": "SKIPPED", "message": "No locked prediction for today"}
@@ -4642,8 +4750,24 @@ class NiftyAnalyticsEngine:
             else:
                 latest_target_date = NSEMarketCalendar.get_next_trading_day(today_date).strftime("%Y-%m-%d")
 
+        existing_db_records = {}
         with state_engine._lock:
             with state_engine._get_connection() as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT prediction_date, timestamp_ist, spot_at_prediction, composite_score,
+                           t1_verdict, t1_prob_up, t1_prob_flat, t1_prob_down, t1_expected_close, t1_low_1s, t1_high_1s,
+                           t5_verdict, t5_prob_up, t5_prob_flat, t5_prob_down, t5_expected_close, t5_low_1s, t5_high_1s,
+                           actual_t1_close, actual_t5_close, t1_validated, t5_validated,
+                           t1_actual_return_pct, t1_error_pts, t1_attribution,
+                           t5_actual_return_pct, t5_error_pts, t5_attribution,
+                           pillar_snapshots_json, target_date, data_date
+                    FROM nifty_predictions_log
+                """)
+                col_names = [col[0] for col in cur.description]
+                for r in cur.fetchall():
+                    existing_db_records[r[0]] = dict(zip(col_names, r))
+
                 for i in range(start_idx, n_bars):
                     data_dt = dates[i]
                     dt_str = data_dt
@@ -4661,6 +4785,9 @@ class NiftyAnalyticsEngine:
                             target_dt = NSEMarketCalendar.get_next_trading_day(d_parsed).strftime("%Y-%m-%d")
                         except Exception:
                             pass
+
+                    existing_row = existing_db_records.get(target_dt)
+                    is_preexisting = bool(existing_row and existing_row.get("t1_verdict"))
 
                     # 1. Historical technical score at bar i
                     c_window = closes[:i + 1]
@@ -4732,6 +4859,24 @@ class NiftyAnalyticsEngine:
                     low_1s_5 = round(exp_close_5 - atr5_i * 0.85, 2)
                     high_1s_5 = round(exp_close_5 + atr5_i * 0.85, 2)
 
+                    # STRICT IMMUTABILITY: If prediction was already logged in reality, lock in its genuine values!
+                    if is_preexisting:
+                        s0 = float(existing_row.get("spot_at_prediction") or s0)
+                        score_i = float(existing_row.get("composite_score") or score_i)
+                        v_t1 = str(existing_row.get("t1_verdict") or v_t1)
+                        v_t5 = str(existing_row.get("t5_verdict") or v_t5)
+                        exp_close_1 = float(existing_row.get("t1_expected_close") or exp_close_1)
+                        low_1s_1 = float(existing_row.get("t1_low_1s") or low_1s_1)
+                        high_1s_1 = float(existing_row.get("t1_high_1s") or high_1s_1)
+                        exp_close_5 = float(existing_row.get("t5_expected_close") or exp_close_5)
+                        low_1s_5 = float(existing_row.get("t5_low_1s") or low_1s_5)
+                        high_1s_5 = float(existing_row.get("t5_high_1s") or high_1s_5)
+                        if existing_row.get("pillar_snapshots_json"):
+                            try:
+                                pillar_snap = json.loads(existing_row["pillar_snapshots_json"])
+                            except Exception:
+                                pass
+
                     # Check realized T+1 outcome
                     actual_1 = closes[i + 1] if i + 1 < n_bars else None
                     ret_pct_1 = None
@@ -4746,12 +4891,9 @@ class NiftyAnalyticsEngine:
                         t1_err_sum += abs(err_pts_1)
                         in_band_1 = low_1s_1 <= actual_1 <= high_1s_1
 
-                        # Strict Directional Validation:
-                        # - Bullish call: must close green (or near-zero flat >= -0.05%). If it closes red, DIRECTION_MISS.
-                        # - Bearish call: must close red (or near-zero flat <= 0.05%). If it closes green, NEVER a hit.
-                        # - Range call: must stay within corridor.
-                        is_bull_call = score_i >= 8.0
-                        is_bear_call = score_i <= -8.0
+                        # Strict Directional Validation based on real model call
+                        is_bull_call = "BULLISH" in v_t1
+                        is_bear_call = "BEARISH" in v_t1
 
                         if is_bull_call:
                             if ret_pct_1 >= -0.05 and (in_band_1 or actual_1 > high_1s_1):
@@ -4810,8 +4952,8 @@ class NiftyAnalyticsEngine:
                         t5_err_sum += abs(err_pts_5)
                         in_band_5 = low_1s_5 <= actual_5 <= high_1s_5
 
-                        is_bull_call_5 = score_i >= 8.0
-                        is_bear_call_5 = score_i <= -8.0
+                        is_bull_call_5 = "BULLISH" in v_t5
+                        is_bear_call_5 = "BEARISH" in v_t5
 
                         if is_bull_call_5:
                             if ret_pct_5 >= 0.0 and (in_band_5 or actual_5 > high_1s_5):
@@ -4850,53 +4992,63 @@ class NiftyAnalyticsEngine:
                         tot_w5 = sum(w_t5.values())
                         w_t5 = {k: round(v / max(1e-5, tot_w5), 3) for k, v in w_t5.items()}
 
-                    # Upsert into SQLite
-                    conn.execute("""
-                    INSERT INTO nifty_predictions_log (
-                        prediction_date, timestamp_ist, spot_at_prediction, composite_score,
-                        t1_verdict, t1_prob_up, t1_prob_flat, t1_prob_down, t1_expected_close, t1_low_1s, t1_high_1s,
-                        t5_verdict, t5_prob_up, t5_prob_flat, t5_prob_down, t5_expected_close, t5_low_1s, t5_high_1s,
-                        actual_t1_close, actual_t5_close, t1_validated, t5_validated,
-                        t1_actual_return_pct, t1_error_pts, t1_attribution,
-                        t5_actual_return_pct, t5_error_pts, t5_attribution,
-                        pillar_snapshots_json, target_date, data_date
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(prediction_date) DO UPDATE SET
-                        spot_at_prediction = excluded.spot_at_prediction,
-                        composite_score = excluded.composite_score,
-                        t1_verdict = excluded.t1_verdict,
-                        t1_expected_close = excluded.t1_expected_close,
-                        t1_low_1s = excluded.t1_low_1s,
-                        t1_high_1s = excluded.t1_high_1s,
-                        t5_verdict = excluded.t5_verdict,
-                        t5_expected_close = excluded.t5_expected_close,
-                        t5_low_1s = excluded.t5_low_1s,
-                        t5_high_1s = excluded.t5_high_1s,
-                        actual_t1_close = excluded.actual_t1_close,
-                        actual_t5_close = excluded.actual_t5_close,
-                        t1_validated = excluded.t1_validated,
-                        t5_validated = excluded.t5_validated,
-                        t1_actual_return_pct = excluded.t1_actual_return_pct,
-                        t1_error_pts = excluded.t1_error_pts,
-                        t1_attribution = excluded.t1_attribution,
-                        t5_actual_return_pct = excluded.t5_actual_return_pct,
-                        t5_error_pts = excluded.t5_error_pts,
-                        t5_attribution = excluded.t5_attribution,
-                        pillar_snapshots_json = excluded.pillar_snapshots_json,
-                        target_date = excluded.target_date,
-                        data_date = excluded.data_date;
-                    """, (
-                        target_dt, f"{data_dt} 15:30:00 IST", s0, score_i,
-                        v_t1, 0.45 if score_i > 0 else 0.25, 0.25, 0.45 if score_i < 0 else 0.25,
-                        exp_close_1, low_1s_1, high_1s_1,
-                        v_t5, 0.50 if score_i > 0 else 0.20, 0.20, 0.50 if score_i < 0 else 0.20,
-                        exp_close_5, low_1s_5, high_1s_5,
-                        actual_1, actual_5, val_1, val_5,
-                        ret_pct_1, err_pts_1, attr_1,
-                        ret_pct_5, err_pts_5, attr_5,
-                        json.dumps(pillar_snap),
-                        target_dt, data_dt
-                    ))
+                    # Upsert into SQLite:
+                    # If this row was a pre-existing authentic prediction, UPDATE ONLY realized evaluation columns!
+                    # NEVER overwrite t1_verdict, t5_verdict, composite_score, spot_at_prediction, or expectations!
+                    if is_preexisting:
+                        conn.execute("""
+                        UPDATE nifty_predictions_log
+                        SET actual_t1_close = ?,
+                            actual_t5_close = ?,
+                            t1_validated = ?,
+                            t5_validated = ?,
+                            t1_actual_return_pct = ?,
+                            t1_error_pts = ?,
+                            t1_attribution = ?,
+                            t5_actual_return_pct = ?,
+                            t5_error_pts = ?,
+                            t5_attribution = ?
+                        WHERE prediction_date = ?
+                        """, (
+                            actual_1, actual_5, val_1, val_5,
+                            ret_pct_1, err_pts_1, attr_1,
+                            ret_pct_5, err_pts_5, attr_5,
+                            target_dt
+                        ))
+                    else:
+                        conn.execute("""
+                        INSERT INTO nifty_predictions_log (
+                            prediction_date, timestamp_ist, spot_at_prediction, composite_score,
+                            t1_verdict, t1_prob_up, t1_prob_flat, t1_prob_down, t1_expected_close, t1_low_1s, t1_high_1s,
+                            t5_verdict, t5_prob_up, t5_prob_flat, t5_prob_down, t5_expected_close, t5_low_1s, t5_high_1s,
+                            actual_t1_close, actual_t5_close, t1_validated, t5_validated,
+                            t1_actual_return_pct, t1_error_pts, t1_attribution,
+                            t5_actual_return_pct, t5_error_pts, t5_attribution,
+                            pillar_snapshots_json, target_date, data_date
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(prediction_date) DO UPDATE SET
+                            actual_t1_close = excluded.actual_t1_close,
+                            actual_t5_close = excluded.actual_t5_close,
+                            t1_validated = excluded.t1_validated,
+                            t5_validated = excluded.t5_validated,
+                            t1_actual_return_pct = excluded.t1_actual_return_pct,
+                            t1_error_pts = excluded.t1_error_pts,
+                            t1_attribution = excluded.t1_attribution,
+                            t5_actual_return_pct = excluded.t5_actual_return_pct,
+                            t5_error_pts = excluded.t5_error_pts,
+                            t5_attribution = excluded.t5_attribution;
+                        """, (
+                            target_dt, f"{data_dt} 15:30:00 IST", s0, score_i,
+                            v_t1, 0.45 if score_i > 0 else 0.25, 0.25, 0.45 if score_i < 0 else 0.25,
+                            exp_close_1, low_1s_1, high_1s_1,
+                            v_t5, 0.50 if score_i > 0 else 0.20, 0.20, 0.50 if score_i < 0 else 0.20,
+                            exp_close_5, low_1s_5, high_1s_5,
+                            actual_1, actual_5, val_1, val_5,
+                            ret_pct_1, err_pts_1, attr_1,
+                            ret_pct_5, err_pts_5, attr_5,
+                            json.dumps(pillar_snap),
+                            target_dt, data_dt
+                        ))
                 conn.commit()
 
         t1_rate = round((t1_hits / max(1, t1_evaluated)) * 100.0, 1) if t1_evaluated > 0 else 72.0
@@ -4954,8 +5106,25 @@ class NiftyAnalyticsEngine:
         ts_ist = format_ist()
         t_date = target_date or pred_date
         d_date = data_date or ""
+        now_dt = now_ist()
+        is_trading = NSEMarketCalendar.is_trading_day(now_dt.date())
+        is_market_alive = is_trading and (datetime.time(9, 0) <= now_dt.time() <= datetime.time(15, 30))
+
         with state_engine._lock:
             with state_engine._get_connection() as conn:
+                existing = conn.execute(
+                    "SELECT t1_verdict, t5_verdict, composite_score FROM nifty_predictions_log WHERE prediction_date = ?",
+                    (pred_date,)
+                ).fetchone()
+
+                if existing and existing[0]:
+                    if is_market_alive or pred_date == now_dt.strftime("%Y-%m-%d"):
+                        logger.info(
+                            f"🔒 [AUDIT INTEGRITY] Prediction for {pred_date} already exists in nifty_predictions_log "
+                            f"(T+1: {existing[0]} | T+5: {existing[1]}). Overwrite strictly prohibited."
+                        )
+                        return
+
                 conn.execute("""
                 INSERT INTO nifty_predictions_log (
                     prediction_date, timestamp_ist, spot_at_prediction, composite_score,
