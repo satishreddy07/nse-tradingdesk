@@ -2041,13 +2041,21 @@
               <div class="flex items-center gap-2">
                 <i data-lucide="line-chart" class="w-4 h-4 text-emerald-400"></i>
                 <h4 class="text-xs sm:text-sm font-bold text-white">Daily Candlestick Chart & Moving Average Overlay</h4>
-                <span class="text-[10px] font-mono text-slate-400">(Last 200 Trading Sessions)</span>
+                <span id="test-mode-chart-timespan-badge" class="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">(Last 2 Years / ~500 Daily Sessions)</span>
               </div>
-              <div class="flex items-center gap-3 text-[11px] font-mono text-slate-300">
+              <div class="flex items-center gap-2 flex-wrap text-[11px] font-mono text-slate-300">
+                <!-- Timeframe range selector buttons -->
+                <div class="inline-flex rounded-lg bg-slate-950 p-0.5 border border-slate-800 mr-1" id="test-mode-timeframe-controls">
+                  <button type="button" onclick="setTestModeTimeframe(22, this)" class="tm-tf-btn px-2 py-0.5 rounded text-[10px] text-slate-400 hover:text-white transition">1M</button>
+                  <button type="button" onclick="setTestModeTimeframe(66, this)" class="tm-tf-btn px-2 py-0.5 rounded text-[10px] text-slate-400 hover:text-white transition">3M</button>
+                  <button type="button" onclick="setTestModeTimeframe(130, this)" class="tm-tf-btn px-2 py-0.5 rounded text-[10px] text-slate-400 hover:text-white transition">6M</button>
+                  <button type="button" onclick="setTestModeTimeframe(250, this)" class="tm-tf-btn px-2 py-0.5 rounded text-[10px] text-slate-400 hover:text-white transition">1Y</button>
+                  <button type="button" onclick="setTestModeTimeframe(500, this)" class="tm-tf-btn px-2 py-0.5 rounded text-[10px] text-emerald-300 bg-emerald-500/20 border border-emerald-500/30 transition">2Y (All)</button>
+                </div>
                 <span class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-cyan-400 inline-block"></span> EMA 20</span>
                 <span class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-amber-400 inline-block"></span> EMA 50</span>
                 <span class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-purple-400 inline-block"></span> EMA 200</span>
-                <label class="flex items-center gap-1 text-[11px] text-slate-400 cursor-pointer ml-2">
+                <label class="flex items-center gap-1 text-[11px] text-slate-400 cursor-pointer ml-1">
                   <input type="checkbox" id="tm-toggle-trade-lines" checked onchange="toggleTestModeTradeLines()" class="rounded bg-slate-800 border-slate-700 text-purple-600 focus:ring-0">
                   <span>Trade Lines</span>
                 </label>
@@ -18847,6 +18855,7 @@
       ema50Series: null,
       ema200Series: null,
       priceLines: [],
+      candles: [],
       searchDebounceTimer: null,
       isLoading: false,
       isInitialized: false
@@ -19038,9 +19047,9 @@
       if (!results || results.length === 0) {
         dropdown.innerHTML = `
           <div class="p-3 text-xs text-slate-400 text-center">
-            <span>No exact index match for "${escapeHtml(query)}".</span>
-            <div class="mt-1 text-[11px] text-purple-300">
-              Click <strong>"Analyze Stock"</strong> to fetch & download live candles from NSE!
+            <span class="text-amber-400 font-semibold">No pure NSE listed equity found for "${escapeHtml(query)}".</span>
+            <div class="mt-1 text-[11px] text-slate-400">
+              Please search by official NSE symbol (e.g. <strong>ARE&M</strong>, <strong>TMCV</strong>, <strong>TCS</strong>, <strong>RELIANCE</strong>) or company name.
             </div>
           </div>
         `;
@@ -19499,6 +19508,7 @@
       });
 
       testModeState.chartInstance = chart;
+      testModeState.candles = candles;
 
       // 1. Candlestick Series
       const candleSeries = chart.addCandlestickSeries({
@@ -19582,8 +19592,17 @@
         }
       });
 
-      // Fit content
+      // Fit content (defaults to showing full 2-year range)
       chart.timeScale().fitContent();
+
+      // Reset timeframe selector buttons to 2Y (All)
+      document.querySelectorAll('.tm-tf-btn').forEach(b => {
+        b.className = 'tm-tf-btn px-2 py-0.5 rounded text-[10px] text-slate-400 hover:text-white transition';
+      });
+      const allBtn = document.querySelector('.tm-tf-btn:last-child');
+      if (allBtn) {
+        allBtn.className = 'tm-tf-btn px-2 py-0.5 rounded text-[10px] text-emerald-300 bg-emerald-500/20 border border-emerald-500/30 transition';
+      }
 
       // Handle window resizing
       const resizeObserver = new ResizeObserver(entries => {
@@ -19593,6 +19612,25 @@
         }
       });
       resizeObserver.observe(container);
+    }
+
+    function setTestModeTimeframe(barCount, btn) {
+      if (btn) {
+        document.querySelectorAll('.tm-tf-btn').forEach(b => {
+          b.className = 'tm-tf-btn px-2 py-0.5 rounded text-[10px] text-slate-400 hover:text-white transition';
+        });
+        btn.className = 'tm-tf-btn px-2 py-0.5 rounded text-[10px] text-emerald-300 bg-emerald-500/20 border border-emerald-500/30 transition';
+      }
+      if (!testModeState.chartInstance || !testModeState.candles || testModeState.candles.length === 0) return;
+      const totalBars = testModeState.candles.length;
+      if (barCount >= totalBars) {
+        testModeState.chartInstance.timeScale().fitContent();
+      } else {
+        testModeState.chartInstance.timeScale().setVisibleLogicalRange({
+          from: Math.max(0, totalBars - barCount),
+          to: totalBars - 1
+        });
+      }
     }
 
     function attachTestModeTradeLines(tradePlan) {

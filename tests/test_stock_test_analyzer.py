@@ -39,21 +39,26 @@ def test_setup_benchmarks_structure():
 
 
 def test_search_nse_stocks():
-    """Verifies symbol search returns results and handles queries."""
+    """Verifies symbol search returns results and strictly limits to pure NSE listed stocks."""
+    # 1. Direct symbol search
     res = stock_test_analyzer.search_nse_stocks("TCS")
     assert isinstance(res, list)
     assert len(res) >= 1
     found_tcs = any(r["symbol"] == "TCS" for r in res)
     assert found_tcs
 
-    # Search for arbitrary ticker
-    res_arb = stock_test_analyzer.search_nse_stocks("ARBITRARY")
-    assert len(res_arb) >= 1
-    assert res_arb[0]["symbol"] == "ARBITRARY"
+    # 2. Company name / alias search (AMARA -> ARE&M)
+    res_amara = stock_test_analyzer.search_nse_stocks("AMARA")
+    assert len(res_amara) >= 1
+    assert any(r["symbol"] == "ARE&M" for r in res_amara)
+
+    # 3. Unlisted / non-existent ticker strictly returns empty list (no fake stocks)
+    res_arb = stock_test_analyzer.search_nse_stocks("ARBITRARYNONEXISTENT999")
+    assert len(res_arb) == 0
 
 
 def test_analyze_stock_known_symbol():
-    """Verifies complete diagnostic analysis on a known stock."""
+    """Verifies complete diagnostic analysis on a known stock with 2-year history."""
     report = stock_test_analyzer.analyze_stock("RELIANCE")
     assert report["status"] == "SUCCESS"
     assert report["symbol"] == "RELIANCE"
@@ -65,7 +70,8 @@ def test_analyze_stock_known_symbol():
     assert "archetype" in report
     assert "trade_plan" in report
     assert "candles" in report
-    assert len(report["candles"]) > 0
+    # Chart candles must include full 2-year history (> 200 bars, up to ~500 bars)
+    assert len(report["candles"]) > 200
     assert "fundamental_source_url" in report
     assert "https://www.screener.in/company/RELIANCE/consolidated/" == report["fundamental_source_url"]
 

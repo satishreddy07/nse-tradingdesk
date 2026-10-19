@@ -44,6 +44,8 @@ NSE_SYMBOL_ALIASES: Dict[str, List[str]] = {
     "TATAMTRDVR": ["TMCV", "TMPV"],
     "TMPV": ["TMPV"],
     "TMCV": ["TMCV"],
+    "AMARAJABAT": ["ARE&M"],
+    "AMARA": ["ARE&M"],
     "M&M": ["M_M", "MM"],
     "BAJAJ-AUTO": ["BAJAJ_AUTO", "BAJAJ-AUTO"],
     "LTI": ["LTIM"],
@@ -77,6 +79,60 @@ class StockTestAnalyzer:
             return
         self._initialized = True
         self._info_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        self._init_nse_master_table()
+
+    def _init_nse_master_table(self):
+        """Ensures table nse_listed_equities_master is created and seeded with pure NSE stocks."""
+        try:
+            import os, sqlite3, json
+            db_path = getattr(state_engine, "db_path", os.path.join("data", "swing_trades.db"))
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS nse_listed_equities_master (
+                    symbol TEXT PRIMARY KEY,
+                    company_name TEXT,
+                    series TEXT,
+                    isin TEXT,
+                    sector TEXT,
+                    is_active INTEGER DEFAULT 1,
+                    updated_at TEXT
+                )
+            """)
+            c.execute("CREATE INDEX IF NOT EXISTS idx_nse_master_symbol ON nse_listed_equities_master(symbol)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_nse_master_name ON nse_listed_equities_master(company_name)")
+            count = c.execute("SELECT count(*) FROM nse_listed_equities_master").fetchone()[0]
+            
+            if count < 500:
+                json_path = os.path.join(os.path.dirname(db_path), "nse_listed_equities_master.json")
+                if not os.path.exists(json_path):
+                    json_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "nse_listed_equities_master.json")
+                
+                if os.path.exists(json_path):
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    records = [
+                        (
+                            d["symbol"], 
+                            d["name"], 
+                            d.get("series", "EQ"), 
+                            d.get("isin", ""), 
+                            d.get("sector") or get_stock_sector(d["symbol"]), 
+                            1, 
+                            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        )
+                        for d in data
+                    ]
+                    c.executemany("""
+                        INSERT OR REPLACE INTO nse_listed_equities_master 
+                        (symbol, company_name, series, isin, sector, is_active, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, records)
+                    conn.commit()
+                    logger.info(f"Seeded {len(records)} pure NSE listed equities into master table.")
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Note on nse_listed_equities_master initialization: {e}")
 
     @classmethod
     def get_symbol_candidates(cls, symbol: str) -> List[str]:
@@ -352,99 +408,106 @@ class StockTestAnalyzer:
     # --------------------------------------------------------------------------
     def search_nse_stocks(self, query: str = "", limit: int = 30) -> List[Dict[str, Any]]:
         """
-        Searches across all known NSE cash equities from SQLite master metadata,
-        Nifty 500 constituents, sector registry, and corporate demerger aliases.
+        Searches strictly across official NSE cash equities (2,600+ equities from nse_listed_equities_master)
+        joined with cached metrics from ohlcv_master_store.
+        Resolves corporate renamings / demerger aliases (e.g. TATAMOTORS -> TMCV, AMARA -> ARE&M).
+        Strictly limits to pure NSE listed stocks; does NOT inject unlisted or arbitrary strings.
         """
+        import os, sqlite3
         q = (query or "").strip().upper()
         results = []
         seen = set()
 
-        # 1. First priority: Check corporate aliases / demerger mappings for query
-        for alias_key, mapped_list in NSE_SYMBOL_ALIASES.items():
-            if q and (q == alias_key or q in alias_key or any(q in m for m in mapped_list)):
-                # If exact alias requested (e.g. TATAMOTORS)
-                if q == alias_key and q not in seen:
-                    seen.add(q)
-                    primary_target = mapped_list[0]
-                    in_db = state_engine.get_ohlcv_df(primary_target)[0] is not None or state_engine.get_ohlcv_df(q)[0] is not None
-                    results.append({
-                        "symbol": q,
-                        "name": f"{q} (Auto-routes to {primary_target})",
-                        "sector": get_stock_sector(primary_target),
-                        "last_close": 0.0,
-                        "change_pct": 0.0,
-                        "in_storage": in_db,
-                        "bars_count": 0,
-                        "last_bar_date": "--"
-                    })
-                # Add the specific demerged / active entities
-                for m in mapped_list:
-                    if m not in seen:
-                        seen.add(m)
-                        in_db = state_engine.get_ohlcv_df(m)[0] is not None
-                        label = f"{m} (Corporate Demerger / Mapped from {alias_key})"
-                        if m == "TMCV":
-                            label = "TMCV (Tata Motors Limited - Commercial Vehicles)"
-                        elif m == "TMPV":
-                            label = "TMPV (Tata Motors Passenger Vehicles - EVs & Cars)"
+        db_path = getattr(state_engine, "db_path", os.path.join("data", "swing_trades.db"))
+        try:
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+
+            # 1. First priority: Check corporate aliases / demerger mappings for query
+            alias_targets = []
+            for alias_key, mapped_list in NSE_SYMBOL_ALIASES.items():
+                if q and (q == alias_key or q in alias_key or any(q == m or q in m for m in mapped_list)):
+                    for m in mapped_list:
+                        if m not in alias_targets:
+                            alias_targets.append(m)
+
+            if alias_targets:
+                placeholders = ",".join(["?"] * len(alias_targets))
+                sql_alias = f"""
+                    SELECT m.symbol, m.company_name, m.sector, o.last_close, o.change_pct, o.bars_count, o.last_bar_date,
+                           CASE WHEN o.symbol IS NOT NULL THEN 1 ELSE 0 END AS in_storage
+                    FROM nse_listed_equities_master m
+                    LEFT JOIN ohlcv_master_store o ON m.symbol = o.symbol
+                    WHERE m.symbol IN ({placeholders})
+                """
+                for r in c.execute(sql_alias, alias_targets).fetchall():
+                    sym = r[0]
+                    if sym not in seen:
+                        seen.add(sym)
                         results.append({
-                            "symbol": m,
-                            "name": label,
-                            "sector": get_stock_sector(m),
-                            "last_close": 0.0,
-                            "change_pct": 0.0,
-                            "in_storage": in_db,
-                            "bars_count": 0,
-                            "last_bar_date": "--"
+                            "symbol": sym,
+                            "name": r[1] or sym,
+                            "sector": r[2] or get_stock_sector(sym),
+                            "last_close": round(float(r[3] or 0.0), 2),
+                            "change_pct": round(float(r[4] or 0.0), 2),
+                            "in_storage": bool(r[7]),
+                            "bars_count": int(r[5] or 0),
+                            "last_bar_date": r[6] or "--"
                         })
 
-        # 2. Fetch existing stored stocks from SQLite Master Vault
-        meta_rows = state_engine.get_all_ohlcv_metadata(search=q, limit=limit * 2)
-        for r in meta_rows:
-            sym = clean_symbol(r.get("symbol", ""))
-            if sym and sym not in seen:
-                seen.add(sym)
-                results.append({
-                    "symbol": sym,
-                    "name": r.get("name") or sym,
-                    "sector": get_stock_sector(sym),
-                    "last_close": round(float(r.get("last_close") or 0.0), 2),
-                    "change_pct": round(float(r.get("change_pct") or 0.0), 2),
-                    "in_storage": True,
-                    "bars_count": int(r.get("bars_count") or 0),
-                    "last_bar_date": r.get("last_bar_date") or "--"
-                })
+            # 2. Query official NSE Listed Equities Master table
+            if q:
+                sql = """
+                    SELECT m.symbol, m.company_name, m.sector, o.last_close, o.change_pct, o.bars_count, o.last_bar_date,
+                           CASE WHEN o.symbol IS NOT NULL THEN 1 ELSE 0 END AS in_storage,
+                           CASE 
+                               WHEN m.symbol = ? THEN 1
+                               WHEN m.symbol LIKE ? || '%' THEN 2
+                               WHEN m.symbol LIKE '%' || ? || '%' THEN 3
+                               WHEN UPPER(m.company_name) LIKE '%' || ? || '%' THEN 4
+                               ELSE 5
+                           END AS rank
+                    FROM nse_listed_equities_master m
+                    LEFT JOIN ohlcv_master_store o ON m.symbol = o.symbol
+                    WHERE m.symbol = ? 
+                       OR m.symbol LIKE ? || '%' 
+                       OR m.symbol LIKE '%' || ? || '%' 
+                       OR UPPER(m.company_name) LIKE '%' || ? || '%'
+                    ORDER BY rank ASC, in_storage DESC, m.symbol ASC
+                    LIMIT ?
+                """
+                params = (q, q, q, q, q, q, q, q, limit)
+            else:
+                sql = """
+                    SELECT m.symbol, m.company_name, m.sector, o.last_close, o.change_pct, o.bars_count, o.last_bar_date,
+                           CASE WHEN o.symbol IS NOT NULL THEN 1 ELSE 0 END AS in_storage,
+                           1 AS rank
+                    FROM nse_listed_equities_master m
+                    LEFT JOIN ohlcv_master_store o ON m.symbol = o.symbol
+                    ORDER BY in_storage DESC, o.last_volume DESC, m.symbol ASC
+                    LIMIT ?
+                """
+                params = (limit,)
 
-        # 3. Match against NSE Sector Map & Registry if list is small
-        if len(results) < limit:
-            for sym, sector in NSE_SECTOR_MAP.items():
-                if sym not in seen and (not q or q in sym):
+            for r in c.execute(sql, params).fetchall():
+                sym = r[0]
+                if sym not in seen:
                     seen.add(sym)
                     results.append({
                         "symbol": sym,
-                        "name": sym,
-                        "sector": sector,
-                        "last_close": 0.0,
-                        "change_pct": 0.0,
-                        "in_storage": False,
-                        "bars_count": 0,
-                        "last_bar_date": "--"
+                        "name": r[1] or sym,
+                        "sector": r[2] or get_stock_sector(sym),
+                        "last_close": round(float(r[3] or 0.0), 2),
+                        "change_pct": round(float(r[4] or 0.0), 2),
+                        "in_storage": bool(r[7]),
+                        "bars_count": int(r[5] or 0),
+                        "last_bar_date": r[6] or "--"
                     })
                     if len(results) >= limit:
                         break
-
-        # 4. If exact query is not in list, provide it as a direct custom option
-        if q and q not in seen and len(q) >= 2:
-            results.insert(0, {
-                "symbol": q,
-                "name": f"{q} (Live NSE Equities Search)",
-                "sector": get_stock_sector(q),
-                "last_close": 0.0,
-                "change_pct": 0.0,
-                "in_storage": False,
-                "bars_count": 0,
-                "last_bar_date": "--"
-            })
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error querying nse_listed_equities_master: {e}")
 
         return results[:limit]
 
@@ -1020,8 +1083,8 @@ class StockTestAnalyzer:
         target_2 = round(close_now + (risk_per_share * 3.0), 2)
         t2_pct = round(((target_2 - close_now) / close_now) * 100.0, 2)
 
-        # Step 6: CANDLESTICK CHART DATA (last 200 bars)
-        chart_bars = df.tail(200)
+        # Step 6: CANDLESTICK CHART DATA (full 2-year history, up to 500 trading sessions)
+        chart_bars = df.tail(500) if len(df) >= 500 else df
         candles = []
         for dt_idx, row in chart_bars.iterrows():
             d_str = dt_idx.strftime("%Y-%m-%d") if hasattr(dt_idx, "strftime") else str(dt_idx)[:10]
