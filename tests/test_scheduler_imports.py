@@ -171,6 +171,7 @@ def test_afternoon_scan_worker_mock_execution(monkeypatch):
     monkeypatch.setattr(cs.NSEMarketCalendar, "is_trading_day", lambda d: True)
     # Ensure telemetry doesn't skip
     state_engine.set_kv("scheduled_scans_telemetry", {})
+    monkeypatch.setattr(state_engine, "get_scheduled_scans_telemetry", lambda: {})
 
     cs.scheduled_afternoon_scan_job()
 
