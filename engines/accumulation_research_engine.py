@@ -354,7 +354,9 @@ class AccumulationResearchEngine:
             "engine_bucket": bucket,
             "engine_score": score,
             "engine_ml_verdict": ml_verdict,
-            "engine_entry_type": entry_type
+            "engine_entry_type": entry_type,
+            "fundamental_source_url": f"https://www.screener.in/company/{symbol}/consolidated/",
+            "nse_source_url": f"https://www.nseindia.com/get-quotes/equity?symbol={symbol}"
         }
 
     def _synthesize_common_findings(

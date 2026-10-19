@@ -771,6 +771,35 @@ def scheduled_movers_research_job():
         logger.warning(f"30-Min Movers Research scan notice: {e}")
 
 
+def scheduled_inhouse_scanner_job():
+    """
+    Every 30 mins during market hours (09:15 to 15:30 IST, Mon-Fri):
+    Runs the In-House Screener across the broad cash universe (unrestricted, matching Chartink).
+    Executes 6-pillar analysis with dual-entry classification (ACCUMULATION_COIL & BREAKOUT_SURGE).
+    Pipes qualifying BUY_NOW setups directly into:
+    1. Shadow Tracking (quant_trade_dataset)
+    2. Portfolio 1 (trades / active_positions)
+    """
+    curr = now_ist()
+    if not NSEMarketCalendar.is_trading_day(curr.date()):
+        return
+    can_trade, _ = NSEMarketCalendar.can_execute_trades()
+    if not can_trade:
+        return
+    try:
+        from engines.institutional_engine import InstitutionalEngine
+        from engines.screener_comparison_engine import screener_comparison_engine
+        logger.info("⚡ [30-Min In-House Broad Screener] Running broad cash equities 6-pillar scan & dual-entry execution...")
+        inst_engine = InstitutionalEngine()
+        signals = inst_engine.run(auto_execute=True, mode_override="periodic_30m")
+        # Update dual-engine parity audit cache with fresh results
+        screener_comparison_engine.run_comparison_audit(force_refresh=True)
+        b_now = int((signals["bucket"] == "BUY_NOW").sum()) if not signals.empty and "bucket" in signals.columns else 0
+        logger.info(f"✓ [30-Min In-House Screener] Scan complete. {len(signals)} evaluated, {b_now} BUY_NOW signals routed to Shadow & Portfolio 1.")
+    except Exception as e:
+        logger.error(f"30-Min In-House Screener execution error: {e}", exc_info=True)
+
+
 def start_scheduler():
     """Initializes and starts the BackgroundScheduler with IST triggers & Render Anti-Sleep Guard."""
     global _scheduler
@@ -961,6 +990,16 @@ def start_scheduler():
             trigger=CronTrigger(day_of_week="mon-fri", hour="9-15", minute="0,30", timezone=IST),
             id="job_movers_research_30m",
             name="30-Min Movers & Pre-Breakout Accumulation Research Scan",
+            replace_existing=True,
+            misfire_grace_time=300
+        )
+
+        # Job 6: Every 30 Minutes In-House Broad Screener & Dual-Entry Execution (Mon-Fri, 09:30-15:30 IST)
+        _scheduler.add_job(
+            scheduled_inhouse_scanner_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour="9-15", minute="0,30", timezone=IST),
+            id="job_inhouse_scanner_30m",
+            name="30-Min In-House Broad Universe Screener & Dual-Entry Execution",
             replace_existing=True,
             misfire_grace_time=300
         )

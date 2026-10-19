@@ -2142,7 +2142,7 @@ def compare_screener_summary_endpoint():
     try:
         audit = screener_comparison_engine.run_comparison_audit(force_refresh=False)
         # Strip heavy arrays for high-speed lightweight summary
-        summary = {k: v for k, v in audit.items() if k not in ("common_stocks", "chartink_only_stocks", "inhouse_filtered_out_symbols")}
+        summary = {k: v for k, v in audit.items() if k not in ("all_stocks", "common_stocks", "chartink_only_stocks", "broad_symbols", "inhouse_filtered_out_symbols")}
         return summary
     except Exception as e:
         logger.error(f"Error fetching comparison summary: {e}")
