@@ -406,27 +406,35 @@ class AccumulationResearchEngine:
         findings = [
             {
                 "id": "vdu_dominance",
+                "point_num": 1,
                 "title": "Volume Dry-Up (VDU) Prior to Breakout",
                 "metric": f"{vdu_pct}% of Movers",
-                "detail": f"{vdu_count} of {n} moving stocks had dry volume (volume ratio <= 0.8x) on the day before the surge, with {extreme_vdu_count} stocks displaying extreme dry-up (<= 0.5x)."
+                "detail": f"{vdu_count} of {n} moving stocks had dry volume (volume ratio <= 0.8x) on the day before the surge, with {extreme_vdu_count} stocks displaying extreme dry-up (<= 0.5x).",
+                "institutional_rationale": "Supply Exhaustion: Institutions absorb floating shares quietly. When sellers vanish, trading activity dries up right before the price lifts."
             },
             {
                 "id": "ema20_support_launch",
-                "title": "Launch from 20 EMA Support",
+                "point_num": 2,
+                "title": "Launch from 20 EMA Support Base",
                 "metric": f"{ema20_pct}% of Movers",
-                "detail": f"{ema20_count} of {n} moving stocks coiled within +/-3.8% of their 20-day exponential moving average before jumping."
+                "detail": f"{ema20_count} of {n} moving stocks coiled within +/-3.8% of their 20-day exponential moving average before jumping.",
+                "institutional_rationale": "Algorithmic Accumulation Floor: Institutional algorithms use the 20 EMA as a benchmark anchor for low-risk, high-reward continuation entries."
             },
             {
                 "id": "volatility_contraction",
-                "title": "Tight Consolidation / Coiling",
+                "point_num": 3,
+                "title": "Tight Volatility Contraction (VCP)",
                 "metric": f"{tight_pct}% with Range <= 3.2%",
-                "detail": f"Average pre-breakout daily range was {avg_pre_rng}%, demonstrating tight institutional price absorption prior to expansion."
+                "detail": f"Average pre-breakout daily range was {avg_pre_rng}%, demonstrating tight institutional price absorption prior to explosive range expansion.",
+                "institutional_rationale": "Volatility Compression: Narrow daily trading ranges signal supply exhaustion. Price tightness always precedes explosive expansion."
             },
             {
                 "id": "volume_explosion",
-                "title": "Breakout Day Volume Surge",
+                "point_num": 4,
+                "title": "Breakout Day Institutional Volume Surge",
                 "metric": f"{avg_surge}x Average Volume",
-                "detail": f"Moving stocks experienced an average volume expansion of {avg_surge}x compared to their 20-day average volume on the jump day."
+                "detail": f"Moving stocks experienced an average volume expansion of {avg_surge}x compared to their 20-day average volume on the jump day.",
+                "institutional_rationale": "Institutional Sponsorship: Huge volume expansion on the jump day confirms real institutional accumulation rather than speculative noise."
             }
         ]
 
