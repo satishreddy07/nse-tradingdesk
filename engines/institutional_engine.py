@@ -295,7 +295,8 @@ class DirectYahooFinanceFetcher:
                         return None
                     df["Volume"] = df["Volume"].fillna(0.0)
                     df = df.sort_index()
-                    df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+                    dt_s = pd.Series(pd.DatetimeIndex(df.index).date)
+                    df = df[~dt_s.duplicated(keep="last").values]
 
                     # Stitch Live Intraday Partial Bar from `meta` if present
                     reg_time = meta.get("regularMarketTime")
@@ -333,7 +334,8 @@ class DirectYahooFinanceFetcher:
                                 "Volume": [reg_v],
                             }, index=pd.DatetimeIndex([meta_dt]))
                             df = pd.concat([df, live_row]).sort_index()
-                            df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+                            dt_s2 = pd.Series(pd.DatetimeIndex(df.index).date)
+                            df = df[~dt_s2.duplicated(keep="last").values]
 
                     df.attrs["meta"] = meta
                     return df
@@ -400,13 +402,13 @@ class DirectYahooFinanceFetcher:
                     max_retries=2
                 )
                 if delta_df is not None and not delta_df.empty:
-                    if cached_df.index.tz is not None and delta_df.index.tz is None:
-                        delta_df.index = delta_df.index.tz_localize(IST)
-                    elif cached_df.index.tz is None and delta_df.index.tz is not None:
-                        delta_df.index = delta_df.index.tz_localize(None)
-
-                    merged = pd.concat([cached_df, delta_df]).sort_index()
-                    merged = merged[~pd.Series(merged.index.date).duplicated(keep="last").values]
+                    c_df = cached_df.copy()
+                    d_df = delta_df.copy()
+                    c_df.index = pd.to_datetime(c_df.index, utc=True)
+                    d_df.index = pd.to_datetime(d_df.index, utc=True)
+                    merged = pd.concat([c_df, d_df]).sort_index()
+                    dt_series = pd.Series(pd.DatetimeIndex(merged.index).date)
+                    merged = merged[~dt_series.duplicated(keep="last").values]
                     if len(merged) > 500:
                         merged = merged.iloc[-500:]
                     if persist_immediately:
@@ -896,12 +898,16 @@ class FeatureEngine:
             "bb_width": bb_width,
             "bb_sq_ratio": bb_sq_ratio,
             "vol_ratio": vol_ratio,
+            "projected_vol_ratio": projected_vol_ratio,
+            "vol_factor": vol_factor,
             "accum_days": accum_days,
             "pocket_pivot": pocket_pivot,
             "vol_dryup": vol_dryup,
             "pivot_20d": pivot_20d,
             "dist_to_pivot": dist_to_pivot,
             "dist_to_ema20": dist_to_ema20,
+            "daily_range_pct": daily_range_pct,
+            "is_accumulating_coil": is_accumulating_coil,
             "base_tightness": base_tightness,
             "week_confluence": week_confluence,
             "is_vcp": is_vcp,
@@ -1145,20 +1151,24 @@ class ExecutionEngine:
         if ml_verdict == "REJECTED" or ml_dec == "REJECT":
             return "AVOID"
 
+        vol_factor = float(row.get('vol_factor', 1.0) or 1.0)
+        projected_vol = float(row.get('projected_vol_ratio', 0.0) or (vol_ratio / max(0.15, vol_factor)))
+        effective_vol = max(vol_ratio, projected_vol)
+
         if score < 40.0:
             return "AVOID"
 
         # 1. ACCUMULATION COIL (Stealth Day 1 Entry before the jump):
-        # High score, resting within 3.8% of 20 EMA, tight range (<=3.2%), volume dry-up (<=0.85x)
+        # High score, resting within 3.8% of 20 EMA, tight range (<=3.5%), controlled volume
         if score >= 78.0 and abs(dist_ema20) <= 3.8:
-            if is_accumulating_coil or (vol_ratio <= 0.85 and daily_range_pct <= 3.2):
+            if is_accumulating_coil or (vol_ratio <= 1.10 and daily_range_pct <= 3.8):
                 if ml_verdict in ("APPROVED", "CAUTION") or ml_dec in ("PASS_TO_AI", "WATCH"):
                     return "BUY_NOW"
 
         # 2. BREAKOUT SURGE (Momentum Entry on volume expansion):
-        # Tested proximity to pivot & EMA20, volume >= 1.15x
-        if score >= 80.0 and abs(dist_pivot) <= 3.5 and abs(dist_ema20) <= 6.5:
-            if vol_ratio >= 1.15 and (ml_verdict == "APPROVED" or ml_dec == "PASS_TO_AI"):
+        # Tested proximity to pivot & EMA20, projected volume >= 1.15x
+        if score >= 80.0 and abs(dist_pivot) <= 3.8 and abs(dist_ema20) <= 6.5:
+            if effective_vol >= 1.15 and (ml_verdict in ("APPROVED", "CAUTION") or ml_dec in ("PASS_TO_AI", "WATCH")):
                 return "BUY_NOW"
             else:
                 return "PRE_BREAKOUT"
@@ -2333,7 +2343,7 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
                 c_df.index = pd.to_datetime(c_df.index, utc=True)
                 d_df.index = pd.to_datetime(d_df.index, utc=True)
                 merged = pd.concat([c_df, d_df]).sort_index()
-                dt_series = pd.Series(merged.index.date)
+                dt_series = pd.Series(pd.DatetimeIndex(merged.index).date)
                 merged = merged[~dt_series.duplicated(keep="last").values]
                 if len(merged) > 500:
                     merged = merged.iloc[-500:]
