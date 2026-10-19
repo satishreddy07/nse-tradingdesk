@@ -172,7 +172,7 @@ def test_combinatorial_evaluation_and_stability(synthetic_ohlcv_df):
         assert "name" in c
         assert "rule_expression" in c
         assert "validation_status" in c
-        assert c["validation_status"] in ["VALIDATED_OOS", "EXPLORATORY", "INSUFFICIENT_DATA"]
+        assert c["validation_status"] in ["VALIDATED_OOS", "EXPLORATORY", "NEUTRAL_EDGE", "INSUFFICIENT_DATA"]
         assert "lift_oos" in c
         assert "out_sample_precision" in c
         assert "in_sample_precision" in c

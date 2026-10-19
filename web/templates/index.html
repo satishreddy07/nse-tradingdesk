@@ -19859,8 +19859,11 @@
         } else if (c.validation_status === 'EXPLORATORY') {
           badgeClass = 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-semibold';
           badgeText = 'EXPLORATORY';
+        } else if (c.validation_status === 'NEUTRAL_EDGE') {
+          badgeClass = 'bg-slate-800 text-slate-300 border-slate-700';
+          badgeText = 'NEUTRAL EDGE';
         } else {
-          badgeClass = 'bg-slate-800 text-slate-400 border-slate-700';
+          badgeClass = 'bg-slate-900 text-slate-500 border-slate-800';
           badgeText = 'INSUFFICIENT DATA';
         }
 

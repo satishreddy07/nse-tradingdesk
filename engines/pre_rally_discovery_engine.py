@@ -726,10 +726,12 @@ class PreRallyDiscoveryEngine:
 
                 # Validation Classification
                 # Strict Criteria: Minimum OOS sample size, positive lift OOS, acceptable stability
-                if n_oos >= 4 and n_all >= 12 and lift_oos >= 1.20 and prec_oos >= 35.0 and stability >= 0.65:
+                if n_oos >= 4 and n_all >= 12 and lift_oos >= 1.15 and prec_oos >= 30.0 and stability >= 0.65:
                     status = "VALIDATED_OOS"
-                elif n_all >= 6 and (lift_all >= 1.10 or lift_oos >= 1.10):
+                elif n_all >= 8 and (lift_all >= 1.05 or lift_oos >= 1.05):
                     status = "EXPLORATORY"
+                elif n_all >= 25:
+                    status = "NEUTRAL_EDGE"
                 else:
                     status = "INSUFFICIENT_DATA"
 
