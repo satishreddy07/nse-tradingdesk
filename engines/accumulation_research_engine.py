@@ -255,6 +255,7 @@ class AccumulationResearchEngine:
             "movers_5pct_count": movers_5pct_count,
             "total_patterns_observed": synthesis.get("total_patterns_observed", 0),
             "pattern_breakdown": synthesis.get("pattern_breakdown", []),
+            "discovered_combinations_breakdown": synthesis.get("discovered_combinations_breakdown", []),
             "vdu_rate_pct": synthesis["vdu_rate_pct"],
             "tightness_rate_pct": synthesis["tightness_rate_pct"],
             "ema20_launch_rate_pct": synthesis["ema20_launch_rate_pct"],
@@ -497,6 +498,29 @@ class AccumulationResearchEngine:
         if vrat_now >= 2.0:
             tags.append({"label": f"💥 Breakout Vol: {vrat_now:.1f}x", "type": "surge", "color": "violet", "desc": "Explosive breakout day volume surge"})
 
+        # Multi-Feature Discovered Pattern Matching (Pre-Rally Discovery Engine)
+        matched_combinations = []
+        try:
+            from engines.pre_rally_discovery_engine import pre_rally_discovery_engine
+            matched_combinations = pre_rally_discovery_engine.match_stock_patterns(symbol, df, idx=idx_t1)
+            for mc in matched_combinations:
+                if mc.get("validation_status") == "VALIDATED_OOS":
+                    tags.append({
+                        "label": f"🏆 {mc['name']} ({mc['lift_oos']}x Lift)",
+                        "type": "validated_pattern",
+                        "color": "emerald",
+                        "desc": f"Out-of-sample validated pre-rally pattern with {mc['lift_oos']}x lift over baseline."
+                    })
+                elif mc.get("validation_status") == "EXPLORATORY":
+                    tags.append({
+                        "label": f"🔬 {mc['name']}",
+                        "type": "exploratory_pattern",
+                        "color": "amber",
+                        "desc": f"Exploratory pre-rally pattern: {mc.get('rule_expression', '')}"
+                    })
+        except Exception:
+            pass
+
         # Natural Language Forensic Narrative
         vdu_txt = f"extreme volume dry-up ({vrat_t1:.2f}x 20-DMA)" if is_extreme_vdu else (f"volume dry-up ({vrat_t1:.2f}x)" if is_vdu else f"volume at {vrat_t1:.2f}x")
         rng_txt = f"ultra-tight {rng_t1:.1f}% daily candle" if is_ultra_tight else (f"tight {rng_t1:.1f}% candle" if is_tight else f"daily range of {rng_t1:.1f}%")
@@ -535,6 +559,7 @@ class AccumulationResearchEngine:
             "is_near_ema20": is_near_ema20,
             "is_at_ema20": is_at_ema20,
             "archetype": archetype,
+            "matched_patterns": matched_combinations,
             "tags": tags,
             "what_happened_before": what_happened_before,
             "engine_bucket": bucket,
@@ -665,6 +690,31 @@ class AccumulationResearchEngine:
             }
         ]
 
+        # Multi-Feature Discovered Pattern Counts across Movers
+        discovered_matches_map = {}
+        for m in movers:
+            for p in m.get("matched_patterns", []):
+                p_id = p.get("combination_id")
+                if not p_id:
+                    continue
+                if p_id not in discovered_matches_map:
+                    discovered_matches_map[p_id] = {
+                        "combination_id": p_id,
+                        "name": p.get("name", p_id),
+                        "category": p.get("category", ""),
+                        "rule_expression": p.get("rule_expression", ""),
+                        "validation_status": p.get("validation_status", "EXPLORATORY"),
+                        "lift_oos": p.get("lift_oos", 1.0),
+                        "out_sample_precision": p.get("out_sample_precision", 0.0),
+                        "stocks_count": 0,
+                        "symbols": []
+                    }
+                discovered_matches_map[p_id]["stocks_count"] += 1
+                discovered_matches_map[p_id]["symbols"].append(m["symbol"])
+
+        discovered_matches_list = list(discovered_matches_map.values())
+        discovered_matches_list.sort(key=lambda x: (x["validation_status"] != "VALIDATED_OOS", -x["stocks_count"]))
+
         return {
             "vdu_rate_pct": vdu_pct,
             "tightness_rate_pct": tight_pct,
@@ -672,6 +722,7 @@ class AccumulationResearchEngine:
             "avg_breakout_surge": avg_surge,
             "archetype_distribution": archetypes,
             "pattern_breakdown": pattern_breakdown,
+            "discovered_combinations_breakdown": discovered_matches_list,
             "total_patterns_observed": total_patterns_observed,
             "dominant_pattern": dominant_pattern,
             "engine_detection_summary": engine_buckets,

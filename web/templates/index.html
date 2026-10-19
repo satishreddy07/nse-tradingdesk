@@ -1346,6 +1346,126 @@
         </div>
       </div>
 
+      <!-- Pre-Rally Pattern Statistical Evidence Modal -->
+      <div id="modal-pattern-evidence" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-3 sm:p-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+          <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                <i data-lucide="microscope" class="w-4 h-4 text-emerald-400"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h3 id="modal-pat-title" class="text-sm font-bold text-white font-mono">PRE-RALLY PATTERN EVIDENCE</h3>
+                  <span id="modal-pat-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">VALIDATED_OOS</span>
+                </div>
+                <p id="modal-pat-desc" class="text-xs text-slate-400 mt-0.5">Empirical evidence from historical OHLCV data evaluated with zero look-ahead bias.</p>
+              </div>
+            </div>
+            <button onclick="closePatternEvidenceModal()" class="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer">
+              <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+          </div>
+
+          <!-- Modal Body -->
+          <div class="p-4 overflow-y-auto flex-1 space-y-4 font-mono text-xs">
+            <!-- Rule Expression Box -->
+            <div class="p-3 rounded-xl bg-slate-950/80 border border-slate-800">
+              <div class="text-[10px] uppercase font-bold text-slate-400 mb-1 flex items-center gap-1.5">
+                <i data-lucide="binary" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>Strict Pre-Rally Rule Expression (Evaluated at Session T-1 Only):</span>
+              </div>
+              <code id="modal-pat-rule" class="text-xs sm:text-sm font-mono text-amber-300 font-bold bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20 block overflow-x-auto">
+                --
+              </code>
+            </div>
+
+            <!-- Quantitative Validation Metrics Grid -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div class="bg-slate-950/70 border border-slate-800 p-2.5 rounded-xl">
+                <div class="text-[10px] text-slate-400">Out-of-Sample Win Rate</div>
+                <div id="modal-pat-oos-prec" class="text-lg font-bold text-emerald-400 mt-0.5">--%</div>
+                <div id="modal-pat-is-prec" class="text-[10px] text-slate-500">In-Sample: --%</div>
+              </div>
+              <div class="bg-slate-950/70 border border-slate-800 p-2.5 rounded-xl">
+                <div class="text-[10px] text-slate-400">Statistical Lift vs Baseline</div>
+                <div id="modal-pat-lift" class="text-lg font-bold text-cyan-400 mt-0.5">--x</div>
+                <div id="modal-pat-baseline" class="text-[10px] text-slate-500">Baseline Rate: --%</div>
+              </div>
+              <div class="bg-slate-950/70 border border-slate-800 p-2.5 rounded-xl">
+                <div class="text-[10px] text-slate-400">Risk-Reward (MFE / MAE)</div>
+                <div id="modal-pat-rr" class="text-lg font-bold text-amber-300 mt-0.5">--:1</div>
+                <div id="modal-pat-mfe-mae" class="text-[10px] text-slate-500">+--% / ---%</div>
+              </div>
+              <div class="bg-slate-950/70 border border-slate-800 p-2.5 rounded-xl">
+                <div class="text-[10px] text-slate-400">Sample Size & Horizon</div>
+                <div id="modal-pat-sample" class="text-lg font-bold text-violet-300 mt-0.5">-- / --</div>
+                <div id="modal-pat-time" class="text-[10px] text-slate-500">Avg Target: -- days</div>
+              </div>
+            </div>
+
+            <!-- Two Column Evidence Tables: Verified Winners vs Documented Failures -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
+              <!-- True Positive Winners -->
+              <div class="bg-slate-950/60 border border-emerald-500/20 rounded-xl p-3">
+                <div class="flex items-center justify-between pb-2 border-b border-emerald-500/20 mb-2">
+                  <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                    <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-400"></i>
+                    <span>Verified True Positive Winners</span>
+                  </span>
+                  <span class="text-[10px] text-slate-400 font-sans">Pre-Rally Conditions Matched</span>
+                </div>
+                <div class="overflow-x-auto max-h-56">
+                  <table class="w-full text-left text-[11px]">
+                    <thead class="text-[10px] text-slate-400 border-b border-slate-800">
+                      <tr>
+                        <th class="py-1 px-1.5">Symbol</th>
+                        <th class="py-1 px-1.5">Event Date</th>
+                        <th class="py-1 px-1.5 text-right">Pre-VDU</th>
+                        <th class="py-1 px-1.5 text-right">20 EMA</th>
+                        <th class="py-1 px-1.5 text-right">Gain %</th>
+                        <th class="py-1 px-1.5 text-right">Max Excursion</th>
+                      </tr>
+                    </thead>
+                    <tbody id="modal-pat-winners-tbody" class="divide-y divide-slate-800/50">
+                      <tr><td colspan="6" class="text-center py-4 text-slate-500">Loading verified winners...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- False Positive Failures / Reversals -->
+              <div class="bg-slate-950/60 border border-rose-500/20 rounded-xl p-3">
+                <div class="flex items-center justify-between pb-2 border-b border-rose-500/20 mb-2">
+                  <span class="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                    <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-rose-400"></i>
+                    <span>Documented False Positive Non-Winners</span>
+                  </span>
+                  <span class="text-[10px] text-slate-400 font-sans">Risk Forensic Review</span>
+                </div>
+                <div class="overflow-x-auto max-h-56">
+                  <table class="w-full text-left text-[11px]">
+                    <thead class="text-[10px] text-slate-400 border-b border-slate-800">
+                      <tr>
+                        <th class="py-1 px-1.5">Symbol</th>
+                        <th class="py-1 px-1.5">Event Date</th>
+                        <th class="py-1 px-1.5 text-right">Pre-VDU</th>
+                        <th class="py-1 px-1.5 text-right">20 EMA</th>
+                        <th class="py-1 px-1.5 text-right">Fwd Return</th>
+                        <th class="py-1 px-1.5 text-right">Max Drawdown</th>
+                      </tr>
+                    </thead>
+                    <tbody id="modal-pat-failures-tbody" class="divide-y divide-slate-800/50">
+                      <tr><td colspan="6" class="text-center py-4 text-slate-500">Loading failure audits...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ================================================================= -->
       <!-- TAB: MOVERS & ACCUMULATION RESEARCH LAB                           -->
       <!-- ================================================================= -->
@@ -1549,7 +1669,104 @@
             </div>
           </div>
 
-          <!-- Executive Synthesis: Common Points Observed Across Moving Stocks -->
+          <!-- ========================================================================= -->
+          <!-- PRE-RALLY PATTERN DISCOVERY & VALIDATION ENGINE                            -->
+          <!-- ========================================================================= -->
+          <div class="mt-4 bg-gradient-to-r from-emerald-950/20 via-slate-900 to-slate-900 border border-emerald-500/30 rounded-2xl p-4 sm:p-5 shadow-2xl relative overflow-hidden">
+            <!-- Engine Header & Control Bar -->
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-emerald-500/20">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                  <i data-lucide="microscope" class="w-4 h-4 text-emerald-400"></i>
+                </div>
+                <div>
+                  <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2 flex-wrap">
+                    <span>Pre-Rally Pattern Discovery &amp; Validation Engine</span>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">EMPIRICAL DISCOVERY</span>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 font-semibold">ZERO LOOK-AHEAD (T-1)</span>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 font-semibold">WALK-FORWARD OOS</span>
+                  </h3>
+                  <p class="text-xs text-slate-400 mt-0.5">
+                    Discovers which pre-rally characteristics historically provide the strongest out-of-sample evidence of subsequent price expansion, calculated strictly as of session T-1.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Top Summary Metrics & On-Demand Run Action -->
+              <div class="flex items-center gap-2 flex-wrap shrink-0">
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs font-mono">
+                  <span class="text-slate-400">Baseline Win Rate:</span>
+                  <strong id="pr-summary-baseline" class="text-amber-300 font-bold">--%</strong>
+                  <span class="text-slate-600">|</span>
+                  <span class="text-slate-400">Events:</span>
+                  <strong id="pr-summary-events" class="text-white font-bold">--</strong>
+                  <span class="text-slate-600">|</span>
+                  <span class="text-slate-400">Validated:</span>
+                  <strong id="pr-summary-validated" class="text-emerald-400 font-bold">--</strong>
+                </div>
+
+                <button id="btn-run-pre-rally-discovery" onclick="triggerPreRallyDiscoveryRun()" class="px-3 py-1.5 rounded-xl text-xs font-mono font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition flex items-center gap-1.5 cursor-pointer shadow-lg">
+                  <i id="icon-run-pre-rally" data-lucide="play" class="w-3.5 h-3.5"></i>
+                  <span>Run Discovery Scan</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Filter & Sort Sub-Navigation -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mt-3 pt-1">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-[11px] font-mono text-slate-400 mr-1">Filter Patterns:</span>
+                <button onclick="filterPreRallyCombinations('ALL')" id="btn-pr-filter-all" class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  All (<span id="pr-count-all">0</span>)
+                </button>
+                <button onclick="filterPreRallyCombinations('VALIDATED_OOS')" id="btn-pr-filter-oos" class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white border border-transparent hover:border-slate-800">
+                  Validated OOS (<span id="pr-count-oos">0</span>)
+                </button>
+                <button onclick="filterPreRallyCombinations('EXPLORATORY')" id="btn-pr-filter-exp" class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white border border-transparent hover:border-slate-800">
+                  Exploratory (<span id="pr-count-exp">0</span>)
+                </button>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <span class="text-[11px] font-mono text-slate-400">Sort By:</span>
+                <select id="pr-sort-select" onchange="sortPreRallyCombinations(this.value)" class="bg-slate-950 border border-slate-800 text-slate-200 text-xs font-mono rounded-lg px-2 py-1 outline-none">
+                  <option value="lift_oos">Out-of-Sample Lift</option>
+                  <option value="out_sample_precision">OOS Win Rate (Precision)</option>
+                  <option value="sample_size">Sample Size (Total Matches)</option>
+                  <option value="mfe_mae_ratio">Risk-Reward (MFE/MAE)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Discovered & Validated Combinations Matrix Table -->
+            <div class="overflow-x-auto mt-3">
+              <table class="w-full text-left text-xs text-slate-300 border-collapse">
+                <thead class="text-[11px] uppercase font-mono bg-slate-950/70 text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th class="py-2.5 px-3">Pattern Combination &amp; Logical Rule</th>
+                    <th class="py-2.5 px-3 text-center">Status</th>
+                    <th class="py-2.5 px-3 text-right">OOS Win Rate (IS / OOS)</th>
+                    <th class="py-2.5 px-3 text-right">Statistical Lift</th>
+                    <th class="py-2.5 px-3 text-center">Sample (OOS / Total)</th>
+                    <th class="py-2.5 px-3 text-right">Risk-Reward (MFE / MAE)</th>
+                    <th class="py-2.5 px-3 text-right">Avg Target Time</th>
+                    <th class="py-2.5 px-3 text-center">Evidence Audit</th>
+                  </tr>
+                </thead>
+                <tbody id="pr-combinations-tbody" class="divide-y divide-slate-800/60 font-mono">
+                  <tr>
+                    <td colspan="8" class="py-6 text-center text-slate-500 font-sans">
+                      Loading discovered combinations...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ========================================================================= -->
+          <!-- LIVE 30-MINUTE MOVERS FORENSICS & TODAY'S EVIDENCE SYNTHESIS              -->
+          <!-- ========================================================================= -->
           <div class="mt-4 bg-gradient-to-r from-amber-950/20 via-slate-900 to-slate-900 border border-amber-500/30 rounded-2xl p-4 sm:p-5 shadow-xl">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-amber-500/20">
               <div class="flex items-center gap-2.5">
@@ -1558,11 +1775,11 @@
                 </div>
                 <div>
                   <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                    <span>Common Points Observed Across Moving Stocks</span>
-                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">SHARED DNA EVIDENCE</span>
+                    <span>Common Points Observed Across Today's Moving Stocks</span>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">TODAY'S RUNNERS</span>
                   </h3>
                   <p class="text-xs text-slate-400 mt-0.5">
-                    Reverse-engineered evidence from session T-1 proving what stocks did before making explosive moves today.
+                    What today's surging stocks exhibited at session T-1 before making their moves.
                   </p>
                 </div>
               </div>
@@ -1579,59 +1796,9 @@
               <div class="text-xs text-slate-300 leading-relaxed">
                 <strong class="text-amber-300 font-semibold font-mono">Actionable Strategy:</strong>
                 <span id="res-actionable-rule-text">
-                  Do not chase stocks after they surge 5%–10% today. Instead, scan for stocks currently matching these common points (tight daily candle &le; 3%, volume dried up &le; 0.8x, resting on 20 EMA) to enter early with low risk before tomorrow's ~3x volume expansion.
+                  Do not chase stocks after they surge 5%–10% today. Instead, scan for stocks currently matching validated combinations (tight daily candle &le; 3%, volume dried up &le; 0.8x, resting on 20 EMA) to enter early with low risk before tomorrow's ~3x volume expansion.
                 </span>
               </div>
-            </div>
-          </div>
-
-          <!-- Empirical Pattern Discovery & Commonality Breakdown Table -->
-          <div class="mt-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
-              <div class="flex items-center gap-2.5">
-                <div class="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
-                  <i data-lucide="layers" class="w-4 h-4 text-amber-400"></i>
-                </div>
-                <div>
-                  <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                    <span>Observed Pre-Breakout Patterns & Stock Distribution</span>
-                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">EMPIRICAL COMMONALITY</span>
-                  </h3>
-                  <p class="text-xs text-slate-400 mt-0.5">
-                    Quantifies how many moving stocks followed each pre-breakout accumulation pattern, with average pre-move characteristics.
-                  </p>
-                </div>
-              </div>
-              <div class="flex items-center gap-2 shrink-0">
-                <span class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                  Patterns Detected: <strong class="text-amber-300" id="res-patterns-detected-count">0</strong>
-                </span>
-              </div>
-            </div>
-
-            <!-- Table of Patterns -->
-            <div class="overflow-x-auto mt-3">
-              <table class="w-full text-left text-xs text-slate-300">
-                <thead class="text-[11px] uppercase font-mono bg-slate-950/60 text-slate-400 border-b border-slate-800">
-                  <tr>
-                    <th class="py-2.5 px-3">Pattern Archetype</th>
-                    <th class="py-2.5 px-3 text-center">Movers Count & Share</th>
-                    <th class="py-2.5 px-3">Matching Stocks (Click to Filter)</th>
-                    <th class="py-2.5 px-3 text-right">Avg Pre-VDU</th>
-                    <th class="py-2.5 px-3 text-right">Avg Range</th>
-                    <th class="py-2.5 px-3 text-right">20 EMA Dist</th>
-                    <th class="py-2.5 px-3 text-right">Avg Gain %</th>
-                    <th class="py-2.5 px-3">Pattern Rationale</th>
-                  </tr>
-                </thead>
-                <tbody id="res-patterns-table-body" class="divide-y divide-slate-800/60 font-mono">
-                  <tr>
-                    <td colspan="8" class="py-6 text-center text-slate-500 font-sans">
-                      Loading pattern distribution...
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
             </div>
           </div>
 
@@ -19246,6 +19413,7 @@
 
         // Render Pattern Discovery & Commonality Table
         renderPatternsCommonalityTable(data.pattern_breakdown || []);
+        loadPreRallyDiscovery();
 
         // Update KPIs
         const vduEl = document.getElementById('res-kpi-vdu');
@@ -19585,6 +19753,305 @@
       if (lbl) lbl.textContent = `Showing ${filtered.length} of ${researchState.allMovers.length} Moving Stocks`;
 
       renderMoversTable(filtered);
+    }
+
+    // =========================================================================
+    // PRE-RALLY PATTERN DISCOVERY & VALIDATION ENGINE LOGIC
+    // =========================================================================
+    const preRallyState = {
+      summary: null,
+      combinations: [],
+      activeFilter: 'ALL',
+      sortBy: 'lift_oos',
+      isLoading: false
+    };
+
+    async function loadPreRallyDiscovery() {
+      if (preRallyState.isLoading) return;
+      preRallyState.isLoading = true;
+
+      try {
+        const [sumRes, combRes] = await Promise.all([
+          fetch('/api/research/pre-rally/summary').then(r => r.json()),
+          fetch('/api/research/pre-rally/combinations?min_sample=1&status=ALL').then(r => r.json())
+        ]);
+
+        if (sumRes.status === 'SUCCESS' && sumRes.summary) {
+          preRallyState.summary = sumRes.summary;
+          const s = sumRes.summary;
+          const baseEl = document.getElementById('pr-summary-baseline');
+          if (baseEl) baseEl.textContent = `${s.baseline_rally_rate || 0}%`;
+
+          const evEl = document.getElementById('pr-summary-events');
+          if (evEl) evEl.textContent = s.total_events_analyzed || 0;
+
+          const valEl = document.getElementById('pr-summary-validated');
+          if (valEl) valEl.textContent = s.validated_oos_count || 0;
+        }
+
+        if (combRes.status === 'SUCCESS' && combRes.combinations) {
+          preRallyState.combinations = combRes.combinations;
+
+          const oosCount = preRallyState.combinations.filter(c => c.validation_status === 'VALIDATED_OOS').length;
+          const expCount = preRallyState.combinations.filter(c => c.validation_status === 'EXPLORATORY').length;
+
+          const cntAll = document.getElementById('pr-count-all');
+          if (cntAll) cntAll.textContent = preRallyState.combinations.length;
+
+          const cntOos = document.getElementById('pr-count-oos');
+          if (cntOos) cntOos.textContent = oosCount;
+
+          const cntExp = document.getElementById('pr-count-exp');
+          if (cntExp) cntExp.textContent = expCount;
+
+          renderPreRallyCombinationsTable();
+        }
+      } catch (err) {
+        console.error("Error loading pre-rally discovery data:", err);
+      } finally {
+        preRallyState.isLoading = false;
+      }
+    }
+
+    function renderPreRallyCombinationsTable() {
+      const tbody = document.getElementById('pr-combinations-tbody');
+      if (!tbody) return;
+
+      let list = [...(preRallyState.combinations || [])];
+      if (preRallyState.activeFilter !== 'ALL') {
+        list = list.filter(c => c.validation_status === preRallyState.activeFilter);
+      }
+
+      // Sort
+      const sb = preRallyState.sortBy;
+      if (sb === 'out_sample_precision') {
+        list.sort((a, b) => (b.out_sample_precision || 0) - (a.out_sample_precision || 0));
+      } else if (sb === 'sample_size') {
+        list.sort((a, b) => (b.sample_size || 0) - (a.sample_size || 0));
+      } else if (sb === 'mfe_mae_ratio') {
+        list.sort((a, b) => (b.mfe_mae_ratio || 0) - (a.mfe_mae_ratio || 0));
+      } else {
+        list.sort((a, b) => {
+          if (a.validation_status === 'VALIDATED_OOS' && b.validation_status !== 'VALIDATED_OOS') return -1;
+          if (b.validation_status === 'VALIDATED_OOS' && a.validation_status !== 'VALIDATED_OOS') return 1;
+          return (b.lift_oos || 0) - (a.lift_oos || 0);
+        });
+      }
+
+      if (!list.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" class="py-8 text-center text-slate-500 font-sans">
+              No combinations matching the "${escapeHtml(preRallyState.activeFilter)}" filter.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      let html = '';
+      list.forEach(c => {
+        let badgeClass = 'bg-slate-800 text-slate-400 border-slate-700';
+        let badgeText = c.validation_status;
+        if (c.validation_status === 'VALIDATED_OOS') {
+          badgeClass = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold';
+          badgeText = '✓ VALIDATED OOS';
+        } else if (c.validation_status === 'EXPLORATORY') {
+          badgeClass = 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-semibold';
+          badgeText = 'EXPLORATORY';
+        } else {
+          badgeClass = 'bg-slate-800 text-slate-400 border-slate-700';
+          badgeText = 'INSUFFICIENT DATA';
+        }
+
+        const liftVal = Number(c.lift_oos || 1.0).toFixed(2);
+        let liftColor = 'text-slate-400';
+        let liftBg = 'bg-slate-800/40 border-slate-700';
+        if (Number(liftVal) >= 1.50) {
+          liftColor = 'text-emerald-400 font-bold';
+          liftBg = 'bg-emerald-500/10 border-emerald-500/30';
+        } else if (Number(liftVal) >= 1.15) {
+          liftColor = 'text-cyan-400 font-bold';
+          liftBg = 'bg-cyan-500/10 border-cyan-500/30';
+        }
+
+        const precOos = Number(c.out_sample_precision || 0).toFixed(1);
+        const precIs = Number(c.in_sample_precision || 0).toFixed(1);
+        const rrVal = Number(c.mfe_mae_ratio || 0).toFixed(1);
+        const mfeVal = Number(c.avg_mfe || 0).toFixed(1);
+        const maeVal = Number(c.avg_mae || 0).toFixed(1);
+
+        html += `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-2.5 px-3">
+              <div class="font-bold text-white text-xs flex items-center gap-1.5">
+                <span>${escapeHtml(c.name || '')}</span>
+              </div>
+              <div class="text-[10px] font-mono text-amber-400/90 mt-0.5 truncate max-w-sm sm:max-w-md" title="${escapeHtml(c.rule_expression || '')}">
+                <code>${escapeHtml(c.rule_expression || '')}</code>
+              </div>
+            </td>
+            <td class="py-2.5 px-3 text-center">
+              <span class="px-2 py-0.5 rounded text-[10px] border ${badgeClass}">
+                ${badgeText}
+              </span>
+            </td>
+            <td class="py-2.5 px-3 text-right">
+              <span class="font-bold ${Number(precOos) >= 40 ? 'text-emerald-400' : 'text-slate-200'}">${precOos}%</span>
+              <div class="text-[10px] text-slate-500 font-sans">IS: ${precIs}%</div>
+            </td>
+            <td class="py-2.5 px-3 text-right">
+              <span class="px-2 py-0.5 rounded text-[11px] font-bold border ${liftBg} ${liftColor}">
+                ${liftVal}x
+              </span>
+            </td>
+            <td class="py-2.5 px-3 text-center">
+              <strong class="text-white">${c.oos_sample_size || 0}</strong>
+              <span class="text-slate-500 text-[10px]">/ ${c.sample_size || 0}</span>
+            </td>
+            <td class="py-2.5 px-3 text-right">
+              <strong class="text-amber-300 font-bold">${rrVal}:1</strong>
+              <div class="text-[10px] text-slate-400">+${mfeVal}% / ${maeVal}%</div>
+            </td>
+            <td class="py-2.5 px-3 text-right text-slate-300">
+              ${c.avg_days_to_target ? Number(c.avg_days_to_target).toFixed(1) + 'd' : '--'}
+            </td>
+            <td class="py-2.5 px-3 text-center">
+              <button onclick="openPatternEvidenceModal('${escapeHtml(c.combination_id || '')}')" class="px-2 py-1 rounded text-[10px] font-mono font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition flex items-center gap-1 mx-auto cursor-pointer" title="Inspect true positive winners and false positive failures">
+                <i data-lucide="eye" class="w-3 h-3"></i>
+                <span>Evidence</span>
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+
+      tbody.innerHTML = html;
+      lucide.createIcons();
+    }
+
+    function filterPreRallyCombinations(filter) {
+      preRallyState.activeFilter = filter;
+      ['btn-pr-filter-all', 'btn-pr-filter-oos', 'btn-pr-filter-exp'].forEach(id => {
+        const b = document.getElementById(id);
+        if (b) {
+          b.className = 'px-2.5 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white border border-transparent hover:border-slate-800';
+        }
+      });
+      const activeBtnId = filter === 'VALIDATED_OOS' ? 'btn-pr-filter-oos' : (filter === 'EXPLORATORY' ? 'btn-pr-filter-exp' : 'btn-pr-filter-all');
+      const activeBtn = document.getElementById(activeBtnId);
+      if (activeBtn) {
+        activeBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+      }
+      renderPreRallyCombinationsTable();
+    }
+
+    function sortPreRallyCombinations(sb) {
+      preRallyState.sortBy = sb;
+      renderPreRallyCombinationsTable();
+    }
+
+    async function triggerPreRallyDiscoveryRun() {
+      const btn = document.getElementById('btn-run-pre-rally-discovery');
+      const icon = document.getElementById('icon-run-pre-rally');
+      if (btn) btn.disabled = true;
+      if (icon) icon.classList.add('animate-spin');
+
+      try {
+        const res = await fetch('/api/research/pre-rally/run', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'SUCCESS') {
+          await loadPreRallyDiscovery();
+        }
+      } catch (err) {
+        console.error("Error running pre-rally discovery scan:", err);
+      } finally {
+        if (btn) btn.disabled = false;
+        if (icon) icon.classList.remove('animate-spin');
+      }
+    }
+
+    async function openPatternEvidenceModal(combinationId) {
+      const modal = document.getElementById('modal-pattern-evidence');
+      if (!modal) return;
+      modal.classList.remove('hidden');
+
+      try {
+        const res = await fetch(`/api/research/pre-rally/combination-detail?combination_id=${encodeURIComponent(combinationId)}`);
+        const data = await res.json();
+        if (data.status !== 'SUCCESS' || !data.combination) return;
+
+        const c = data.combination;
+        document.getElementById('modal-pat-title').textContent = c.name || combinationId;
+        const badge = document.getElementById('modal-pat-status-badge');
+        if (badge) {
+          badge.textContent = c.validation_status || 'EXPLORATORY';
+          badge.className = c.validation_status === 'VALIDATED_OOS' ?
+            'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+            'px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30';
+        }
+        document.getElementById('modal-pat-desc').textContent = c.description || '';
+        document.getElementById('modal-pat-rule').textContent = c.rule_expression || '--';
+
+        document.getElementById('modal-pat-oos-prec').textContent = `${Number(c.out_sample_precision || 0).toFixed(1)}%`;
+        document.getElementById('modal-pat-is-prec').textContent = `In-Sample: ${Number(c.in_sample_precision || 0).toFixed(1)}%`;
+
+        document.getElementById('modal-pat-lift').textContent = `${Number(c.lift_oos || 1.0).toFixed(2)}x`;
+        document.getElementById('modal-pat-baseline').textContent = `Baseline Rate: ${Number(c.baseline_rate || 0).toFixed(1)}%`;
+
+        document.getElementById('modal-pat-rr').textContent = `${Number(c.mfe_mae_ratio || 0).toFixed(1)}:1`;
+        document.getElementById('modal-pat-mfe-mae').textContent = `+${Number(c.avg_mfe || 0).toFixed(1)}% / ${Number(c.avg_mae || 0).toFixed(1)}%`;
+
+        document.getElementById('modal-pat-sample').textContent = `${c.oos_sample_size || 0} OOS / ${c.sample_size || 0} Total`;
+        document.getElementById('modal-pat-time').textContent = `Avg Target: ${Number(c.avg_days_to_target || 0).toFixed(1)} days`;
+
+        // Render Verified Winners
+        const wTbody = document.getElementById('modal-pat-winners-tbody');
+        if (wTbody) {
+          const wins = c.example_winners || [];
+          if (!wins.length) {
+            wTbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-slate-500">No verified winner examples logged yet.</td></tr>`;
+          } else {
+            wTbody.innerHTML = wins.map(w => `
+              <tr class="hover:bg-slate-900 transition font-mono">
+                <td class="py-1 px-1.5 font-bold text-white">${escapeHtml(w.symbol || '')}</td>
+                <td class="py-1 px-1.5 text-slate-400">${escapeHtml(w.date || '')}</td>
+                <td class="py-1 px-1.5 text-right ${w.vdu <= 0.8 ? 'text-amber-300' : 'text-slate-400'}">${w.vdu ? Number(w.vdu).toFixed(2) + 'x' : '--'}</td>
+                <td class="py-1 px-1.5 text-right ${Math.abs(w.dist_ema20 || 0) <= 2.5 ? 'text-cyan-300' : 'text-slate-400'}">${w.dist_ema20 ? (w.dist_ema20 >= 0 ? '+' : '') + Number(w.dist_ema20).toFixed(1) + '%' : '--'}</td>
+                <td class="py-1 px-1.5 text-right font-bold text-emerald-400">+${Number(w.fwd_return || 0).toFixed(1)}%</td>
+                <td class="py-1 px-1.5 text-right text-emerald-300">+${Number(w.mfe || 0).toFixed(1)}%</td>
+              </tr>
+            `).join('');
+          }
+        }
+
+        // Render Documented Failures
+        const fTbody = document.getElementById('modal-pat-failures-tbody');
+        if (fTbody) {
+          const fails = c.example_failures || [];
+          if (!fails.length) {
+            fTbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-slate-500">Zero failures recorded in this sample.</td></tr>`;
+          } else {
+            fTbody.innerHTML = fails.map(f => `
+              <tr class="hover:bg-slate-900 transition font-mono">
+                <td class="py-1 px-1.5 font-bold text-white">${escapeHtml(f.symbol || '')}</td>
+                <td class="py-1 px-1.5 text-slate-400">${escapeHtml(f.date || '')}</td>
+                <td class="py-1 px-1.5 text-right text-slate-400">${f.vdu ? Number(f.vdu).toFixed(2) + 'x' : '--'}</td>
+                <td class="py-1 px-1.5 text-right text-slate-400">${f.dist_ema20 ? (f.dist_ema20 >= 0 ? '+' : '') + Number(f.dist_ema20).toFixed(1) + '%' : '--'}</td>
+                <td class="py-1 px-1.5 text-right font-bold ${f.fwd_return < 0 ? 'text-rose-400' : 'text-slate-400'}">${f.fwd_return ? (f.fwd_return >= 0 ? '+' : '') + Number(f.fwd_return).toFixed(1) + '%' : '--'}</td>
+                <td class="py-1 px-1.5 text-right text-rose-400 font-bold">${Number(f.mae || 0).toFixed(1)}%</td>
+              </tr>
+            `).join('');
+          }
+        }
+      } catch (err) {
+        console.error("Error opening pattern evidence modal:", err);
+      }
+    }
+
+    function closePatternEvidenceModal() {
+      const modal = document.getElementById('modal-pattern-evidence');
+      if (modal) modal.classList.add('hidden');
     }
 
     function renderPatternsCommonalityTable(patterns) {

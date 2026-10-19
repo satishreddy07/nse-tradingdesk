@@ -2245,6 +2245,102 @@ def get_research_audit_history(limit: int = 50, regime: str = None):
 
 
 # --------------------------------------------------------------------------
+# PRE-RALLY PATTERN DISCOVERY & VALIDATION ENGINE ENDPOINTS
+# --------------------------------------------------------------------------
+@app.get("/api/research/pre-rally/summary")
+def get_pre_rally_summary():
+    """
+    Returns high-level summary of the Pre-Rally Pattern Discovery & Validation Engine:
+    - In-Sample vs Out-of-Sample baseline rally rates
+    - Total events & candidate hypotheses evaluated
+    - Chronological split cutoff date and validation counts
+    """
+    from engines.pre_rally_discovery_engine import pre_rally_discovery_engine
+    try:
+        summary = pre_rally_discovery_engine.get_summary_stats()
+        return _sanitize_for_json({"status": "SUCCESS", "summary": summary})
+    except Exception as e:
+        logger.error(f"Error fetching pre-rally summary: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+@app.get("/api/research/pre-rally/combinations")
+def get_pre_rally_combinations(
+    status: str = "ALL",
+    min_sample: int = 5,
+    sort_by: str = "lift_oos"
+):
+    """
+    Returns discovered and statistically validated pre-rally feature combinations:
+    - In-Sample vs Out-of-Sample precision
+    - Lift over baseline
+    - MFE/MAE risk-reward ratios
+    - Validation status (VALIDATED_OOS, EXPLORATORY, INSUFFICIENT_DATA)
+    """
+    from engines.pre_rally_discovery_engine import pre_rally_discovery_engine
+    try:
+        combinations = pre_rally_discovery_engine.get_discovered_combinations(
+            min_sample=min_sample,
+            status_filter=status
+        )
+        if sort_by == "out_sample_precision":
+            combinations.sort(key=lambda x: (x.get("validation_status") != "VALIDATED_OOS", -float(x.get("out_sample_precision", 0.0) or 0.0)))
+        elif sort_by == "sample_size":
+            combinations.sort(key=lambda x: -int(x.get("sample_size", 0) or 0))
+        elif sort_by == "mfe_mae_ratio":
+            combinations.sort(key=lambda x: -float(x.get("mfe_mae_ratio", 0.0) or 0.0))
+        else: # default lift_oos
+            combinations.sort(key=lambda x: (x.get("validation_status") != "VALIDATED_OOS", -float(x.get("lift_oos", 0.0) or 0.0)))
+
+        return _sanitize_for_json({
+            "status": "SUCCESS",
+            "count": len(combinations),
+            "combinations": combinations
+        })
+    except Exception as e:
+        logger.error(f"Error fetching pre-rally combinations: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+@app.get("/api/research/pre-rally/combination-detail")
+def get_pre_rally_combination_detail(combination_id: str):
+    """Returns granular audit trail for a specific pattern combination including real winners and failures."""
+    from engines.pre_rally_discovery_engine import pre_rally_discovery_engine
+    try:
+        detail = pre_rally_discovery_engine.get_combination_detail(combination_id=combination_id)
+        if not detail:
+            return JSONResponse(status_code=404, content={"status": "NOT_FOUND", "message": f"Combination {combination_id} not found."})
+        return _sanitize_for_json({"status": "SUCCESS", "combination": detail})
+    except Exception as e:
+        logger.error(f"Error fetching combination detail: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+@app.post("/api/research/pre-rally/run")
+def trigger_pre_rally_discovery_run(
+    min_fwd_return: float = 5.0,
+    fwd_horizon: int = 10,
+    max_adverse_pct: float = -3.5,
+    max_symbols: int = 35
+):
+    """Triggers an empirical pattern discovery and validation cycle across historical OHLCV data."""
+    from engines.pre_rally_discovery_engine import pre_rally_discovery_engine
+    try:
+        res = pre_rally_discovery_engine.run_discovery(
+            min_fwd_return=min_fwd_return,
+            fwd_horizon=fwd_horizon,
+            max_adverse_pct=max_adverse_pct,
+            max_symbols=max_symbols,
+            force_refresh=True
+        )
+        return _sanitize_for_json(res)
+    except Exception as e:
+        logger.error(f"Error executing pre-rally discovery run: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+
+# --------------------------------------------------------------------------
 # INSTITUTIONAL TEST MODE & SINGLE STOCK DIAGNOSTIC LAB ENDPOINTS
 # --------------------------------------------------------------------------
 @app.get("/api/test-mode/benchmarks")
