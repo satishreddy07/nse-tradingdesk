@@ -318,7 +318,7 @@
 
       <!-- Current Stage Text -->
       <div id="scan-stage-text" class="text-xs sm:text-sm font-semibold text-slate-100 mb-2">
-        Connecting live to Chartink Screener...
+        Initializing Screener Engine...
       </div>
 
       <!-- Progress Bar -->
@@ -17474,7 +17474,9 @@
 
       const banner = document.getElementById('live-scan-banner');
       if (banner) banner.classList.remove('hidden');
-      document.getElementById('scan-stage-text').innerText = `Connecting live to screener for ${scanType}...`;
+      const activeSrc = (screenerState && screenerState.swingSource) ? screenerState.swingSource : 'IN_HOUSE';
+      const sourceLabel = (activeSrc === 'IN_HOUSE') ? 'In-House Nifty 500' : 'Chartink Live';
+      document.getElementById('scan-stage-text').innerText = `Connecting live to ${sourceLabel} for ${scanType}...`;
       document.getElementById('scan-progress-bar').style.width = '5%';
       document.getElementById('scan-pct-text').innerText = '5%';
 
@@ -17482,7 +17484,7 @@
         const res = await fetch('/api/scan/trigger', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scan_type: scanType, auto_execute: autoExec })
+          body: JSON.stringify({ scan_type: scanType, auto_execute: autoExec, source: activeSrc })
         });
         const data = await res.json();
         showToast(data.message || `Live scan ${scanType} started!`, 'info');

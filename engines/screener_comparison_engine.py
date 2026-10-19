@@ -60,22 +60,21 @@ class ScreenerComparisonEngine:
     def get_inhouse_universe_tickers(self) -> List[str]:
         """
         Returns all qualified cash equities (formatted as 'SYMBOL.NS') for swing trading candidate discovery.
-        UNRESTRICTED BROAD UNIVERSE: Sourced from all cash equities matching the EQ-FINAL liquidity/fundamental
-        matrix, plus all active master store symbols and Nifty 500 constituents (zero Nifty 500 clamping).
+        STRICTLY IN-HOUSE UNIVERSE: Sourced from official Nifty 500 constituents plus active local master
+        store symbols. Zero network dependency on external Chartink calls.
         """
         syms_set: Set[str] = set()
 
-        # 1. Load from recent screener scan or cache if available
+        # 1. Primary: Official Nifty 500 constituents (Institutional quality)
         try:
-            scan = custom_screener_engine.run_scan(preset_name="EQ-FINAL", force_refresh=False)
-            res = scan.get("results", [])
-            for r in res:
-                if r.get("symbol"):
-                    syms_set.add(clean_symbol(r["symbol"]))
+            n500 = get_nifty500_symbols()
+            for s in n500:
+                if s:
+                    syms_set.add(clean_symbol(s))
         except Exception as e:
-            logger.debug(f"EQ-FINAL universe lookup notice: {e}")
+            logger.debug(f"Nifty 500 lookup notice: {e}")
 
-        # 2. Add all local master OHLCV metadata symbols
+        # 2. Add all local master OHLCV metadata symbols (already verified & stored locally)
         try:
             meta = state_engine.get_all_ohlcv_metadata(limit=2000)
             for r in meta:
@@ -85,17 +84,8 @@ class ScreenerComparisonEngine:
         except Exception as e:
             logger.debug(f"Master metadata lookup notice: {e}")
 
-        # 3. Add official Nifty 500 constituents
-        try:
-            n500 = get_nifty500_symbols()
-            for s in n500:
-                if s:
-                    syms_set.add(clean_symbol(s))
-        except Exception as e:
-            logger.debug(f"Nifty 500 lookup notice: {e}")
-
         if syms_set:
-            logger.info(f"Loaded {len(syms_set)} broad cash universe stocks for in-house scanner (zero Nifty 500 restriction).")
+            logger.info(f"Loaded {len(syms_set)} institutional stocks for In-House Nifty 500 Engine.")
             return [f"{s}.NS" for s in sorted(syms_set)]
 
         # Fallback to default symbols

@@ -428,6 +428,7 @@ def refresh_prices_endpoint(req: Optional[RefreshPricesRequest] = None):
 class TriggerScanRequest(BaseModel):
     scan_type: str = "ALL"  # 'MORNING_1020AM', 'AFTERNOON_300PM', 'AFTERNOON_305PM', 'INSTITUTIONAL', 'NIFTY500', 'ALL'
     auto_execute: bool = True
+    source: Optional[str] = None
 
 
 @app.get("/api/execution/queue")
@@ -453,7 +454,7 @@ def trigger_scan(req: TriggerScanRequest):
     q_status = execution_queue.get_status()
 
     # If scan is already running on execution worker
-    if curr_prog.get("is_running") and q_status.get("is_running") and q_status.get("current_task", {}).get("type") == "CHARTINK_SCAN":
+    if curr_prog.get("is_running") and q_status.get("is_running") and q_status.get("current_task", {}).get("type") in ("CHARTINK_SCAN", "IN_HOUSE_SCAN", "SCAN"):
         return {
             "status": "ALREADY_RUNNING",
             "message": f"Scan is currently in progress: {curr_prog.get('stage')}",
@@ -462,11 +463,16 @@ def trigger_scan(req: TriggerScanRequest):
 
     can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
 
+    if req.source:
+        state_engine.set_swing_universe_source(req.source)
+    active_source = req.source or state_engine.get_swing_universe_source()
+    source_label = "In-House Nifty 500" if active_source == "IN_HOUSE" else "Chartink Live"
+
     # Determine initial stage based on queue state
     if q_status.get("is_running"):
         init_stage = f"⏳ In Queue (Position {q_status.get('queued_count', 0) + 1}): Waiting for [{q_status.get('current_task', {}).get('name')}] to complete..."
     else:
-        init_stage = f"Initiating live {s_type} scan..."
+        init_stage = f"Initiating live {s_type} scan ({source_label})..."
 
     state_engine.start_scan_progress(
         scan_type=s_type,
@@ -475,13 +481,13 @@ def trigger_scan(req: TriggerScanRequest):
 
     effective_auto_exec = bool(req.auto_execute and can_trade)
     def run_scan_worker():
-        logger.info(f"⚡ Live scan started: {s_type} (Auto-Execute: {effective_auto_exec}, TradingGate: {can_trade})")
-        state_engine.update_scan_progress(stage=f"Step 1/6: Fetching live {s_type} universe from Chartink...", percent=10)
+        logger.info(f"⚡ Live scan started: {s_type} [{source_label}] (Auto-Execute: {effective_auto_exec}, TradingGate: {can_trade})")
+        state_engine.update_scan_progress(stage=f"Step 1/6: Sourcing live {s_type} universe from {source_label}...", percent=10)
         try:
             if s_type in ("MORNING_1020AM", "AFTERNOON_305PM", "AFTERNOON_300PM", "INSTITUTIONAL", "ALL"):
                 inst = InstitutionalEngine()
                 mode_override = "morning" if "MORNING" in s_type else ("afternoon" if "AFTERNOON" in s_type else None)
-                inst.run(auto_execute=effective_auto_exec, mode_override=mode_override)
+                inst.run(auto_execute=effective_auto_exec, mode_override=mode_override, universe_source=active_source)
 
             if s_type in ("AFTERNOON_305PM", "AFTERNOON_300PM", "NIFTY500", "ALL"):
                 run_nifty500_pipeline_sync(mode="MANUAL_TRIGGER", auto_execute=effective_auto_exec)
@@ -491,8 +497,8 @@ def trigger_scan(req: TriggerScanRequest):
 
     task_res = execution_queue.submit_task(
         run_scan_worker,
-        task_name=f"Live Scan: {s_type}",
-        task_type="CHARTINK_SCAN",
+        task_name=f"Live Scan: {s_type} ({source_label})",
+        task_type="IN_HOUSE_SCAN" if active_source == "IN_HOUSE" else "CHARTINK_SCAN",
         deduplicate=True
     )
 

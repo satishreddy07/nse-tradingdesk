@@ -166,3 +166,24 @@ def test_inhouse_universe_tickers_formatting():
     assert len(tickers) >= 50
     assert all(t.endswith(".NS") for t in tickers)
     assert all(not t.startswith("^") for t in tickers)
+
+
+def test_scan_trigger_with_inhouse_source(client):
+    """Verifies that POST /api/scan/trigger accepts source='IN_HOUSE' and sets proper initial stage."""
+    from execution.state_engine import state_engine
+
+    # Trigger scan with source='IN_HOUSE'
+    res = client.post("/api/scan/trigger", json={
+        "scan_type": "INSTITUTIONAL",
+        "auto_execute": False,
+        "source": "IN_HOUSE"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] in ("STARTED", "QUEUED", "ALREADY_RUNNING")
+
+    prog = state_engine.get_scan_progress()
+    # Stage should NOT contain Chartink Screener url when IN_HOUSE is active
+    assert "https://chartink.com/screener" not in str(prog.get("stage", ""))
+    assert state_engine.get_swing_universe_source() == "IN_HOUSE"
+

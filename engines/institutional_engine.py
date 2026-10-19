@@ -1433,7 +1433,8 @@ class InstitutionalEngine:
         self,
         custom_tickers: Optional[List[str]] = None,
         auto_execute: bool = True,
-        mode_override: Optional[str] = None
+        mode_override: Optional[str] = None,
+        universe_source: Optional[str] = None
     ) -> pd.DataFrame:
         start_time = time.time()
         mode, mode_desc = get_run_mode()
@@ -1447,14 +1448,24 @@ class InstitutionalEngine:
         _institutional_engine_state["trading_gate_open"] = can_trade
         _institutional_engine_state["trading_gate_message"] = gate_msg
 
+        source = universe_source or state_engine.get_swing_universe_source()
+        if source not in ("IN_HOUSE", "CHARTINK"):
+            source = "IN_HOUSE"
+        source_label = "In-House Nifty 500" if source == "IN_HOUSE" else "Chartink Live"
+        init_stage_msg = (
+            f"Step 1/6: Sourcing universe from {source_label}..."
+            if source == "IN_HOUSE" else
+            f"Step 1/6: Connecting live to Chartink Screener ({self.chartink.url})..."
+        )
+
         state_engine.start_scan_progress(
             scan_type=f"INSTITUTIONAL_6PILLAR ({mode.upper()})",
-            initial_stage=f"Step 1/6: Connecting live to Chartink Screener ({self.chartink.url})..."
+            initial_stage=init_stage_msg
         )
-        logger.info(f"=== Institutional 6-Pillar Engine Run ({mode.upper()}) at {format_ist()} ===")
+        logger.info(f"=== Institutional 6-Pillar Engine Run ({mode.upper()}) [{source_label}] at {format_ist()} ===")
 
         try:
-            # Step 1: Ingest Universe Live from Chartink
+            # Step 1: Ingest Universe Live from Chartink or In-House
             if custom_tickers and len(custom_tickers) > 0:
                 tickers = [format_nse_ticker(t) for t in custom_tickers]
                 _institutional_engine_state["chartink_fetched_count"] = len(tickers)
@@ -1465,7 +1476,6 @@ class InstitutionalEngine:
                     stocks_done=0
                 )
             else:
-                source = state_engine.get_swing_universe_source()
                 from_live_chartink = False
                 if source == "IN_HOUSE":
                     logger.info("Swing candidate universe sourcing: IN_HOUSE (Nifty 500 Institutional).")
@@ -1498,7 +1508,7 @@ class InstitutionalEngine:
                 )
 
             source_tag = "CUSTOM" if custom_tickers else source
-            source_name = "Custom Input" if custom_tickers else ("Chartink Screener" if source == "CHARTINK" else "In-House Broad Universe")
+            source_name = "Custom Input" if custom_tickers else ("Chartink Screener" if source == "CHARTINK" else "In-House Nifty 500 Engine")
             try:
                 state_engine.record_system_activity(
                     category="SCANNER_PARITY",
@@ -1560,7 +1570,7 @@ class InstitutionalEngine:
 
             # Step 6: 6-Pillar Percentile Scoring
             state_engine.update_scan_progress(
-                stage=f"Step 5/6: Constructing 6-Pillars & Ranking Universe Percentiles ({len(raw_df)} liquid stocks out of {len(tickers)} Chartink stocks)...",
+                stage=f"Step 5/6: Constructing 6-Pillars & Ranking Universe Percentiles ({len(raw_df)} liquid stocks out of {len(tickers)} {source_label} stocks)...",
                 percent=85
             )
             scored_df = PercentileScoringEngine.score_universe(raw_df, run_mode=mode)
@@ -1732,7 +1742,7 @@ class InstitutionalEngine:
                     swing_quant_ml_engine.record_decision_audit(
                         candidate_id=cand_id,
                         symbol=ticker,
-                        scanner_source="Chartink 6-Pillar Screener",
+                        scanner_source="In-House Nifty 500 Engine" if source == "IN_HOUSE" else "Chartink 6-Pillar Screener",
                         scanner_run_id=scan_run_id,
                         technical_classification="BUY NOW",
                         technical_snapshot=tech_snapshot,
@@ -2052,7 +2062,8 @@ class InstitutionalEngine:
                 if req_val > available_cash:
                     logger.warning(f"⚠️ [P1 Risk Gate Blocked] {ticker}: Required ₹{req_val:,.2f} > Available Cash ₹{available_cash:,.2f}")
                     swing_quant_ml_engine.record_decision_audit(
-                        candidate_id=cand_id, symbol=ticker, scanner_source="Chartink 6-Pillar Screener",
+                        candidate_id=cand_id, symbol=ticker,
+                        scanner_source="In-House Nifty 500 Engine" if source == "IN_HOUSE" else "Chartink 6-Pillar Screener",
                         scanner_run_id=scan_run_id, technical_classification="BUY NOW", technical_snapshot=tech_snapshot,
                         ml_decision=ml_decision, ml_win_prob=ml_prob, ml_score=ml_score, expected_r=expected_r,
                         ml_reasons=risk_flags, ai_request_id=ai_req_id, ai_status=ai_res.status,
@@ -2189,7 +2200,7 @@ class InstitutionalEngine:
 
             elapsed = time.time() - start_time
             summary_msg = (
-                f"Chartink Live Scan Complete in {elapsed:.1f}s: {len(tickers)} Chartink stocks fetched "
+                f"{source_label} Scan Complete in {elapsed:.1f}s: {len(tickers)} {source_label} stocks fetched "
                 f"(Master Vault Hit: {dl_stats['cache_hits']}, Intraday Delta: {dl_stats['gap_filled']}, New 2Y: {dl_stats['full_downloads']}) -> "
                 f"{len(signals_df)} liquid stocks analyzed -> BUY NOW: {b_now} (Auto-Executed: {orders_placed}) | PRE BREAKOUT: {p_brk} | WAIT PULLBACK: {w_pb}{gate_notice}"
             )
