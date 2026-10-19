@@ -2199,7 +2199,8 @@ def trigger_movers_research_study(force_refresh: bool = True):
 def get_test_mode_benchmarks():
     """Returns standard criteria benchmarks for BUY NOW, BREAKOUT, and PULLBACK."""
     from engines.stock_test_analyzer import stock_test_analyzer
-    return stock_test_analyzer.get_setup_benchmarks()
+    bms = stock_test_analyzer.get_setup_benchmarks()
+    return {"status": "SUCCESS", "setups": bms, **bms}
 
 
 @app.get("/api/test-mode/search")

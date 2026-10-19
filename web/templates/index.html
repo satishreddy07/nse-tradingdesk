@@ -18880,7 +18880,7 @@
         const res = await fetch('/api/test-mode/benchmarks');
         if (!res.ok) throw new Error(`HTTP error ${res.status}`);
         const data = await res.json();
-        testModeState.benchmarks = data.setups || {};
+        testModeState.benchmarks = data.setups || data || {};
         renderBenchmarkModalContent();
       } catch (err) {
         console.error('Failed to load test mode benchmarks:', err);
@@ -19046,7 +19046,7 @@
 
       let html = '';
       results.forEach(item => {
-        const inDbBadge = item.in_local_db
+        const inDbBadge = (item.in_storage || item.in_local_db)
           ? '<span class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">Master Vault</span>'
           : '<span class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30">Live Downloadable</span>';
 
