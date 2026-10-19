@@ -20,6 +20,8 @@ Empirical Test Mode Engine:
 ========================================================================================
 """
 
+import os
+import json
 import time
 import math
 import logging
@@ -29,6 +31,8 @@ from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import yfinance as yf
+
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.getcwd()
 
 from core.data_quality import now_ist, format_ist, IST
 from core.stock_registry import clean_symbol, format_nse_ticker, get_stock_sector, NSE_SECTOR_MAP
@@ -106,7 +110,7 @@ class StockTestAnalyzer:
             if count < 500:
                 json_path = os.path.join(os.path.dirname(db_path), "nse_listed_equities_master.json")
                 if not os.path.exists(json_path):
-                    json_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "nse_listed_equities_master.json")
+                    json_path = os.path.join(os.path.dirname(MODULE_DIR), "data", "nse_listed_equities_master.json")
                 
                 if os.path.exists(json_path):
                     with open(json_path, "r", encoding="utf-8") as f:

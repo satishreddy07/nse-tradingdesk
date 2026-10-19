@@ -884,6 +884,41 @@ def scheduled_inhouse_scanner_job():
         logger.error(f"30-Min In-House Screener execution error: {e}", exc_info=True)
 
 
+def scheduled_prospective_paper_trading_job():
+    """
+    Every Trading Day at 15:45 IST (Mon-Fri post-market close):
+    Executes prospective paper-trading lifecycle:
+    1. Scans broad universe for ATR Squeeze <= 0.85 setups as of today's closed candle.
+    2. Converts pending signals to prospective paper trades.
+    3. Advances and resolves open paper trades using TradeSimulator.
+    4. ZERO live broker orders - completely decoupled empirical validation pipeline.
+    """
+    curr = now_ist()
+    if not NSEMarketCalendar.is_trading_day(curr.date()):
+        return
+    try:
+        t0 = time.time()
+        logger.info("🔬 [Prospective Paper-Trading] Executing post-market paper trade lifecycle...")
+        from engines.prospective_validation_engine import prospective_validation_engine
+        res = prospective_validation_engine.run_daily_pipeline()
+        elapsed = time.time() - t0
+        sig_count = res.get("signal_scan", {}).get("signals_discovered", 0)
+        completed_count = res.get("trade_sync", {}).get("trades_completed", 0)
+        try:
+            state_engine.record_system_activity(
+                category="RESEARCH_PROSPECTIVE",
+                action="Post-Market Prospective Paper-Trading Run",
+                status="SUCCESS",
+                summary=f"Discovered {sig_count} squeeze setups; resolved {completed_count} paper trades.",
+                details=res,
+                execution_sec=elapsed
+            )
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"Prospective paper-trading post-market run notice: {e}")
+
+
 def start_scheduler():
     """Initializes and starts the BackgroundScheduler with IST triggers & Render Anti-Sleep Guard."""
     global _scheduler
@@ -1096,6 +1131,16 @@ def start_scheduler():
             name="30-Min In-House Broad Universe Screener & Dual-Entry Execution",
             replace_existing=True,
             misfire_grace_time=300
+        )
+
+        # Job 7: Post-Market Prospective Paper-Trading Lifecycle Run (Mon-Fri, 15:45 IST)
+        _scheduler.add_job(
+            scheduled_prospective_paper_trading_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=15, minute=45, timezone=IST),
+            id="job_prospective_paper_trading_1545",
+            name="15:45 PM Post-Market Prospective Paper-Trading Lifecycle Run",
+            replace_existing=True,
+            misfire_grace_time=600
         )
 
         _scheduler.start()

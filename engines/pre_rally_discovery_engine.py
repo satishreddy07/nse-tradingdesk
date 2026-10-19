@@ -785,7 +785,7 @@ class PreRallyDiscoveryEngine:
                     "stability_score": stability,
                     "validation_status": status,
                     "example_winners": example_wins,
-                    "example_failures": example_failures if 'example_failures' in locals() else example_fails,
+                    "example_failures": example_fails,
                     "updated_at": run_ts
                 }
                 evaluated_combinations.append(comb_dict)

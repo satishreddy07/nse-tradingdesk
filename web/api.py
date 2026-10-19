@@ -2378,6 +2378,58 @@ def analyze_stock_endpoint(symbol: str, force_download: bool = False):
         return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
 
 
+# --------------------------------------------------------------------------
+# PROSPECTIVE VALIDATION & PAPER-TRADING ENDPOINTS (ZERO-BROKER)
+# --------------------------------------------------------------------------
+@app.get("/api/research/prospective-validation/summary")
+def get_prospective_validation_summary():
+    """
+    Returns telemetry summary for the prospective paper-trading pipeline:
+    - Signals count, open trades, completed trades
+    - Realized gross & net expectancies, win rate, profit factor, drawdown
+    - Exit breakdown (profit target, stop loss, gaps, time expiry, conflicts)
+    - Active open trades and recent completed trades list
+    - Zero-broker safety confirmation & historical baseline reference
+    """
+    try:
+        from engines.prospective_validation_engine import prospective_validation_engine
+        telem = prospective_validation_engine.get_telemetry_summary()
+        return _sanitize_for_json(telem)
+    except Exception as e:
+        logger.error(f"Error fetching prospective validation telemetry: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+@app.post("/api/research/prospective-validation/scan-today")
+def trigger_prospective_scan_today(as_of_date: Optional[str] = None):
+    """
+    Triggers prospective signal scan across universe as of today (or specified date),
+    converts new signals to paper trades, and updates open trades.
+    """
+    try:
+        from engines.prospective_validation_engine import prospective_validation_engine
+        res = prospective_validation_engine.run_daily_pipeline()
+        return _sanitize_for_json(res)
+    except Exception as e:
+        logger.error(f"Error running prospective scan: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+@app.post("/api/research/prospective-validation/update-trades")
+def trigger_prospective_update_trades():
+    """
+    Advances open paper trades with latest OHLCV bars without scanning new signals.
+    """
+    try:
+        from engines.prospective_validation_engine import prospective_validation_engine
+        res = prospective_validation_engine.sync_open_paper_trades()
+        return _sanitize_for_json(res)
+    except Exception as e:
+        logger.error(f"Error syncing open paper trades: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+
 
 
 

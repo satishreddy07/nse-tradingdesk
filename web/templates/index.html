@@ -1765,6 +1765,169 @@
           </div>
 
           <!-- ========================================================================= -->
+          <!-- PROSPECTIVE PAPER-TRADING VALIDATION ENGINE (ZERO-BROKER PIPELINE)        -->
+          <!-- ========================================================================= -->
+          <div class="mt-4 bg-slate-900/90 border border-indigo-500/30 rounded-2xl p-4 sm:p-5 shadow-xl">
+            <!-- Header & Badges -->
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-indigo-500/20">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center shrink-0">
+                  <i data-lucide="shield-check" class="w-4 h-4 text-indigo-400"></i>
+                </div>
+                <div>
+                  <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2 flex-wrap">
+                    <span>Prospective Paper-Trading Validation Engine</span>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">ZERO-BROKER PAPER ONLY</span>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-semibold">FROZEN RULE: ATR SQUEEZE &le; 0.85</span>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 font-semibold">NEXT_OPEN (+5% / -3.5%)</span>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/30 font-semibold">NSE STATUTORY FRICTION</span>
+                  </h3>
+                  <p class="text-xs text-slate-400 mt-0.5">
+                    Forward out-of-sample paper execution tracking for the ATR Squeeze hypothesis. Completely decoupled from live broker capital with zero order dispatch.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="flex items-center gap-2 flex-wrap shrink-0">
+                <button id="btn-sync-prospective-trades" onclick="triggerProspectiveUpdateTrades()" class="px-3 py-1.5 rounded-xl text-xs font-mono font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1.5 cursor-pointer">
+                  <i id="icon-sync-prospective" data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                  <span>Sync Open Trades</span>
+                </button>
+                <button id="btn-run-prospective-scan" onclick="triggerProspectiveScanToday()" class="px-3 py-1.5 rounded-xl text-xs font-mono font-semibold bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 transition flex items-center gap-1.5 cursor-pointer shadow-lg">
+                  <i id="icon-run-prospective" data-lucide="radar" class="w-3.5 h-3.5"></i>
+                  <span>Scan Today's Setups</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 4-Card Telemetry Grid -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+              <div class="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">Prospective Activity</div>
+                <div class="mt-1 text-lg font-bold font-mono text-white flex items-baseline gap-1.5">
+                  <span id="pv-open-trades">0</span>
+                  <span class="text-xs text-slate-400 font-normal">Active Open /</span>
+                  <span id="pv-signals-count" class="text-indigo-400">0</span>
+                  <span class="text-xs text-slate-400 font-normal">Signals</span>
+                </div>
+                <div class="text-[10px] text-slate-500 font-mono mt-0.5">Completed: <span id="pv-completed-trades" class="text-slate-300">0</span> trades</div>
+              </div>
+
+              <div class="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">Net Expectancy / Trade</div>
+                <div class="mt-1 text-lg font-bold font-mono flex items-baseline gap-1.5" id="pv-net-expectancy-container">
+                  <span id="pv-net-expectancy" class="text-slate-300">0.00%</span>
+                </div>
+                <div class="text-[10px] text-slate-500 font-mono mt-0.5">Gross: <span id="pv-gross-expectancy" class="text-slate-400">0.00%</span> | Friction: ~0.35%</div>
+              </div>
+
+              <div class="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">Win Rate (Realized vs Label)</div>
+                <div class="mt-1 text-lg font-bold font-mono text-white flex items-baseline gap-1.5">
+                  <span id="pv-realized-win-rate" class="text-emerald-400">0.0%</span>
+                  <span class="text-xs text-slate-500 font-normal">vs</span>
+                  <span id="pv-label-win-rate" class="text-amber-300">0.0%</span>
+                </div>
+                <div class="text-[10px] text-slate-500 font-mono mt-0.5">Hist. OOS Baseline: 37.2% Label / -0.04% Net</div>
+              </div>
+
+              <div class="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">Risk / Return Profile</div>
+                <div class="mt-1 text-lg font-bold font-mono text-white flex items-baseline gap-2">
+                  <span class="text-xs text-slate-400 font-normal">PF:</span>
+                  <span id="pv-profit-factor" class="text-slate-200">1.00</span>
+                  <span class="text-slate-600">|</span>
+                  <span class="text-xs text-slate-400 font-normal">Max DD:</span>
+                  <span id="pv-max-dd" class="text-rose-400">0.0%</span>
+                </div>
+                <div class="text-[10px] text-slate-500 font-mono mt-0.5">Avg Win: <span id="pv-avg-win" class="text-emerald-400">+0.0%</span> | Loss: <span id="pv-avg-loss" class="text-rose-400">-0.0%</span></div>
+              </div>
+            </div>
+
+            <!-- Institutional Disclosure Banner -->
+            <div class="mt-3 p-2.5 rounded-xl bg-indigo-950/30 border border-indigo-500/20 text-xs text-slate-300 font-sans flex items-start gap-2">
+              <i data-lucide="info" class="w-4 h-4 text-indigo-400 shrink-0 mt-0.5"></i>
+              <div class="text-[11px] leading-relaxed">
+                <strong class="text-indigo-200">Statistical Outcome vs Realized Executable Return:</strong>
+                Historical analysis of 35 liquid NSE stocks showed the ATR Squeeze &le; 0.85 hypothesis achieved a 37.2% label win rate (+5% target before -3.5% stop within 10 sessions), but candle-by-candle path simulation with realistic gap fills, conflict stop priority, and statutory delivery taxes yielded a net expectancy of <strong class="text-rose-300">-0.04%</strong> (no proven live edge). This prospective engine paper-trades newly coiling candidates forward out-of-sample without risking live capital.
+              </div>
+            </div>
+
+            <!-- Active Open Paper Trades Table -->
+            <div class="mt-4">
+              <div class="flex items-center justify-between pb-2">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-300 font-mono flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>Active Prospective Paper Trades (<span id="pv-open-table-count">0</span>)</span>
+                </h4>
+                <span class="text-[10px] font-mono text-slate-500">Auto-tracked via TradeSimulator &bull; Day 10 Close Expiry</span>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-slate-300 border-collapse">
+                  <thead class="text-[10px] uppercase font-mono bg-slate-950/70 text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th class="py-2 px-3">Symbol</th>
+                      <th class="py-2 px-3">Signal Date</th>
+                      <th class="py-2 px-3">Entry Date</th>
+                      <th class="py-2 px-3 text-right">Entry (Open)</th>
+                      <th class="py-2 px-3 text-right">Target (+5%)</th>
+                      <th class="py-2 px-3 text-right">Stop (-3.5%)</th>
+                      <th class="py-2 px-3 text-right">Current Price</th>
+                      <th class="py-2 px-3 text-right">Unrealized P&amp;L</th>
+                      <th class="py-2 px-3 text-center">Days Held</th>
+                      <th class="py-2 px-3 text-right">MFE / MAE</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pv-open-trades-tbody" class="divide-y divide-slate-800/60 font-mono">
+                    <tr>
+                      <td colspan="10" class="py-4 text-center text-slate-500 font-sans text-xs">
+                        No active open prospective paper trades. Click "Scan Today's Setups" to scan universe.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Recent Completed Prospective Trades Table -->
+            <div class="mt-4">
+              <div class="flex items-center justify-between pb-2">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-300 font-mono flex items-center gap-1.5">
+                  <i data-lucide="history" class="w-3.5 h-3.5 text-slate-400"></i>
+                  <span>Recent Completed Prospective Trades (<span id="pv-completed-table-count">0</span>)</span>
+                </h4>
+                <span class="text-[10px] font-mono text-slate-500">Realized Gross vs Net Frictions</span>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-slate-300 border-collapse">
+                  <thead class="text-[10px] uppercase font-mono bg-slate-950/70 text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th class="py-2 px-3">Symbol</th>
+                      <th class="py-2 px-3">Entry &rarr; Exit Date</th>
+                      <th class="py-2 px-3 text-right">Entry</th>
+                      <th class="py-2 px-3 text-right">Exit Price</th>
+                      <th class="py-2 px-3 text-center">Exit Reason</th>
+                      <th class="py-2 px-3 text-center">Days</th>
+                      <th class="py-2 px-3 text-right">Gross P&amp;L</th>
+                      <th class="py-2 px-3 text-right">Frictions</th>
+                      <th class="py-2 px-3 text-right">Net Return</th>
+                      <th class="py-2 px-3 text-center">Label / Win</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pv-completed-trades-tbody" class="divide-y divide-slate-800/60 font-mono">
+                    <tr>
+                      <td colspan="10" class="py-4 text-center text-slate-500 font-sans text-xs">
+                        No completed prospective paper trades yet recorded.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========================================================================= -->
           <!-- LIVE 30-MINUTE MOVERS FORENSICS & TODAY'S EVIDENCE SYNTHESIS              -->
           <!-- ========================================================================= -->
           <div class="mt-4 bg-gradient-to-r from-amber-950/20 via-slate-900 to-slate-900 border border-amber-500/30 rounded-2xl p-4 sm:p-5 shadow-xl">
@@ -19414,6 +19577,7 @@
         // Render Pattern Discovery & Commonality Table
         renderPatternsCommonalityTable(data.pattern_breakdown || []);
         loadPreRallyDiscovery();
+        loadProspectiveValidation();
 
         // Update KPIs
         const vduEl = document.getElementById('res-kpi-vdu');
@@ -20055,6 +20219,165 @@
     function closePatternEvidenceModal() {
       const modal = document.getElementById('modal-pattern-evidence');
       if (modal) modal.classList.add('hidden');
+    }
+
+    // =========================================================================
+    // PROSPECTIVE PAPER-TRADING VALIDATION JAVASCRIPT
+    // =========================================================================
+    let prospectiveLoading = false;
+
+    async function loadProspectiveValidation() {
+      if (prospectiveLoading) return;
+      prospectiveLoading = true;
+      try {
+        const res = await fetch('/api/research/prospective-validation/summary');
+        const data = await res.json();
+        if (data.status !== 'SUCCESS') return;
+
+        const perf = data.prospective_performance || {};
+        const openEl = document.getElementById('pv-open-trades');
+        if (openEl) openEl.textContent = perf.open_trades_count || 0;
+        const sigEl = document.getElementById('pv-signals-count');
+        if (sigEl) sigEl.textContent = perf.signals_count || 0;
+        const compEl = document.getElementById('pv-completed-trades');
+        if (compEl) compEl.textContent = perf.completed_trades_count || 0;
+
+        const netExp = perf.mean_net_expectancy_pct || 0;
+        const netEl = document.getElementById('pv-net-expectancy');
+        if (netEl) {
+          netEl.textContent = `${netExp >= 0 ? '+' : ''}${Number(netExp).toFixed(2)}%`;
+          netEl.className = netExp > 0 ? 'text-emerald-400 font-bold text-lg' : (netExp < 0 ? 'text-rose-400 font-bold text-lg' : 'text-slate-300 font-bold text-lg');
+        }
+        const grossEl = document.getElementById('pv-gross-expectancy');
+        if (grossEl) grossEl.textContent = `${perf.mean_gross_expectancy_pct >= 0 ? '+' : ''}${Number(perf.mean_gross_expectancy_pct || 0).toFixed(2)}%`;
+
+        const rWinEl = document.getElementById('pv-realized-win-rate');
+        if (rWinEl) rWinEl.textContent = `${Number(perf.realized_win_rate_pct || 0).toFixed(1)}%`;
+        const lWinEl = document.getElementById('pv-label-win-rate');
+        if (lWinEl) lWinEl.textContent = `${Number(perf.label_win_rate_pct || 0).toFixed(1)}%`;
+
+        const pfEl = document.getElementById('pv-profit-factor');
+        if (pfEl) pfEl.textContent = Number(perf.profit_factor || 1.0).toFixed(2);
+        const ddEl = document.getElementById('pv-max-dd');
+        if (ddEl) ddEl.textContent = `-${Number(perf.max_drawdown_pct || 0).toFixed(1)}%`;
+
+        const winAvgEl = document.getElementById('pv-avg-win');
+        if (winAvgEl) winAvgEl.textContent = `+${Number(perf.avg_win_pct || 0).toFixed(1)}%`;
+        const lossAvgEl = document.getElementById('pv-avg-loss');
+        if (lossAvgEl) lossAvgEl.textContent = `${Number(perf.avg_loss_pct || 0).toFixed(1)}%`;
+
+        // Render Open Trades Table
+        const openTrades = data.open_trades || [];
+        const openCnt = document.getElementById('pv-open-table-count');
+        if (openCnt) openCnt.textContent = openTrades.length;
+        const openTbody = document.getElementById('pv-open-trades-tbody');
+        if (openTbody) {
+          if (!openTrades.length) {
+            openTbody.innerHTML = `<tr><td colspan="10" class="py-4 text-center text-slate-500 font-sans text-xs">No active open prospective paper trades. Click "Scan Today's Setups" to scan universe.</td></tr>`;
+          } else {
+            openTbody.innerHTML = openTrades.map(t => {
+              const uRet = t.unrealized_return_pct || 0;
+              const uColor = uRet > 0 ? 'text-emerald-400 font-bold' : (uRet < 0 ? 'text-rose-400 font-bold' : 'text-slate-300');
+              return `
+                <tr class="hover:bg-slate-800/40 transition">
+                  <td class="py-2 px-3 font-bold text-white">${escapeHtml(t.symbol)}</td>
+                  <td class="py-2 px-3 text-slate-400">${escapeHtml(t.signal_date || '')}</td>
+                  <td class="py-2 px-3 text-indigo-300 font-semibold">${escapeHtml(t.entry_date || '')}</td>
+                  <td class="py-2 px-3 text-right">₹${Number(t.entry_price).toFixed(2)}</td>
+                  <td class="py-2 px-3 text-right text-emerald-400">₹${Number(t.target_price).toFixed(2)}</td>
+                  <td class="py-2 px-3 text-right text-rose-400">₹${Number(t.stop_price).toFixed(2)}</td>
+                  <td class="py-2 px-3 text-right text-white">₹${Number(t.current_price || t.entry_price).toFixed(2)}</td>
+                  <td class="py-2 px-3 text-right ${uColor}">${uRet >= 0 ? '+' : ''}${Number(uRet).toFixed(2)}%</td>
+                  <td class="py-2 px-3 text-center text-slate-300">${t.hold_days || 0}/10</td>
+                  <td class="py-2 px-3 text-right text-slate-400">+${Number(t.mfe_pct || 0).toFixed(1)}% / ${Number(t.mae_pct || 0).toFixed(1)}%</td>
+                </tr>
+              `;
+            }).join('');
+          }
+        }
+
+        // Render Completed Trades Table
+        const compTrades = data.recent_completed_trades || [];
+        const compCnt = document.getElementById('pv-completed-table-count');
+        if (compCnt) compCnt.textContent = compTrades.length;
+        const compTbody = document.getElementById('pv-completed-trades-tbody');
+        if (compTbody) {
+          if (!compTrades.length) {
+            compTbody.innerHTML = `<tr><td colspan="10" class="py-4 text-center text-slate-500 font-sans text-xs">No completed prospective paper trades yet recorded.</td></tr>`;
+          } else {
+            compTbody.innerHTML = compTrades.map(t => {
+              const netRet = t.net_return_pct || 0;
+              const netColor = netRet > 0 ? 'text-emerald-400 font-bold' : (netRet < 0 ? 'text-rose-400 font-bold' : 'text-slate-300');
+              const reason = t.exit_reason || 'UNKNOWN';
+              let badgeColor = 'bg-slate-800 text-slate-300 border-slate-700';
+              if (reason === 'PROFIT_TARGET') badgeColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+              else if (reason === 'TARGET_GAP') badgeColor = 'bg-teal-500/20 text-teal-300 border-teal-500/30';
+              else if (reason === 'STOP_LOSS') badgeColor = 'bg-rose-500/20 text-rose-300 border-rose-500/30';
+              else if (reason === 'STOP_GAP') badgeColor = 'bg-orange-500/20 text-orange-300 border-orange-500/30';
+              else if (reason === 'STOP_CONFLICT') badgeColor = 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+              else if (reason === 'TIME_EXPIRY') badgeColor = 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30';
+
+              return `
+                <tr class="hover:bg-slate-800/40 transition">
+                  <td class="py-2 px-3 font-bold text-white">${escapeHtml(t.symbol)}</td>
+                  <td class="py-2 px-3 text-slate-400">${escapeHtml(t.entry_date || '')} &rarr; ${escapeHtml(t.exit_date || '')}</td>
+                  <td class="py-2 px-3 text-right">₹${Number(t.entry_price).toFixed(2)}</td>
+                  <td class="py-2 px-3 text-right font-semibold text-white">₹${Number(t.exit_price).toFixed(2)}</td>
+                  <td class="py-2 px-3 text-center">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold border ${badgeColor}">${escapeHtml(reason)}</span>
+                  </td>
+                  <td class="py-2 px-3 text-center text-slate-300">${t.hold_days || 0}</td>
+                  <td class="py-2 px-3 text-right ${t.gross_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${t.gross_return_pct >= 0 ? '+' : ''}${Number(t.gross_return_pct || 0).toFixed(2)}%</td>
+                  <td class="py-2 px-3 text-right text-slate-500">-${Number(t.charges_pct || 0).toFixed(2)}%</td>
+                  <td class="py-2 px-3 text-right ${netColor}">${netRet >= 0 ? '+' : ''}${Number(netRet).toFixed(2)}%</td>
+                  <td class="py-2 px-3 text-center">
+                    <span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${t.is_win ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}">${t.is_win ? 'WIN' : 'LOSS'}</span>
+                  </td>
+                </tr>
+              `;
+            }).join('');
+          }
+        }
+      } catch (err) {
+        console.error("Error loading prospective validation telemetry:", err);
+      } finally {
+        prospectiveLoading = false;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      }
+    }
+
+    async function triggerProspectiveScanToday() {
+      const btn = document.getElementById('btn-run-prospective-scan');
+      const icon = document.getElementById('icon-run-prospective');
+      if (btn) btn.disabled = true;
+      if (icon) icon.classList.add('animate-spin');
+      try {
+        const res = await fetch('/api/research/prospective-validation/scan-today', { method: 'POST' });
+        await res.json();
+        await loadProspectiveValidation();
+      } catch (err) {
+        console.error("Error running prospective scan:", err);
+      } finally {
+        if (btn) btn.disabled = false;
+        if (icon) icon.classList.remove('animate-spin');
+      }
+    }
+
+    async function triggerProspectiveUpdateTrades() {
+      const btn = document.getElementById('btn-sync-prospective-trades');
+      const icon = document.getElementById('icon-sync-prospective');
+      if (btn) btn.disabled = true;
+      if (icon) icon.classList.add('animate-spin');
+      try {
+        const res = await fetch('/api/research/prospective-validation/update-trades', { method: 'POST' });
+        await res.json();
+        await loadProspectiveValidation();
+      } catch (err) {
+        console.error("Error updating prospective trades:", err);
+      } finally {
+        if (btn) btn.disabled = false;
+        if (icon) icon.classList.remove('animate-spin');
+      }
     }
 
     function renderPatternsCommonalityTable(patterns) {
