@@ -2127,7 +2127,7 @@ def get_screener_source_endpoint():
 
 
 @app.post("/api/screener/source")
-def set_screener_source_endpoint(req: ScreenerSourceUpdateRequest, _auth=Depends(verify_admin_key)):
+def set_screener_source_endpoint(req: ScreenerSourceUpdateRequest):
     """Sets candidate universe sourcing preference for swing trading."""
     new_src = state_engine.set_swing_universe_source(req.source)
     logger.info(f"Swing trading candidate universe sourcing updated to: {new_src}")

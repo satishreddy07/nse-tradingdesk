@@ -245,8 +245,16 @@
               <span>🎯 Portfolio 2 Only (Nifty 500)</span>
               <span class="text-[10px] text-slate-400 font-mono">₹1L</span>
             </button>
-            <div class="border-t border-slate-800 mt-1 pt-1">
-              <label class="flex items-center gap-2 px-3 py-1 text-[11px] text-slate-400 cursor-pointer">
+            <div class="border-t border-slate-800 mt-1 pt-1.5 px-2">
+              <div class="flex items-center justify-between text-[10px] uppercase font-mono text-slate-400 font-semibold mb-1">
+                <span>Universe Sourcing</span>
+                <span id="hdr-source-badge" class="text-[9px] text-cyan-400 font-mono">IN-HOUSE</span>
+              </div>
+              <div class="flex items-center gap-1 p-1 bg-slate-950 rounded-lg mb-1.5 border border-slate-800">
+                <button id="hdr-btn-source-inhouse" onclick="setSwingUniverseSource('IN_HOUSE')" class="flex-1 py-1 px-1.5 rounded text-[11px] font-bold text-center bg-cyan-500 text-slate-950 transition cursor-pointer">In-House</button>
+                <button id="hdr-btn-source-chartink" onclick="setSwingUniverseSource('CHARTINK')" class="flex-1 py-1 px-1.5 rounded text-[11px] font-bold text-center text-slate-400 hover:text-white transition cursor-pointer">Chartink</button>
+              </div>
+              <label class="flex items-center gap-2 py-1 text-[11px] text-slate-400 cursor-pointer">
                 <input type="checkbox" id="chk-auto-exec" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
                 <span>Auto-place BUY NOW orders (Market Hours)</span>
               </label>
@@ -407,21 +415,38 @@
       <!-- ================================================================= -->
       <div id="tab-p1" class="tab-content space-y-4 sm:space-y-6">
       
-        <!-- Engine Header & Subtitle -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-slate-900/60 border border-slate-800 p-4 sm:p-5 rounded-2xl glow-cyan">
+        <!-- Engine Header & Subtitle with Universe Sourcing Toggle -->
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 bg-slate-900/80 border border-slate-800 p-4 sm:p-5 rounded-2xl glow-cyan shadow-xl">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <span class="px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">PORTFOLIO 1</span>
               <h2 class="text-base sm:text-xl font-extrabold text-white leading-tight">Institutional 6-Pillar Percentile Engine</h2>
+              <span id="p1-source-active-pill" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-500/30 flex items-center gap-1 shrink-0">
+                <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                <span id="p1-source-active-label">IN-HOUSE VPS</span>
+              </span>
             </div>
-            <p class="text-[11px] sm:text-xs text-slate-400 mt-1 leading-relaxed">
-              Dynamic Chartink Screener Universe • 16-Thread C-Vectorized Indicator Engine • Telegram Cloud Vault • Strict Market-Hours Gate (09:15–15:30 IST)
+            <p id="p1-universe-subtitle" class="text-[11px] sm:text-xs text-slate-400 mt-1 leading-relaxed">
+              Official In-House VPS Universe (Nifty 500 Institutional) • 16-Thread C-Vectorized Indicator Engine • Telegram Cloud Vault • Strict Market-Hours Gate (09:15–15:30 IST)
             </p>
           </div>
-          <div class="flex items-center gap-2 w-full sm:w-auto shrink-0">
-            <button id="btn-p1-scan" onclick="triggerScan('INSTITUTIONAL')" class="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center gap-1.5 transition shadow-md shadow-cyan-500/15 whitespace-nowrap">
+          
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto shrink-0">
+            <!-- Universe Sourcing Toggle Switcher -->
+            <div class="flex items-center justify-between sm:justify-start bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
+              <button id="p1-btn-source-inhouse" onclick="setSwingUniverseSource('IN_HOUSE')" class="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20">
+                <i data-lucide="shield-check" class="w-3.5 h-3.5 shrink-0"></i>
+                <span>In-House (N500)</span>
+              </button>
+              <button id="p1-btn-source-chartink" onclick="setSwingUniverseSource('CHARTINK')" class="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200">
+                <i data-lucide="globe" class="w-3.5 h-3.5 shrink-0"></i>
+                <span>Chartink Live</span>
+              </button>
+            </div>
+
+            <button id="btn-p1-scan" onclick="triggerScan('INSTITUTIONAL')" class="w-full sm:w-auto justify-center px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center gap-1.5 transition shadow-md shadow-cyan-500/20 whitespace-nowrap cursor-pointer">
               <i data-lucide="play" class="w-3.5 h-3.5 stroke-[2.5] shrink-0"></i>
-              <span id="btn-p1-scan-text">Scan P1 Universe (Chartink Live)</span>
+              <span id="btn-p1-scan-text">Scan P1 Universe</span>
             </button>
           </div>
         </div>
@@ -7601,6 +7626,7 @@
       lucide.createIcons();
       setInterval(updateClock, 1000);
       updateDrawerContent();
+      if (typeof loadSwingUniverseSource === 'function') loadSwingUniverseSource();
       refreshAllData();
       pollScanProgress();
 
@@ -18225,6 +18251,8 @@
         const data = await res.json();
         if (data.status === 'SUCCESS') {
           console.log(`Swing trading candidate universe sourcing updated: ${source}`);
+          const label = (source === 'IN_HOUSE') ? 'In-House VPS (Nifty 500)' : 'Chartink Live (All Cash)';
+          showToast(`Screener Universe switched to: ${label}`, 'success');
         }
       } catch (err) {
         console.error("Error setting swing universe source:", err);
@@ -18232,11 +18260,68 @@
     }
 
     function updateScreenerSourceUI(source) {
+      const isInHouse = (source === 'IN_HOUSE');
+
+      // 1. Portfolio 1 Header Card Toggle
+      const p1Inhouse = document.getElementById('p1-btn-source-inhouse');
+      const p1Chartink = document.getElementById('p1-btn-source-chartink');
+      const p1Subtitle = document.getElementById('p1-universe-subtitle');
+      const p1Label = document.getElementById('p1-source-active-label');
+      const p1Pill = document.getElementById('p1-source-active-pill');
+      const p1ScanText = document.getElementById('btn-p1-scan-text');
+
+      if (p1Inhouse && p1Chartink) {
+        if (isInHouse) {
+          p1Inhouse.className = "flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20";
+          p1Chartink.className = "flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200";
+        } else {
+          p1Inhouse.className = "flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200";
+          p1Chartink.className = "flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer bg-blue-500 text-slate-950 shadow-md shadow-blue-500/20";
+        }
+      }
+
+      if (p1Label) p1Label.textContent = isInHouse ? "IN-HOUSE VPS" : "CHARTINK LIVE";
+      if (p1Pill) {
+        p1Pill.className = isInHouse
+          ? "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-500/30 flex items-center gap-1 shrink-0"
+          : "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-950 text-blue-300 border border-blue-500/30 flex items-center gap-1 shrink-0";
+      }
+
+      if (p1Subtitle) {
+        p1Subtitle.textContent = isInHouse
+          ? "Official In-House VPS Universe (Nifty 500 Institutional) • 16-Thread C-Vectorized Indicator Engine • Telegram Cloud Vault • Strict Market-Hours Gate (09:15–15:30 IST)"
+          : "Dynamic Chartink Screener Universe (All Cash Equities) • 16-Thread C-Vectorized Indicator Engine • Telegram Cloud Vault • Strict Market-Hours Gate (09:15–15:30 IST)";
+      }
+
+      if (p1ScanText) {
+        p1ScanText.textContent = isInHouse ? "Scan P1 Universe (In-House VPS)" : "Scan P1 Universe (Chartink Live)";
+      }
+
+      // 2. Global Scan Dropdown Toggle
+      const hdrInhouse = document.getElementById('hdr-btn-source-inhouse');
+      const hdrChartink = document.getElementById('hdr-btn-source-chartink');
+      const hdrBadge = document.getElementById('hdr-source-badge');
+
+      if (hdrInhouse && hdrChartink) {
+        if (isInHouse) {
+          hdrInhouse.className = "flex-1 py-1 px-1.5 rounded text-[11px] font-bold text-center bg-cyan-500 text-slate-950 transition cursor-pointer";
+          hdrChartink.className = "flex-1 py-1 px-1.5 rounded text-[11px] font-bold text-center text-slate-400 hover:text-white transition cursor-pointer";
+        } else {
+          hdrInhouse.className = "flex-1 py-1 px-1.5 rounded text-[11px] font-bold text-center text-slate-400 hover:text-white transition cursor-pointer";
+          hdrChartink.className = "flex-1 py-1 px-1.5 rounded text-[11px] font-bold text-center bg-blue-500 text-slate-950 transition cursor-pointer";
+        }
+      }
+      if (hdrBadge) {
+        hdrBadge.textContent = isInHouse ? "IN-HOUSE" : "CHARTINK";
+        hdrBadge.className = isInHouse ? "text-[9px] text-cyan-400 font-mono" : "text-[9px] text-blue-400 font-mono";
+      }
+
+      // 3. Parity Auditor Section Toggle
       const btnInhouse = document.getElementById('btn-source-inhouse');
       const btnChartink = document.getElementById('btn-source-chartink');
       const badge = document.getElementById('screener-source-live-badge');
 
-      if (source === 'IN_HOUSE') {
+      if (isInHouse) {
         if (btnInhouse) {
           btnInhouse.className = "px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20";
         }
