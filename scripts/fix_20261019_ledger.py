@@ -1,9 +1,14 @@
 import sqlite3
 import os
 
-db_path = os.environ.get("TRADINGDESK_DB_PATH", "data/swing_trades.db")
-if not os.path.exists(db_path) and os.path.exists("/opt/nse-tradingdesk/data/swing_trades.db"):
-    db_path = "/opt/nse-tradingdesk/data/swing_trades.db"
+db_path = os.environ.get("DB_PATH") or os.environ.get("TRADINGDESK_DB_PATH")
+if not db_path:
+    if os.path.exists("/var/lib/nse-tradingdesk/swing_trades.db"):
+        db_path = "/var/lib/nse-tradingdesk/swing_trades.db"
+    elif os.path.exists("/opt/nse-tradingdesk/data/swing_trades.db"):
+        db_path = "/opt/nse-tradingdesk/data/swing_trades.db"
+    else:
+        db_path = "data/swing_trades.db"
 
 conn = sqlite3.connect(db_path)
 c = conn.cursor()
