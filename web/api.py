@@ -621,7 +621,7 @@ def open_new_position(req: OpenPositionRequest):
     if sym_clean in active_syms:
         raise HTTPException(status_code=400, detail=f"{sym_clean} is already active in your portfolio.")
 
-    max_slots = 15 if "NIFTY" in p_type else 10
+    max_slots = P2_MAX_SLOTS if "NIFTY" in p_type else 10
     if len(active_positions) >= max_slots:
         raise HTTPException(
             status_code=400,

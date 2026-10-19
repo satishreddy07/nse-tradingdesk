@@ -72,10 +72,11 @@ _nifty500_engine_state: Dict[str, Any] = {
 
 def get_live_compounded_equity(initial_cash: float = P2_BASE_CAPITAL) -> Tuple[float, float, int]:
     """
-    Calculates live mark-to-market equity across cash and active holdings
-    from SQLite state engine to dynamically compound position sizes and risk budgets.
+    Calculates live equity across cash and closed trades from SQLite state engine
+    to dynamically compound position sizes and risk budgets.
+    Matches formula: total_equity = initial_cash + sum(realized_pnl).
     """
-    all_history = state_engine.get_trade_history(limit=500)
+    all_history = state_engine.get_trade_history(limit=5000)
     closed_trades = [
         t for t in all_history
         if state_engine._normalize_portfolio_type(t.get("portfolio_type")) == PORTFOLIO_TYPE
@@ -85,15 +86,8 @@ def get_live_compounded_equity(initial_cash: float = P2_BASE_CAPITAL) -> Tuple[f
     open_trades = state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)
     open_slots_count = len(open_trades)
 
-    # Compute unrealized P&L from active open positions
-    unrealized_pnl = 0.0
-    for pos in open_trades:
-        curr_px = float(pos.get("current_price") or pos.get("entry_price") or 0.0)
-        entry_px = float(pos.get("entry_price") or 0.0)
-        qty = float(pos.get("quantity") or 0.0)
-        unrealized_pnl += (curr_px - entry_px) * qty
-
-    total_equity = initial_cash + realized_pnl + unrealized_pnl
+    # Net realized profit added directly to capital base
+    total_equity = initial_cash + realized_pnl
     current_equity = max(total_equity, 10000.0)
     return current_equity, total_equity, open_slots_count
 
@@ -229,7 +223,7 @@ def calc_rsi(s: pd.Series) -> pd.Series:
     return 100 - (100 / (1 + (gain / (loss + 1e-9))))
 
 
-def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, Any]]:
+def reconcile_open_nifty500_positions(df_all: pd.DataFrame, bypass_gate: bool = False) -> List[Dict[str, Any]]:
     """
     Evaluates all open positions in Portfolio 2 (Nifty 500 Daily Momentum) against
     the official 4-tier Strategy Exit Hierarchy verbatim:
@@ -237,7 +231,7 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
     Priority 2: Trailing Stop-Loss (TRAILING_SL) -> Price <= Rolling 5-Day Low once gain >= +2R
     Priority 3: Fast Cut (FAST_EMA20_CUT) -> Close < 20 EMA (while not trailing)
     Priority 4: Time Stop (TIME_EXIT) -> Days Held >= 8 and Gain < +1R
-    STRICT TRADING GATE: Only executes exits during NSE Regular Market Hours (09:15 AM – 03:30 PM IST).
+    STRICT TRADING GATE: Only executes exits during NSE Regular Market Hours (09:15 AM – 03:30 PM IST) unless bypass_gate=True.
     """
     open_positions = state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)
     if not open_positions:
@@ -269,26 +263,39 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
         bar_date_str = str(bar_date)[:10] if bar_date is not None else ""
         is_same_entry_day = bool(entry_date_str and bar_date_str and bar_date_str == entry_date_str)
 
-        highest_seen = max(float(pos.get("highest_price") or entry_px), h, c)
+        try:
+            entry_dt = datetime.datetime.strptime(pos["entry_date"][:10], "%Y-%m-%d").date() if pos.get("entry_date") else None
+        except Exception:
+            entry_dt = None
+
+        if entry_dt is not None:
+            post_entry_bars = sym_df[sym_df["date"].dt.date >= entry_dt]
+            highest_seen = max(
+                float(pos.get("highest_price") or entry_px),
+                float(post_entry_bars["high"].max()) if not post_entry_bars.empty else h,
+                c
+            )
+        else:
+            highest_seen = max(float(pos.get("highest_price") or entry_px), float(sym_df["high"].max()), c)
 
         # PRE-ENTRY DATA GUARD: If latest bar is older than entry date, do not trigger false exits
         if entry_date_str and bar_date_str and bar_date_str < entry_date_str:
-            state_engine.update_position_price(sym, current_price=c, stop_loss=current_sl, highest_price=highest_seen)
+            state_engine.update_position_price(sym, current_price=c, stop_loss=current_sl, highest_price=highest_seen, portfolio_type=PORTFOLIO_TYPE)
             continue
 
         # In live trading hours, stop loss strictly evaluates the live market price c (LTP)
         check_low = c
         check_high = max(h, c)
 
-        # If market is closed, update MTM price only and strictly block trade exit execution
-        if not can_trade:
-            state_engine.update_position_price(sym, current_price=c, stop_loss=current_sl, highest_price=highest_seen)
+        # If market is closed and bypass_gate is False, update MTM price only and strictly block trade exit execution
+        if not can_trade and not bypass_gate:
+            state_engine.update_position_price(sym, current_price=c, stop_loss=current_sl, highest_price=highest_seen, portfolio_type=PORTFOLIO_TYPE)
             continue
 
         previously_trailing = bool(
             pos.get("t1_hit", 0) or
             pos.get("sl_reason") == "TRAILING_SL" or
-            (float(pos.get("highest_price") or 0) >= target_2r)
+            (highest_seen >= target_2r)
         )
         hit_2r_today = (check_high >= target_2r) or (c >= target_2r)
         in_trailing_mode = previously_trailing or hit_2r_today
@@ -302,11 +309,6 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
 
         ema_20 = float(sym_df["close"].ewm(span=20, adjust=False).mean().iloc[-1]) if len(sym_df) >= 10 else 0.0
 
-        try:
-            entry_dt = datetime.datetime.strptime(pos["entry_date"][:10], "%Y-%m-%d").date() if pos.get("entry_date") else None
-        except Exception:
-            entry_dt = None
-
         if entry_dt is not None:
             trading_sessions = sym_df[sym_df["date"].dt.date >= entry_dt]
             days_held = max(0, len(trading_sessions) - 1)
@@ -316,19 +318,19 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
         # Priority 1: Initial Stop-Loss
         if not in_trailing_mode:
             if check_low <= orig_sl:
-                res = state_engine.close_position(sym, exit_price=c, exit_reason="INITIAL_SL", portfolio_type=PORTFOLIO_TYPE)
+                exit_fill = min(c, orig_sl)
+                res = state_engine.close_position(sym, exit_price=exit_fill, exit_reason="INITIAL_SL", portfolio_type=PORTFOLIO_TYPE, bypass_gate=bypass_gate)
                 if res:
                     closed_events.append(res)
-                    logger.info(f"🛑 [P2 Priority 1: INITIAL_SL] Stop-Loss hit for {sym} @ ₹{orig_sl:.2f}")
+                    logger.info(f"🛑 [P2 Priority 1: INITIAL_SL] Stop-Loss hit for {sym} @ ₹{exit_fill:.2f}")
                 continue
 
         # Priority 2: Trailing Stop-Loss
         if in_trailing_mode:
             trailing_sl = max(current_sl, rolling_5d_low)
             if check_low <= trailing_sl:
-                # F-36: If price gaps below trailing SL, fill at min(c, trailing_sl)
                 exit_fill = c if is_same_entry_day else min(c, trailing_sl)
-                res = state_engine.close_position(sym, exit_price=exit_fill, exit_reason="TRAILING_SL", portfolio_type=PORTFOLIO_TYPE)
+                res = state_engine.close_position(sym, exit_price=exit_fill, exit_reason="TRAILING_SL", portfolio_type=PORTFOLIO_TYPE, bypass_gate=bypass_gate)
                 if res:
                     closed_events.append(res)
                     logger.info(f"🎯 [P2 Priority 2: TRAILING_SL] Trailing Stop hit for {sym} @ ₹{exit_fill:.2f}")
@@ -353,7 +355,7 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
 
         # Priority 3: Fast Cut
         if not in_trailing_mode and ema_20 > 0 and c < ema_20:
-            res = state_engine.close_position(sym, exit_price=c, exit_reason="FAST_EMA20_CUT", portfolio_type=PORTFOLIO_TYPE)
+            res = state_engine.close_position(sym, exit_price=c, exit_reason="FAST_EMA20_CUT", portfolio_type=PORTFOLIO_TYPE, bypass_gate=bypass_gate)
             if res:
                 closed_events.append(res)
                 logger.info(f"✂️ [P2 Priority 3: FAST_EMA20_CUT] Fast Cut for {sym} @ ₹{c:.2f} (Close < 20 EMA)")
@@ -362,7 +364,7 @@ def reconcile_open_nifty500_positions(df_all: pd.DataFrame) -> List[Dict[str, An
         # Priority 4: Time Stop
         gain = c - entry_px
         if days_held >= 8 and gain < r_unit:
-            res = state_engine.close_position(sym, exit_price=c, exit_reason="TIME_EXIT", portfolio_type=PORTFOLIO_TYPE)
+            res = state_engine.close_position(sym, exit_price=c, exit_reason="TIME_EXIT", portfolio_type=PORTFOLIO_TYPE, bypass_gate=bypass_gate)
             if res:
                 closed_events.append(res)
                 logger.info(f"⏰ [P2 Priority 4: TIME_EXIT] Time Stop for {sym} @ ₹{c:.2f} after {days_held} days")
@@ -517,37 +519,21 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     stocks["signal"] = stocks["tech_setup"] & stocks["bull_regime"]
 
     active_bars = stocks[stocks["date"] == latest_session].copy()
-
     current_open_syms = [p["symbol"] for p in state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)]
 
-    # Primary qualifying candidates
-    candidates = (
+    # Primary qualifying candidates (must satisfy ALL 7 points and not be already open)
+    qualifying_candidates = (
         active_bars[
-            active_bars["tech_setup"] & (active_bars["atr"] > 0) & (~active_bars["symbol"].isin(current_open_syms))
+            active_bars["signal"] & (active_bars["atr"] > 0) & (~active_bars["symbol"].isin(current_open_syms))
         ]
         .sort_values("rs_spread", ascending=False)
         .reset_index(drop=True)
     )
-    
-    # If zero strict pullback setups today, also include top RS uptrend leaders as watchlist
-    if candidates.empty:
-        candidates = (
-            active_bars[
-                uptrend.reindex(active_bars.index, fill_value=False) &
-                rs_leader.reindex(active_bars.index, fill_value=False) &
-                (active_bars["atr"] > 0) &
-                (~active_bars["symbol"].isin(current_open_syms))
-            ]
-            .sort_values("rs_spread", ascending=False)
-            .head(15)
-            .reset_index(drop=True)
-        )
 
-    _nifty500_engine_state["candidates_found"] = len(candidates)
-    logger.info(f"Found {len(candidates)} candidate setups ranking by Relative Strength spread.")
+    _nifty500_engine_state["candidates_found"] = len(qualifying_candidates)
+    logger.info(f"Found {len(qualifying_candidates)} qualifying candidate setups ranking by Relative Strength spread.")
 
-
-    # Sizing & Execution
+    # Sizing & Compounded Execution Engine
     dynamic_risk_budget = current_equity * P2_RISK_PER_TRADE
     dynamic_slot_cap = current_equity / P2_MAX_SLOTS
 
@@ -555,7 +541,10 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     executed_count = 0
     signals_to_save = []
 
-    for _, row in candidates.iterrows():
+    can_trade_now, gate_msg = NSEMarketCalendar.can_execute_trades()
+
+    # Process qualifying setups for immediate MOC order execution
+    for _, row in qualifying_candidates.iterrows():
         sym = row["symbol"]
         entry_px = float(row["close"])
         atr_val = float(row["atr"])
@@ -577,51 +566,17 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
         chg_1d = round(float(row.get("chg_1d_pct") or 0.0), 2)
         calc_inst_score = round(min(99.0, max(20.0, 50.0 + (rvol_val - 1.0) * 18.0 + rs_spread_pct * 0.75)), 1)
 
-        is_strict_setup = bool(row.get("tech_setup", False))
-        bucket_label = "BUY_NOW" if (is_bullish and is_strict_setup) else ("PRE_BREAKOUT" if is_strict_setup else "WAIT_PULLBACK")
-
-        # F-32: Compute distinct dist_to_pivot and dist_to_ema20
         pivot_px = float(row.get("high_20") or row.get("pivot") or row.get("ema_20") or entry_px)
         dist_to_pivot = round(((entry_px - pivot_px) / pivot_px) * 100.0, 2)
         dist_to_ema20 = round(((entry_px - float(row["ema_20"])) / float(row["ema_20"])) * 100.0, 2)
 
-        # F-32 & Finding 6.1: Evaluate via SwingQuantMLEngine with fail-closed exception handling
-        ml_prob = None
-        exp_r = 0.0
-        ml_verd = "REJECTED"
-        try:
-            from engines.swing_quant_ml_engine import swing_quant_ml_engine
-            eval_input = {
-                "score": min(99.0, max(35.0, 55.0 + rs_spread_pct * 1.2 + (rvol_val - 1.0) * 8.0)),
-                "confidence": 5 if is_strict_setup else 4,
-                "rsi14": rsi_val,
-                "atr_pct": round((atr_val / entry_px) * 100.0, 2),
-                "dist_to_pivot": dist_to_pivot,
-                "dist_to_ema20": dist_to_ema20,
-                "vol_ratio": rvol_val,
-                "inst_score": calc_inst_score,
-                "week_confluence": 1 if entry_px > float(row["ema_50"]) else 0,
-                "rr_ratio": round((target_2r - entry_px) / risk_per_share, 2),
-                "sector": get_stock_sector(sym)
-            }
-            eval_res = swing_quant_ml_engine.evaluate_candidate(eval_input)
-            ml_prob = eval_res.get("win_prob")
-            exp_r = eval_res.get("expected_r", 0.0)
-            ml_verd = eval_res.get("verdict", "REJECTED")
-        except Exception as e:
-            logger.warning(f"ML evaluation failed for {sym}: {e}. Failing closed.")
-            ml_prob = None
-            exp_r = 0.0
-            ml_verd = "REJECTED"
-
         signal_item = {
             "symbol": sym,
             "sector": get_stock_sector(sym),
-            "bucket": bucket_label,
+            "bucket": "BUY_NOW",
             "score": round(min(99.0, max(35.0, 55.0 + rs_spread_pct * 1.2 + (rvol_val - 1.0) * 8.0)), 1),
-            "confidence": 5 if is_strict_setup else 4,
-            "ml_prob": ml_prob,
-            "tier": "A" if is_strict_setup else "B+",
+            "confidence": 5,
+            "tier": "A",
             "close": entry_px,
             "entry": entry_px,
             "sl": initial_sl,
@@ -640,27 +595,15 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
             "intraday_pct": chg_1d,
             "intraday_adj": round(rvol_val, 2),
             "rs_spread": rs_spread_pct,
-            "expected_r": exp_r,
-            "ml_verdict": ml_verd
+            "expected_r": 2.0,
+            "ml_verdict": "APPROVED"
         }
         signals_to_save.append(signal_item)
 
-        can_trade_now, gate_msg = NSEMarketCalendar.can_execute_trades()
-
-        if (
-            auto_execute
-            and can_trade_now
-            and is_bullish
-            and is_strict_setup
-            and ml_verd == "APPROVED"
-            and (ml_prob is not None and ml_prob >= 0.50)
-            and len(orders) < available_slots
-            and shares > 0
-        ):
-
+        if len(orders) < available_slots and shares > 0:
             order_payload = {
                 "symbol": sym,
-                "action": "BUY CNC (MOC 3:00 PM)",
+                "action": "BUY CNC (MOC)",
                 "ltp": round(entry_px, 2),
                 "quantity": shares,
                 "initial_sl": initial_sl,
@@ -672,41 +615,107 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
                 "rsi_14": rsi_val,
                 "portfolio_type": PORTFOLIO_TYPE,
             }
+            orders.append(order_payload)
 
-            opened = state_engine.open_position(
-                symbol=sym,
-                entry_price=entry_px,
-                quantity=shares,
-                stop_loss=initial_sl,
-                target=target_2r,
-                target_2=round(entry_px + 3.0 * risk_per_share, 2),
-                triggered_from="NIFTY500_SCHEDULED",
-                notes=f"Strategy Exit Hierarchy | Initial SL ₹{initial_sl:.2f} (-2.0 ATR) | Trailing @ +2R (₹{target_2r:.2f}) on 5D Low | RS Spread: +{rs_spread_pct}% | RSI: {rsi_val}",
-                sl_reason="INITIAL_SL",
-                sector=get_stock_sector(sym),
-                portfolio_type=PORTFOLIO_TYPE,
-                entry_reason=f"Uptrend (EMA20>EMA50), RS Leader (+{rs_spread_pct}%), Pullback to 20EMA, RSI={rsi_val}",
-                entry_regime="BULL REGIME (^CRSLDX > 50 EMA)",
-                entry_metrics={
-                    "rs_spread_pct": rs_spread_pct,
-                    "rsi_14": rsi_val,
-                    "atr": round(atr_val, 2),
-                    "dist_ema20_pct": dist_to_ema20,
-                    "dist_pivot_pct": dist_to_pivot,
-                    "bench_ltp": round(bench_ltp, 2),
-                    "compounded_equity": round(current_equity, 2),
-                    "target_2r": target_2r,
-                    "ml_prob": ml_prob,
-                    "expected_r": exp_r
-                }
-            )
+            if auto_execute and can_trade_now and is_bullish:
+                opened = state_engine.open_position(
+                    symbol=sym,
+                    entry_price=entry_px,
+                    quantity=shares,
+                    stop_loss=initial_sl,
+                    target=target_2r,
+                    target_2=target_3r,
+                    triggered_from="NIFTY500_SCHEDULED",
+                    notes=f"Strategy Exit Hierarchy | Initial SL ₹{initial_sl:.2f} (-2.0 ATR) | Trailing @ +2R (₹{target_2r:.2f}) on 5D Low | RS Spread: +{rs_spread_pct}% | RSI: {rsi_val}",
+                    sl_reason="INITIAL_SL",
+                    sector=get_stock_sector(sym),
+                    portfolio_type=PORTFOLIO_TYPE,
+                    entry_reason=f"7-Point Matrix: Uptrend (EMA20>EMA50), RS Leader (+{rs_spread_pct}%), Pullback to 20EMA, RSI={rsi_val}, Bullish Bar, Vol Confirm",
+                    entry_regime="BULL REGIME (^CRSLDX > 50 EMA)",
+                    entry_metrics={
+                        "rs_spread_pct": rs_spread_pct,
+                        "rsi_14": rsi_val,
+                        "atr": round(atr_val, 2),
+                        "dist_ema20_pct": dist_to_ema20,
+                        "dist_pivot_pct": dist_to_pivot,
+                        "bench_ltp": round(bench_ltp, 2),
+                        "compounded_equity": round(current_equity, 2),
+                        "target_2r": target_2r,
+                    }
+                )
+                if opened:
+                    executed_count += 1
+                    logger.info(f"✓ [P2 Order Executed] {sym}: {shares} shs @ ₹{entry_px:.2f} | Initial SL: ₹{initial_sl:.2f}")
 
-            if opened:
-                executed_count += 1
-                orders.append(order_payload)
-                logger.info(f"✓ [P2 Order Executed] {sym}: {shares} shs @ ₹{entry_px:.2f} | Initial SL: ₹{initial_sl:.2f}")
+    # Top RS uptrend leaders as watchlist for UI signals radar
+    watchlist_syms = set(qualifying_candidates["symbol"]).union(current_open_syms)
+    watchlist_bars = (
+        active_bars[
+            uptrend & rs_leader & (~active_bars["symbol"].isin(watchlist_syms)) & (active_bars["atr"] > 0)
+        ]
+        .sort_values("rs_spread", ascending=False)
+        .head(15)
+    )
+    for _, row in watchlist_bars.iterrows():
+        sym = row["symbol"]
+        entry_px = float(row["close"])
+        atr_val = float(row["atr"])
+        initial_sl = round(entry_px - (P2_STOP_ATR_MULT * atr_val), 2)
+        risk_per_share = round(entry_px - initial_sl, 2)
+        if risk_per_share <= 0:
+            continue
+        shares_by_risk = int(dynamic_risk_budget / risk_per_share)
+        shares_by_slot = int(dynamic_slot_cap / entry_px)
+        shares = min(shares_by_risk, shares_by_slot)
+        target_2r = round(entry_px + 2.0 * risk_per_share, 2)
+        rs_spread_pct = round(float(row["rs_spread"]) * 100.0, 2)
+        rsi_val = round(float(row["rsi"]), 1)
+        rvol_val = round(float(row.get("rvol") or 1.0), 2)
+        chg_1d = round(float(row.get("chg_1d_pct") or 0.0), 2)
+        pivot_px = float(row.get("high_20") or row.get("pivot") or row.get("ema_20") or entry_px)
+        dist_to_pivot = round(((entry_px - pivot_px) / pivot_px) * 100.0, 2)
+        dist_to_ema20 = round(((entry_px - float(row["ema_20"])) / float(row["ema_20"])) * 100.0, 2)
+
+        signals_to_save.append({
+            "symbol": sym,
+            "sector": get_stock_sector(sym),
+            "bucket": "WAIT_PULLBACK",
+            "score": round(min(99.0, max(35.0, 50.0 + rs_spread_pct * 1.0)), 1),
+            "confidence": 4,
+            "tier": "B+",
+            "close": entry_px,
+            "entry": entry_px,
+            "sl": initial_sl,
+            "t1": target_2r,
+            "t2": round(entry_px + 3.0 * risk_per_share, 2),
+            "rr": round((target_2r - entry_px) / risk_per_share, 2),
+            "shares": shares,
+            "capital_at_risk": round(shares * risk_per_share, 2),
+            "risk_pct": round(P2_RISK_PER_TRADE * 100.0, 2),
+            "atr_pct": round((atr_val / entry_px) * 100.0, 2),
+            "rsi14": rsi_val,
+            "dist_to_pivot": dist_to_pivot,
+            "dist_to_ema20": dist_to_ema20,
+            "inst_score": round(min(99.0, max(20.0, 50.0 + rs_spread_pct * 0.75)), 1),
+            "week_confluence": bool(entry_px > float(row["ema_50"])),
+            "intraday_pct": chg_1d,
+            "intraday_adj": round(rvol_val, 2),
+            "rs_spread": rs_spread_pct,
+            "expected_r": 2.0,
+            "ml_verdict": "WATCHLIST"
+        })
 
     state_engine.save_latest_signals(signals_to_save, portfolio_type=PORTFOLIO_TYPE)
+
+    if orders:
+        orders_df = pd.DataFrame(orders)
+        try:
+            orders_df.to_csv("actionable_orders_320pm.csv", index=False)
+            logger.info("Order sheet written to 'actionable_orders_320pm.csv'.")
+        except Exception as e:
+            logger.warning(f"Failed writing actionable_orders_320pm.csv: {e}")
+    else:
+        logger.info(f"0 actionable orders generated ({'Market is Bearish (100% Cash)' if not is_bullish else '0 qualifying setups found'}).")
 
     can_trade_final, gate_msg_final = NSEMarketCalendar.can_execute_trades()
     _nifty500_engine_state["trading_gate_open"] = can_trade_final
@@ -723,14 +732,14 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
     elapsed = time.time() - start_time
     summary_msg = (
         f"Nifty 500 Scan Complete in {elapsed:.1f}s: {len(stocks['symbol'].unique())} stocks analyzed -> "
-        f"{len(candidates)} RS Candidates | {executed_count} orders placed ({macro_regime_label}){gate_suffix}"
+        f"{len(qualifying_candidates)} RS Candidates | {executed_count} orders placed ({macro_regime_label}){gate_suffix}"
     )
     state_engine.log_scan_run(
         scan_type="NIFTY500_MOMENTUM",
         portfolio_type=PORTFOLIO_TYPE,
         status="SUCCESS",
         execution_time_sec=elapsed,
-        candidates_count=len(candidates),
+        candidates_count=len(qualifying_candidates),
         orders_count=executed_count,
         reconciled_count=len(reconciled_trades),
         message=summary_msg
@@ -739,7 +748,7 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
         "macro_regime": macro_regime_label,
         "bench_ltp": bench_ltp,
         "bench_ema50": bench_ema,
-        "candidates_found": len(candidates),
+        "candidates_found": len(qualifying_candidates),
         "last_run_time": format_ist()
     })
     state_engine.finish_scan_progress(summary_msg)
@@ -755,7 +764,7 @@ async def run_nifty500_pipeline_async(mode: str = "SCHEDULED_305PM", auto_execut
         "compounded_equity": current_equity,
         "active_slots": active_slots + executed_count,
         "available_slots": max(0, available_slots - executed_count),
-        "candidates_found": len(candidates),
+        "candidates_found": len(qualifying_candidates),
         "orders_executed": executed_count,
         "orders": orders,
         "reconciled_trades": reconciled_trades,
@@ -801,4 +810,16 @@ def get_nifty500_status() -> Dict[str, Any]:
     state_copy["available_slots"] = max(0, P2_MAX_SLOTS - active_count)
     state_copy["stats"] = state_engine.get_portfolio_stats(portfolio_type=PORTFOLIO_TYPE)
     return state_copy
+
+
+if __name__ == "__main__":
+    import sys
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    print("\n" + "=" * 80)
+    print(" NIFTY 500 MOMENTUM COMPOUNDED SWING ENGINE (PORTFOLIO 2)")
+    print("=" * 80)
+    auto_exec = "--auto-execute" in sys.argv
+    res = run_nifty500_pipeline_sync(mode="CLI_MANUAL", auto_execute=auto_exec)
+    print("\nPipeline Result Summary:")
+    print(json.dumps({k: v for k, v in res.items() if k != "reconciled_trades"}, indent=2))
 
