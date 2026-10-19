@@ -7742,12 +7742,15 @@
 
       // Instant refresh when user switches back to this tab
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
-          pollLiveSpotTick();
+        if (!document.hidden) {
+          pollScanProgress();
           refreshAllData();
-          const optMod = document.getElementById('module-options');
-          if (optMod && !optMod.classList.contains('hidden')) {
-            loadOptionsChainDesk(false);
+          if (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+            pollLiveSpotTick();
+            const optMod = document.getElementById('module-options');
+            if (optMod && !optMod.classList.contains('hidden')) {
+              loadOptionsChainDesk(false);
+            }
           }
         }
       });
@@ -17427,8 +17430,9 @@
             showToast(prog.stage, 'info');
           }
         } else {
-          if (btnP1Text) btnP1Text.innerText = "Scan P1 Universe (Chartink Live)";
-          if (wasScanRunning) {
+          const activeSrc = (screenerState && screenerState.swingSource === 'IN_HOUSE') ? 'In-House VPS' : 'Chartink Live';
+          if (btnP1Text) btnP1Text.innerText = `Scan P1 Universe (${activeSrc})`;
+          if (wasScanRunning || (banner && !banner.classList.contains('hidden') && titleEl && titleEl.innerText.includes('RUNNING'))) {
             wasScanRunning = false;
             const stageText = (prog.stage || '').toLowerCase();
             const isAborted = stageText.includes('abort') || stageText.includes('failed') || stageText.includes('error');
@@ -17449,6 +17453,9 @@
               barEl.style.width = "100%";
               barEl.className = isAborted ? "h-full bg-rose-500 rounded-full transition-all duration-300" : "h-full bg-gradient-to-r from-cyan-500 via-emerald-400 to-violet-500 transition-all duration-300";
             }
+            if (counterEl) {
+              counterEl.innerText = `${prog.stocks_done || prog.stocks_total || 0} / ${prog.stocks_total || 0} Stocks Complete`;
+            }
             if (stageEl && prog.stage) stageEl.innerText = prog.stage;
             if (logFeedEl && Array.isArray(prog.logs)) {
               logFeedEl.innerHTML = prog.logs.map(line => `<div>${line}</div>`).join('');
@@ -17460,6 +17467,11 @@
               loadScanLogs();
               loadSystemActivityLogs();
             }
+            setTimeout(() => {
+              if (banner && !wasScanRunning && titleEl && titleEl.innerText.includes('COMPLETED')) {
+                banner.classList.add('hidden');
+              }
+            }, 8000);
           }
         }
       } catch (err) {
