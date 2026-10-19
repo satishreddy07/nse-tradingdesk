@@ -82,8 +82,7 @@ class ProspectiveValidationEngine:
         if db_path:
             self.db_path = db_path
         else:
-            base_dir = os.path.dirname(MODULE_DIR)
-            self.db_path = os.path.join(base_dir, "data", "swing_trades.db")
+            self.db_path = os.environ.get("DB_PATH") or os.path.join(os.path.dirname(MODULE_DIR), "data", "swing_trades.db")
 
         self._lock = threading.Lock()
         self.config = dict(FROZEN_BASELINE_CONFIG)
