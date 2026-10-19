@@ -169,9 +169,10 @@ def test_afternoon_scan_worker_mock_execution(monkeypatch):
 
     # Force calendar to return True
     monkeypatch.setattr(cs.NSEMarketCalendar, "is_trading_day", lambda d: True)
-    # Ensure telemetry doesn't skip
-    state_engine.set_kv("scheduled_scans_telemetry", {})
-    monkeypatch.setattr(state_engine, "get_scheduled_scans_telemetry", lambda: {})
+    # Ensure telemetry is hermetic and doesn't skip
+    t_dict = {}
+    monkeypatch.setattr(state_engine, "get_scheduled_scans_telemetry", lambda: t_dict)
+    monkeypatch.setattr(state_engine, "record_scheduled_scan_outcome", lambda run_key, status, **kw: t_dict.update({run_key: {"status": status, **kw}}))
 
     cs.scheduled_afternoon_scan_job()
 
