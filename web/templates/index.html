@@ -1403,6 +1403,84 @@
                 <span>Run Live Research Scan</span>
               </button>
             </div>
+          <!-- Transparent Sourcing & Movers Funnel Breakdown -->
+          <div class="mt-4 bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-lg">
+            <div class="flex items-center justify-between pb-2.5 mb-3 border-b border-slate-800/80">
+              <div class="flex items-center gap-2">
+                <i data-lucide="filter" class="w-4 h-4 text-amber-400"></i>
+                <span class="text-xs font-mono font-bold text-slate-200 uppercase tracking-wider">
+                  Screener Universe & Empirical Forensics Funnel
+                </span>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                  REAL-TIME PIPELINE
+                </span>
+              </div>
+              <span class="text-[11px] font-mono text-slate-400 hidden sm:inline">
+                Zero Hardcoded Numbers • 100% Computed Live
+              </span>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 font-mono">
+              <!-- Stage 1: Universe Sourced -->
+              <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3 hover:border-slate-700 transition">
+                <div class="flex items-center justify-between text-slate-400 text-[10px] uppercase font-bold tracking-wider">
+                  <span>1. Universe Sourced</span>
+                  <i data-lucide="database" class="w-3.5 h-3.5 text-slate-400"></i>
+                </div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <span id="res-funnel-total" class="text-xl sm:text-2xl font-bold text-white">--</span>
+                  <span class="text-[11px] text-slate-400 font-sans">stocks</span>
+                </div>
+                <div class="text-[10px] text-slate-400 font-sans mt-0.5 truncate" title="Chartink / In-House EQ-FINAL Screener Base">
+                  Chartink / In-House Base
+                </div>
+              </div>
+
+              <!-- Stage 2: Positive Stocks -->
+              <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3 hover:border-emerald-500/40 transition">
+                <div class="flex items-center justify-between text-slate-400 text-[10px] uppercase font-bold tracking-wider">
+                  <span>2. Positive Stocks</span>
+                  <i data-lucide="trending-up" class="w-3.5 h-3.5 text-emerald-400"></i>
+                </div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <span id="res-funnel-positive" class="text-xl sm:text-2xl font-bold text-emerald-400">--</span>
+                  <span id="res-funnel-pos-pct" class="text-[11px] text-emerald-400/80 font-sans font-semibold">(--%)</span>
+                </div>
+                <div class="text-[10px] text-slate-400 font-sans mt-0.5 truncate">
+                  Stocks trading green (&gt;0%)
+                </div>
+              </div>
+
+              <!-- Stage 3: Movers >= 3% -->
+              <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3 hover:border-amber-500/40 transition">
+                <div class="flex items-center justify-between text-slate-400 text-[10px] uppercase font-bold tracking-wider">
+                  <span>3. Power Movers (&ge;3%)</span>
+                  <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
+                </div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <span id="res-funnel-movers3" class="text-xl sm:text-2xl font-bold text-amber-300">--</span>
+                  <span id="res-funnel-movers3-pct" class="text-[11px] text-amber-400/80 font-sans font-semibold">(--%)</span>
+                </div>
+                <div class="text-[10px] text-slate-400 font-sans mt-0.5 truncate">
+                  Deep-dive study targets
+                </div>
+              </div>
+
+              <!-- Stage 4: Unique Patterns -->
+              <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3 hover:border-indigo-500/40 transition">
+                <div class="flex items-center justify-between text-slate-400 text-[10px] uppercase font-bold tracking-wider">
+                  <span>4. Patterns Observed</span>
+                  <i data-lucide="layers" class="w-3.5 h-3.5 text-indigo-400"></i>
+                </div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <span id="res-funnel-patterns" class="text-xl sm:text-2xl font-bold text-indigo-300">--</span>
+                  <span class="text-[11px] text-slate-400 font-sans">archetypes</span>
+                </div>
+                <div class="text-[10px] text-slate-400 font-sans mt-0.5 truncate">
+                  Distinct pre-move patterns
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Common Findings & Pattern Statistics Cards -->
@@ -1502,6 +1580,54 @@
                   Do not chase stocks after they surge 5%–10% today. Instead, scan for stocks currently matching these common points (tight daily candle &le; 3%, volume dried up &le; 0.8x, resting on 20 EMA) to enter early with low risk before tomorrow's ~3x volume expansion.
                 </span>
               </div>
+            </div>
+          <!-- Empirical Pattern Discovery & Commonality Breakdown Table -->
+          <div class="mt-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+                  <i data-lucide="layers" class="w-4 h-4 text-amber-400"></i>
+                </div>
+                <div>
+                  <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                    <span>Observed Pre-Breakout Patterns & Stock Distribution</span>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">EMPIRICAL COMMONALITY</span>
+                  </h3>
+                  <p class="text-xs text-slate-400 mt-0.5">
+                    Quantifies how many moving stocks followed each pre-breakout accumulation pattern, with average pre-move characteristics.
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                  Patterns Detected: <strong class="text-amber-300" id="res-patterns-detected-count">0</strong>
+                </span>
+              </div>
+            </div>
+
+            <!-- Table of Patterns -->
+            <div class="overflow-x-auto mt-3">
+              <table class="w-full text-left text-xs text-slate-300">
+                <thead class="text-[11px] uppercase font-mono bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th class="py-2.5 px-3">Pattern Archetype</th>
+                    <th class="py-2.5 px-3 text-center">Movers Count & Share</th>
+                    <th class="py-2.5 px-3">Matching Stocks (Click to Filter)</th>
+                    <th class="py-2.5 px-3 text-right">Avg Pre-VDU</th>
+                    <th class="py-2.5 px-3 text-right">Avg Range</th>
+                    <th class="py-2.5 px-3 text-right">20 EMA Dist</th>
+                    <th class="py-2.5 px-3 text-right">Avg Gain %</th>
+                    <th class="py-2.5 px-3">Pattern Rationale</th>
+                  </tr>
+                </thead>
+                <tbody id="res-patterns-table-body" class="divide-y divide-slate-800/60 font-mono">
+                  <tr>
+                    <td colspan="8" class="py-6 text-center text-slate-500 font-sans">
+                      Loading pattern distribution...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -1734,20 +1860,21 @@
               <thead class="text-[11px] uppercase font-mono bg-slate-950/60 text-slate-400 border-b border-slate-800">
                 <tr>
                   <th class="py-2.5 px-3">#</th>
-                  <th class="py-2.5 px-3">Symbol / Company</th>
+                  <th class="py-2.5 px-3 min-w-[200px]">Symbol / Company</th>
                   <th class="py-2.5 px-3 text-right">LTP / Close</th>
                   <th class="py-2.5 px-3 text-right">Breakout %</th>
+                  <th class="py-2.5 px-3 text-left min-w-[260px]">Pre-Movement Signatures & Tags</th>
                   <th class="py-2.5 px-3 text-right">Breakout Surge</th>
                   <th class="py-2.5 px-3 text-right">T-1 Daily Range</th>
                   <th class="py-2.5 px-3 text-right">T-1 VDU Ratio</th>
                   <th class="py-2.5 px-3 text-right">T-1 EMA20 Dist</th>
-                  <th class="py-2.5 px-3 text-center">Pre-Breakout Archetype</th>
+                  <th class="py-2.5 px-3 text-center">Pattern Archetype</th>
                   <th class="py-2.5 px-3 text-center">Engine Classification</th>
                 </tr>
               </thead>
               <tbody id="res-movers-table-body" class="divide-y divide-slate-800/60 font-mono">
                 <tr>
-                  <td colspan="10" class="py-8 text-center text-slate-500 font-sans">
+                  <td colspan="11" class="py-8 text-center text-slate-500 font-sans">
                     <div class="flex flex-col items-center gap-2">
                       <div class="w-6 h-6 border-2 border-amber-500/30 border-t-amber-400 rounded-full animate-spin"></div>
                       <span>Loading Empirical Movers Research Data...</span>
@@ -19076,6 +19203,32 @@
         researchState.data = data;
         researchState.allMovers = data.movers || [];
 
+        // Update Funnel KPIs
+        const totEl = document.getElementById('res-funnel-total');
+        if (totEl) totEl.textContent = data.total_universe_count || data.total_universe || 0;
+
+        const posEl = document.getElementById('res-funnel-positive');
+        if (posEl) posEl.textContent = data.positive_stocks_count != null ? data.positive_stocks_count : (data.movers || []).length;
+
+        const posPctEl = document.getElementById('res-funnel-pos-pct');
+        if (posPctEl) posPctEl.textContent = `(${data.positive_stocks_pct || 0}%)`;
+
+        const m3El = document.getElementById('res-funnel-movers3');
+        if (m3El) m3El.textContent = data.movers_3pct_count != null ? data.movers_3pct_count : (data.movers || []).filter(m => m.chg_pct >= 3.0).length;
+
+        const m3PctEl = document.getElementById('res-funnel-movers3-pct');
+        if (m3PctEl) m3PctEl.textContent = `(${data.movers_3pct_pct || 0}%)`;
+
+        const patCnt = data.total_patterns_observed || (data.pattern_breakdown ? data.pattern_breakdown.length : 0);
+        const patEl = document.getElementById('res-funnel-patterns');
+        if (patEl) patEl.textContent = patCnt;
+
+        const patDetEl = document.getElementById('res-patterns-detected-count');
+        if (patDetEl) patDetEl.textContent = patCnt;
+
+        // Render Pattern Discovery & Commonality Table
+        renderPatternsCommonalityTable(data.pattern_breakdown || []);
+
         // Update KPIs
         const vduEl = document.getElementById('res-kpi-vdu');
         if (vduEl) vduEl.textContent = `${data.vdu_rate_pct || 0}%`;
@@ -19416,6 +19569,95 @@
       renderMoversTable(filtered);
     }
 
+    function renderPatternsCommonalityTable(patterns) {
+      const tbody = document.getElementById('res-patterns-table-body');
+      if (!tbody) return;
+
+      if (!patterns || !patterns.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" class="py-6 text-center text-slate-500 font-sans">
+              No distinct pre-breakout patterns observed in current movers.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      let html = '';
+      patterns.forEach(p => {
+        let archBadge = 'bg-slate-800 text-slate-300 border-slate-700';
+        if (p.pattern_name === 'Textbook VDU Coil') {
+          archBadge = 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold';
+        } else if (p.pattern_name === 'VDU at EMA Support') {
+          archBadge = 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-bold';
+        } else if (p.pattern_name === 'Tight Base at EMA') {
+          archBadge = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold';
+        } else if (p.pattern_name === 'Multi-Day Accumulation Base') {
+          archBadge = 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40 font-bold';
+        } else if (p.pattern_name === 'Momentum Continuation') {
+          archBadge = 'bg-violet-500/20 text-violet-300 border-violet-500/40 font-bold';
+        } else if (p.pattern_name === '50 EMA Deep Pullback') {
+          archBadge = 'bg-rose-500/20 text-rose-300 border-rose-500/40 font-bold';
+        } else if (p.pattern_name === 'Tight Base Contraction') {
+          archBadge = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+        }
+
+        const symsHtml = (p.symbols || []).map(s => `
+          <button onclick="filterMoversBySymbol('${escapeHtml(s)}')" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 hover:bg-amber-500/20 text-slate-200 hover:text-amber-300 border border-slate-700 hover:border-amber-500/40 transition cursor-pointer" title="Click to filter registry for ${escapeHtml(s)}">
+            ${escapeHtml(s)}
+          </button>
+        `).join(' ');
+
+        html += `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-2.5 px-3">
+              <span class="px-2 py-0.5 rounded text-xs border ${archBadge}">
+                ${escapeHtml(p.pattern_name)}
+              </span>
+              <div class="text-[10px] text-slate-400 font-sans mt-0.5">${escapeHtml(p.description || '')}</div>
+            </td>
+            <td class="py-2.5 px-3 text-center">
+              <strong class="text-amber-300 font-bold text-xs">${p.stocks_count} Stocks</strong>
+              <div class="text-slate-400 text-[10px]">(${p.stocks_pct}%)</div>
+            </td>
+            <td class="py-2.5 px-3">
+              <div class="flex items-center gap-1 flex-wrap max-w-xs">
+                ${symsHtml}
+              </div>
+            </td>
+            <td class="py-2.5 px-3 text-right ${p.avg_pre_vdu <= 0.8 ? 'text-amber-300 font-bold' : 'text-slate-400'}">
+              ${p.avg_pre_vdu != null ? Number(p.avg_pre_vdu).toFixed(2) + 'x' : '--'}
+            </td>
+            <td class="py-2.5 px-3 text-right ${p.avg_pre_range <= 3.2 ? 'text-emerald-300 font-bold' : 'text-slate-400'}">
+              ${p.avg_pre_range != null ? Number(p.avg_pre_range).toFixed(1) + '%' : '--'}
+            </td>
+            <td class="py-2.5 px-3 text-right ${Math.abs(p.avg_ema20_dist || 0) <= 3.8 ? 'text-cyan-300 font-bold' : 'text-slate-400'}">
+              ${p.avg_ema20_dist != null ? (p.avg_ema20_dist >= 0 ? '+' : '') + Number(p.avg_ema20_dist).toFixed(1) + '%' : '--'}
+            </td>
+            <td class="py-2.5 px-3 text-right text-emerald-400 font-bold">
+              +${p.avg_gain_pct != null ? Number(p.avg_gain_pct).toFixed(1) : '--'}%
+            </td>
+            <td class="py-2.5 px-3 text-[11px] text-slate-300 font-sans max-w-xs leading-snug">
+              ${escapeHtml(p.rationale || '')}
+            </td>
+          </tr>
+        `;
+      });
+
+      tbody.innerHTML = html;
+      lucide.createIcons();
+    }
+
+    function filterMoversBySymbol(sym) {
+      researchState.searchQuery = (sym || '').trim().toLowerCase();
+      const sInput = document.getElementById('res-search-input');
+      if (sInput) sInput.value = sym;
+      applyMoversFilters();
+      const regHeader = document.getElementById('res-filtered-count-badge');
+      if (regHeader) regHeader.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
     function renderMoversTable(movers) {
       const tbody = document.getElementById('res-movers-table-body');
       if (!tbody) return;
@@ -19423,7 +19665,7 @@
       if (!movers || !movers.length) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="10" class="py-8 text-center text-slate-500 font-sans">
+            <td colspan="11" class="py-8 text-center text-slate-500 font-sans">
               No moving stocks found matching current filter.
             </td>
           </tr>
@@ -19443,13 +19685,17 @@
         if (m.archetype === 'Textbook VDU Coil') {
           archBadge = 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold';
         } else if (m.archetype === 'VDU at EMA Support') {
-          archBadge = 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40';
+          archBadge = 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-bold';
         } else if (m.archetype === 'Tight Base at EMA') {
-          archBadge = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+          archBadge = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold';
+        } else if (m.archetype === 'Multi-Day Accumulation Base') {
+          archBadge = 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40 font-bold';
         } else if (m.archetype === 'Momentum Continuation') {
-          archBadge = 'bg-violet-500/20 text-violet-300 border-violet-500/40';
+          archBadge = 'bg-violet-500/20 text-violet-300 border-violet-500/40 font-bold';
         } else if (m.archetype === '50 EMA Deep Pullback') {
-          archBadge = 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+          archBadge = 'bg-rose-500/20 text-rose-300 border-rose-500/40 font-bold';
+        } else if (m.archetype === 'Tight Base Contraction') {
+          archBadge = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
         }
 
         // Engine Status badge
@@ -19464,6 +19710,23 @@
           bucketBadge = 'bg-rose-500/10 text-rose-400/80 border border-rose-500/20';
         }
 
+        // Pre-Movement Forensic Tags HTML
+        let tagsHtml = '';
+        if (m.tags && Array.isArray(m.tags) && m.tags.length > 0) {
+          tagsHtml = `<div class="flex items-center gap-1.5 flex-wrap">` + m.tags.map(t => {
+            let colorCls = 'bg-slate-800 text-slate-300 border-slate-700';
+            if (t.color === 'amber') colorCls = 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-semibold';
+            else if (t.color === 'emerald') colorCls = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-semibold';
+            else if (t.color === 'cyan') colorCls = 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-semibold';
+            else if (t.color === 'indigo') colorCls = 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40 font-semibold';
+            else if (t.color === 'violet') colorCls = 'bg-violet-500/20 text-violet-300 border-violet-500/40 font-semibold';
+            else if (t.color === 'rose') colorCls = 'bg-rose-500/20 text-rose-300 border-rose-500/40 font-semibold';
+            return `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono border ${colorCls}" title="${escapeHtml(t.desc || t.label)}">${escapeHtml(t.label)}</span>`;
+          }).join('') + `</div>`;
+        } else {
+          tagsHtml = `<span class="text-[10px] text-slate-500">None detected</span>`;
+        }
+
         html += `
           <tr class="hover:bg-slate-800/40 transition">
             <td class="py-2.5 px-3 text-slate-500">${idx + 1}</td>
@@ -19472,7 +19735,7 @@
                 <span>${m.symbol}</span>
                 ${m.is_vdu && m.is_tight ? '<span class="px-1 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">COIL</span>' : ''}
               </div>
-              <div class="text-[10px] text-slate-400 font-sans truncate max-w-[140px]">${m.name || m.symbol}</div>
+              <div class="text-[10px] text-slate-400 font-sans truncate max-w-[150px]">${m.name || m.symbol}</div>
               <div class="flex items-center gap-1.5 mt-0.5">
                 <a href="${m.fundamental_source_url || `https://www.screener.in/company/${escapeHtml(m.symbol)}/consolidated/`}" target="_blank" rel="noopener noreferrer" class="text-[10px] font-mono font-semibold text-sky-400 hover:text-sky-300 hover:underline inline-flex items-center gap-0.5" title="View company financials & fundamentals on Screener.in">
                   <span>Screener.in</span>
@@ -19483,9 +19746,13 @@
                   NSE ↗
                 </a>
               </div>
+              ${m.what_happened_before ? `<div class="text-[10px] text-slate-400 font-sans italic mt-1 leading-snug bg-slate-950/40 p-1 rounded border border-slate-800/60">${escapeHtml(m.what_happened_before)}</div>` : ''}
             </td>
             <td class="py-2.5 px-3 text-right text-slate-200">₹${Number(m.close).toFixed(2)}</td>
             <td class="py-2.5 px-3 text-right ${chgClass}">+${Number(m.chg_pct).toFixed(2)}%</td>
+            <td class="py-2.5 px-3 text-left">
+              ${tagsHtml}
+            </td>
             <td class="py-2.5 px-3 text-right text-violet-300 font-semibold">${Number(m.breakout_vol_ratio).toFixed(1)}x</td>
             <td class="py-2.5 px-3 text-right ${rngClass}">${Number(m.pre_range_t1).toFixed(2)}%</td>
             <td class="py-2.5 px-3 text-right ${vduClass}">${Number(m.pre_vdu_t1).toFixed(2)}x</td>

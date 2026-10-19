@@ -30,6 +30,28 @@ from engines.custom_screener_engine import custom_screener_engine
 
 logger = logging.getLogger("AccumulationResearchEngine")
 
+ARCHETYPE_DESCRIPTIONS = {
+    "Textbook VDU Coil": "Volume dry-up with tight volatility contraction resting right on 20 EMA.",
+    "VDU at EMA Support": "Institutional volume dry-up directly on 20 EMA support anchor.",
+    "Tight Base at EMA": "Volatility compression base with narrow price consolidation near 20 EMA.",
+    "Multi-Day Accumulation Base": "Multi-session quiet institutional inventory absorption prior to expansion.",
+    "Momentum Continuation": "High-momentum trend continuation breaking out above previous swing high.",
+    "50 EMA Deep Pullback": "Mean-reversion launch from 50-day institutional moving average support.",
+    "Tight Base Contraction": "Volatility compression base with narrow price consolidation.",
+    "Loose / Consolidating": "Wide-range expansion from broader consolidation structure."
+}
+
+ARCHETYPE_RATIONALE = {
+    "Textbook VDU Coil": "Supply Exhaustion & Algorithmic Anchor: Floating supply dries up while price coils at 20 EMA, triggering explosive expansion when buyers step in.",
+    "VDU at EMA Support": "Institutional Floor: Floating supply absorbed quietly at key 20 EMA benchmark support without letting price slip.",
+    "Tight Base at EMA": "Volatility Compression: Multi-day narrow trading range contracts volatility before explosive range expansion.",
+    "Multi-Day Accumulation Base": "Quiet Inventory Building: Sustained institutional absorption over 3+ days preventing price appreciation before breakout.",
+    "Momentum Continuation": "Institutional Momentum: Active funds adding to winning relative-strength leaders clearing multi-week resistance.",
+    "50 EMA Deep Pullback": "Institutional Value Support: Smart money stepping in at 50 EMA mean-reversion discount during broader market pullbacks.",
+    "Tight Base Contraction": "Volatility Contraction: Supply drying up across narrow candles before range expansion.",
+    "Loose / Consolidating": "Consolidation Clearance: Price breaking out from wider structural base as buying volume accelerates."
+}
+
 
 class AccumulationResearchEngine:
     _instance: Optional["AccumulationResearchEngine"] = None
@@ -88,7 +110,10 @@ class AccumulationResearchEngine:
                         ("nifty_rsi14", "REAL DEFAULT 50.0"),
                         ("india_vix", "REAL DEFAULT 14.0"),
                         ("top_archetype", "TEXT DEFAULT ''"),
-                        ("regime_details_json", "TEXT DEFAULT '{}'")
+                        ("regime_details_json", "TEXT DEFAULT '{}'"),
+                        ("positive_stocks_count", "INTEGER DEFAULT 0"),
+                        ("total_patterns_count", "INTEGER DEFAULT 0"),
+                        ("pattern_breakdown_json", "TEXT DEFAULT '[]'")
                     ]:
                         if col not in existing:
                             try:
@@ -134,25 +159,43 @@ class AccumulationResearchEngine:
         if not all_screened:
             return self._build_empty_report(total_universe, timestamp_str, today_str)
 
-        # 2. Filter positive moving stocks (per_chg >= min_gain_pct)
-        movers = []
+        # 2. Count positive stocks and movers
+        positive_stocks = []
+        movers_3pct_list = []
+        movers_5pct_list = []
         for s in all_screened:
             try:
                 chg = float(s.get("per_chg", 0.0) or 0.0)
-                if chg >= min_gain_pct:
-                    movers.append(s)
+                if chg > 0.0:
+                    positive_stocks.append(s)
+                if chg >= 3.0:
+                    movers_3pct_list.append(s)
+                if chg >= 5.0:
+                    movers_5pct_list.append(s)
             except Exception:
                 continue
 
-        # Sort descending by % change
-        movers.sort(key=lambda x: float(x.get("per_chg", 0.0) or 0.0), reverse=True)
-        top_movers = movers[:top_n]
-        movers_count = len(movers)
+        positive_stocks_count = len(positive_stocks)
+        movers_3pct_count = len(movers_3pct_list)
+        movers_5pct_count = len(movers_5pct_list)
 
-        logger.info(f"Identified {movers_count} stocks gaining >= {min_gain_pct}% out of {total_universe} screened stocks.")
+        # Ensure all stocks with per_chg >= 3.0% are included and analyzed,
+        # plus any positive movers with per_chg >= min_gain_pct
+        movers_candidates = [s for s in positive_stocks if float(s.get("per_chg", 0.0) or 0.0) >= min_gain_pct]
+        movers_candidates.sort(key=lambda x: float(x.get("per_chg", 0.0) or 0.0), reverse=True)
+
+        # Analyze all >= 3% movers, plus top movers up to max(top_n, movers_3pct_count, 60)
+        target_count = max(top_n, movers_3pct_count, 60)
+        selected_movers = movers_candidates[:target_count]
+        movers_count = len(selected_movers)
+
+        logger.info(
+            f"Universe: {total_universe} | Positive: {positive_stocks_count} ({positive_stocks_count / (total_universe + 1e-9) * 100:.1f}%) | "
+            f">=3% Movers: {movers_3pct_count} ({movers_3pct_count / (total_universe + 1e-9) * 100:.1f}%) | Analyzing {movers_count} stocks."
+        )
 
         # 3. Batch download / fetch OHLCV bars for top movers
-        symbols = [s["symbol"] for s in top_movers]
+        symbols = [s["symbol"] for s in selected_movers]
         ohlcv_data = self._fetch_ohlcv_batch(symbols)
 
         # 4. Fetch latest signals classification from state engine for parity check
@@ -160,7 +203,7 @@ class AccumulationResearchEngine:
 
         # 5. Quantitative Accumulation Analysis per Stock
         movers_analyzed = []
-        for s in top_movers:
+        for s in selected_movers:
             sym = s["symbol"]
             df = ohlcv_data.get(sym)
             analysis = self._analyze_stock_accumulation(sym, s, df, latest_signals_map.get(sym))
@@ -203,9 +246,15 @@ class AccumulationResearchEngine:
             "run_timestamp": timestamp_str,
             "scan_date": today_str,
             "total_universe": total_universe,
+            "total_universe_count": total_universe,
+            "positive_stocks_count": positive_stocks_count,
+            "positive_stocks_pct": round((positive_stocks_count / (total_universe + 1e-9)) * 100.0, 1),
             "positive_movers_count": movers_count,
-            "movers_3pct_count": sum(1 for m in movers_analyzed if m["chg_pct"] >= 3.0),
-            "movers_5pct_count": sum(1 for m in movers_analyzed if m["chg_pct"] >= 5.0),
+            "movers_3pct_count": movers_3pct_count,
+            "movers_3pct_pct": round((movers_3pct_count / (total_universe + 1e-9)) * 100.0, 1),
+            "movers_5pct_count": movers_5pct_count,
+            "total_patterns_observed": synthesis.get("total_patterns_observed", 0),
+            "pattern_breakdown": synthesis.get("pattern_breakdown", []),
             "vdu_rate_pct": synthesis["vdu_rate_pct"],
             "tightness_rate_pct": synthesis["tightness_rate_pct"],
             "ema20_launch_rate_pct": synthesis["ema20_launch_rate_pct"],
@@ -370,10 +419,30 @@ class AccumulationResearchEngine:
 
         # Accumulation Flags
         is_tight = rng_t1 <= 3.2
+        is_ultra_tight = rng_t1 <= 2.2
         is_vdu = vrat_t1 <= 0.80
         is_extreme_vdu = vrat_t1 <= 0.50
         is_near_ema20 = abs(dist20_t1) <= 3.8
+        is_at_ema20 = abs(dist20_t1) <= 2.0
         is_near_ema50 = abs(dist50_t1) <= 4.5
+
+        # Multi-session pre-move accumulation tracking (last 5 sessions before T-0: idx -2 down to -6)
+        pre_sessions = df.iloc[-6:-1] if len(df) >= 6 else df.iloc[:-1]
+        accum_days_count = 0
+        tight_days_count = 0
+        vdu_days_count = 0
+        if len(pre_sessions) > 0:
+            for _, row in pre_sessions.iterrows():
+                row_vol = float(row.get("Volume", 0.0) or 0.0)
+                row_close = float(row.get("Close", 0.0) or 0.0)
+                row_high = float(row.get("High", 0.0) or 0.0)
+                row_low = float(row.get("Low", 0.0) or 0.0)
+                day_rng = ((row_high - row_low) / (row_low + 1e-9)) * 100.0
+                if day_rng <= 3.5:
+                    tight_days_count += 1
+                cl_pos = (row_close - row_low) / (row_high - row_low + 1e-9)
+                if cl_pos >= 0.50:
+                    accum_days_count += 1
 
         # Archetype derivation
         if is_tight and is_vdu and is_near_ema20:
@@ -382,12 +451,62 @@ class AccumulationResearchEngine:
             archetype = "VDU at EMA Support"
         elif is_tight and is_near_ema20:
             archetype = "Tight Base at EMA"
-        elif dist20_t1 > 5.0:
+        elif accum_days_count >= 3 and is_near_ema20:
+            archetype = "Multi-Day Accumulation Base"
+        elif dist20_t1 > 4.5:
             archetype = "Momentum Continuation"
         elif dist20_t1 < -3.5 and is_near_ema50:
             archetype = "50 EMA Deep Pullback"
+        elif is_tight:
+            archetype = "Tight Base Contraction"
         else:
             archetype = "Loose / Consolidating"
+
+        # Forensic Visual Tags
+        tags = []
+        if is_extreme_vdu:
+            tags.append({"label": f"💧 Extreme VDU: {vrat_t1:.2f}x", "type": "vdu", "color": "amber", "desc": "Extreme Volume Dry-Up <= 0.5x"})
+        elif is_vdu:
+            tags.append({"label": f"💧 VDU: {vrat_t1:.2f}x", "type": "vdu", "color": "amber", "desc": "Volume Dry-Up <= 0.8x"})
+        elif vrat_t1 <= 1.0:
+            tags.append({"label": f"💧 Low Vol: {vrat_t1:.2f}x", "type": "vdu", "color": "slate", "desc": "Below-Average Volume"})
+        else:
+            tags.append({"label": f"📊 Active Vol: {vrat_t1:.2f}x", "type": "vol", "color": "slate", "desc": "Above-Average Pre-Move Volume"})
+
+        if is_ultra_tight:
+            tags.append({"label": f"🎯 Ultra-Tight: {rng_t1:.1f}%", "type": "tight", "color": "emerald", "desc": "Ultra-Tight Range <= 2.2%"})
+        elif is_tight:
+            tags.append({"label": f"🎯 Tight Range: {rng_t1:.1f}%", "type": "tight", "color": "emerald", "desc": "Tight Range <= 3.2%"})
+        else:
+            tags.append({"label": f"📏 Range: {rng_t1:.1f}%", "type": "range", "color": "slate", "desc": "Moderate Daily Range"})
+
+        if is_at_ema20:
+            tags.append({"label": f"⚡ At 20 EMA: {dist20_t1:+.1f}%", "type": "ema", "color": "cyan", "desc": "Directly on 20 EMA (+/-2%)"})
+        elif is_near_ema20:
+            tags.append({"label": f"⚡ Coiled at 20 EMA: {dist20_t1:+.1f}%", "type": "ema", "color": "cyan", "desc": "Coiled near 20 EMA (+/-3.8%)"})
+        elif dist20_t1 > 3.8:
+            tags.append({"label": f"🚀 Extended: {dist20_t1:+.1f}%", "type": "ema", "color": "violet", "desc": "Extended above 20 EMA"})
+        else:
+            tags.append({"label": f"📉 Below 20 EMA: {dist20_t1:+.1f}%", "type": "ema", "color": "rose", "desc": "Trading below 20 EMA"})
+
+        if accum_days_count >= 3:
+            tags.append({"label": f"🏦 {accum_days_count}-Day Accumulation", "type": "accum", "color": "indigo", "desc": f"{accum_days_count} of last 5 days closed in upper half"})
+        elif is_vdu and vrat_t2 <= 0.80:
+            tags.append({"label": "💧 2-Day VDU Base", "type": "accum", "color": "amber", "desc": "Consecutive multi-day volume contraction"})
+
+        if vrat_now >= 2.0:
+            tags.append({"label": f"💥 Breakout Vol: {vrat_now:.1f}x", "type": "surge", "color": "violet", "desc": "Explosive breakout day volume surge"})
+
+        # Natural Language Forensic Narrative
+        vdu_txt = f"extreme volume dry-up ({vrat_t1:.2f}x 20-DMA)" if is_extreme_vdu else (f"volume dry-up ({vrat_t1:.2f}x)" if is_vdu else f"volume at {vrat_t1:.2f}x")
+        rng_txt = f"ultra-tight {rng_t1:.1f}% daily candle" if is_ultra_tight else (f"tight {rng_t1:.1f}% candle" if is_tight else f"daily range of {rng_t1:.1f}%")
+        ema_txt = f"resting directly on 20 EMA ({dist20_t1:+.1f}%)" if is_at_ema20 else (f"coiled {dist20_t1:+.1f}% near 20 EMA" if is_near_ema20 else f"standing {dist20_t1:+.1f}% from 20 EMA")
+
+        what_happened_before = f"Before today's {chg_now:+.1f}% surge, exhibited {vdu_txt} with {rng_txt}, {ema_txt}"
+        if accum_days_count >= 3:
+            what_happened_before += f" ({accum_days_count}-session institutional accumulation base)."
+        else:
+            what_happened_before += "."
 
         bucket = sig_info.get("bucket", "NOT_IN_DB") if sig_info else "NOT_IN_DB"
         score = sig_info.get("score", 0.0) if sig_info else 0.0
@@ -406,11 +525,18 @@ class AccumulationResearchEngine:
             "pre_vdu_t1": round(vrat_t1, 2),
             "pre_vdu_t2": round(vrat_t2, 2),
             "dist_ema20_t1": round(dist20_t1, 2),
+            "dist_ema50_t1": round(dist50_t1, 2),
+            "accum_days_5d": accum_days_count,
+            "tight_days_5d": tight_days_count,
             "is_vdu": is_vdu,
             "is_extreme_vdu": is_extreme_vdu,
             "is_tight": is_tight,
+            "is_ultra_tight": is_ultra_tight,
             "is_near_ema20": is_near_ema20,
+            "is_at_ema20": is_at_ema20,
             "archetype": archetype,
+            "tags": tags,
+            "what_happened_before": what_happened_before,
             "engine_bucket": bucket,
             "engine_score": score,
             "engine_ml_verdict": ml_verdict,
@@ -455,6 +581,47 @@ class AccumulationResearchEngine:
         for m in movers:
             arch = m["archetype"]
             archetypes[arch] = archetypes.get(arch, 0) + 1
+
+        # Comprehensive Pattern Grouping & Commonality Breakdown
+        pattern_groups = {}
+        for m in movers:
+            arch = m["archetype"]
+            if arch not in pattern_groups:
+                pattern_groups[arch] = []
+            pattern_groups[arch].append(m)
+
+        pattern_breakdown = []
+        for arch_name, p_movers in pattern_groups.items():
+            cnt = len(p_movers)
+            pct = round((cnt / n) * 100.0, 1)
+            avg_gain = round(float(np.mean([m["chg_pct"] for m in p_movers])), 2)
+            avg_vdu = round(float(np.mean([m["pre_vdu_t1"] for m in p_movers])), 2)
+            avg_rng = round(float(np.mean([m["pre_range_t1"] for m in p_movers])), 2)
+            avg_dist = round(float(np.mean([m["dist_ema20_t1"] for m in p_movers])), 2)
+            avg_surge_val = round(float(np.mean([m["breakout_vol_ratio"] for m in p_movers])), 2)
+            syms = [m["symbol"] for m in p_movers]
+
+            desc = ARCHETYPE_DESCRIPTIONS.get(arch_name, "Empirical pre-breakout accumulation pattern.")
+            rationale = ARCHETYPE_RATIONALE.get(arch_name, "Institutional price and volume alignment preceding range expansion.")
+
+            pattern_breakdown.append({
+                "pattern_name": arch_name,
+                "description": desc,
+                "stocks_count": cnt,
+                "stocks_pct": pct,
+                "symbols": syms,
+                "avg_gain_pct": avg_gain,
+                "avg_pre_vdu": avg_vdu,
+                "avg_pre_range": avg_rng,
+                "avg_ema20_dist": avg_dist,
+                "avg_breakout_surge": avg_surge_val,
+                "rationale": rationale
+            })
+
+        # Sort patterns by stocks count descending
+        pattern_breakdown.sort(key=lambda x: x["stocks_count"], reverse=True)
+        total_patterns_observed = len([p for p in pattern_breakdown if p["stocks_count"] > 0])
+        dominant_pattern = pattern_breakdown[0]["pattern_name"] if pattern_breakdown else "Textbook VDU Coil"
 
         # Engine classification counts
         engine_buckets = {}
@@ -504,6 +671,9 @@ class AccumulationResearchEngine:
             "ema20_launch_rate_pct": ema20_pct,
             "avg_breakout_surge": avg_surge,
             "archetype_distribution": archetypes,
+            "pattern_breakdown": pattern_breakdown,
+            "total_patterns_observed": total_patterns_observed,
+            "dominant_pattern": dominant_pattern,
             "engine_detection_summary": engine_buckets,
             "common_findings": findings
         }
@@ -513,41 +683,43 @@ class AccumulationResearchEngine:
         try:
             with state_engine._lock:
                 with state_engine._get_connection() as conn:
-                    conn.execute("""
-                    INSERT OR REPLACE INTO research_movers_audit (
-                        audit_id, run_timestamp, scan_date, total_universe,
-                        positive_movers_count, movers_3pct_count, vdu_rate_pct,
-                        tightness_rate_pct, ema20_launch_rate_pct, avg_breakout_surge,
-                        findings_summary_json, archetype_breakdown_json, movers_data_json,
-                        sha256_hash, market_regime, nifty_spot, nifty_change_pct,
-                        nifty_trend, nifty_rsi14, india_vix, top_archetype,
-                        regime_details_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        report["audit_id"],
-                        report["run_timestamp"],
-                        report["scan_date"],
-                        report["total_universe"],
-                        report["positive_movers_count"],
-                        report["movers_3pct_count"],
-                        report["vdu_rate_pct"],
-                        report["tightness_rate_pct"],
-                        report["ema20_launch_rate_pct"],
-                        report["avg_breakout_surge"],
-                        json.dumps(report.get("common_findings", [])),
-                        json.dumps(report.get("archetype_distribution", {})),
-                        json.dumps(report.get("movers", [])[:30]),
-                        report["sha256_hash"],
-                        report.get("market_regime", "NEUTRAL"),
-                        float(report.get("nifty_spot", 0.0) or 0.0),
-                        float(report.get("nifty_change_pct", 0.0) or 0.0),
-                        report.get("nifty_trend", "NEUTRAL"),
-                        float(report.get("nifty_rsi14", 50.0) or 50.0),
-                        float(report.get("india_vix", 14.0) or 14.0),
-                        report.get("top_archetype", ""),
-                        json.dumps(report.get("regime_details", {})),
-                        format_ist()
-                    ))
+                    col_names = [r[1] for r in conn.execute("PRAGMA table_info(research_movers_audit)").fetchall()]
+
+                    data_dict = {
+                        "audit_id": report["audit_id"],
+                        "run_timestamp": report["run_timestamp"],
+                        "scan_date": report["scan_date"],
+                        "total_universe": report["total_universe"],
+                        "positive_movers_count": report["positive_movers_count"],
+                        "movers_3pct_count": report["movers_3pct_count"],
+                        "vdu_rate_pct": report["vdu_rate_pct"],
+                        "tightness_rate_pct": report["tightness_rate_pct"],
+                        "ema20_launch_rate_pct": report["ema20_launch_rate_pct"],
+                        "avg_breakout_surge": report["avg_breakout_surge"],
+                        "findings_summary_json": json.dumps(report.get("common_findings", [])),
+                        "archetype_breakdown_json": json.dumps(report.get("archetype_distribution", {})),
+                        "movers_data_json": json.dumps(report.get("movers", [])),
+                        "sha256_hash": report["sha256_hash"],
+                        "market_regime": report.get("market_regime", "NEUTRAL"),
+                        "nifty_spot": float(report.get("nifty_spot", 0.0) or 0.0),
+                        "nifty_change_pct": float(report.get("nifty_change_pct", 0.0) or 0.0),
+                        "nifty_trend": report.get("nifty_trend", "NEUTRAL"),
+                        "nifty_rsi14": float(report.get("nifty_rsi14", 50.0) or 50.0),
+                        "india_vix": float(report.get("india_vix", 14.0) or 14.0),
+                        "top_archetype": report.get("top_archetype", ""),
+                        "regime_details_json": json.dumps(report.get("regime_details", {})),
+                        "positive_stocks_count": int(report.get("positive_stocks_count", 0)),
+                        "total_patterns_count": int(report.get("total_patterns_observed", 0)),
+                        "pattern_breakdown_json": json.dumps(report.get("pattern_breakdown", [])),
+                        "created_at": format_ist()
+                    }
+
+                    valid_cols = [c for c in data_dict.keys() if c in col_names]
+                    placeholders = ",".join(["?"] * len(valid_cols))
+                    cols_str = ",".join(valid_cols)
+                    vals = [data_dict[c] for c in valid_cols]
+
+                    conn.execute(f"INSERT OR REPLACE INTO research_movers_audit ({cols_str}) VALUES ({placeholders})", vals)
                     conn.commit()
         except Exception as e:
             logger.warning(f"Error persisting research audit run: {e}")
@@ -558,14 +730,20 @@ class AccumulationResearchEngine:
             "run_timestamp": ts,
             "scan_date": dt,
             "total_universe": total,
+            "total_universe_count": total,
+            "positive_stocks_count": 0,
+            "positive_stocks_pct": 0.0,
             "positive_movers_count": 0,
             "movers_3pct_count": 0,
+            "movers_3pct_pct": 0.0,
             "movers_5pct_count": 0,
             "vdu_rate_pct": 0.0,
             "tightness_rate_pct": 0.0,
             "ema20_launch_rate_pct": 0.0,
             "avg_breakout_surge": 0.0,
             "execution_duration_sec": 0.0,
+            "total_patterns_observed": 0,
+            "pattern_breakdown": [],
             "common_findings": [],
             "archetype_distribution": {},
             "engine_detection_summary": {},
@@ -595,21 +773,90 @@ class AccumulationResearchEngine:
                     ).fetchone()
                     if row:
                         row_dict = dict(row)
+                        movers_list = json.loads(row_dict.get("movers_data_json") or "[]")
+                        arch_dist = json.loads(row_dict.get("archetype_breakdown_json") or "{}")
+                        pattern_bd = json.loads(row_dict.get("pattern_breakdown_json") or "[]")
+
+                        tot_univ = int(row_dict.get("total_universe") or 0)
+                        pos_cnt = int(row_dict.get("positive_stocks_count") or row_dict.get("positive_movers_count") or 0)
+                        m3_cnt = int(row_dict.get("movers_3pct_count") or sum(1 for m in movers_list if float(m.get("chg_pct", 0) or 0) >= 3.0))
+
+                        # Reconstruct pattern breakdown if missing
+                        if not pattern_bd and movers_list:
+                            temp_synth = self._synthesize_common_findings(movers_list, tot_univ, len(movers_list))
+                            pattern_bd = temp_synth.get("pattern_breakdown", [])
+
+                        # Ensure each mover has tags and what_happened_before
+                        for m in movers_list:
+                            vrat_t1 = float(m.get("pre_vdu_t1", 1.0) or 1.0)
+                            rng_t1 = float(m.get("pre_range_t1", 3.0) or 3.0)
+                            dist20_t1 = float(m.get("dist_ema20_t1", 0.0) or 0.0)
+                            vrat_now = float(m.get("breakout_vol_ratio", 1.0) or 1.0)
+                            chg_now = float(m.get("chg_pct", 0.0) or 0.0)
+
+                            if not m.get("tags"):
+                                tags = []
+                                if vrat_t1 <= 0.50:
+                                    tags.append({"label": f"💧 Extreme VDU: {vrat_t1:.2f}x", "type": "vdu", "color": "amber", "desc": "Extreme Volume Dry-Up <= 0.5x"})
+                                elif vrat_t1 <= 0.80:
+                                    tags.append({"label": f"💧 VDU: {vrat_t1:.2f}x", "type": "vdu", "color": "amber", "desc": "Volume Dry-Up <= 0.8x"})
+                                elif vrat_t1 <= 1.0:
+                                    tags.append({"label": f"💧 Low Vol: {vrat_t1:.2f}x", "type": "vdu", "color": "slate", "desc": "Below-Average Volume"})
+                                else:
+                                    tags.append({"label": f"📊 Active Vol: {vrat_t1:.2f}x", "type": "vol", "color": "slate", "desc": "Above-Average Pre-Move Volume"})
+
+                                if rng_t1 <= 2.2:
+                                    tags.append({"label": f"🎯 Ultra-Tight: {rng_t1:.1f}%", "type": "tight", "color": "emerald", "desc": "Ultra-Tight Range <= 2.2%"})
+                                elif rng_t1 <= 3.2:
+                                    tags.append({"label": f"🎯 Tight Range: {rng_t1:.1f}%", "type": "tight", "color": "emerald", "desc": "Tight Range <= 3.2%"})
+                                else:
+                                    tags.append({"label": f"📏 Range: {rng_t1:.1f}%", "type": "range", "color": "slate", "desc": "Moderate Daily Range"})
+
+                                if abs(dist20_t1) <= 2.0:
+                                    tags.append({"label": f"⚡ At 20 EMA: {dist20_t1:+.1f}%", "type": "ema", "color": "cyan", "desc": "Directly on 20 EMA (+/-2%)"})
+                                elif abs(dist20_t1) <= 3.8:
+                                    tags.append({"label": f"⚡ Coiled at 20 EMA: {dist20_t1:+.1f}%", "type": "ema", "color": "cyan", "desc": "Coiled near 20 EMA (+/-3.8%)"})
+                                elif dist20_t1 > 3.8:
+                                    tags.append({"label": f"🚀 Extended: {dist20_t1:+.1f}%", "type": "ema", "color": "violet", "desc": "Extended above 20 EMA"})
+                                else:
+                                    tags.append({"label": f"📉 Below 20 EMA: {dist20_t1:+.1f}%", "type": "ema", "color": "rose", "desc": "Trading below 20 EMA"})
+
+                                if int(m.get("accum_days_5d", 0) or 0) >= 3:
+                                    tags.append({"label": f"🏦 {m['accum_days_5d']}-Day Accumulation", "type": "accum", "color": "indigo", "desc": "Multi-day upper closes"})
+
+                                if vrat_now >= 2.0:
+                                    tags.append({"label": f"💥 Breakout Vol: {vrat_now:.1f}x", "type": "surge", "color": "violet", "desc": "Breakout Day Surge"})
+
+                                m["tags"] = tags
+
+                            if not m.get("what_happened_before"):
+                                vdu_txt = f"extreme volume dry-up ({vrat_t1:.2f}x)" if vrat_t1 <= 0.5 else (f"volume dry-up ({vrat_t1:.2f}x)" if vrat_t1 <= 0.8 else f"volume ratio of {vrat_t1:.2f}x")
+                                rng_txt = f"ultra-tight {rng_t1:.1f}% daily candle" if rng_t1 <= 2.2 else (f"tight {rng_t1:.1f}% candle" if rng_t1 <= 3.2 else f"daily range of {rng_t1:.1f}%")
+                                ema_txt = f"resting directly on 20 EMA ({dist20_t1:+.1f}%)" if abs(dist20_t1) <= 2.0 else (f"coiled {dist20_t1:+.1f}% near 20 EMA" if abs(dist20_t1) <= 3.8 else f"standing {dist20_t1:+.1f}% from 20 EMA")
+                                m["what_happened_before"] = f"Before today's {chg_now:+.1f}% surge, exhibited {vdu_txt} with {rng_txt}, {ema_txt}."
+
                         self._last_report = {
                             "audit_id": row_dict["audit_id"],
                             "run_timestamp": row_dict["run_timestamp"],
                             "scan_date": row_dict["scan_date"],
-                            "total_universe": row_dict["total_universe"],
-                            "positive_movers_count": row_dict["positive_movers_count"],
-                            "movers_3pct_count": row_dict["movers_3pct_count"],
-                            "vdu_rate_pct": row_dict["vdu_rate_pct"],
-                            "tightness_rate_pct": row_dict["tightness_rate_pct"],
-                            "ema20_launch_rate_pct": row_dict["ema20_launch_rate_pct"],
-                            "avg_breakout_surge": row_dict["avg_breakout_surge"],
+                            "total_universe": tot_univ,
+                            "total_universe_count": tot_univ,
+                            "positive_stocks_count": pos_cnt,
+                            "positive_stocks_pct": round((pos_cnt / (tot_univ + 1e-9)) * 100.0, 1),
+                            "positive_movers_count": int(row_dict.get("positive_movers_count") or len(movers_list)),
+                            "movers_3pct_count": m3_cnt,
+                            "movers_3pct_pct": round((m3_cnt / (tot_univ + 1e-9)) * 100.0, 1),
+                            "movers_5pct_count": sum(1 for m in movers_list if float(m.get("chg_pct", 0) or 0) >= 5.0),
+                            "total_patterns_observed": int(row_dict.get("total_patterns_count") or len(pattern_bd)),
+                            "pattern_breakdown": pattern_bd,
+                            "vdu_rate_pct": float(row_dict.get("vdu_rate_pct") or 0.0),
+                            "tightness_rate_pct": float(row_dict.get("tightness_rate_pct") or 0.0),
+                            "ema20_launch_rate_pct": float(row_dict.get("ema20_launch_rate_pct") or 0.0),
+                            "avg_breakout_surge": float(row_dict.get("avg_breakout_surge") or 0.0),
                             "execution_duration_sec": 0.0,
                             "common_findings": json.loads(row_dict.get("findings_summary_json") or "[]"),
-                            "archetype_distribution": json.loads(row_dict.get("archetype_breakdown_json") or "{}"),
-                            "movers": json.loads(row_dict.get("movers_data_json") or "[]"),
+                            "archetype_distribution": arch_dist,
+                            "movers": movers_list,
                             "sha256_hash": row_dict.get("sha256_hash") or "",
                             "market_regime": row_dict.get("market_regime", "NEUTRAL"),
                             "nifty_spot": float(row_dict.get("nifty_spot") or 0.0),

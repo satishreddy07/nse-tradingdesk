@@ -105,3 +105,42 @@ def test_regime_performance_matrix_and_audit_history():
         assert "market_regime" in entry
         assert "sha256_hash" in entry
 
+
+def test_funnel_and_pattern_breakdown():
+    """Verify that funnel counts (universe, positive, >=3% movers), tags, and pattern breakdown are computed."""
+    report = accumulation_research_engine.get_latest_research()
+    assert report is not None
+    assert "total_universe" in report
+    assert "positive_stocks_count" in report
+    assert "movers_3pct_count" in report
+    assert "total_patterns_observed" in report
+    assert "pattern_breakdown" in report
+    assert isinstance(report["pattern_breakdown"], list)
+
+    # Check movers have tags and narrative
+    movers = report.get("movers", [])
+    if movers:
+        m0 = movers[0]
+        assert "tags" in m0
+        assert isinstance(m0["tags"], list)
+        assert len(m0["tags"]) > 0
+        assert "what_happened_before" in m0
+        assert isinstance(m0["what_happened_before"], str)
+        assert len(m0["what_happened_before"]) > 10
+
+    # Check pattern breakdown structure
+    pb = report.get("pattern_breakdown", [])
+    if pb:
+        p0 = pb[0]
+        assert "pattern_name" in p0
+        assert "stocks_count" in p0
+        assert "stocks_pct" in p0
+        assert "symbols" in p0
+        assert isinstance(p0["symbols"], list)
+        assert "avg_pre_vdu" in p0
+        assert "avg_pre_range" in p0
+        assert "avg_ema20_dist" in p0
+        assert "avg_gain_pct" in p0
+        assert "rationale" in p0
+
+
