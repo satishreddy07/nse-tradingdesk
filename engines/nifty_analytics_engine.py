@@ -3431,6 +3431,7 @@ class NiftyAnalyticsEngine:
                         candidate["ai_analysis"] = ai_out.model_dump()
                 except Exception:
                     pass
+            candidate["prediction_ledger"] = self._get_recent_predictions_ledger(limit=18)
             with self._lock:
                 self._predictions_mem_cache = candidate
                 self._predictions_cache_ts = now_ts
@@ -3447,6 +3448,7 @@ class NiftyAnalyticsEngine:
                             candidate["ai_analysis"] = ai_out.model_dump()
                     except Exception:
                         pass
+                candidate["prediction_ledger"] = self._get_recent_predictions_ledger(limit=18)
                 with self._lock:
                     self._predictions_mem_cache = candidate
                     self._predictions_cache_ts = now_ts
@@ -3463,6 +3465,7 @@ class NiftyAnalyticsEngine:
                         self._predictions_mem_cache["ai_analysis"] = ai_out.model_dump()
                 except Exception:
                     pass
+            self._predictions_mem_cache["prediction_ledger"] = self._get_recent_predictions_ledger(limit=18)
             return self._predictions_mem_cache
 
         # If not forcing recalculate or refresh, check general persisted predictions
@@ -3477,6 +3480,7 @@ class NiftyAnalyticsEngine:
                             persisted["ai_analysis"] = ai_out.model_dump()
                     except Exception:
                         pass
+                persisted["prediction_ledger"] = self._get_recent_predictions_ledger(limit=18)
                 with self._lock:
                     self._predictions_mem_cache = persisted
                     self._predictions_cache_ts = now_ts
