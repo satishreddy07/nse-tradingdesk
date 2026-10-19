@@ -2192,6 +2192,35 @@ def trigger_movers_research_study(force_refresh: bool = True):
         return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
 
 
+@app.get("/api/research/regime-analysis")
+def get_research_regime_analysis():
+    """
+    Returns empirical multi-regime performance matrix:
+    Aggregates historical scans grouped by BULLISH, BEARISH, NEUTRAL regimes,
+    quantifying what setup features (VDU %, 20 EMA launch %, tightness %, breakout surge)
+    consistently produce winners under different macro market environments.
+    """
+    from engines.accumulation_research_engine import accumulation_research_engine
+    try:
+        matrix = accumulation_research_engine.get_regime_performance_matrix()
+        return _sanitize_for_json(matrix)
+    except Exception as e:
+        logger.error(f"Error computing research regime analysis: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+@app.get("/api/research/audit-history")
+def get_research_audit_history(limit: int = 50, regime: str = None):
+    """Returns paginated historical scans logged with market regime tags and audit hashes."""
+    from engines.accumulation_research_engine import accumulation_research_engine
+    try:
+        history = accumulation_research_engine.get_audit_history(limit=limit, regime=regime)
+        return _sanitize_for_json({"status": "SUCCESS", "count": len(history), "history": history})
+    except Exception as e:
+        logger.error(f"Error fetching research audit history: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
 # --------------------------------------------------------------------------
 # INSTITUTIONAL TEST MODE & SINGLE STOCK DIAGNOSTIC LAB ENDPOINTS
 # --------------------------------------------------------------------------

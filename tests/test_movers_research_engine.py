@@ -74,3 +74,34 @@ def test_day1_accumulation_recognition():
     risk_pct = (pos_info["entry"] - pos_info["sl"]) / pos_info["entry"] * 100.0
     assert risk_pct <= 4.0
     assert pos_info["rr"] >= 2.5
+
+
+def test_regime_performance_matrix_and_audit_history():
+    """Verify that regime matrix aggregates BULLISH, BEARISH, and NEUTRAL scans and audit history works."""
+    # Test matrix endpoint
+    res_matrix = client.get("/api/research/regime-analysis")
+    assert res_matrix.status_code == 200
+    data = res_matrix.json()
+    assert data["status"] == "SUCCESS"
+    assert "current_regime" in data
+    assert data["current_regime"] in ["BULLISH", "BEARISH", "NEUTRAL"]
+    assert "regimes" in data
+    assert "BULLISH" in data["regimes"]
+    assert "BEARISH" in data["regimes"]
+    assert "NEUTRAL" in data["regimes"]
+    assert "history" in data
+    assert isinstance(data["history"], list)
+
+    # Test audit history endpoint
+    res_hist = client.get("/api/research/audit-history?limit=10")
+    assert res_hist.status_code == 200
+    hist_data = res_hist.json()
+    assert hist_data["status"] == "SUCCESS"
+    assert "count" in hist_data
+    assert "history" in hist_data
+    if hist_data["count"] > 0:
+        entry = hist_data["history"][0]
+        assert "audit_id" in entry
+        assert "market_regime" in entry
+        assert "sha256_hash" in entry
+

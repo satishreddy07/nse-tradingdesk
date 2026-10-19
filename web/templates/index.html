@@ -1367,6 +1367,57 @@
         </div>
       </div>
 
+      <!-- Multi-Regime Historical Scans Audit Modal -->
+      <div id="modal-regime-audit-history" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-3 sm:p-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+          <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <div class="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center shrink-0">
+                <i data-lucide="history" class="w-4 h-4 text-indigo-400"></i>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-white font-mono">MOVERS RESEARCH HISTORICAL SCANS AUDIT LOG</h3>
+                <p class="text-[11px] text-slate-400">Recorded automatically every 30 mins with macro market regime tags (Bullish, Bearish, Neutral).</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                <button onclick="filterAuditHistory('ALL')" id="btn-audit-all" class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">All</button>
+                <button onclick="filterAuditHistory('BULLISH')" id="btn-audit-bull" class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold text-slate-400 hover:text-white">Bullish</button>
+                <button onclick="filterAuditHistory('BEARISH')" id="btn-audit-bear" class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold text-slate-400 hover:text-white">Bearish</button>
+                <button onclick="filterAuditHistory('NEUTRAL')" id="btn-audit-neutral" class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold text-slate-400 hover:text-white">Neutral</button>
+              </div>
+              <button onclick="closeRegimeAuditHistoryModal()" class="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition">
+                <i data-lucide="x" class="w-5 h-5"></i>
+              </button>
+            </div>
+          </div>
+          <div class="p-4 overflow-y-auto flex-1 font-mono text-xs">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="text-[11px] text-slate-400 border-b border-slate-800">
+                  <th class="p-2">Timestamp (IST)</th>
+                  <th class="p-2">Regime</th>
+                  <th class="p-2">Nifty / Trend</th>
+                  <th class="p-2">VIX</th>
+                  <th class="p-2 text-right">Movers</th>
+                  <th class="p-2 text-right">VDU %</th>
+                  <th class="p-2 text-right">20 EMA %</th>
+                  <th class="p-2 text-right">Tight %</th>
+                  <th class="p-2 text-right">Surge</th>
+                  <th class="p-2">Top Archetype</th>
+                </tr>
+              </thead>
+              <tbody id="regime-audit-table-body" class="divide-y divide-slate-800/60">
+                <tr>
+                  <td colspan="10" class="p-6 text-center text-slate-500">Loading audit scans...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- ================================================================= -->
       <!-- TAB: MOVERS & ACCUMULATION RESEARCH LAB                           -->
       <!-- ================================================================= -->
@@ -1391,6 +1442,12 @@
                   <span class="text-[9px] px-1 py-0.2 rounded bg-emerald-500/30 text-emerald-300 font-bold">SUCCESS</span>
                   <i data-lucide="history" class="w-3 h-3 text-amber-400 ml-0.5"></i>
                 </div>
+                <!-- REGIME BADGE -->
+                <div id="res-regime-badge" class="px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5 cursor-pointer hover:border-slate-500 transition" onclick="openRegimeAuditHistoryModal()" title="Current Macro Market Regime (Click to inspect historical regime matrix)">
+                  <span id="res-regime-dot" class="w-2 h-2 rounded-full bg-slate-400"></span>
+                  <span id="res-regime-text">REGIME: DETECTING...</span>
+                  <i data-lucide="split" class="w-3 h-3 text-slate-400 ml-0.5"></i>
+                </div>
                 <span id="res-sha-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700 truncate max-w-xs" title="Cryptographic SHA-256 Audit Verification">
                   SHA-256: VERIFYING...
                 </span>
@@ -1409,6 +1466,10 @@
                 <div class="text-[10px] font-mono text-slate-400">LAST RESEARCH SCAN</div>
                 <div id="res-last-scan-time" class="text-xs font-mono font-bold text-amber-300">--:--:-- IST</div>
               </div>
+              <button onclick="openRegimeAuditHistoryModal()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer">
+                <i data-lucide="split" class="w-3.5 h-3.5 text-indigo-400"></i>
+                <span class="hidden sm:inline">Regimes Log</span>
+              </button>
               <button onclick="triggerMoversResearchScan()" id="btn-run-research-scan" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/40 text-amber-300 font-semibold text-xs flex items-center gap-2 transition cursor-pointer shadow-lg shadow-amber-500/10">
                 <i data-lucide="refresh-cw" id="icon-refresh-research" class="w-3.5 h-3.5 text-amber-400"></i>
                 <span>Run Live Research Scan</span>
@@ -1512,6 +1573,167 @@
                 <span id="res-actionable-rule-text">
                   Do not chase stocks after they surge 5%–10% today. Instead, scan for stocks currently matching these common points (tight daily candle &le; 3%, volume dried up &le; 0.8x, resting on 20 EMA) to enter early with low risk before tomorrow's ~3x volume expansion.
                 </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Multi-Regime Forensic Matrix: Bullish vs Bearish vs Neutral -->
+          <div class="mt-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center shrink-0">
+                  <i data-lucide="split" class="w-4 h-4 text-indigo-400"></i>
+                </div>
+                <div>
+                  <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                    <span>Multi-Regime Historical Analysis Matrix</span>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">PERSISTENT AUDIT</span>
+                  </h3>
+                  <p class="text-xs text-slate-400 mt-0.5">
+                    Empirically tracks what accumulation characteristics (VDU %, 20 EMA launch %, tightness %, breakout surge) work best in Bullish, Bearish, and Neutral market regimes.
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span id="res-total-scans-badge" class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                  Total Scans Logged: <strong class="text-white" id="res-total-scans-count">0</strong>
+                </span>
+                <button onclick="openRegimeAuditHistoryModal()" class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 transition flex items-center gap-1.5 cursor-pointer">
+                  <i data-lucide="history" class="w-3.5 h-3.5"></i>
+                  <span>View Scans Log</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 3 Comparative Regime Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+              <!-- Regime 1: Bullish Regime Card -->
+              <div id="card-regime-bullish" class="p-4 rounded-xl bg-slate-950/70 border border-emerald-500/30 hover:border-emerald-500/60 transition flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between pb-2 border-b border-emerald-500/20">
+                    <span class="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1.5">
+                      <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                      <span>BULLISH REGIME</span>
+                    </span>
+                    <span id="regime-bull-scans" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                      0 Scans Logged
+                    </span>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 mt-3 font-mono text-xs">
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">Avg VDU Rate</div>
+                      <div id="regime-bull-vdu" class="text-sm font-bold text-emerald-300">--%</div>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">20 EMA Launch</div>
+                      <div id="regime-bull-ema" class="text-sm font-bold text-emerald-300">--%</div>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">Range Tightness</div>
+                      <div id="regime-bull-tight" class="text-sm font-bold text-emerald-300">--%</div>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">Breakout Surge</div>
+                      <div id="regime-bull-surge" class="text-sm font-bold text-emerald-300">--x</div>
+                    </div>
+                  </div>
+                  <div class="mt-2.5 bg-slate-900/80 p-2 rounded-lg text-xs">
+                    <span class="text-[10px] text-slate-400 block font-mono">Dominant Setup Archetype:</span>
+                    <strong id="regime-bull-archetype" class="text-emerald-300 font-semibold">Textbook VDU Coil</strong>
+                  </div>
+                </div>
+                <div class="mt-3 pt-2.5 border-t border-slate-800 text-[11px] text-slate-300 font-sans leading-relaxed">
+                  <span class="text-emerald-400 font-semibold font-mono">What Works:</span>
+                  <span id="regime-bull-guidance" class="text-slate-300">
+                    High win rates on momentum continuation, VCP coiling, and immediate 20 EMA launches. Broad liquidity rewards early aggressive breakouts.
+                  </span>
+                </div>
+              </div>
+
+              <!-- Regime 2: Bearish Regime Card -->
+              <div id="card-regime-bearish" class="p-4 rounded-xl bg-slate-950/70 border border-rose-500/30 hover:border-rose-500/60 transition flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between pb-2 border-b border-rose-500/20">
+                    <span class="text-xs font-mono font-bold text-rose-400 flex items-center gap-1.5">
+                      <span class="w-2 h-2 rounded-full bg-rose-400"></span>
+                      <span>BEARISH REGIME</span>
+                    </span>
+                    <span id="regime-bear-scans" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-300 border border-rose-500/20">
+                      0 Scans Logged
+                    </span>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 mt-3 font-mono text-xs">
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">Avg VDU Rate</div>
+                      <div id="regime-bear-vdu" class="text-sm font-bold text-rose-300">--%</div>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">20 EMA Launch</div>
+                      <div id="regime-bear-ema" class="text-sm font-bold text-rose-300">--%</div>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">Range Tightness</div>
+                      <div id="regime-bear-tight" class="text-sm font-bold text-rose-300">--%</div>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">Breakout Surge</div>
+                      <div id="regime-bear-surge" class="text-sm font-bold text-rose-300">--x</div>
+                    </div>
+                  </div>
+                  <div class="mt-2.5 bg-slate-900/80 p-2 rounded-lg text-xs">
+                    <span class="text-[10px] text-slate-400 block font-mono">Dominant Setup Archetype:</span>
+                    <strong id="regime-bear-archetype" class="text-rose-300 font-semibold">50 EMA Deep Pullback</strong>
+                  </div>
+                </div>
+                <div class="mt-3 pt-2.5 border-t border-slate-800 text-[11px] text-slate-300 font-sans leading-relaxed">
+                  <span class="text-rose-400 font-semibold font-mono">What Works:</span>
+                  <span id="regime-bear-guidance" class="text-slate-300">
+                    Breakouts suffer high failure rates. Runners originate from deep oversold pullbacks at key 50/200 EMA supports with heavy VDU absorption.
+                  </span>
+                </div>
+              </div>
+
+              <!-- Regime 3: Neutral / Sideways Regime Card -->
+              <div id="card-regime-neutral" class="p-4 rounded-xl bg-slate-950/70 border border-amber-500/30 hover:border-amber-500/60 transition flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between pb-2 border-b border-amber-500/20">
+                    <span class="text-xs font-mono font-bold text-amber-400 flex items-center gap-1.5">
+                      <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                      <span>NEUTRAL / SIDEWAYS REGIME</span>
+                    </span>
+                    <span id="regime-neutral-scans" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                      0 Scans Logged
+                    </span>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 mt-3 font-mono text-xs">
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">Avg VDU Rate</div>
+                      <div id="regime-neutral-vdu" class="text-sm font-bold text-amber-300">--%</div>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">20 EMA Launch</div>
+                      <div id="regime-neutral-ema" class="text-sm font-bold text-amber-300">--%</div>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">Range Tightness</div>
+                      <div id="regime-neutral-tight" class="text-sm font-bold text-amber-300">--%</div>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                      <div class="text-[10px] text-slate-400">Breakout Surge</div>
+                      <div id="regime-neutral-surge" class="text-sm font-bold text-amber-300">--x</div>
+                    </div>
+                  </div>
+                  <div class="mt-2.5 bg-slate-900/80 p-2 rounded-lg text-xs">
+                    <span class="text-[10px] text-slate-400 block font-mono">Dominant Setup Archetype:</span>
+                    <strong id="regime-neutral-archetype" class="text-amber-300 font-semibold">Tight Base at EMA</strong>
+                  </div>
+                </div>
+                <div class="mt-3 pt-2.5 border-t border-slate-800 text-[11px] text-slate-300 font-sans leading-relaxed">
+                  <span class="text-amber-400 font-semibold font-mono">What Works:</span>
+                  <span id="regime-neutral-guidance" class="text-slate-300">
+                    Index chop forces capital into stock-specific stories. Multi-day range contraction (&le;3%) with extreme volume dry-up offers the cleanest entries.
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -18703,6 +18925,25 @@
           shaEl.title = `Cryptographic Verification Hash: ${sha}`;
         }
 
+        // Update Market Regime Badge
+        const reg = (data.market_regime || 'NEUTRAL').toUpperCase();
+        const regBadge = document.getElementById('res-regime-badge');
+        const regDot = document.getElementById('res-regime-dot');
+        const regText = document.getElementById('res-regime-text');
+        if (regBadge && regText) {
+          regText.textContent = `REGIME: ${reg}`;
+          if (reg === 'BULLISH') {
+            regBadge.className = 'px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 cursor-pointer hover:border-emerald-400 transition';
+            if (regDot) regDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+          } else if (reg === 'BEARISH') {
+            regBadge.className = 'px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1.5 cursor-pointer hover:border-rose-400 transition';
+            if (regDot) regDot.className = 'w-2 h-2 rounded-full bg-rose-400 animate-pulse';
+          } else {
+            regBadge.className = 'px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1.5 cursor-pointer hover:border-amber-400 transition';
+            if (regDot) regDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+          }
+        }
+
         const badgeCount = document.getElementById('badge-research-count');
         if (badgeCount) badgeCount.textContent = (data.movers || []).length;
 
@@ -18762,12 +19003,171 @@
         }
 
         applyMoversFilters();
+
+        // Load Persistent Multi-Regime Matrix
+        loadRegimeAnalysis();
       } catch (err) {
         console.error("Error loading movers research data:", err);
       } finally {
         researchState.isLoading = false;
         if (refreshIcon) refreshIcon.classList.remove('animate-spin');
       }
+    }
+
+    // =========================================================================
+    // MULTI-REGIME FORENSIC MATRIX CLIENT LOGIC
+    // =========================================================================
+    let regimeAnalysisState = {
+      matrix: null,
+      historyFilter: 'ALL'
+    };
+
+    async function loadRegimeAnalysis() {
+      try {
+        const res = await fetch('/api/research/regime-analysis');
+        const data = await res.json();
+        if (data.status !== 'SUCCESS') return;
+        regimeAnalysisState.matrix = data;
+
+        const totalScansEl = document.getElementById('res-total-scans-count');
+        if (totalScansEl) totalScansEl.textContent = data.total_scans_logged || 0;
+
+        const regs = data.regimes || {};
+
+        // Update Bullish Card
+        const bull = regs.BULLISH || {};
+        const bullScans = document.getElementById('regime-bull-scans');
+        if (bullScans) bullScans.textContent = `${bull.scans_count || 0} Scans Logged`;
+        const bullVdu = document.getElementById('regime-bull-vdu');
+        if (bullVdu) bullVdu.textContent = `${bull.avg_vdu_rate_pct || 0}%`;
+        const bullEma = document.getElementById('regime-bull-ema');
+        if (bullEma) bullEma.textContent = `${bull.avg_ema20_launch_rate_pct || 0}%`;
+        const bullTight = document.getElementById('regime-bull-tight');
+        if (bullTight) bullTight.textContent = `${bull.avg_tightness_rate_pct || 0}%`;
+        const bullSurge = document.getElementById('regime-bull-surge');
+        if (bullSurge) bullSurge.textContent = `${bull.avg_breakout_surge || 0}x`;
+        const bullArch = document.getElementById('regime-bull-archetype');
+        if (bullArch) bullArch.textContent = bull.dominant_archetype || 'Textbook VDU Coil';
+
+        // Update Bearish Card
+        const bear = regs.BEARISH || {};
+        const bearScans = document.getElementById('regime-bear-scans');
+        if (bearScans) bearScans.textContent = `${bear.scans_count || 0} Scans Logged`;
+        const bearVdu = document.getElementById('regime-bear-vdu');
+        if (bearVdu) bearVdu.textContent = `${bear.avg_vdu_rate_pct || 0}%`;
+        const bearEma = document.getElementById('regime-bear-ema');
+        if (bearEma) bearEma.textContent = `${bear.avg_ema20_launch_rate_pct || 0}%`;
+        const bearTight = document.getElementById('regime-bear-tight');
+        if (bearTight) bearTight.textContent = `${bear.avg_tightness_rate_pct || 0}%`;
+        const bearSurge = document.getElementById('regime-bear-surge');
+        if (bearSurge) bearSurge.textContent = `${bear.avg_breakout_surge || 0}x`;
+        const bearArch = document.getElementById('regime-bear-archetype');
+        if (bearArch) bearArch.textContent = bear.dominant_archetype || '50 EMA Deep Pullback';
+
+        // Update Neutral Card
+        const neut = regs.NEUTRAL || {};
+        const neutScans = document.getElementById('regime-neutral-scans');
+        if (neutScans) neutScans.textContent = `${neut.scans_count || 0} Scans Logged`;
+        const neutVdu = document.getElementById('regime-neutral-vdu');
+        if (neutVdu) neutVdu.textContent = `${neut.avg_vdu_rate_pct || 0}%`;
+        const neutEma = document.getElementById('regime-neutral-ema');
+        if (neutEma) neutEma.textContent = `${neut.avg_ema20_launch_rate_pct || 0}%`;
+        const neutTight = document.getElementById('regime-neutral-tight');
+        if (neutTight) neutTight.textContent = `${neut.avg_tightness_rate_pct || 0}%`;
+        const neutSurge = document.getElementById('regime-neutral-surge');
+        if (neutSurge) neutSurge.textContent = `${neut.avg_breakout_surge || 0}x`;
+        const neutArch = document.getElementById('regime-neutral-archetype');
+        if (neutArch) neutArch.textContent = neut.dominant_archetype || 'Tight Base at EMA';
+
+        // Highlight active regime card
+        ['card-regime-bullish', 'card-regime-bearish', 'card-regime-neutral'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.classList.remove('ring-2', 'ring-emerald-400', 'ring-rose-400', 'ring-amber-400', 'bg-slate-900/90');
+        });
+        const curReg = data.current_regime || 'NEUTRAL';
+        if (curReg === 'BULLISH') {
+          const el = document.getElementById('card-regime-bullish');
+          if (el) el.classList.add('ring-2', 'ring-emerald-400', 'bg-slate-900/90');
+        } else if (curReg === 'BEARISH') {
+          const el = document.getElementById('card-regime-bearish');
+          if (el) el.classList.add('ring-2', 'ring-rose-400', 'bg-slate-900/90');
+        } else {
+          const el = document.getElementById('card-regime-neutral');
+          if (el) el.classList.add('ring-2', 'ring-amber-400', 'bg-slate-900/90');
+        }
+
+        renderAuditHistoryTable(data.history || []);
+      } catch (err) {
+        console.error("Error loading regime analysis matrix:", err);
+      }
+    }
+
+    function openRegimeAuditHistoryModal() {
+      const modal = document.getElementById('modal-regime-audit-history');
+      if (modal) modal.classList.remove('hidden');
+      loadRegimeAnalysis();
+    }
+
+    function closeRegimeAuditHistoryModal() {
+      const modal = document.getElementById('modal-regime-audit-history');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function filterAuditHistory(regime) {
+      regimeAnalysisState.historyFilter = regime;
+      ['btn-audit-all', 'btn-audit-bull', 'btn-audit-bear', 'btn-audit-neutral'].forEach(id => {
+        const b = document.getElementById(id);
+        if (b) {
+          b.className = 'px-2 py-0.5 rounded text-[11px] font-mono font-semibold text-slate-400 hover:text-white';
+        }
+      });
+      const activeBtnId = regime === 'BULLISH' ? 'btn-audit-bull' : (regime === 'BEARISH' ? 'btn-audit-bear' : (regime === 'NEUTRAL' ? 'btn-audit-neutral' : 'btn-audit-all'));
+      const activeBtn = document.getElementById(activeBtnId);
+      if (activeBtn) {
+        activeBtn.className = 'px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40';
+      }
+
+      if (regimeAnalysisState.matrix && regimeAnalysisState.matrix.history) {
+        let rows = regimeAnalysisState.matrix.history;
+        if (regime !== 'ALL') {
+          rows = rows.filter(r => r.market_regime === regime);
+        }
+        renderAuditHistoryTable(rows);
+      }
+    }
+
+    function renderAuditHistoryTable(history) {
+      const tbody = document.getElementById('regime-audit-table-body');
+      if (!tbody) return;
+      if (!history || !history.length) {
+        tbody.innerHTML = `<tr><td colspan="10" class="p-6 text-center text-slate-500 font-sans">No scans recorded for this regime yet. Data logs continuously every 30 mins.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = history.map(r => {
+        const reg = (r.market_regime || 'NEUTRAL').toUpperCase();
+        const regColor = reg === 'BULLISH' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : (reg === 'BEARISH' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30');
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="p-2 text-slate-300 font-mono text-[11px]">${escapeHtml(r.run_timestamp || '')}</td>
+            <td class="p-2">
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${regColor}">
+                ${reg}
+              </span>
+            </td>
+            <td class="p-2 text-slate-300 font-mono text-[11px]">
+              ${r.nifty_spot ? Number(r.nifty_spot).toFixed(1) : '--'}
+              <span class="text-[10px] text-slate-400">(${escapeHtml(r.nifty_trend || '')})</span>
+            </td>
+            <td class="p-2 text-slate-400 font-mono text-[11px]">${r.india_vix ? Number(r.india_vix).toFixed(1) : '--'}</td>
+            <td class="p-2 text-right font-bold text-amber-300">${r.positive_movers_count || 0}</td>
+            <td class="p-2 text-right font-bold ${r.vdu_rate_pct >= 50 ? 'text-emerald-400' : 'text-slate-300'}">${Number(r.vdu_rate_pct || 0).toFixed(1)}%</td>
+            <td class="p-2 text-right font-bold ${r.ema20_launch_rate_pct >= 60 ? 'text-cyan-400' : 'text-slate-300'}">${Number(r.ema20_launch_rate_pct || 0).toFixed(1)}%</td>
+            <td class="p-2 text-right font-bold text-slate-300">${Number(r.tightness_rate_pct || 0).toFixed(1)}%</td>
+            <td class="p-2 text-right font-bold text-violet-300">${Number(r.avg_breakout_surge || 0).toFixed(2)}x</td>
+            <td class="p-2 text-slate-300 font-sans text-[11px]">${escapeHtml(r.top_archetype || '--')}</td>
+          </tr>
+        `;
+      }).join('');
     }
 
     async function triggerMoversResearchScan() {

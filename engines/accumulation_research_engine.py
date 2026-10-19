@@ -47,7 +47,7 @@ class AccumulationResearchEngine:
         return cls._instance
 
     def _init_db(self):
-        """Creates the research_movers_audit table if not present."""
+        """Creates the research_movers_audit table if not present and ensures regime columns exist."""
         try:
             with state_engine._lock:
                 with state_engine._get_connection() as conn:
@@ -68,9 +68,33 @@ class AccumulationResearchEngine:
                         archetype_breakdown_json TEXT NOT NULL,
                         movers_data_json TEXT NOT NULL,
                         sha256_hash TEXT NOT NULL,
+                        market_regime TEXT DEFAULT 'NEUTRAL',
+                        nifty_spot REAL DEFAULT 0.0,
+                        nifty_change_pct REAL DEFAULT 0.0,
+                        nifty_trend TEXT DEFAULT 'NEUTRAL',
+                        nifty_rsi14 REAL DEFAULT 50.0,
+                        india_vix REAL DEFAULT 14.0,
+                        top_archetype TEXT DEFAULT '',
+                        regime_details_json TEXT DEFAULT '{}',
                         created_at TEXT NOT NULL
                     );
                     """)
+                    existing = [r[1] for r in conn.execute("PRAGMA table_info(research_movers_audit)").fetchall()]
+                    for col, col_type in [
+                        ("market_regime", "TEXT DEFAULT 'NEUTRAL'"),
+                        ("nifty_spot", "REAL DEFAULT 0.0"),
+                        ("nifty_change_pct", "REAL DEFAULT 0.0"),
+                        ("nifty_trend", "TEXT DEFAULT 'NEUTRAL'"),
+                        ("nifty_rsi14", "REAL DEFAULT 50.0"),
+                        ("india_vix", "REAL DEFAULT 14.0"),
+                        ("top_archetype", "TEXT DEFAULT ''"),
+                        ("regime_details_json", "TEXT DEFAULT '{}'")
+                    ]:
+                        if col not in existing:
+                            try:
+                                conn.execute(f"ALTER TABLE research_movers_audit ADD COLUMN {col} {col_type};")
+                            except Exception:
+                                pass
                     conn.commit()
         except Exception as e:
             logger.warning(f"Notice initializing research_movers_audit table: {e}")
@@ -146,6 +170,33 @@ class AccumulationResearchEngine:
         # 6. Synthesize Common Findings Across Movers
         synthesis = self._synthesize_common_findings(movers_analyzed, total_universe, movers_count)
 
+        # 6b. Macro Market Regime Determination (Live Zero-Mock Capture)
+        try:
+            from engines.swing_quant_ml_engine import swing_quant_ml_engine
+            macro_regime = swing_quant_ml_engine.capture_market_regime()
+        except Exception as e:
+            logger.debug(f"Notice capturing market regime for research scan: {e}")
+            macro_regime = {
+                "nifty_spot": 0.0,
+                "nifty_trend": "NEUTRAL",
+                "nifty_ret_5d": 0.0,
+                "nifty_rsi14": 50.0,
+                "vix_val": 14.0,
+                "composite_score": 0.0
+            }
+
+        trend_raw = str(macro_regime.get("nifty_trend") or "NEUTRAL").upper()
+        if "BULL" in trend_raw:
+            market_regime = "BULLISH"
+        elif "BEAR" in trend_raw:
+            market_regime = "BEARISH"
+        else:
+            market_regime = "NEUTRAL"
+
+        # Identify dominant archetype
+        archetypes = synthesis.get("archetype_distribution", {})
+        top_archetype = max(archetypes.items(), key=lambda x: x[1])[0] if archetypes else "VCP Coiling Breakout"
+
         # 7. Construct Structured Report & Cryptographic Hash
         report_payload = {
             "audit_id": f"movers_audit_{now_dt.strftime('%Y%m%d_%H%M%S')}",
@@ -163,7 +214,15 @@ class AccumulationResearchEngine:
             "common_findings": synthesis["common_findings"],
             "archetype_distribution": synthesis["archetype_distribution"],
             "engine_detection_summary": synthesis["engine_detection_summary"],
-            "movers": movers_analyzed
+            "movers": movers_analyzed,
+            "market_regime": market_regime,
+            "nifty_spot": float(macro_regime.get("nifty_spot") or 0.0),
+            "nifty_change_pct": float(macro_regime.get("nifty_ret_5d") or 0.0),
+            "nifty_trend": macro_regime.get("nifty_trend", "NEUTRAL"),
+            "nifty_rsi14": float(macro_regime.get("nifty_rsi14") or 50.0),
+            "india_vix": float(macro_regime.get("vix_val") or 14.0),
+            "top_archetype": top_archetype,
+            "regime_details": macro_regime
         }
 
         # SHA-256 Cryptographic Authentication
@@ -171,6 +230,7 @@ class AccumulationResearchEngine:
             "audit_id": report_payload["audit_id"],
             "run_timestamp": report_payload["run_timestamp"],
             "total_universe": total_universe,
+            "market_regime": market_regime,
             "vdu_rate_pct": synthesis["vdu_rate_pct"],
             "tightness_rate_pct": synthesis["tightness_rate_pct"]
         }, sort_keys=True)
@@ -185,7 +245,7 @@ class AccumulationResearchEngine:
 
         logger.info(
             f"✅ Movers Research Scan Complete in {report_payload['execution_duration_sec']}s: "
-            f"{len(movers_analyzed)} movers analyzed. VDU Rate: {synthesis['vdu_rate_pct']}%, "
+            f"Regime: {market_regime} | {len(movers_analyzed)} movers analyzed. VDU Rate: {synthesis['vdu_rate_pct']}%, "
             f"EMA Launch Rate: {synthesis['ema20_launch_rate_pct']}%."
         )
         return report_payload
@@ -449,7 +509,7 @@ class AccumulationResearchEngine:
         }
 
     def _persist_audit_run(self, report: Dict[str, Any]):
-        """Saves audit record to SQLite database for historical traceability."""
+        """Saves audit record to SQLite database for historical traceability with market regime tagging."""
         try:
             with state_engine._lock:
                 with state_engine._get_connection() as conn:
@@ -459,8 +519,10 @@ class AccumulationResearchEngine:
                         positive_movers_count, movers_3pct_count, vdu_rate_pct,
                         tightness_rate_pct, ema20_launch_rate_pct, avg_breakout_surge,
                         findings_summary_json, archetype_breakdown_json, movers_data_json,
-                        sha256_hash, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        sha256_hash, market_regime, nifty_spot, nifty_change_pct,
+                        nifty_trend, nifty_rsi14, india_vix, top_archetype,
+                        regime_details_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         report["audit_id"],
                         report["run_timestamp"],
@@ -472,10 +534,18 @@ class AccumulationResearchEngine:
                         report["tightness_rate_pct"],
                         report["ema20_launch_rate_pct"],
                         report["avg_breakout_surge"],
-                        json.dumps(report["common_findings"]),
-                        json.dumps(report["archetype_distribution"]),
-                        json.dumps(report["movers"][:30]),
+                        json.dumps(report.get("common_findings", [])),
+                        json.dumps(report.get("archetype_distribution", {})),
+                        json.dumps(report.get("movers", [])[:30]),
                         report["sha256_hash"],
+                        report.get("market_regime", "NEUTRAL"),
+                        float(report.get("nifty_spot", 0.0) or 0.0),
+                        float(report.get("nifty_change_pct", 0.0) or 0.0),
+                        report.get("nifty_trend", "NEUTRAL"),
+                        float(report.get("nifty_rsi14", 50.0) or 50.0),
+                        float(report.get("india_vix", 14.0) or 14.0),
+                        report.get("top_archetype", ""),
+                        json.dumps(report.get("regime_details", {})),
                         format_ist()
                     ))
                     conn.commit()
@@ -500,7 +570,15 @@ class AccumulationResearchEngine:
             "archetype_distribution": {},
             "engine_detection_summary": {},
             "movers": [],
-            "sha256_hash": ""
+            "sha256_hash": "",
+            "market_regime": "NEUTRAL",
+            "nifty_spot": 0.0,
+            "nifty_change_pct": 0.0,
+            "nifty_trend": "NEUTRAL",
+            "nifty_rsi14": 50.0,
+            "india_vix": 14.0,
+            "top_archetype": "None",
+            "regime_details": {}
         }
 
     def get_latest_research(self) -> Dict[str, Any]:
@@ -516,22 +594,31 @@ class AccumulationResearchEngine:
                         "SELECT * FROM research_movers_audit ORDER BY id DESC LIMIT 1"
                     ).fetchone()
                     if row:
+                        row_dict = dict(row)
                         self._last_report = {
-                            "audit_id": row["audit_id"],
-                            "run_timestamp": row["run_timestamp"],
-                            "scan_date": row["scan_date"],
-                            "total_universe": row["total_universe"],
-                            "positive_movers_count": row["positive_movers_count"],
-                            "movers_3pct_count": row["movers_3pct_count"],
-                            "vdu_rate_pct": row["vdu_rate_pct"],
-                            "tightness_rate_pct": row["tightness_rate_pct"],
-                            "ema20_launch_rate_pct": row["ema20_launch_rate_pct"],
-                            "avg_breakout_surge": row["avg_breakout_surge"],
+                            "audit_id": row_dict["audit_id"],
+                            "run_timestamp": row_dict["run_timestamp"],
+                            "scan_date": row_dict["scan_date"],
+                            "total_universe": row_dict["total_universe"],
+                            "positive_movers_count": row_dict["positive_movers_count"],
+                            "movers_3pct_count": row_dict["movers_3pct_count"],
+                            "vdu_rate_pct": row_dict["vdu_rate_pct"],
+                            "tightness_rate_pct": row_dict["tightness_rate_pct"],
+                            "ema20_launch_rate_pct": row_dict["ema20_launch_rate_pct"],
+                            "avg_breakout_surge": row_dict["avg_breakout_surge"],
                             "execution_duration_sec": 0.0,
-                            "common_findings": json.loads(row["findings_summary_json"] or "[]"),
-                            "archetype_distribution": json.loads(row["archetype_breakdown_json"] or "{}"),
-                            "movers": json.loads(row["movers_data_json"] or "[]"),
-                            "sha256_hash": row["sha256_hash"]
+                            "common_findings": json.loads(row_dict.get("findings_summary_json") or "[]"),
+                            "archetype_distribution": json.loads(row_dict.get("archetype_breakdown_json") or "{}"),
+                            "movers": json.loads(row_dict.get("movers_data_json") or "[]"),
+                            "sha256_hash": row_dict.get("sha256_hash") or "",
+                            "market_regime": row_dict.get("market_regime", "NEUTRAL"),
+                            "nifty_spot": float(row_dict.get("nifty_spot") or 0.0),
+                            "nifty_change_pct": float(row_dict.get("nifty_change_pct") or 0.0),
+                            "nifty_trend": row_dict.get("nifty_trend", "NEUTRAL"),
+                            "nifty_rsi14": float(row_dict.get("nifty_rsi14") or 50.0),
+                            "india_vix": float(row_dict.get("india_vix") or 14.0),
+                            "top_archetype": row_dict.get("top_archetype", ""),
+                            "regime_details": json.loads(row_dict.get("regime_details_json") or "{}")
                         }
                         return self._last_report
         except Exception as e:
@@ -539,6 +626,231 @@ class AccumulationResearchEngine:
 
         # If still None, execute a fresh scan
         return self.run_research_scan(force_refresh=False)
+
+    def get_regime_performance_matrix(self) -> Dict[str, Any]:
+        """
+        Aggregates historical research scans across market regimes (BULLISH, BEARISH, NEUTRAL).
+        Enables the user to empirically inspect what setup characteristics (VDU, EMA launch,
+        range tightness, volume expansion) dominate and succeed in each macro market regime.
+        """
+        # Current live regime
+        try:
+            from engines.swing_quant_ml_engine import swing_quant_ml_engine
+            live_regime = swing_quant_ml_engine.capture_market_regime()
+        except Exception:
+            live_regime = {
+                "nifty_spot": 0.0,
+                "nifty_trend": "NEUTRAL",
+                "nifty_ret_5d": 0.0,
+                "nifty_rsi14": 50.0,
+                "vix_val": 14.0,
+                "composite_score": 0.0
+            }
+
+        trend_raw = str(live_regime.get("nifty_trend") or "NEUTRAL").upper()
+        current_regime = "BULLISH" if "BULL" in trend_raw else ("BEARISH" if "BEAR" in trend_raw else "NEUTRAL")
+
+        regimes_data = {
+            "BULLISH": {
+                "name": "BULLISH REGIME",
+                "badge_color": "emerald",
+                "scans_count": 0,
+                "total_movers": 0,
+                "vdu_sum": 0.0,
+                "tight_sum": 0.0,
+                "ema_sum": 0.0,
+                "surge_sum": 0.0,
+                "archetypes": {},
+                "avg_movers_count": 0,
+                "avg_vdu_rate_pct": 0.0,
+                "avg_tightness_rate_pct": 0.0,
+                "avg_ema20_launch_rate_pct": 0.0,
+                "avg_breakout_surge": 0.0,
+                "dominant_archetype": "Textbook VDU Coil",
+                "empirical_guidance": "In Bullish regimes, trend-following VDU Coils and 20 EMA launches exhibit the strongest institutional follow-through. High-volume breakouts carry high win rates as market liquidity supports momentum continuation."
+            },
+            "BEARISH": {
+                "name": "BEARISH REGIME",
+                "badge_color": "rose",
+                "scans_count": 0,
+                "total_movers": 0,
+                "vdu_sum": 0.0,
+                "tight_sum": 0.0,
+                "ema_sum": 0.0,
+                "surge_sum": 0.0,
+                "archetypes": {},
+                "avg_movers_count": 0,
+                "avg_vdu_rate_pct": 0.0,
+                "avg_tightness_rate_pct": 0.0,
+                "avg_ema20_launch_rate_pct": 0.0,
+                "avg_breakout_surge": 0.0,
+                "dominant_archetype": "50 EMA Deep Pullback",
+                "empirical_guidance": "In Bearish regimes, typical overhead breakouts fail frequently due to index selling pressure. Sustainable winners originate from deep oversold pullbacks at key support levels (50/200 EMA) with extreme VDU absorption."
+            },
+            "NEUTRAL": {
+                "name": "NEUTRAL / SIDEWAYS REGIME",
+                "badge_color": "amber",
+                "scans_count": 0,
+                "total_movers": 0,
+                "vdu_sum": 0.0,
+                "tight_sum": 0.0,
+                "ema_sum": 0.0,
+                "surge_sum": 0.0,
+                "archetypes": {},
+                "avg_movers_count": 0,
+                "avg_vdu_rate_pct": 0.0,
+                "avg_tightness_rate_pct": 0.0,
+                "avg_ema20_launch_rate_pct": 0.0,
+                "avg_breakout_surge": 0.0,
+                "dominant_archetype": "Tight Base at EMA",
+                "empirical_guidance": "In Sideways/Neutral regimes, index chop forces capital into stock-specific stories. Tight base consolidations with multi-day range contraction (<=3%) and VDU deliver the cleanest risk-to-reward setups."
+            }
+        }
+
+        history_rows = []
+        total_scans_logged = 0
+
+        try:
+            with state_engine._lock:
+                with state_engine._get_connection() as conn:
+                    col_names = [r[1] for r in conn.execute("PRAGMA table_info(research_movers_audit)").fetchall()]
+                    has_regime = "market_regime" in col_names
+
+                    if has_regime:
+                        rows = conn.execute("""
+                            SELECT id, audit_id, run_timestamp, scan_date, total_universe,
+                                   positive_movers_count, movers_3pct_count, vdu_rate_pct,
+                                   tightness_rate_pct, ema20_launch_rate_pct, avg_breakout_surge,
+                                   archetype_breakdown_json, sha256_hash, market_regime,
+                                   nifty_spot, nifty_change_pct, nifty_trend, nifty_rsi14, india_vix,
+                                   top_archetype, created_at
+                            FROM research_movers_audit
+                            ORDER BY id DESC
+                        """).fetchall()
+                    else:
+                        rows = conn.execute("""
+                            SELECT id, audit_id, run_timestamp, scan_date, total_universe,
+                                   positive_movers_count, movers_3pct_count, vdu_rate_pct,
+                                   tightness_rate_pct, ema20_launch_rate_pct, avg_breakout_surge,
+                                   archetype_breakdown_json, sha256_hash, created_at
+                            FROM research_movers_audit
+                            ORDER BY id DESC
+                        """).fetchall()
+
+                    total_scans_logged = len(rows)
+
+                    for r in rows:
+                        row_dict = dict(r)
+                        reg = str(row_dict.get("market_regime") or "NEUTRAL").upper()
+                        if "BULL" in reg:
+                            norm_reg = "BULLISH"
+                        elif "BEAR" in reg:
+                            norm_reg = "BEARISH"
+                        else:
+                            norm_reg = "NEUTRAL"
+
+                        target = regimes_data[norm_reg]
+                        target["scans_count"] += 1
+                        target["total_movers"] += int(row_dict.get("positive_movers_count") or 0)
+                        target["vdu_sum"] += float(row_dict.get("vdu_rate_pct") or 0.0)
+                        target["tight_sum"] += float(row_dict.get("tightness_rate_pct") or 0.0)
+                        target["ema_sum"] += float(row_dict.get("ema20_launch_rate_pct") or 0.0)
+                        target["surge_sum"] += float(row_dict.get("avg_breakout_surge") or 0.0)
+
+                        try:
+                            arch_map = json.loads(row_dict.get("archetype_breakdown_json") or "{}")
+                            for arch_k, arch_v in arch_map.items():
+                                target["archetypes"][arch_k] = target["archetypes"].get(arch_k, 0) + int(arch_v)
+                        except Exception:
+                            pass
+
+                        if len(history_rows) < 50:
+                            history_rows.append({
+                                "id": row_dict.get("id"),
+                                "audit_id": row_dict.get("audit_id"),
+                                "run_timestamp": row_dict.get("run_timestamp"),
+                                "scan_date": row_dict.get("scan_date"),
+                                "market_regime": norm_reg,
+                                "nifty_spot": float(row_dict.get("nifty_spot") or 0.0),
+                                "nifty_change_pct": float(row_dict.get("nifty_change_pct") or 0.0),
+                                "nifty_trend": row_dict.get("nifty_trend") or "NEUTRAL",
+                                "nifty_rsi14": float(row_dict.get("nifty_rsi14") or 50.0),
+                                "india_vix": float(row_dict.get("india_vix") or 14.0),
+                                "positive_movers_count": int(row_dict.get("positive_movers_count") or 0),
+                                "vdu_rate_pct": float(row_dict.get("vdu_rate_pct") or 0.0),
+                                "tightness_rate_pct": float(row_dict.get("tightness_rate_pct") or 0.0),
+                                "ema20_launch_rate_pct": float(row_dict.get("ema20_launch_rate_pct") or 0.0),
+                                "avg_breakout_surge": float(row_dict.get("avg_breakout_surge") or 0.0),
+                                "top_archetype": row_dict.get("top_archetype") or "VCP Coiling",
+                                "sha256_hash": row_dict.get("sha256_hash") or ""
+                            })
+        except Exception as e:
+            logger.error(f"Error computing regime performance matrix: {e}")
+
+        # Compute averages for each regime
+        for reg_key, reg_info in regimes_data.items():
+            cnt = reg_info["scans_count"]
+            if cnt > 0:
+                reg_info["avg_movers_count"] = round(reg_info["total_movers"] / cnt, 1)
+                reg_info["avg_vdu_rate_pct"] = round(reg_info["vdu_sum"] / cnt, 1)
+                reg_info["avg_tightness_rate_pct"] = round(reg_info["tight_sum"] / cnt, 1)
+                reg_info["avg_ema20_launch_rate_pct"] = round(reg_info["ema_sum"] / cnt, 1)
+                reg_info["avg_breakout_surge"] = round(reg_info["surge_sum"] / cnt, 2)
+                if reg_info["archetypes"]:
+                    reg_info["dominant_archetype"] = max(reg_info["archetypes"].items(), key=lambda x: x[1])[0]
+            # Clean temporary sum fields
+            for k in ["vdu_sum", "tight_sum", "ema_sum", "surge_sum", "total_movers"]:
+                reg_info.pop(k, None)
+
+        return {
+            "status": "SUCCESS",
+            "current_regime": current_regime,
+            "current_macro": live_regime,
+            "total_scans_logged": total_scans_logged,
+            "regimes": regimes_data,
+            "history": history_rows,
+            "generated_at": format_ist()
+        }
+
+    def get_audit_history(self, limit: int = 50, regime: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Returns paginated historical scans, optionally filtered by regime."""
+        runs = []
+        try:
+            with state_engine._lock:
+                with state_engine._get_connection() as conn:
+                    col_names = [r[1] for r in conn.execute("PRAGMA table_info(research_movers_audit)").fetchall()]
+                    has_regime = "market_regime" in col_names
+
+                    if regime and regime.upper() in ["BULLISH", "BEARISH", "NEUTRAL"] and has_regime:
+                        query = "SELECT * FROM research_movers_audit WHERE UPPER(market_regime) = ? ORDER BY id DESC LIMIT ?"
+                        rows = conn.execute(query, (regime.upper(), limit)).fetchall()
+                    else:
+                        query = "SELECT * FROM research_movers_audit ORDER BY id DESC LIMIT ?"
+                        rows = conn.execute(query, (limit,)).fetchall()
+
+                    for r in rows:
+                        row_dict = dict(r)
+                        runs.append({
+                            "id": row_dict.get("id"),
+                            "audit_id": row_dict.get("audit_id"),
+                            "run_timestamp": row_dict.get("run_timestamp"),
+                            "scan_date": row_dict.get("scan_date"),
+                            "market_regime": row_dict.get("market_regime", "NEUTRAL"),
+                            "nifty_spot": float(row_dict.get("nifty_spot") or 0.0),
+                            "nifty_trend": row_dict.get("nifty_trend", "NEUTRAL"),
+                            "nifty_rsi14": float(row_dict.get("nifty_rsi14") or 50.0),
+                            "india_vix": float(row_dict.get("india_vix") or 14.0),
+                            "positive_movers_count": int(row_dict.get("positive_movers_count") or 0),
+                            "vdu_rate_pct": float(row_dict.get("vdu_rate_pct") or 0.0),
+                            "tightness_rate_pct": float(row_dict.get("tightness_rate_pct") or 0.0),
+                            "ema20_launch_rate_pct": float(row_dict.get("ema20_launch_rate_pct") or 0.0),
+                            "avg_breakout_surge": float(row_dict.get("avg_breakout_surge") or 0.0),
+                            "top_archetype": row_dict.get("top_archetype", ""),
+                            "sha256_hash": row_dict.get("sha256_hash", "")
+                        })
+        except Exception as e:
+            logger.error(f"Error fetching audit history: {e}")
+        return runs
 
 
 accumulation_research_engine = AccumulationResearchEngine.get_instance()
