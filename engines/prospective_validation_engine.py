@@ -262,6 +262,20 @@ class ProspectiveValidationEngine:
     # PIPELINE EXECUTION: DISCOVERY -> ENTRY -> LIFECYCLE SYNC
     # =========================================================================
 
+    def _resolve_universe_symbols(self, max_symbols: int = 150) -> List[str]:
+        """Resolves active liquid stocks from ohlcv_master_store."""
+        try:
+            with self._get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT symbol FROM ohlcv_master_store WHERE bars_count >= 25 AND symbol NOT LIKE '^%' AND symbol NOT LIKE '%=%' ORDER BY bars_count DESC LIMIT ?",
+                    (max_symbols,)
+                ).fetchall()
+                if rows:
+                    return [r[0] if isinstance(r, (tuple, list)) else r["symbol"] for r in rows]
+        except Exception as e:
+            logger.debug(f"Notice reading symbols from ohlcv_master_store: {e}")
+        return []
+
     def scan_and_record_signals(
         self,
         symbols: Optional[List[str]] = None,
@@ -271,13 +285,7 @@ class ProspectiveValidationEngine:
         Scans OHLCV series across universe and records candidate signals idempotently.
         """
         if symbols is None:
-            symbols = state_engine.get_all_ohlcv_symbols()
-
-        if not symbols:
-            # Fallback to loading symbols present in database
-            with self._get_conn() as conn:
-                rows = conn.execute("SELECT DISTINCT symbol FROM ohlcv_master_store").fetchall()
-                symbols = [r["symbol"] for r in rows]
+            symbols = self._resolve_universe_symbols()
 
         discovered_count = 0
         new_inserted = 0
