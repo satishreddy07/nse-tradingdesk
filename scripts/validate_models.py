@@ -129,10 +129,24 @@ def run_model_validation(force_refresh: bool = False, verbose_ledger: bool = Tru
 
         print(f"  * US Composite Score      : {us_t1.get('composite_score', 0.0):+.1f} / 100")
         print(f"  * US Next-Day Verdict     : {us_t1.get('verdict', 'N/A')} (Confidence: {us_t1.get('confidence', 'N/A')})")
-        print(f"  * US Probabilities        : Up: {us_t1.get('prob_up', 0)*100:.1f}% | Flat: {us_t1.get('prob_flat', 0)*100:.1f}% | Down: {us_t1.get('prob_down', 0)*100:.1f}%")
-        print(f"  * SPY Expected Drift      : {us_t1.get('expected_pts_spy', 0.0):+.2f} pts ({us_t1.get('expected_pct_spy', 0.0):+.2f}%)")
-        print(f"  * Futures Beta Transm.    : beta = {radar.get('beta_sp_to_nifty', 0.52):.2f}")
-        print(f"  * Expected Nifty Fair Gap : {radar.get('expected_fair_gap_pts', 0.0):+.1f} pts ({radar.get('expected_fair_gap_pct', 0.0):+.2f}%)")
+        p_up = us_t1.get('prob_up')
+        p_fl = us_t1.get('prob_flat')
+        p_dn = us_t1.get('prob_down')
+        prob_str = f"Up: {p_up*100:.1f}% | Flat: {p_fl*100:.1f}% | Down: {p_dn*100:.1f}%" if None not in (p_up, p_fl, p_dn) else "UNAVAILABLE"
+        print(f"  * US Probabilities        : {prob_str}")
+        exp_pts = us_t1.get('expected_pts_spy')
+        exp_pct = us_t1.get('expected_pct_spy')
+        exp_pts_str = f"{exp_pts:+.2f} pts" if exp_pts is not None else "N/A"
+        exp_pct_str = f"({exp_pct:+.2f}%)" if exp_pct is not None else ""
+        print(f"  * SPY Expected Drift      : {exp_pts_str} {exp_pct_str}")
+        beta = radar.get('beta_sp_to_nifty')
+        beta_str = f"{beta:.2f}" if beta is not None else "N/A"
+        print(f"  * Futures Beta Transm.    : beta = {beta_str}")
+        gap_pts = radar.get('expected_fair_gap_pts')
+        gap_pct = radar.get('expected_fair_gap_pct')
+        gap_pts_str = f"{gap_pts:+.1f} pts" if gap_pts is not None else "N/A"
+        gap_pct_str = f"({gap_pct:+.2f}%)" if gap_pct is not None else ""
+        print(f"  * Expected Nifty Fair Gap : {gap_pts_str} {gap_pct_str}")
         print(f"  * Opening Gap Verdict     : {radar.get('gap_verdict', 'N/A')}")
     except Exception as e:
         print(f"  [Notice] US Intelligence preview warning: {e}")
