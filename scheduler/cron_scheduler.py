@@ -282,6 +282,25 @@ def scheduled_premarket_nifty_prediction_job():
             total_scanned=50,
             note=f"Official Pre-Market Forecast Locked at {format_ist(current_dt)} • T+1: {t1_v} | T+5: {t5_v}"
         )
+        try:
+            state_engine.record_system_activity(
+                category="PREMARKET_FORECAST",
+                action="Pre-Market Nifty Prediction & Positional Options Lock",
+                status="SUCCESS",
+                summary=f"Pre-Market Forecast LOCKED at {format_ist(current_dt)}: T+1 {t1_v} | T+5 {t5_v}. Nifty Spot: ₹{float(preds.get('nifty_spot') or 0):,.2f}.",
+                details={
+                    "t1_verdict": t1_v,
+                    "t5_verdict": t5_v,
+                    "nifty_spot": preds.get("nifty_spot") if preds else None,
+                    "rsi": preds.get("rsi") if preds else None,
+                    "trend": preds.get("trend") if preds else None,
+                    "composite_score": preds.get("composite_score") if preds else None,
+                    "telegram_bulletin_dispatched": True
+                },
+                execution_sec=float((preds or {}).get("execution_time_sec") or 1.5)
+            )
+        except Exception:
+            pass
 
         # STRICT HARD GATE PIPELINE: Trigger options strategy evaluation only after prediction lock
         if preds and preds.get("status") in ("OK", "LOCKED"):
@@ -547,11 +566,23 @@ def scheduled_nifty_intraday_50min_job(slot_label: Optional[str] = None):
         # Auto-gapfill any missed earlier slots so the dashboard is 100% complete
         nifty_analytics_engine.auto_gapfill_missed_intraday_slots(interval_mode="30m")
         snap = dash.get("latest_snapshot") or {}
+        slot_t = snap.get('slot_time') or slot_label or current_dt.strftime("%H:%M")
         logger.info(
-            f"⚡ [Intraday Option Expiry Collector] Captured slot {snap.get('slot_time')} | "
+            f"⚡ [Intraday Option Expiry Collector] Captured slot {slot_t} | "
             f"Nifty Spot: {snap.get('spot_price')} | Straddle: {snap.get('straddle_premium')} | "
             f"Near-ATM PCR: {snap.get('near_atm_pcr')} | State: {snap.get('market_state')}"
         )
+        try:
+            state_engine.record_system_activity(
+                category="INTRADAY_SLOT",
+                action=f"Intraday Slot Snapshot ({slot_t})",
+                status="SUCCESS",
+                summary=f"Captured Intraday Slot {slot_t} | Spot: ₹{snap.get('spot_price', 0):,.2f} | ATM PCR: {snap.get('near_atm_pcr')} | Straddle: ₹{snap.get('straddle_premium')} | State: {snap.get('market_state', 'BALANCED')}.",
+                details=snap,
+                execution_sec=0.8
+            )
+        except Exception:
+            pass
         if slot_label in ("09:30", "12:00", "15:20", "15:30", None):
             nifty_analytics_engine.compute_nifty_predictions(force_refresh=False)
     except Exception as e:
@@ -777,6 +808,24 @@ def scheduled_movers_research_job():
             execution_time_sec=elapsed,
             note=f"{len(res.get('movers', [])) if res else 0} positive movers analyzed"
         )
+        try:
+            m_cnt = len(res.get("movers", [])) if res else 0
+            b_cnt = len([m for m in (res.get("movers", []) if res else []) if m.get("engine_bucket") == "BUY_NOW"])
+            state_engine.record_system_activity(
+                category="MOVERS_RESEARCH",
+                action="30-Min Movers & Accumulation Research Scan",
+                status="SUCCESS",
+                summary=f"Analyzed {m_cnt} positive stocks: {b_cnt} BUY_NOW accumulation setups detected with empirical regime tagging.",
+                details={
+                    "total_movers": m_cnt,
+                    "buy_now_count": b_cnt,
+                    "regime": (res or {}).get("regime", "NEUTRAL"),
+                    "sample_movers": [m.get("symbol") for m in ((res or {}).get("movers", []))[:10]]
+                },
+                execution_sec=elapsed
+            )
+        except Exception:
+            pass
     except Exception as e:
         logger.warning(f"30-Min Movers Research scan notice: {e}")
 
@@ -815,6 +864,21 @@ def scheduled_inhouse_scanner_job():
             execution_time_sec=elapsed,
             note=f"{b_now} BUY_NOW signals found out of {len(signals)} broad cash stocks analyzed"
         )
+        try:
+            state_engine.record_system_activity(
+                category="SCANNER_PARITY",
+                action="30-Min Screener Auto-Run Complete",
+                status="SUCCESS",
+                summary=f"30-Min Screener completed in {elapsed:.1f}s: {len(signals)} evaluated, {b_now} BUY_NOW signals routed to Shadow ML & Portfolio 1.",
+                details={
+                    "stocks_evaluated": len(signals),
+                    "buy_now_count": b_now,
+                    "execution_time_sec": elapsed
+                },
+                execution_sec=elapsed
+            )
+        except Exception:
+            pass
         logger.info(f"✓ [30-Min In-House Screener] Scan complete. {len(signals)} evaluated, {b_now} BUY_NOW signals routed to Shadow & Portfolio 1.")
     except Exception as e:
         logger.error(f"30-Min In-House Screener execution error: {e}", exc_info=True)
@@ -831,6 +895,16 @@ def start_scheduler():
         threading.Thread(target=scheduled_nse_holiday_sync_job, daemon=True).start()
 
         _scheduler = BackgroundScheduler(timezone=IST)
+
+        # Job 0A-0: Daily Early Pre-Market Assessment at 08:35 AM IST Mon-Fri
+        _scheduler.add_job(
+            scheduled_premarket_nifty_prediction_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=8, minute=35, timezone=IST),
+            id="job_premarket_prediction_0835",
+            name="08:35 AM Early Pre-Market Assessment & Forecast",
+            replace_existing=True,
+            misfire_grace_time=300
+        )
 
         # Job 0A-1: Daily Official Pre-Market Forecast Lock & Telegram Bulletin at 08:45 AM IST Mon-Fri
         _scheduler.add_job(

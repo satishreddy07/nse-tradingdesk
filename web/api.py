@@ -388,14 +388,15 @@ class RefreshPricesRequest(BaseModel):
 
 
 @app.post("/api/prices/refresh")
-def refresh_prices_endpoint(req: RefreshPricesRequest = RefreshPricesRequest()):
+def refresh_prices_endpoint(req: Optional[RefreshPricesRequest] = None):
     """
     Fetches live LTP from Yahoo Finance for all Active Portfolio Positions and Screened Signals on the page,
     updating MTM PnL, trailing stops, and signal prices immediately.
     Serialized via execution_queue to prevent collision with active scans.
     """
+    scope = req.scope if req and req.scope else "ACTIVE_AND_SIGNALS"
     def _refresh_task():
-        return refresh_live_market_prices(scope=req.scope)
+        return refresh_live_market_prices(scope=scope)
 
     q_status = execution_queue.get_status()
     if not q_status.get("is_running") and q_status.get("queued_count") == 0:
@@ -510,6 +511,22 @@ def trigger_scan(req: TriggerScanRequest):
 @app.get("/api/scan/logs")
 def get_scan_logs(limit: int = 50):
     return state_engine.get_recent_scan_logs(limit=limit)
+
+
+@app.get("/api/system/activity-logs")
+def get_system_activity_logs(limit: int = 100, category: Optional[str] = None):
+    """
+    Returns unified system-wide execution, audit, and pipeline telemetry logs.
+    Covers:
+    - 08:35 & 08:45 AM Pre-Market Forecast Locks & Bulletins
+    - Screener Ingestion -> Indicator -> 6-Pillar Classification Breakdown
+    - Risk Gate Evaluations & Active Portfolio Admissions
+    - Uncapped Training Portfolio Shadow ML Dataset Logging
+    - 30-Minute Movers Research Scans
+    - Intraday Multi-Interval Expiry Snapshots
+    - 5-Minute Live Price & MTM Streams
+    """
+    return state_engine.get_system_activity_logs(limit=limit, category=category)
 
 
 # --------------------------------------------------------------------------

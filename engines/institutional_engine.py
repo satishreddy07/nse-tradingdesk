@@ -1487,6 +1487,25 @@ class InstitutionalEngine:
                     stocks_done=0
                 )
 
+            source_tag = "CUSTOM" if custom_tickers else source
+            source_name = "Custom Input" if custom_tickers else ("Chartink Screener" if source == "CHARTINK" else "In-House Broad Universe")
+            try:
+                state_engine.record_system_activity(
+                    category="SCANNER_PARITY",
+                    action=f"Screener Candidate Sourcing ({source_tag})",
+                    status="SUCCESS",
+                    summary=f"Sourced {len(tickers)} positive candidate stocks from {source_name} for 6-pillar analysis.",
+                    details={
+                        "source": source_tag,
+                        "count": len(tickers),
+                        "sample": [clean_symbol(t) for t in tickers[:12]],
+                        "timestamp": format_ist()
+                    },
+                    execution_sec=round(time.time() - start_time, 2)
+                )
+            except Exception:
+                pass
+
             # Step 2: Parallel Benchmarks Fetch
             state_engine.update_scan_progress(
                 stage=f"Step 2/6: Parallel fetch of 11 NSE Market & Sector Benchmarks (^NSEI, ^CRSLDX, Bank, IT, Auto, Pharma)...",
@@ -1602,9 +1621,35 @@ class InstitutionalEngine:
             _institutional_engine_state["buy_now_count"] = b_now
             _institutional_engine_state["pre_breakout_count"] = p_brk
             _institutional_engine_state["wait_pullback_count"] = w_pb
-            _institutional_engine_state["avoid_count"] = avoid
             _institutional_engine_state["signals"] = records_list[:100]
             _institutional_engine_state["status"] = "COMPLETED"
+
+            b_now_list = signals_df[signals_df['bucket'] == 'BUY_NOW']['ticker'].tolist()
+            p_brk_list = signals_df[signals_df['bucket'] == 'PRE_BREAKOUT']['ticker'].tolist()
+            w_pb_list = signals_df[signals_df['bucket'] == 'WAIT_PULLBACK']['ticker'].tolist()
+            avoid_list = signals_df[signals_df['bucket'] == 'AVOID']['ticker'].tolist()
+
+            try:
+                state_engine.record_system_activity(
+                    category="SCANNER_PARITY",
+                    action="6-Pillar Indicator Analysis & Classification",
+                    status="SUCCESS",
+                    summary=f"Analyzed {len(signals_df)} stocks: {b_now} BUY_NOW, {p_brk} PRE_BREAKOUT, {w_pb} WAIT_PULLBACK, {avoid} AVOID.",
+                    details={
+                        "total_analyzed": len(signals_df),
+                        "buy_now_count": b_now,
+                        "buy_now_stocks": b_now_list,
+                        "pre_breakout_count": p_brk,
+                        "pre_breakout_stocks": p_brk_list[:25],
+                        "wait_pullback_count": w_pb,
+                        "wait_pullback_stocks": w_pb_list[:25],
+                        "avoid_count": avoid,
+                        "mode": mode
+                    },
+                    execution_sec=round(time.time() - start_time, 2)
+                )
+            except Exception:
+                pass
 
             # 6. ML + AI FINAL BUY DECISION GATE & EXECUTION
             orders_placed = 0
@@ -2079,6 +2124,48 @@ class InstitutionalEngine:
             except Exception as e:
                 logger.debug(f"Failed to record shadow candidates: {e}")
 
+            try:
+                state_engine.record_system_activity(
+                    category="PORTFOLIO_RISK",
+                    action="Risk Gate Evaluation & Portfolio Execution",
+                    status="SUCCESS" if orders_placed > 0 or not can_trade else "INFO",
+                    summary=(
+                        f"Risk Gate evaluated {b_now} BUY_NOW candidates: {orders_placed} added to portfolio "
+                        f"({len(active_positions) + orders_placed}/{max_slots} slots, ₹{available_cash:,.0f} free cash). "
+                        f"Trading Gate: {'OPEN' if can_trade else 'CLOSED (Market Hours)'}."
+                    ),
+                    details={
+                        "buy_now_total": b_now,
+                        "orders_executed": orders_placed,
+                        "active_slots_used": len(active_positions) + orders_placed,
+                        "max_slots": max_slots,
+                        "available_slots": available_slots,
+                        "available_cash": round(available_cash, 2),
+                        "can_trade": can_trade,
+                        "gate_notice": gate_notice
+                    },
+                    execution_sec=round(time.time() - start_time, 2)
+                )
+            except Exception:
+                pass
+
+            if shadow_logged > 0:
+                try:
+                    state_engine.record_system_activity(
+                        category="SHADOW_ML",
+                        action="ML Shadow Candidate Training Ingest",
+                        status="SUCCESS",
+                        summary=f"Logged {shadow_logged} unconstrained BUY_NOW candidates to quant_trade_dataset for offline ML training.",
+                        details={
+                            "candidates_logged": shadow_logged,
+                            "sample_symbols": [s for s in b_now_list if s not in active_syms][:15],
+                            "dataset": "quant_trade_dataset"
+                        },
+                        execution_sec=round(time.time() - start_time, 2)
+                    )
+                except Exception:
+                    pass
+
             elapsed = time.time() - start_time
             summary_msg = (
                 f"Chartink Live Scan Complete in {elapsed:.1f}s: {len(tickers)} Chartink stocks fetched "
@@ -2197,21 +2284,41 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
     ordered_syms: List[str] = []
     seen = set()
     for s in pos_syms + sig_syms:
-        if s and s not in seen and not s.startswith("^"):
+        # Strictly ignore non-NSE equities, commodity futures (=F), or indices (^)
+        if s and s not in seen and not s.startswith("^") and not s.endswith("=F") and "=" not in s:
             seen.add(s)
             ordered_syms.append(s)
 
     if not ordered_syms:
-        return {"status": "NO_SYMBOLS", "updated_count": 0, "timestamp": format_ist()}
+        return {
+            "status": "NO_SYMBOLS",
+            "updated_count": 0,
+            "symbols_updated": 0,
+            "positions_updated": 0,
+            "active_positions_updated": 0,
+            "timestamp": format_ist()
+        }
 
     def _fetch_live_tick(sym: str) -> Tuple[str, Optional[pd.DataFrame], Optional[float], Optional[float]]:
-        cached_df, _ = state_engine.get_ohlcv_df(sym)
+        try:
+            cached_df, _ = state_engine.get_ohlcv_df(sym)
 
-        # If cache is absent or truncated (< 80 bars), do a full 2-year fetch so we never truncate historical depth!
-        if cached_df is None or len(cached_df) < 80:
-            _, full_df = fetcher.fetch_ticker_chart(sym, range_period="2y", max_retries=2)
-            if full_df is not None and len(full_df) >= 80:
-                merged = full_df
+            # If cache is absent or truncated (< 80 bars), do a full 2-year fetch so we never truncate historical depth!
+            if cached_df is None or len(cached_df) < 80:
+                _, full_df = fetcher.fetch_ticker_chart(sym, range_period="2y", max_retries=2)
+                if full_df is not None and len(full_df) >= 80:
+                    merged = full_df.copy()
+                    merged.index = pd.to_datetime(merged.index, utc=True)
+                else:
+                    delta_df = fetcher._request_yahoo_df(
+                        f"{sym}.NS",
+                        {"range": "5d", "interval": "1d", "includePrePost": "false"},
+                        max_retries=2
+                    )
+                    if delta_df is None or delta_df.empty:
+                        return sym, None, None, None
+                    merged = delta_df.copy()
+                    merged.index = pd.to_datetime(merged.index, utc=True)
             else:
                 delta_df = fetcher._request_yahoo_df(
                     f"{sym}.NS",
@@ -2220,28 +2327,23 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
                 )
                 if delta_df is None or delta_df.empty:
                     return sym, None, None, None
-                merged = delta_df
-        else:
-            delta_df = fetcher._request_yahoo_df(
-                f"{sym}.NS",
-                {"range": "5d", "interval": "1d", "includePrePost": "false"},
-                max_retries=2
-            )
-            if delta_df is None or delta_df.empty:
-                return sym, None, None, None
 
-            if cached_df.index.tz is not None and delta_df.index.tz is None:
-                delta_df.index = delta_df.index.tz_localize(IST)
-            elif cached_df.index.tz is None and delta_df.index.tz is not None:
-                delta_df.index = delta_df.index.tz_localize(None)
-            merged = pd.concat([cached_df, delta_df]).sort_index()
-            merged = merged[~pd.Series(merged.index.date).duplicated(keep="last").values]
-            if len(merged) > 500:
-                merged = merged.iloc[-500:]
+                c_df = cached_df.copy()
+                d_df = delta_df.copy()
+                c_df.index = pd.to_datetime(c_df.index, utc=True)
+                d_df.index = pd.to_datetime(d_df.index, utc=True)
+                merged = pd.concat([c_df, d_df]).sort_index()
+                dt_series = pd.Series(merged.index.date)
+                merged = merged[~dt_series.duplicated(keep="last").values]
+                if len(merged) > 500:
+                    merged = merged.iloc[-500:]
 
-        ltp = round(float(merged["Close"].iloc[-1]), 2)
-        day_high = round(float(merged["High"].iloc[-1]), 2)
-        return sym, merged, ltp, day_high
+            ltp = round(float(merged["Close"].iloc[-1]), 2)
+            day_high = round(float(merged["High"].iloc[-1]), 2)
+            return sym, merged, ltp, day_high
+        except Exception as e:
+            logger.warning(f"Error updating live price tick for {sym}: {e}")
+            return sym, None, None, None
 
     updated_dfs: Dict[str, pd.DataFrame] = {}
     live_ltp_map: Dict[str, Tuple[float, float]] = {}
@@ -2288,13 +2390,26 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
         "status": "OK",
         "scope": scope_up,
         "updated_count": len(live_ltp_map),
+        "symbols_updated": len(live_ltp_map),
         "positions_updated": pos_updated,
+        "active_positions_updated": pos_updated,
         "reconciled_count": len(reconciled_events),
         "elapsed_sec": elapsed,
         "timestamp": now_str,
         "prices": {k: v[0] for k, v in list(live_ltp_map.items())[:50]}
     }
     state_engine.set_kv("last_price_stream", stream_meta)
+    try:
+        state_engine.record_system_activity(
+            category="PRICE_STREAM",
+            action="5-Min Live Price Stream & MTM Sync",
+            status="SUCCESS",
+            summary=f"Streamed live quotes: {len(live_ltp_map)} stocks updated & {pos_updated} active holdings updated in {elapsed}s at {now_str}.",
+            details=stream_meta,
+            execution_sec=elapsed
+        )
+    except Exception:
+        pass
     try:
         from core.data_watchdog import data_watchdog
         data_watchdog.record_packet("swing_trading", latency_ms=elapsed * 1000.0, details={

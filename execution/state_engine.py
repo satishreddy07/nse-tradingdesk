@@ -307,6 +307,55 @@ class StateEngine:
                 );
                 """)
 
+                # 7. Unified System Activity & Pipeline Execution Ledger
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS system_activity_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    log_id TEXT UNIQUE NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    details_json TEXT DEFAULT '{}',
+                    execution_sec REAL DEFAULT 0.0,
+                    created_at TEXT NOT NULL
+                );
+                """)
+
+                # Purge any leaked commodity/futures tickers from equity tables
+                try:
+                    cursor.execute("DELETE FROM latest_signals WHERE symbol LIKE '%=F%' OR symbol LIKE '^%';")
+                except Exception:
+                    pass
+
+                # Backfill initial system activity logs if empty
+                try:
+                    c_row = cursor.execute("SELECT COUNT(*) as cnt FROM system_activity_logs").fetchone()
+                    if c_row and c_row["cnt"] == 0:
+                        prev_scans = cursor.execute("SELECT * FROM scan_logs ORDER BY id DESC LIMIT 15").fetchall()
+                        for ps in prev_scans:
+                            s_type = ps["scan_type"] or "6-Pillar Screener"
+                            c_cnt = ps["candidates_count"] or 0
+                            o_cnt = ps["orders_count"] or 0
+                            cursor.execute("""
+                            INSERT INTO system_activity_logs (
+                                log_id, timestamp, category, action, status, summary, details_json, execution_sec, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                f"act_seed_{ps['id']}",
+                                ps["timestamp"],
+                                "SCANNER_PARITY",
+                                f"{s_type} Run",
+                                ps["status"] or "SUCCESS",
+                                ps["message"] or f"Scan completed: {c_cnt} candidates identified, {o_cnt} orders executed.",
+                                json.dumps({"candidates": c_cnt, "orders": o_cnt, "scan_type": s_type}),
+                                float(ps["execution_time_sec"] or 0.0),
+                                ps["timestamp"]
+                            ))
+                except Exception:
+                    pass
+
                 conn.commit()
                 logger.info("Single Master File Database schemas verified and ready.")
 
@@ -352,6 +401,69 @@ class StateEngine:
             src = "IN_HOUSE"
         self.set_kv("swing_universe_source", src)
         return src
+
+    # --------------------------------------------------------------------------
+    # UNIFIED SYSTEM ACTIVITY & PIPELINE AUDIT LOGS
+    # --------------------------------------------------------------------------
+    def record_system_activity(
+        self,
+        category: str,
+        action: str,
+        status: str,
+        summary: str,
+        details: Optional[Dict[str, Any]] = None,
+        execution_sec: float = 0.0
+    ) -> str:
+        """
+        Records an authenticated timestamped system activity event into system_activity_logs.
+        Tracks Pre-market forecasts, 30m screener & parity runs, movers research scans,
+        intraday slot evaluations, risk management decisions, and 5m live price ticks.
+        """
+        now_dt = now_ist()
+        now_str = format_ist()
+        log_id = f"act_{now_dt.strftime('%Y%m%d_%H%M%S_%f')}"
+        det_json = json.dumps(details or {}, default=str)
+        try:
+            with self._lock:
+                with self._get_connection() as conn:
+                    conn.execute("""
+                    INSERT INTO system_activity_logs (
+                        log_id, timestamp, category, action, status, summary, details_json, execution_sec, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        log_id, now_str, category.upper(), action, status.upper(), summary, det_json, execution_sec, now_str
+                    ))
+                    conn.commit()
+        except Exception as e:
+            logger.warning(f"Error logging system activity ({action}): {e}")
+        return log_id
+
+    def get_system_activity_logs(self, limit: int = 100, category: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Retrieves recent unified system activity and multi-step pipeline execution logs."""
+        logs = []
+        try:
+            with self._lock:
+                with self._get_connection() as conn:
+                    if category and category.upper() not in ("ALL", ""):
+                        rows = conn.execute(
+                            "SELECT * FROM system_activity_logs WHERE category = ? ORDER BY id DESC LIMIT ?",
+                            (category.upper(), limit)
+                        ).fetchall()
+                    else:
+                        rows = conn.execute(
+                            "SELECT * FROM system_activity_logs ORDER BY id DESC LIMIT ?",
+                            (limit,)
+                        ).fetchall()
+                    for r in rows:
+                        row_dict = dict(r)
+                        try:
+                            row_dict["details"] = json.loads(row_dict.get("details_json") or "{}")
+                        except Exception:
+                            row_dict["details"] = {}
+                        logs.append(row_dict)
+        except Exception as e:
+            logger.warning(f"Error reading system activity logs: {e}")
+        return logs
 
     # --------------------------------------------------------------------------
     # MASTER OHLCV STORAGE (ALL STOCKS IN SINGLE MASTER FILE)

@@ -2781,40 +2781,91 @@
           </div>
         </div>
 
-        <!-- Execution Logs Table -->
-        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
-          <div class="flex items-center justify-between pb-4 border-b border-slate-800">
-            <h3 class="font-bold text-white text-sm flex items-center gap-2">
-              <i data-lucide="file-text" class="w-4 h-4 text-slate-400"></i>
-              <span>Scan Execution Logs</span>
-            </h3>
-            <button onclick="loadScanLogs()" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
-              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
-              <span>Refresh Logs</span>
-            </button>
+        <!-- Master System Activity & Pipeline Execution Ledger -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+          <!-- Ledger Header -->
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">AUDIT VAULT</span>
+                <h3 class="font-extrabold text-white text-base sm:text-lg flex items-center gap-2">
+                  <i data-lucide="activity" class="w-4 h-4 text-cyan-400"></i>
+                  <span>Master System Activity & Pipeline Execution Ledger</span>
+                </h3>
+              </div>
+              <p class="text-[11px] sm:text-xs text-slate-400 mt-0.5">
+                Full-spectrum audit: 08:35/08:45 Pre-Market Locks • 30M Screener Ingestion & 6-Pillar Classification Breakdown • Risk Gate Admissions • Shadow ML Training Logs • 30M Movers Research • 5M Live Price & MTM Streams
+              </p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button onclick="loadSystemActivityLogs()" class="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-semibold text-xs flex items-center gap-1.5 transition">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5" id="activity-refresh-icon"></i>
+                <span>Refresh Activity</span>
+              </button>
+            </div>
           </div>
 
-          <div class="overflow-x-auto custom-scroll mt-4">
+          <!-- Category Filter Bar -->
+          <div class="flex items-center gap-1.5 overflow-x-auto custom-scroll pb-1">
+            <button onclick="filterActivityLogs('ALL')" data-category="ALL" class="activity-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 transition whitespace-nowrap">All Events</button>
+            <button onclick="filterActivityLogs('PREMARKET_FORECAST')" data-category="PREMARKET_FORECAST" class="activity-filter-btn px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent transition whitespace-nowrap">08:35/08:45 Pre-Market Locks</button>
+            <button onclick="filterActivityLogs('SCANNER_PARITY')" data-category="SCANNER_PARITY" class="activity-filter-btn px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent transition whitespace-nowrap">30M Screener & Classification</button>
+            <button onclick="filterActivityLogs('PORTFOLIO_RISK')" data-category="PORTFOLIO_RISK" class="activity-filter-btn px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent transition whitespace-nowrap">Risk Gate & Portfolio Admissions</button>
+            <button onclick="filterActivityLogs('SHADOW_ML')" data-category="SHADOW_ML" class="activity-filter-btn px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent transition whitespace-nowrap">Shadow ML Training Ingest</button>
+            <button onclick="filterActivityLogs('MOVERS_RESEARCH')" data-category="MOVERS_RESEARCH" class="activity-filter-btn px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent transition whitespace-nowrap">30M Movers Research</button>
+            <button onclick="filterActivityLogs('INTRADAY_SLOT')" data-category="INTRADAY_SLOT" class="activity-filter-btn px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent transition whitespace-nowrap">Intraday Expiry Slots</button>
+            <button onclick="filterActivityLogs('PRICE_STREAM')" data-category="PRICE_STREAM" class="activity-filter-btn px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent transition whitespace-nowrap">5M Live Price & MTM Streams</button>
+          </div>
+
+          <!-- Activity Ledger Table -->
+          <div class="overflow-x-auto custom-scroll border border-slate-800/80 rounded-xl bg-slate-950/40">
             <table class="w-full text-left text-xs text-slate-300">
-              <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <thead class="bg-slate-950/80 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
                 <tr>
-                  <th class="p-3">Timestamp (IST)</th>
-                  <th class="p-3">Scan Type</th>
-                  <th class="p-3">Portfolio</th>
-                  <th class="p-3">Status</th>
-                  <th class="p-3">Duration</th>
-                  <th class="p-3">Candidates</th>
-                  <th class="p-3">Orders</th>
-                  <th class="p-3">Message</th>
+                  <th class="p-3 whitespace-nowrap">Timestamp (IST)</th>
+                  <th class="p-3 whitespace-nowrap">Category</th>
+                  <th class="p-3 whitespace-nowrap">Pipeline Step / Action</th>
+                  <th class="p-3 whitespace-nowrap">Status</th>
+                  <th class="p-3 whitespace-nowrap">Duration</th>
+                  <th class="p-3 min-w-[340px]">Audit Summary & Output Breakdown (Click row to expand)</th>
                 </tr>
               </thead>
-              <tbody id="scan-logs-tbody" class="divide-y divide-slate-800/60 font-mono">
+              <tbody id="system-activity-tbody" class="divide-y divide-slate-800/60 font-sans">
                 <tr>
-                  <td colspan="8" class="p-8 text-center text-slate-500 font-sans">No execution logs found.</td>
+                  <td colspan="6" class="p-8 text-center text-slate-500 font-sans">Loading unified system activity ledger...</td>
                 </tr>
               </tbody>
             </table>
           </div>
+
+          <!-- Collapsible Raw Scan Logs Accordion -->
+          <details class="bg-slate-950/40 border border-slate-800/80 rounded-xl p-3">
+            <summary class="cursor-pointer text-xs font-bold text-slate-400 hover:text-slate-200 flex items-center justify-between">
+              <span class="flex items-center gap-2"><i data-lucide="file-text" class="w-3.5 h-3.5"></i> Raw Scan Logs Table</span>
+              <span class="text-[10px] text-cyan-400 font-mono">View Raw Database Entries</span>
+            </summary>
+            <div class="overflow-x-auto custom-scroll mt-3">
+              <table class="w-full text-left text-xs text-slate-300">
+                <thead class="bg-slate-950/80 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                  <tr>
+                    <th class="p-3">Timestamp (IST)</th>
+                    <th class="p-3">Scan Type</th>
+                    <th class="p-3">Portfolio</th>
+                    <th class="p-3">Status</th>
+                    <th class="p-3">Duration</th>
+                    <th class="p-3">Candidates</th>
+                    <th class="p-3">Orders</th>
+                    <th class="p-3">Message</th>
+                  </tr>
+                </thead>
+                <tbody id="scan-logs-tbody" class="divide-y divide-slate-800/60 font-mono">
+                  <tr>
+                    <td colspan="8" class="p-8 text-center text-slate-500 font-sans">No execution logs found.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
         </div>
 
       </div>
@@ -14449,7 +14500,10 @@
       if (tabId === 'tab-research') loadMoversResearch();
       if (tabId === 'tab-test-mode') initTestModeTab();
       if (tabId === 'tab-history') loadHistoryData();
-      if (tabId === 'tab-scheduler') loadScanLogs();
+      if (tabId === 'tab-scheduler') {
+        loadScanLogs();
+        loadSystemActivityLogs();
+      }
       if (tabId === 'tab-analytics') loadAllEquityCurves();
       if (tabId === 'tab-ml-training') loadMlTrainingDesk();
     }
@@ -17126,6 +17180,137 @@
     }
 
     // -------------------------------------------------------------------------
+    // MASTER SYSTEM ACTIVITY & PIPELINE EXECUTION LEDGER
+    // -------------------------------------------------------------------------
+    let currentActivityCategory = 'ALL';
+
+    async function filterActivityLogs(cat) {
+      currentActivityCategory = cat;
+      document.querySelectorAll('.activity-filter-btn').forEach(b => {
+        if (b.dataset.category === cat) {
+          b.className = 'activity-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 transition whitespace-nowrap';
+        } else {
+          b.className = 'activity-filter-btn px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent transition whitespace-nowrap';
+        }
+      });
+      await loadSystemActivityLogs();
+    }
+
+    async function loadSystemActivityLogs() {
+      const icon = document.getElementById('activity-refresh-icon');
+      if (icon) icon.classList.add('animate-spin');
+      try {
+        const url = currentActivityCategory && currentActivityCategory !== 'ALL'
+          ? `/api/system/activity-logs?limit=150&category=${encodeURIComponent(currentActivityCategory)}`
+          : `/api/system/activity-logs?limit=150`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const logs = await res.json();
+        const tbody = document.getElementById('system-activity-tbody');
+        if (!tbody) return;
+
+        if (!logs || logs.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-500 font-sans">No activity logs recorded yet for this category. Auto-runs execute at 08:35/08:45 AM, every 30m, and every 5m.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = logs.map((l, idx) => {
+          let catBadge = 'bg-slate-800 text-slate-300 border border-slate-700';
+          const cat = (l.category || '').toUpperCase();
+          if (cat.includes('PREMARKET') || cat.includes('FORECAST')) {
+            catBadge = 'bg-purple-500/20 text-purple-300 border border-purple-500/40';
+          } else if (cat.includes('SCANNER') || cat.includes('PARITY')) {
+            catBadge = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40';
+          } else if (cat.includes('RISK') || cat.includes('PORTFOLIO')) {
+            catBadge = 'bg-amber-500/20 text-amber-300 border border-amber-500/40';
+          } else if (cat.includes('SHADOW') || cat.includes('ML')) {
+            catBadge = 'bg-pink-500/20 text-pink-300 border border-pink-500/40';
+          } else if (cat.includes('MOVERS')) {
+            catBadge = 'bg-blue-500/20 text-blue-300 border border-blue-500/40';
+          } else if (cat.includes('PRICE') || cat.includes('STREAM')) {
+            catBadge = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+          } else if (cat.includes('INTRADAY') || cat.includes('SLOT')) {
+            catBadge = 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40';
+          }
+
+          let stBadge = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+          const st = (l.status || '').toUpperCase();
+          if (st.includes('FAIL') || st.includes('ERROR')) {
+            stBadge = 'bg-rose-500/20 text-rose-300 border border-rose-500/30';
+          } else if (st.includes('WARN')) {
+            stBadge = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+          } else if (st.includes('INFO')) {
+            stBadge = 'bg-sky-500/20 text-sky-300 border border-sky-500/30';
+          } else if (st.includes('LOCK')) {
+            stBadge = 'bg-purple-500/20 text-purple-300 border border-purple-500/30';
+          }
+
+          const rowId = `act-det-${idx}`;
+          const det = l.details || {};
+          const hasDetails = det && typeof det === 'object' && Object.keys(det).length > 0;
+
+          let detHtml = '';
+          if (hasDetails) {
+            if (det.buy_now_stocks && det.buy_now_stocks.length > 0) {
+              detHtml += `<div class="mt-2 text-[11px] p-2 rounded bg-slate-900 border border-slate-800"><strong class="text-emerald-400">BUY NOW Candidates (${det.buy_now_count || det.buy_now_stocks.length}):</strong> <span class="font-mono text-emerald-200">${det.buy_now_stocks.join(', ')}</span></div>`;
+            }
+            if (det.pre_breakout_stocks && det.pre_breakout_stocks.length > 0) {
+              detHtml += `<div class="mt-1 text-[11px] p-2 rounded bg-slate-900 border border-slate-800"><strong class="text-cyan-400">PRE BREAKOUT (${det.pre_breakout_count || det.pre_breakout_stocks.length}):</strong> <span class="font-mono text-cyan-200">${det.pre_breakout_stocks.join(', ')}</span></div>`;
+            }
+            if (det.wait_pullback_stocks && det.wait_pullback_stocks.length > 0) {
+              detHtml += `<div class="mt-1 text-[11px] p-2 rounded bg-slate-900 border border-slate-800"><strong class="text-amber-400">WAIT PULLBACK (${det.wait_pullback_count || det.wait_pullback_stocks.length}):</strong> <span class="font-mono text-amber-200">${det.wait_pullback_stocks.join(', ')}</span></div>`;
+            }
+            if (det.active_slots_used !== undefined) {
+              detHtml += `<div class="mt-1 text-[11px] p-2 rounded bg-slate-900 border border-slate-800"><strong class="text-amber-400">Risk Allocation Gate:</strong> <span class="font-mono text-slate-200">${det.active_slots_used}/${det.max_slots} slots allocated • ₹${(det.available_cash || 0).toLocaleString()} free cash • Orders filled: ${det.orders_executed || 0}</span></div>`;
+            }
+            if (det.sample_symbols && det.sample_symbols.length > 0) {
+              detHtml += `<div class="mt-1 text-[11px] p-2 rounded bg-slate-900 border border-slate-800"><strong class="text-pink-400">Shadow ML Dataset Ingest:</strong> <span class="font-mono text-pink-200">${det.sample_symbols.join(', ')} (${det.candidates_logged || det.sample_symbols.length} total logged)</span></div>`;
+            }
+            if (det.spot_price !== undefined) {
+              detHtml += `<div class="mt-1 text-[11px] p-2 rounded bg-slate-900 border border-slate-800"><strong class="text-indigo-400">Intraday Slot Snapshot:</strong> <span class="font-mono text-indigo-200">Spot: ₹${det.spot_price} • Straddle: ₹${det.straddle_premium || '--'} • Near-ATM PCR: ${det.near_atm_pcr || '--'} • Market State: ${det.market_state || '--'}</span></div>`;
+            }
+            if (det.t1_verdict || det.t5_verdict) {
+              detHtml += `<div class="mt-1 text-[11px] p-2 rounded bg-slate-900 border border-slate-800"><strong class="text-purple-400">Pre-Market Forecast:</strong> <span class="font-mono text-purple-200">T+1: ${det.t1_verdict} • T+5: ${det.t5_verdict} • Nifty Spot: ₹${(det.nifty_spot || 0).toLocaleString()} • RSI: ${det.rsi || '--'}</span></div>`;
+            }
+            if (!detHtml) {
+              detHtml = `<pre class="mt-2 text-[10px] text-slate-400 bg-slate-950 p-2 rounded overflow-x-auto max-h-32 font-mono">${JSON.stringify(det, null, 2)}</pre>`;
+            }
+          }
+
+          return `
+            <tr class="hover:bg-slate-800/40 transition border-b border-slate-800/60 cursor-pointer" onclick="toggleActivityDetail('${rowId}')">
+              <td class="p-3 font-mono text-slate-300 whitespace-nowrap text-xs">${l.timestamp}</td>
+              <td class="p-3 whitespace-nowrap">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${catBadge}">${l.category}</span>
+              </td>
+              <td class="p-3 font-semibold text-white text-xs whitespace-nowrap">${l.action}</td>
+              <td class="p-3 whitespace-nowrap">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${stBadge}">${l.status}</span>
+              </td>
+              <td class="p-3 text-slate-400 font-mono text-xs whitespace-nowrap">${l.execution_sec ? l.execution_sec.toFixed(1) + 's' : '-'}</td>
+              <td class="p-3 text-slate-200 text-xs">
+                <div class="flex items-center justify-between gap-2">
+                  <span>${l.summary || '-'}</span>
+                  ${hasDetails ? `<span class="text-[10px] text-cyan-400 font-mono shrink-0 hover:underline">Details ▾</span>` : ''}
+                </div>
+                <div id="${rowId}" class="hidden pt-2 border-t border-slate-800/80 mt-2">${detHtml}</div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error("Error loading system activity logs:", e);
+      } finally {
+        if (icon) icon.classList.remove('animate-spin');
+      }
+    }
+
+    function toggleActivityDetail(id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('hidden');
+    }
+
+    // -------------------------------------------------------------------------
     // LIVE SCAN PROGRESS & ACTION TRIGGERS
     // -------------------------------------------------------------------------
     async function pollScanProgress() {
@@ -17211,7 +17396,10 @@
             }
             showToast(prog.stage || (isAborted ? "Scan aborted!" : "Scan completed! Updating Master File..."), isAborted ? 'error' : 'success');
             await refreshAllData();
-            if (currentTab === 'tab-scheduler') loadScanLogs();
+            if (currentTab === 'tab-scheduler') {
+              loadScanLogs();
+              loadSystemActivityLogs();
+            }
           }
         }
       } catch (err) {
