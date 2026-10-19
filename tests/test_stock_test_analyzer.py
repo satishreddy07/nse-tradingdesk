@@ -96,3 +96,17 @@ def test_api_endpoints(api_client):
     assert "buy_now_audit" in a_data
     assert "breakout_audit" in a_data
     assert "pullback_audit" in a_data
+
+
+def test_tatamotors_alias_resolution():
+    """Verifies that TATAMOTORS resolves to demerged entities (TMCV / TMPV) with genuine data."""
+    report = stock_test_analyzer.analyze_stock("TATAMOTORS")
+    assert report["status"] == "SUCCESS"
+    assert report["symbol"] == "TATAMOTORS"
+    assert report["resolved_symbol"] in ["TMCV", "TMPV", "TATAMOTORS"]
+    assert report["current_price"] > 0
+    assert len(report["candles"]) > 0
+    assert "trade_plan" in report
+    assert report["trade_plan"]["entry_price"] > 0
+    assert report["fundamentals"]["market_cap_cr"] is not None
+    assert report["fundamentals"]["market_cap_cr"] > 1000.0  # Tata Motors > ₹1,000 Cr

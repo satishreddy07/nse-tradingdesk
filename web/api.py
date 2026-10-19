@@ -2222,6 +2222,8 @@ def analyze_stock_endpoint(symbol: str, force_download: bool = False):
     from engines.stock_test_analyzer import stock_test_analyzer
     try:
         report = stock_test_analyzer.analyze_stock(symbol, force_download=force_download)
+        if report.get("status") == "ERROR":
+            return JSONResponse(status_code=400, content=_sanitize_for_json(report))
         return _sanitize_for_json(report)
     except Exception as e:
         logger.error(f"Error in analyze_stock_endpoint for {symbol}: {e}", exc_info=True)

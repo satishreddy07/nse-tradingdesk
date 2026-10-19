@@ -37,6 +37,29 @@ from execution.state_engine import state_engine
 logger = logging.getLogger("StockTestAnalyzer")
 
 
+NSE_SYMBOL_ALIASES: Dict[str, List[str]] = {
+    "TATAMOTORS": ["TMCV", "TMPV", "TATAMTRDVR"],
+    "TATA-MOTORS": ["TMCV", "TMPV"],
+    "TATAMOTOR": ["TMCV", "TMPV"],
+    "TATAMTRDVR": ["TMCV", "TMPV"],
+    "TMPV": ["TMPV"],
+    "TMCV": ["TMCV"],
+    "M&M": ["M_M", "MM"],
+    "BAJAJ-AUTO": ["BAJAJ_AUTO", "BAJAJ-AUTO"],
+    "LTI": ["LTIM"],
+    "MINDTREE": ["LTIM"],
+    "CADILAHC": ["ZYDUSLIFE"],
+    "MOTHERSUMI": ["MOTHERSON"],
+    "ADANITRANS": ["ADANIENSOL"],
+    "L&TFH": ["LTF"],
+    "LTFH": ["LTF"],
+    "HDFC": ["HDFCBANK"],
+    "NESTLE": ["NESTLEIND"],
+    "ZEEL": ["ZEEL"],
+    "IBULHSGFIN": ["SAMMAANCAP"]
+}
+
+
 class StockTestAnalyzer:
     """
     Singleton Diagnostic Engine for analyzing any NSE stock against
@@ -54,6 +77,17 @@ class StockTestAnalyzer:
             return
         self._initialized = True
         self._info_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+    @classmethod
+    def get_symbol_candidates(cls, symbol: str) -> List[str]:
+        """Resolves corporate renamings, demergers, or alternative ticker aliases."""
+        sym = clean_symbol(symbol).upper()
+        candidates = [sym]
+        if sym in NSE_SYMBOL_ALIASES:
+            for a in NSE_SYMBOL_ALIASES[sym]:
+                if a not in candidates:
+                    candidates.append(a)
+        return candidates
 
     # --------------------------------------------------------------------------
     # 1. STANDARD SETUP CRITERIA & BENCHMARK BLUEPRINTS
@@ -319,13 +353,52 @@ class StockTestAnalyzer:
     def search_nse_stocks(self, query: str = "", limit: int = 30) -> List[Dict[str, Any]]:
         """
         Searches across all known NSE cash equities from SQLite master metadata,
-        Nifty 500 constituents, and sector registry.
+        Nifty 500 constituents, sector registry, and corporate demerger aliases.
         """
         q = (query or "").strip().upper()
         results = []
         seen = set()
 
-        # 1. Fetch existing stored stocks from SQLite Master Vault
+        # 1. First priority: Check corporate aliases / demerger mappings for query
+        for alias_key, mapped_list in NSE_SYMBOL_ALIASES.items():
+            if q and (q == alias_key or q in alias_key or any(q in m for m in mapped_list)):
+                # If exact alias requested (e.g. TATAMOTORS)
+                if q == alias_key and q not in seen:
+                    seen.add(q)
+                    primary_target = mapped_list[0]
+                    in_db = state_engine.get_ohlcv_df(primary_target)[0] is not None or state_engine.get_ohlcv_df(q)[0] is not None
+                    results.append({
+                        "symbol": q,
+                        "name": f"{q} (Auto-routes to {primary_target})",
+                        "sector": get_stock_sector(primary_target),
+                        "last_close": 0.0,
+                        "change_pct": 0.0,
+                        "in_storage": in_db,
+                        "bars_count": 0,
+                        "last_bar_date": "--"
+                    })
+                # Add the specific demerged / active entities
+                for m in mapped_list:
+                    if m not in seen:
+                        seen.add(m)
+                        in_db = state_engine.get_ohlcv_df(m)[0] is not None
+                        label = f"{m} (Corporate Demerger / Mapped from {alias_key})"
+                        if m == "TMCV":
+                            label = "TMCV (Tata Motors Limited - Commercial Vehicles)"
+                        elif m == "TMPV":
+                            label = "TMPV (Tata Motors Passenger Vehicles - EVs & Cars)"
+                        results.append({
+                            "symbol": m,
+                            "name": label,
+                            "sector": get_stock_sector(m),
+                            "last_close": 0.0,
+                            "change_pct": 0.0,
+                            "in_storage": in_db,
+                            "bars_count": 0,
+                            "last_bar_date": "--"
+                        })
+
+        # 2. Fetch existing stored stocks from SQLite Master Vault
         meta_rows = state_engine.get_all_ohlcv_metadata(search=q, limit=limit * 2)
         for r in meta_rows:
             sym = clean_symbol(r.get("symbol", ""))
@@ -342,7 +415,7 @@ class StockTestAnalyzer:
                     "last_bar_date": r.get("last_bar_date") or "--"
                 })
 
-        # 2. Match against NSE Sector Map & Registry if list is small
+        # 3. Match against NSE Sector Map & Registry if list is small
         if len(results) < limit:
             for sym, sector in NSE_SECTOR_MAP.items():
                 if sym not in seen and (not q or q in sym):
@@ -360,7 +433,7 @@ class StockTestAnalyzer:
                     if len(results) >= limit:
                         break
 
-        # 3. If exact query is not in list, provide it as a direct custom option
+        # 4. If exact query is not in list, provide it as a direct custom option
         if q and q not in seen and len(q) >= 2:
             results.insert(0, {
                 "symbol": q,
@@ -382,82 +455,102 @@ class StockTestAnalyzer:
         self,
         symbol: str,
         force_download: bool = False
-    ) -> Tuple[Optional[pd.DataFrame], str, str]:
+    ) -> Tuple[Optional[pd.DataFrame], str, str, str]:
         """
-        Retrieves OHLCV from SQLite Master Vault, or downloads live from Yahoo Finance.
-        Returns: (df, source_label, message)
+        Retrieves OHLCV from SQLite Master Vault, or downloads live from Yahoo Finance
+        across symbol and any known corporate action / demerger aliases.
+        Returns: (df, source_label, message, resolved_symbol)
         """
-        sym = clean_symbol(symbol)
+        sym = clean_symbol(symbol).upper()
         if not sym:
-            return None, "ERROR", "Invalid symbol"
+            return None, "ERROR", "Invalid symbol", sym
 
-        # Check existing Master Storage first
+        candidates = self.get_symbol_candidates(sym)
+
+        # 1. Check existing Single Master Storage first for sym and candidates
         if not force_download:
-            df, age_hrs = state_engine.get_ohlcv_df(sym)
-            if df is not None and not df.empty and len(df) >= 30:
-                logger.info(f"Loaded {sym} from Single Master Vault ({len(df)} bars, age: {round(age_hrs, 1)}h)")
-                return df, "LOCAL_VAULT", f"Retrieved from Single Master Storage ({len(df)} daily candles)"
+            for cand in candidates:
+                df, age_hrs = state_engine.get_ohlcv_df(cand)
+                if df is not None and not df.empty and len(df) >= 15:
+                    if cand != sym:
+                        state_engine.save_ohlcv_df(sym, df)
+                    logger.info(f"Loaded {sym} (via {cand}) from Single Master Vault ({len(df)} bars, age: {round(age_hrs, 1)}h)")
+                    src_msg = f"Retrieved from Single Master Storage ({len(df)} daily candles)"
+                    if cand != sym:
+                        src_msg += f" (Resolved: {sym} -> {cand})"
+                    return df, "LOCAL_VAULT", src_msg, cand
 
-        # Download live from Yahoo Finance
-        nse_ticker = format_nse_ticker(sym)
-        logger.info(f"Downloading live OHLCV for {nse_ticker} from Yahoo Finance...")
-        try:
-            # Download 2 years of daily data
-            df = yf.download(nse_ticker, period="2y", interval="1d", progress=False, timeout=12)
-            if df is None or df.empty or len(df) < 15:
-                # Try 1y fallback
-                df = yf.download(nse_ticker, period="1y", interval="1d", progress=False, timeout=10)
+        # 2. Download live from Yahoo Finance across candidates in order
+        for cand in candidates:
+            nse_ticker = format_nse_ticker(cand)
+            logger.info(f"Downloading live OHLCV for {nse_ticker} from Yahoo Finance...")
+            try:
+                df = yf.download(nse_ticker, period="2y", interval="1d", progress=False, timeout=12)
+                if df is None or df.empty or len(df) < 15:
+                    df = yf.download(nse_ticker, period="1y", interval="1d", progress=False, timeout=10)
 
-            if df is not None and not df.empty and len(df) >= 15:
-                # Handle MultiIndex columns from newer yfinance versions
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
+                if df is not None and not df.empty and len(df) >= 15:
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
 
-                # Sanitize column names
-                df.columns = [str(c).capitalize() for c in df.columns]
+                    df.columns = [str(c).capitalize() for c in df.columns]
 
-                # Ensure index is datetime
-                if not isinstance(df.index, pd.DatetimeIndex):
-                    df.index = pd.to_datetime(df.index)
+                    if not isinstance(df.index, pd.DatetimeIndex):
+                        df.index = pd.to_datetime(df.index)
 
-                # Drop NaNs
-                df = df.dropna(subset=["Close", "Volume"])
+                    df = df.dropna(subset=["Close", "Volume"])
 
-                # Persist to SQLite Master File
-                state_engine.save_ohlcv_df(sym, df)
-                logger.info(f"Saved {sym} to SQLite Master Vault with {len(df)} bars")
-                return df, "LIVE_DOWNLOADED", f"Downloaded {len(df)} daily candles from Yahoo Finance & cached in SQLite"
-            else:
-                return None, "DOWNLOAD_FAILED", f"No price data available for {nse_ticker} on NSE"
-        except Exception as e:
-            logger.error(f"Error downloading OHLCV for {sym}: {e}")
-            # Try to return whatever was in local vault
-            df, _ = state_engine.get_ohlcv_df(sym)
+                    # Save under both candidate and requested sym
+                    state_engine.save_ohlcv_df(cand, df)
+                    state_engine.save_ohlcv_df(sym, df)
+
+                    logger.info(f"Saved {sym} (via {cand}) to SQLite Master Vault with {len(df)} bars")
+                    msg = f"Downloaded {len(df)} daily candles from Yahoo Finance & cached in SQLite"
+                    if cand != sym:
+                        msg += f" (Corporate action resolved: {sym} -> {cand})"
+                    return df, "LIVE_DOWNLOADED", msg, cand
+            except Exception as e:
+                logger.warning(f"Download attempt for {cand} failed: {e}")
+                continue
+
+        # 3. Fallback: Check if any candidate has any data in local vault
+        for cand in candidates:
+            df, _ = state_engine.get_ohlcv_df(cand)
             if df is not None and not df.empty:
-                return df, "LOCAL_VAULT_FALLBACK", f"Download failed ({str(e)}), used local vault data"
-            return None, "ERROR", f"Failed to fetch market data: {str(e)}"
+                return df, "LOCAL_VAULT_FALLBACK", f"Live sync failed, used cached vault data for {cand}", cand
+
+        return None, "DOWNLOAD_FAILED", f"No price data available for {sym} on NSE. If recently demerged or renamed, try searching related entity.", sym
 
     # --------------------------------------------------------------------------
     # 4. FUNDAMENTAL DATA FETCHER (Screener / Yahoo Finance with Zero-Mock)
     # --------------------------------------------------------------------------
-    def get_stock_fundamentals(self, symbol: str) -> Dict[str, Any]:
+    def get_stock_fundamentals(self, symbol: str, resolved_symbol: Optional[str] = None) -> Dict[str, Any]:
         """
         Fetches authentic fundamentals (Market Cap, ROCE, ROE, Debt/Equity, EPS, PAT)
         from Yahoo Finance or local cache with Screener.in source redirect.
         """
-        sym = clean_symbol(symbol)
+        sym = clean_symbol(symbol).upper()
+        cand = (resolved_symbol or sym).upper()
         now = time.time()
 
-        # Check memory cache (valid for 15 mins)
-        if sym in self._info_cache:
-            ts, cached = self._info_cache[sym]
+        cache_key = f"{sym}_{cand}"
+        if cache_key in self._info_cache:
+            ts, cached = self._info_cache[cache_key]
             if now - ts < 900.0:
                 return cached
 
+        candidates_to_try = [cand]
+        if cand != sym:
+            candidates_to_try.append(sym)
+        for alt in self.get_symbol_candidates(sym):
+            if alt not in candidates_to_try:
+                candidates_to_try.append(alt)
+
         res = {
             "symbol": sym,
+            "resolved_symbol": cand,
             "company_name": sym,
-            "sector": get_stock_sector(sym),
+            "sector": get_stock_sector(cand) or get_stock_sector(sym),
             "industry": "NSE Equities",
             "market_cap_cr": None,
             "roce_pct": None,
@@ -467,63 +560,73 @@ class StockTestAnalyzer:
             "net_profit_cr": None,
             "pe_ratio": None,
             "source": "YAHOO_FINANCE_LIVE",
-            "fundamental_source_url": f"https://www.screener.in/company/{sym}/consolidated/",
-            "nse_source_url": f"https://www.nseindia.com/get-quotes/equity?symbol={sym}"
+            "fundamental_source_url": f"https://www.screener.in/company/{cand}/consolidated/",
+            "nse_source_url": f"https://www.nseindia.com/get-quotes/equity?symbol={cand}"
         }
 
-        try:
-            t = yf.Ticker(format_nse_ticker(sym))
-            info = t.info or {}
+        for ticker_cand in candidates_to_try:
+            try:
+                nse_ticker = format_nse_ticker(ticker_cand)
+                t = yf.Ticker(nse_ticker)
+                info = t.info or {}
 
-            res["company_name"] = info.get("longName") or info.get("shortName") or sym
-            res["sector"] = info.get("sector") or get_stock_sector(sym)
-            res["industry"] = info.get("industry") or "NSE Cash Equity"
+                # Fast info check if info is sparse
+                if not info or not info.get("marketCap"):
+                    try:
+                        fi = t.fast_info
+                        if fi and getattr(fi, "market_cap", None):
+                            mc = getattr(fi, "market_cap")
+                            res["market_cap_cr"] = round(mc / 1e7, 2)
+                    except Exception:
+                        pass
 
-            # Market Cap in Crores
-            mc = info.get("marketCap")
-            if mc and mc > 0:
-                res["market_cap_cr"] = round(mc / 1e7, 2)
+                if info.get("longName") or info.get("shortName"):
+                    res["company_name"] = info.get("longName") or info.get("shortName") or sym
+                    res["sector"] = info.get("sector") or get_stock_sector(ticker_cand) or get_stock_sector(sym)
+                    res["industry"] = info.get("industry") or "NSE Cash Equity"
 
-            # ROE %
-            roe = info.get("returnOnEquity")
-            if roe is not None:
-                res["roe_pct"] = round(float(roe) * 100.0, 2)
+                    mc = info.get("marketCap")
+                    if mc and mc > 0:
+                        res["market_cap_cr"] = round(mc / 1e7, 2)
 
-            # ROCE / Operating Margins approximation from returnOnAssets or operatingMargins
-            roa = info.get("returnOnAssets")
-            if roa is not None:
-                res["roce_pct"] = round(float(roa) * 120.0, 2)  # Operating ROCE proxy
-            elif roe is not None:
-                res["roce_pct"] = round(float(roe) * 110.0, 2)
+                    roe = info.get("returnOnEquity")
+                    if roe is not None:
+                        res["roe_pct"] = round(float(roe) * 100.0, 2)
 
-            # Debt to Equity
-            de = info.get("debtToEquity")
-            if de is not None:
-                # yfinance often returns 50 for 0.50 or 150 for 1.50
-                de_val = float(de)
-                if de_val > 20:
-                    de_val = de_val / 100.0
-                res["debt_to_equity"] = round(de_val, 2)
+                    roa = info.get("returnOnAssets")
+                    if roa is not None:
+                        res["roce_pct"] = round(float(roa) * 120.0, 2)
+                    elif roe is not None:
+                        res["roce_pct"] = round(float(roe) * 110.0, 2)
 
-            # EPS
-            eps = info.get("trailingEps") or info.get("forwardEps")
-            if eps is not None:
-                res["trailing_eps"] = round(float(eps), 2)
+                    de = info.get("debtToEquity")
+                    if de is not None:
+                        de_val = float(de)
+                        if de_val > 20:
+                            de_val = de_val / 100.0
+                        res["debt_to_equity"] = round(de_val, 2)
 
-            # Net Profit in Crores
-            np_val = info.get("netIncomeToCommon")
-            if np_val is not None:
-                res["net_profit_cr"] = round(float(np_val) / 1e7, 2)
+                    eps = info.get("trailingEps") or info.get("forwardEps")
+                    if eps is not None:
+                        res["trailing_eps"] = round(float(eps), 2)
 
-            # PE Ratio
-            pe = info.get("trailingPE") or info.get("forwardPE")
-            if pe is not None:
-                res["pe_ratio"] = round(float(pe), 1)
+                    np_val = info.get("netIncomeToCommon")
+                    if np_val is not None:
+                        res["net_profit_cr"] = round(float(np_val) / 1e7, 2)
 
-            self._info_cache[sym] = (now, res)
-        except Exception as e:
-            logger.debug(f"Fundamental fetch note for {sym}: {e}")
+                    pe = info.get("trailingPE") or info.get("forwardPE")
+                    if pe is not None:
+                        res["pe_ratio"] = round(float(pe), 1)
 
+                    res["resolved_symbol"] = ticker_cand
+                    res["fundamental_source_url"] = f"https://www.screener.in/company/{ticker_cand}/consolidated/"
+                    res["nse_source_url"] = f"https://www.nseindia.com/get-quotes/equity?symbol={ticker_cand}"
+                    break
+            except Exception as e:
+                logger.debug(f"Fundamental fetch note for {ticker_cand}: {e}")
+                continue
+
+        self._info_cache[cache_key] = (now, res)
         return res
 
     # --------------------------------------------------------------------------
@@ -538,21 +641,22 @@ class StockTestAnalyzer:
         Generates comparison audit tables, lightweight chart series, and trade plan.
         """
         t0 = time.time()
-        sym = clean_symbol(symbol)
+        sym = clean_symbol(symbol).upper()
         if not sym:
             return {"status": "ERROR", "message": "Invalid stock symbol"}
 
         # Step 1: OHLCV Retrieval or Download
-        df, data_source, data_msg = self.get_or_download_stock_ohlcv(sym, force_download=force_download)
+        df, data_source, data_msg, resolved_sym = self.get_or_download_stock_ohlcv(sym, force_download=force_download)
         if df is None or df.empty or len(df) < 15:
             return {
                 "status": "ERROR",
                 "symbol": sym,
+                "resolved_symbol": resolved_sym,
                 "message": f"Could not retrieve sufficient trading data for '{sym}'. Reason: {data_msg}"
             }
 
         # Step 2: Fundamentals Fetch
-        fundamentals = self.get_stock_fundamentals(sym)
+        fundamentals = self.get_stock_fundamentals(sym, resolved_symbol=resolved_sym)
 
         # Step 3: Technical Indicators Computation
         c = df["Close"]
@@ -939,6 +1043,8 @@ class StockTestAnalyzer:
         return {
             "status": "SUCCESS",
             "symbol": sym,
+            "resolved_symbol": resolved_sym,
+            "alias_notice": f"Corporate Demerger / Ticker Mapping: Displaying genuine live NSE trading data for {resolved_sym} ({fundamentals.get('company_name', resolved_sym)}) for query '{sym}'." if resolved_sym != sym else None,
             "company_name": fundamentals.get("company_name", sym),
             "sector": fundamentals.get("sector", "NSE Equities"),
             "industry": fundamentals.get("industry", "Cash Equities"),

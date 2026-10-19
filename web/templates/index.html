@@ -1814,6 +1814,7 @@
             <button onclick="selectAndAnalyzeQuickStock('TCS')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">TCS</button>
             <button onclick="selectAndAnalyzeQuickStock('INFY')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">INFY</button>
             <button onclick="selectAndAnalyzeQuickStock('HDFCBANK')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">HDFCBANK</button>
+            <button onclick="selectAndAnalyzeQuickStock('TATAMOTORS')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">TATAMOTORS</button>
             <button onclick="selectAndAnalyzeQuickStock('DIXON')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">DIXON</button>
             <button onclick="selectAndAnalyzeQuickStock('KAYNES')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">KAYNES</button>
             <button onclick="selectAndAnalyzeQuickStock('BSE')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">BSE</button>
@@ -1833,6 +1834,9 @@
 
         <!-- 4. DIAGNOSTIC RESULTS CONTAINER -->
         <div id="test-mode-results" class="space-y-4 sm:space-y-6">
+
+          <!-- Corporate Demerger / Alias Notification Banner -->
+          <div id="tm-alias-banner" class="hidden text-xs font-mono text-cyan-300 bg-cyan-500/10 px-3.5 py-2.5 rounded-xl border border-cyan-500/30 flex items-center gap-2"></div>
 
           <!-- Telemetry & Source Bar -->
           <div class="bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
@@ -19148,12 +19152,11 @@
       try {
         const url = `/api/test-mode/analyze/${encodeURIComponent(symbol)}?force_download=${forceDownload}`;
         const res = await fetch(url);
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.detail || `Analysis failed with HTTP ${res.status}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.status === 'ERROR') {
+          throw new Error(data.message || data.detail || `Analysis failed with HTTP ${res.status}`);
         }
 
-        const data = await res.json();
         testModeState.currentAnalysis = data;
         renderTestModeResults(data);
 
@@ -19163,13 +19166,24 @@
         console.error('Error running test mode diagnostic:', err);
         if (loadingEl) {
           loadingEl.innerHTML = `
-            <div class="text-rose-400 space-y-2 py-4">
+            <div class="text-rose-400 space-y-3 py-4 max-w-lg mx-auto">
               <i data-lucide="alert-triangle" class="w-8 h-8 mx-auto text-rose-400"></i>
-              <h4 class="text-sm font-bold">Analysis Failed for ${escapeHtml(symbol)}</h4>
-              <p class="text-xs text-slate-400 max-w-md mx-auto">${escapeHtml(err.message)}</p>
-              <button onclick="triggerTestModeAnalysis(true, '${escapeHtml(symbol)}')" class="mt-2 px-3 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-semibold hover:bg-rose-500/30 transition">
-                Retry with Force Live Download
-              </button>
+              <h4 class="text-sm font-bold">Analysis Notice for ${escapeHtml(symbol)}</h4>
+              <p class="text-xs text-slate-300 leading-relaxed">${escapeHtml(err.message)}</p>
+              <div class="flex items-center justify-center gap-2 pt-2 flex-wrap">
+                <button onclick="triggerTestModeAnalysis(true, '${escapeHtml(symbol)}')" class="px-3 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-semibold hover:bg-rose-500/30 transition flex items-center gap-1.5">
+                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                  <span>Retry Force Live Download</span>
+                </button>
+                ${(symbol.includes('TATA') || symbol.includes('MOTOR')) ? `
+                  <button onclick="selectAndAnalyzeQuickStock('TMCV')" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-semibold hover:bg-cyan-500/30 transition">
+                    Analyze TMCV (Tata Motors Ltd)
+                  </button>
+                  <button onclick="selectAndAnalyzeQuickStock('TMPV')" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-semibold hover:bg-cyan-500/30 transition">
+                    Analyze TMPV (Tata Motors PV)
+                  </button>
+                ` : ''}
+              </div>
             </div>
           `;
           lucide.createIcons();
@@ -19181,7 +19195,21 @@
     }
 
     function renderTestModeResults(data) {
-      if (!data) return;
+      if (!data || !data.current_price || isNaN(Number(data.current_price))) {
+        console.warn('Incomplete analysis data received:', data);
+        return;
+      }
+
+      // Handle Alias / Demerger Banner
+      const aliasBanner = document.getElementById('tm-alias-banner');
+      if (aliasBanner) {
+        if (data.alias_notice) {
+          aliasBanner.innerHTML = `<i data-lucide="info" class="w-4 h-4 text-cyan-400 shrink-0"></i><span>${escapeHtml(data.alias_notice)}</span>`;
+          aliasBanner.classList.remove('hidden');
+        } else {
+          aliasBanner.classList.add('hidden');
+        }
+      }
 
       // 1. Telemetry Bar
       const sourceBadge = document.getElementById('tm-source-badge');
