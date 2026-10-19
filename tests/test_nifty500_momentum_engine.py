@@ -21,7 +21,13 @@ from engines.nifty500_engine import (
     reconcile_open_nifty500_positions
 )
 from execution.state_engine import state_engine
+from unittest.mock import patch
 
+@pytest.fixture(autouse=True)
+def mock_telegram():
+    with patch("core.telegram_vault.telegram_vault.send_alert_and_sync"), \
+         patch("core.telegram_vault.telegram_vault.backup_master_file_to_cloud"):
+        yield
 
 def test_portfolio2_compounding_constants():
     """Validates core quantitative parameters of Portfolio 2."""
