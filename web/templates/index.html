@@ -627,7 +627,7 @@
                 <tr>
                   <th class="p-3.5">Symbol</th>
                   <th class="p-3.5">Entry Date & Time (IST)</th>
-                  <th class="p-3.5">Entry / Live LTP</th>
+                  <th class="p-3.5">Entry / Live LTP & Day Change</th>
                   <th class="p-3.5">Stop Loss</th>
                   <th class="p-3.5">T1 (1.5R) / T2 (3.0R)</th>
                   <th class="p-3.5">Qty / Value</th>
@@ -832,7 +832,7 @@
               <tr>
                 <th class="p-3.5">Symbol</th>
                 <th class="p-3.5">Entry Date & Time (IST)</th>
-                <th class="p-3.5">Entry / LTP</th>
+                <th class="p-3.5">Entry / LTP & Day Change</th>
                 <th class="p-3.5">Current Stop</th>
                 <th class="p-3.5">+2R Trailing Target</th>
                 <th class="p-3.5">Shares / Cost</th>
@@ -15446,6 +15446,10 @@
         const ltp = p.current_price || p.entry_price;
         const ltpTime = (p.price_updated_at || p.updated_at || p.entry_date || '').slice(11, 19);
         const syncTitle = msgId ? `Synced to Cloud Master File (Msg #${msgId})` : `Synced to Telegram Cloud Master Vault`;
+        const dayChg = typeof p.day_change_pct === 'number' ? p.day_change_pct : (parseFloat(p.day_change_pct) || 0.0);
+        const dayChgClass = dayChg >= 0 ? 'text-emerald-400 bg-emerald-950/70 border-emerald-500/30' : 'text-rose-400 bg-rose-950/70 border-rose-500/30';
+        const dayChgSign = dayChg >= 0 ? '+' : '';
+        const dayChgArrow = dayChg >= 0 ? '▲' : '▼';
         const t1Badge = p.t1_hit
           ? `<span title="${syncTitle} • Realized +₹${Number(p.t1_pnl || 0).toLocaleString('en-IN')}" class="quant-badge inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold whitespace-nowrap"><span>🎯</span> <span>T1 Booked (+₹${Math.round(Number(p.t1_pnl || 0)).toLocaleString('en-IN')})</span></span>`
           : `<span title="${syncTitle}" class="quant-badge inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 font-medium whitespace-nowrap"><span>☁️</span> <span>Vault Synced</span></span>`;
@@ -15462,7 +15466,12 @@
             </td>
             <td class="p-3.5">
               <div class="text-slate-300">Entry: ₹${p.entry_price.toFixed(2)}</div>
-              <div class="text-[11px] font-bold ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">LTP: ₹${ltp.toFixed(2)}</div>
+              <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <span class="text-[11px] font-bold text-white">LTP: ₹${ltp.toFixed(2)}</span>
+                <span class="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dayChgClass}" title="Today's Session Change">
+                  ${dayChgArrow} ${dayChgSign}${dayChg.toFixed(2)}%
+                </span>
+              </div>
             </td>
             <td class="p-3.5 text-rose-400 font-semibold">₹${p.stop_loss.toFixed(2)}</td>
             <td class="p-3.5">
@@ -15695,6 +15704,10 @@
         const pnl = p.unrealized_pnl || 0;
         const pnlClass = pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
         const pnlSign = pnl >= 0 ? '+' : '';
+        const dayChg = typeof p.day_change_pct === 'number' ? p.day_change_pct : (parseFloat(p.day_change_pct) || 0.0);
+        const dayChgClass = dayChg >= 0 ? 'text-emerald-400 bg-emerald-950/70 border-emerald-500/30' : 'text-rose-400 bg-rose-950/70 border-rose-500/30';
+        const dayChgSign = dayChg >= 0 ? '+' : '';
+        const dayChgArrow = dayChg >= 0 ? '▲' : '▼';
         const isTrailing = Boolean(p.t1_hit || p.sl_reason === 'TRAILING_SL');
         const stateBadge = isTrailing ?
           '<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">🎯 TRAILING 5D LOW</span>' :
@@ -15708,7 +15721,12 @@
             <td class="p-3.5 text-slate-300 text-[11px] font-mono">${p.entry_date || '-'}</td>
             <td class="p-3.5">
               <div>₹${p.entry_price.toFixed(2)}</div>
-              <div class="text-[11px] text-slate-400">LTP: ₹${(p.current_price || p.entry_price).toFixed(2)}</div>
+              <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <span class="text-[11px] font-bold text-white">LTP: ₹${(p.current_price || p.entry_price).toFixed(2)}</span>
+                <span class="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dayChgClass}" title="Today's Session Change">
+                  ${dayChgArrow} ${dayChgSign}${dayChg.toFixed(2)}%
+                </span>
+              </div>
             </td>
             <td class="p-3.5 text-rose-400 font-semibold">₹${p.stop_loss.toFixed(2)}</td>
             <td class="p-3.5 text-violet-400 font-semibold">₹${p.target.toFixed(2)}</td>

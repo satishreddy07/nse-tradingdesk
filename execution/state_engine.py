@@ -830,6 +830,7 @@ class StateEngine:
         is_completed = False
         completed_info = None
         trade_status = "NONE"
+        entry_ts = candles[-1]["time"] if candles else ""
 
         if active_pos:
             ep = round(float(active_pos["entry_price"]), 2)
@@ -842,6 +843,7 @@ class StateEngine:
             risk_per_share = max(0.5, round(ep - orig_sl, 2)) if orig_sl < ep else max(0.5, round(ep * 0.02, 2))
             rr_t1 = round((t1 - ep) / risk_per_share, 2)
             rr_t2 = round((t2 - ep) / risk_per_share, 2)
+            entry_ts = str(active_pos.get("entry_date") or active_pos.get("entry_time") or (candles[-1]["time"] if candles else ""))
             show_trade_lines = True
             trade_status = "ACTIVE"
         elif is_completed_trade:
@@ -1237,6 +1239,7 @@ class StateEngine:
         query = """
         SELECT a.*,
                m.last_close AS master_last_close,
+               m.prev_close AS master_prev_close,
                m.change_pct AS day_change_pct,
                m.updated_at AS master_updated_at
         FROM active_positions a
@@ -1265,9 +1268,14 @@ class StateEngine:
                             item["price_updated_at"] = master_upd
                     else:
                         item["price_updated_at"] = pos_upd or item.get("entry_date", "")
-                    item["day_change_pct"] = round(float(item.get("day_change_pct") or 0.0), 2)
+                    
                     ep = float(item.get("entry_price") or 0.0)
                     cp = float(item.get("current_price") or ep)
+                    day_chg = round(float(item.get("day_change_pct") or 0.0), 2)
+                    master_prev = float(item.get("master_prev_close") or 0.0)
+                    if day_chg == 0.0 and master_prev > 0 and cp > 0:
+                        day_chg = round(((cp - master_prev) / master_prev) * 100.0, 2)
+                    item["day_change_pct"] = day_chg
                     sl = float(item.get("stop_loss") or ep * 0.95)
                     qty = int(item.get("quantity") or 0)
                     orig_qty = int(item.get("original_quantity") or (qty * 2 if (item.get("t1_hit") and float(item.get("t1_pnl") or 0.0) > 0) else qty))
