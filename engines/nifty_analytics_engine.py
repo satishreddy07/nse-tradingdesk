@@ -49,7 +49,7 @@ from sklearn.linear_model import Ridge, LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from core import config
 from core.config import (
-    P1_BASE_CAPITAL, P2_BASE_CAPITAL, NIFTY_LOT_SIZE,
+    P1_BASE_CAPITAL, P2_BASE_CAPITAL, P3_BASE_CAPITAL, NIFTY_LOT_SIZE,
     RISK_FREE_RATE, DEFAULT_OPTIONS_IV, calc_regulatory_options_cost
 )
 
@@ -6737,11 +6737,17 @@ class NiftyAnalyticsEngine:
                 p2_rows = conn.execute(
                     "SELECT * FROM trade_history WHERE portfolio_type IN ('P2_NIFTY500', 'NIFTY500_MOMENTUM') ORDER BY exit_date ASC"
                 ).fetchall()
+                p3_rows = conn.execute(
+                    "SELECT * FROM trade_history WHERE portfolio_type IN ('PORTFOLIO_3_PRE_BREAKOUT', 'PORTFOLIO_3') ORDER BY exit_date ASC"
+                ).fetchall()
                 p1_active = conn.execute(
                     "SELECT * FROM active_positions WHERE portfolio_type IN ('P1_SWING', 'INSTITUTIONAL_6PILLAR')"
                 ).fetchall()
                 p2_active = conn.execute(
                     "SELECT * FROM active_positions WHERE portfolio_type IN ('P2_NIFTY500', 'NIFTY500_MOMENTUM')"
+                ).fetchall()
+                p3_active = conn.execute(
+                    "SELECT * FROM active_positions WHERE portfolio_type IN ('PORTFOLIO_3_PRE_BREAKOUT', 'PORTFOLIO_3')"
                 ).fetchall()
 
         # Build P1 curve (Institutional 6-Pillar Swing Desk, Base ₹5,00,000)
@@ -6799,11 +6805,39 @@ class NiftyAnalyticsEngine:
                     "label": f"🎯 T1 Booked: {r['symbol']} (+₹{t1_p:,.0f})"
                 })
 
+        # Build P3 curve (Pre-Breakout Coil Desk, Base ₹2,00,000)
+        p3_base = float(P3_BASE_CAPITAL)
+        p3_running = p3_base
+        p3_curve = [{"timestamp": "Start", "date": "Base Capital", "equity": p3_base, "pnl": 0.0, "label": "Base ₹2,00,000"}]
+        for r in p3_rows:
+            pnl = float(r["pnl"] or 0.0)
+            p3_running += pnl
+            p3_curve.append({
+                "timestamp": r["exit_date"],
+                "date": str(r["exit_date"])[:10],
+                "equity": round(p3_running, 2),
+                "pnl": round(pnl, 2),
+                "label": f"{r['symbol']} ({r['return_pct']}%)"
+            })
+
+        for r in p3_active:
+            if r["t1_hit"] and float(r["t1_pnl"] or 0.0) > 0:
+                t1_p = float(r["t1_pnl"])
+                p3_running += t1_p
+                p3_curve.append({
+                    "timestamp": r["updated_at"] or format_ist(),
+                    "date": str(r["updated_at"] or format_ist())[:10],
+                    "equity": round(p3_running, 2),
+                    "pnl": round(t1_p, 2),
+                    "label": f"🎯 Leg 1 Booked: {r['symbol']} (+₹{t1_p:,.0f})"
+                })
+
         result = {
             "status": "OK",
             "options_curve": opt_curve,
             "swing_curve": p1_curve,
             "nifty500_curve": p2_curve,
+            "p3_curve": p3_curve,
             "timestamp_ist": format_ist()
         }
 

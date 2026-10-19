@@ -85,6 +85,9 @@
     .glow-violet {
       box-shadow: 0 0 20px -5px rgba(139, 92, 246, 0.25);
     }
+    .glow-amber {
+      box-shadow: 0 0 20px -5px rgba(245, 158, 11, 0.25);
+    }
     .no-scrollbar::-webkit-scrollbar {
       display: none;
     }
@@ -355,6 +358,12 @@
             <i data-lucide="trending-up" class="w-3.5 h-3.5 text-violet-400 shrink-0"></i>
             <span>P2: Nifty 500</span>
             <span id="badge-p2-slots" class="px-1.5 py-0.2 rounded text-[10px] bg-violet-900/70 font-mono text-violet-200">0/10</span>
+          </button>
+
+          <button onclick="switchTab('tab-p3')" id="nav-tab-p3" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
+            <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
+            <span>P3: Pre-Breakout</span>
+            <span id="badge-p3-slots" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-900/70 font-mono text-amber-200">0/10</span>
           </button>
 
           <button onclick="switchTab('tab-charts')" id="nav-tab-charts" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
@@ -817,6 +826,212 @@
       </div>
 
     </div>
+
+      <!-- ================================================================= -->
+      <!-- TAB 3: PORTFOLIO 3 — PRE-BREAKOUT COILS & SPLIT EXITS             -->
+      <!-- ================================================================= -->
+      <div id="tab-p3" class="tab-content hidden space-y-6">
+
+        <!-- Engine Header & Subtitle -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/60 border border-slate-800 p-5 rounded-2xl glow-amber">
+          <div>
+            <div class="flex items-center gap-2.5">
+              <span class="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">PORTFOLIO 3</span>
+              <h2 class="text-xl font-extrabold text-white">Pre-Breakout Coil & Split Exit Engine</h2>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950 text-amber-300 border border-amber-500/30 flex items-center gap-1 shrink-0">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span>VOL CONFIRMATION</span>
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">
+              ₹2,00,000 Base Capital • 1.0% Fixed Risk (₹2,000/trade) • Max 10 Slots (20% Cap) • EOD Pre-Breakout Coils (VDU ≤ 0.8x, EMA ±3.8%, Range ≤ 3.2%) • 30m Breakout (09:15–10:15 IST, Vol Pacing ≥ 3.12x) • Split Exit (50% @ +2.0R / 50% 10 EMA Trailing Runner)
+            </p>
+          </div>
+          <div class="flex items-center gap-2 self-start sm:self-center flex-wrap">
+            <button onclick="triggerP3WatchlistScan()" class="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex items-center gap-1.5 transition">
+              <i data-lucide="filter" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+              <span>Scan EOD Watchlist</span>
+            </button>
+            <button onclick="triggerP3BreakoutCheck()" class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 transition">
+              <i data-lucide="zap" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+              <span>Run Breakout Check</span>
+            </button>
+            <button onclick="triggerP3Reconcile()" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <span>Reconcile Exits</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Intraday Window & Volume Confirmation Banner -->
+        <div id="p3-window-banner" class="p-4 rounded-xl border border-slate-800 bg-slate-900/90 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div id="p3-window-badge" class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+              <i data-lucide="zap" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <div class="text-xs font-semibold text-white flex items-center gap-2">
+                <span>Trigger Gate:</span>
+                <span id="p3-window-text" class="text-amber-400 font-mono">INTRADAY BREAKOUT WINDOW (09:15 - 10:15 IST)</span>
+              </div>
+              <div class="text-[11px] text-slate-400 mt-0.5" id="p3-window-desc">
+                Evaluating live 30-min price action & volume pacing (>= 3.12x of 20-day time-of-day avg volume).
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 text-xs font-mono text-slate-300">
+            <div id="p3-last-scan">EOD Scan: --</div>
+            <div id="p3-last-check">Check: --</div>
+          </div>
+        </div>
+
+        <!-- KPI Metric Cards Grid (6 Distinct Cards) -->
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+            <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Total Equity</div>
+            <div id="p3-kpi-equity" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">₹2,00,000</div>
+            <div class="text-[10px] text-amber-400 mt-1 font-mono">Base ₹2,00,000 Capital</div>
+          </div>
+
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+            <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Portfolio Slots</div>
+            <div id="p3-kpi-slots" class="text-lg sm:text-2xl font-mono font-bold text-white mt-1">0 / 10</div>
+            <div class="text-[10px] text-slate-400 mt-1 font-mono">Slot Cap: ₹40,000 (20%)</div>
+          </div>
+
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+            <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Risk / Trade (1.0%)</div>
+            <div id="p3-kpi-risk" class="text-lg sm:text-2xl font-mono font-bold text-amber-400 mt-1">₹2,000</div>
+            <div class="text-[10px] text-slate-400 mt-1 font-mono">Stop: T-1 Low × 0.998</div>
+          </div>
+
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+            <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Realized PnL</div>
+            <div id="p3-kpi-realized" class="text-lg sm:text-2xl font-mono font-bold text-slate-200 mt-1">₹0.00</div>
+            <div id="p3-kpi-winrate" class="text-[10px] text-emerald-400 mt-1 font-mono">Win Rate: 0.0%</div>
+          </div>
+
+          <div class="bg-slate-900/80 border border-emerald-500/20 rounded-xl p-4">
+            <div class="text-[11px] font-medium text-emerald-400 uppercase tracking-wider">Unrealized PnL (MTM)</div>
+            <div id="p3-kpi-unrealized" class="text-lg sm:text-2xl font-mono font-bold text-slate-200 mt-1">₹0.00</div>
+            <div class="text-[10px] text-slate-400 mt-1 font-mono">Live Open Positions MTM</div>
+          </div>
+
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+            <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Active Watchlist</div>
+            <div id="p3-kpi-watchlist" class="text-lg sm:text-2xl font-mono font-bold text-amber-300 mt-1">0 Coils</div>
+            <div class="text-[10px] text-slate-400 mt-1 font-mono">Volume Pacing ≥ 3.12x</div>
+          </div>
+        </div>
+
+        <!-- Portfolio 3 Pre-Breakout Equity Curve Chart -->
+        <div class="bg-slate-900/85 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div class="flex items-center gap-2">
+              <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
+              <span class="text-xs font-bold text-white uppercase font-mono tracking-wide">Pre-Breakout Coil Desk (P3) Equity Curve</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">Base ₹2,00,000</span>
+            </div>
+            <div id="p3-equity-hud" class="text-[11px] font-mono text-amber-300">Hover / touch curve to inspect equity points</div>
+          </div>
+          <div class="relative w-full h-40 sm:h-48 bg-[#050811] rounded-xl border border-slate-800/80 overflow-hidden">
+            <canvas id="p3-portfolio-equity-canvas" class="w-full h-full block cursor-crosshair"></canvas>
+          </div>
+        </div>
+
+        <!-- Active Holdings Section with Split Exit Tracking -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+          <div class="p-4 sm:p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <i data-lucide="layers" class="w-4 h-4 text-amber-400"></i>
+              <h3 class="font-bold text-white text-sm">Active Positions & Split Exit Management</h3>
+              <span id="p3-active-count-tag" class="text-xs font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">0 Open</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-700/40 text-emerald-300">🟢 50/50 Automated Dual-Leg</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="loadP3Data(true)" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs flex items-center gap-1 transition">
+                <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                <span>Refresh Live</span>
+              </button>
+              <button onclick="triggerP3Reconcile()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 transition">
+                <i data-lucide="shield-check" class="w-3 h-3"></i>
+                <span>Evaluate Exits</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-left text-xs text-slate-300 min-w-[980px]">
+              <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                <tr>
+                  <th class="p-3.5">Symbol</th>
+                  <th class="p-3.5">Entry Date & Time</th>
+                  <th class="p-3.5">Entry / LTP & Day Change</th>
+                  <th class="p-3.5">Total Quantity / Value</th>
+                  <th class="p-3.5">Initial Stop (1R)</th>
+                  <th class="p-3.5">Leg 1 (50% @ +2.0R Target)</th>
+                  <th class="p-3.5">Leg 2 (50% Runner Trailing 10 EMA)</th>
+                  <th class="p-3.5">Unrealized PnL</th>
+                  <th class="p-3.5 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody id="p3-positions-tbody" class="divide-y divide-slate-800/60 font-mono">
+                <tr>
+                  <td colspan="9" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 3. Coils trigger during 09:15–10:15 IST with volume pacing >= 3.12x.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Pre-Breakout Coil Watchlist Section -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 class="font-bold text-white text-sm flex items-center gap-2">
+                <i data-lucide="crosshair" class="w-4 h-4 text-amber-400"></i>
+                <span>Pre-Breakout Coil Watchlist (T-1 Ingestion)</span>
+              </h3>
+              <p class="text-xs text-slate-400">VDU ≤ 0.8x 20 SMA Vol • 20 EMA Proximity ±3.8% • Range Contraction ≤ 3.2% • Trend: Close ≥ 20 EMA > 50 SMA</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="triggerP3WatchlistScan()" class="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-semibold text-xs flex items-center gap-1 transition">
+                <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                <span>Re-Scan EOD Watchlist</span>
+              </button>
+              <button onclick="triggerP3BreakoutCheck()" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs flex items-center gap-1 transition">
+                <i data-lucide="play" class="w-3 h-3"></i>
+                <span>Trigger Intraday Now</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-left text-xs text-slate-300 min-w-[1000px]">
+              <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                <tr>
+                  <th class="p-3.5">Stock Symbol</th>
+                  <th class="p-3.5">T-1 Close & Date</th>
+                  <th class="p-3.5">Breakout Trigger (H_T-1)</th>
+                  <th class="p-3.5">Initial SL (L_T-1 × 0.998)</th>
+                  <th class="p-3.5">Risk / Share</th>
+                  <th class="p-3.5">VDU Ratio (≤0.8x)</th>
+                  <th class="p-3.5">20 EMA Dist (±3.8%)</th>
+                  <th class="p-3.5">Daily Range (≤3.2%)</th>
+                  <th class="p-3.5">Watchlist Status</th>
+                  <th class="p-3.5 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody id="p3-watchlist-tbody" class="divide-y divide-slate-800/60 font-mono">
+                <tr>
+                  <td colspan="10" class="p-8 text-center text-slate-500 font-sans">No active coil candidates on watchlist. Click "Scan EOD Watchlist" to scan for setups.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
 
       <!-- ================================================================= -->
       <!-- TAB: EQ-FINAL & CUSTOM SCREENER (CHARTINK HYBRID MATRIX)          -->
@@ -7927,6 +8142,7 @@
     let allPositionsCache = [];
     let p1ActiveSet = new Set();
     let p2ActiveSet = new Set();
+    let p3ActiveSet = new Set();
 
     let scanPollTimer = null;
     let lastLoggedStep = "";
@@ -7958,6 +8174,9 @@
         }
         if (equityCurvesCache.nifty500_curve && document.getElementById('nifty500-portfolio-equity-canvas')) {
           drawEquityCurveCanvas('nifty500-portfolio-equity-canvas', equityCurvesCache.nifty500_curve, 'nifty500-equity-hud', '#8b5cf6', 'Nifty 500 Desk P2');
+        }
+        if (equityCurvesCache.p3_curve && document.getElementById('p3-portfolio-equity-canvas')) {
+          drawEquityCurveCanvas('p3-portfolio-equity-canvas', equityCurvesCache.p3_curve, 'p3-equity-hud', '#f59e0b', 'Pre-Breakout Desk P3');
         }
       }
     });
@@ -8264,6 +8483,7 @@
           const swingTabs = [
             { id: 'tab-p1', name: 'P1: 6-Pillar', icon: 'layers' },
             { id: 'tab-p2', name: 'P2: Nifty 500', icon: 'trending-up' },
+            { id: 'tab-p3', name: 'P3: Pre-Breakout', icon: 'zap' },
             { id: 'tab-charts', name: 'Charts & OHLCV', icon: 'candlestick-chart' },
             { id: 'tab-screener', name: 'EQ Screener', icon: 'filter' },
             { id: 'tab-research', name: 'Movers Research', icon: 'microscope' },
@@ -14821,6 +15041,9 @@
         if (data.nifty500_curve) {
           drawEquityCurveCanvas('nifty500-portfolio-equity-canvas', data.nifty500_curve, 'nifty500-equity-hud', '#8b5cf6', 'Nifty 500 Desk P2');
         }
+        if (data.p3_curve) {
+          drawEquityCurveCanvas('p3-portfolio-equity-canvas', data.p3_curve, 'p3-equity-hud', '#f59e0b', 'Pre-Breakout Desk P3');
+        }
       } catch (err) {
         console.error("Failed loading multi-desk equity curves:", err);
       }
@@ -14852,6 +15075,8 @@
       if (activeBtn) {
         if (tabId === 'tab-p2') {
           activeBtn.classList.add('bg-violet-500/15', 'text-violet-300', 'border-violet-500/40');
+        } else if (tabId === 'tab-p3') {
+          activeBtn.classList.add('bg-amber-500/15', 'text-amber-300', 'border-amber-500/40');
         } else if (tabId === 'tab-charts') {
           activeBtn.classList.add('bg-emerald-500/15', 'text-emerald-300', 'border-emerald-500/40');
         } else if (tabId === 'tab-screener') {
@@ -14888,6 +15113,7 @@
       }
 
       lucide.createIcons();
+      if (tabId === 'tab-p3') loadP3Data();
       if (tabId === 'tab-charts') loadFetchedStocksData();
       if (tabId === 'tab-signals') renderGlobalSignals();
       if (tabId === 'tab-research') loadMoversResearch();
@@ -15468,8 +15694,10 @@
           loadSystemStatus(),
           loadP1Data(forceSignals),
           loadP2Data(forceSignals),
+          loadP3Data(forceSignals),
           (typeof loadAllEquityCurves === 'function' ? loadAllEquityCurves() : Promise.resolve())
         ]);
+        if (currentModule === 'module-swing' && currentTab === 'tab-p3') await loadP3Data();
         if (currentModule === 'module-swing' && currentTab === 'tab-charts') await loadFetchedStocksData();
         if (currentModule === 'module-swing' && currentTab === 'tab-history') await loadHistoryData();
         if (currentModule === 'module-swing' && currentTab === 'tab-analytics') await loadAllEquityCurves();
@@ -16457,6 +16685,283 @@
     }
 
     // -------------------------------------------------------------------------
+    // PORTFOLIO 3: PRE-BREAKOUT COILS & SPLIT EXIT DATA
+    // -------------------------------------------------------------------------
+    let p3WatchlistCache = [];
+    let p3PositionsCache = [];
+    let p3LegsCache = [];
+
+    async function loadP3Data(forceSignals = false) {
+      try {
+        const [sumRes, posRes, watchRes, legRes] = await Promise.all([
+          fetch('/api/portfolio/PORTFOLIO_3/summary'),
+          fetch('/api/portfolio/PORTFOLIO_3/positions'),
+          fetch('/api/portfolio/PORTFOLIO_3/watchlist'),
+          fetch('/api/portfolio/PORTFOLIO_3/legs')
+        ]);
+
+        if (sumRes.ok) {
+          const sum = await sumRes.json();
+          const st = sum.stats || {};
+
+          const eqEl = document.getElementById('p3-kpi-equity');
+          if (eqEl) eqEl.innerText = `₹${(sum.current_equity || 200000).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
+          const slotsEl = document.getElementById('p3-kpi-slots');
+          if (slotsEl) slotsEl.innerText = `${sum.active_positions_count || 0} / ${sum.max_slots || 10}`;
+
+          const badgeSlots = document.getElementById('badge-p3-slots');
+          if (badgeSlots) badgeSlots.innerText = `${sum.active_positions_count || 0}/${sum.max_slots || 10}`;
+
+          const activeCountTag = document.getElementById('p3-active-count-tag');
+          if (activeCountTag) activeCountTag.innerText = `${sum.active_positions_count || 0} Open`;
+
+          const riskEl = document.getElementById('p3-kpi-risk');
+          if (riskEl) riskEl.innerText = `₹${(sum.risk_per_trade_inr || 2000).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
+          const pnl = st.total_realized_pnl || 0;
+          const pnlEl = document.getElementById('p3-kpi-realized');
+          if (pnlEl) {
+            pnlEl.innerText = `${pnl >= 0 ? '+' : ''}₹${pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+            pnlEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${pnl > 0 ? 'text-emerald-400' : (pnl < 0 ? 'text-rose-400' : 'text-slate-200')}`;
+          }
+
+          const winEl = document.getElementById('p3-kpi-winrate');
+          if (winEl) winEl.innerText = `Win Rate: ${st.win_rate || 0}% (${st.total_trades || 0} Trades)`;
+
+          const unPnl = st.unrealized_pnl || 0;
+          const unEl = document.getElementById('p3-kpi-unrealized');
+          if (unEl) {
+            unEl.innerText = `${unPnl >= 0 ? '+' : ''}₹${unPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+            unEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${unPnl > 0 ? 'text-emerald-400' : (unPnl < 0 ? 'text-rose-400' : 'text-slate-200')}`;
+          }
+
+          const watchKpi = document.getElementById('p3-kpi-watchlist');
+          if (watchKpi) watchKpi.innerText = `${sum.watchlist_count || 0} Coils`;
+
+          // Banner
+          const winBadge = document.getElementById('p3-window-badge');
+          const winText = document.getElementById('p3-window-text');
+          const winDesc = document.getElementById('p3-window-desc');
+          if (sum.intraday_breakout_window_active) {
+            if (winBadge) winBadge.className = 'w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0';
+            if (winText) {
+              winText.innerText = 'INTRADAY TRIGGER WINDOW ACTIVE (09:15 - 10:15 IST)';
+              winText.className = 'text-emerald-400 font-mono font-bold';
+            }
+            if (winDesc) winDesc.innerText = 'Evaluating live 30-min price action & volume pacing (>= 3.12x of 20-day time-of-day avg volume).';
+          } else {
+            if (winBadge) winBadge.className = 'w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0';
+            if (winText) {
+              winText.innerText = 'INTRADAY WINDOW STANDBY (Active 09:15 - 10:15 IST)';
+              winText.className = 'text-amber-400 font-mono font-bold';
+            }
+            if (winDesc) winDesc.innerText = sum.intraday_breakout_window_message || 'Breakout triggers evaluated every 30m during 09:15 - 10:15 IST.';
+          }
+
+          const scanTs = sum.last_scan_timestamp ? (sum.last_scan_timestamp.includes('T') ? sum.last_scan_timestamp.split('T')[1].substring(0, 8) : sum.last_scan_timestamp) : '--';
+          const checkTs = sum.last_intraday_check_timestamp ? (sum.last_intraday_check_timestamp.includes('T') ? sum.last_intraday_check_timestamp.split('T')[1].substring(0, 8) : sum.last_intraday_check_timestamp) : '--';
+          if (document.getElementById('p3-last-scan')) document.getElementById('p3-last-scan').innerText = `EOD Scan: ${scanTs}`;
+          if (document.getElementById('p3-last-check')) document.getElementById('p3-last-check').innerText = `Check: ${checkTs}`;
+        }
+
+        if (posRes.ok && legRes.ok) {
+          const positions = await posRes.json();
+          const legs = await legRes.json();
+          p3PositionsCache = positions || [];
+          p3LegsCache = legs || [];
+          p3ActiveSet = new Set((positions || []).map(p => (p.symbol || '').toUpperCase()));
+          renderP3Positions(p3PositionsCache, p3LegsCache);
+        }
+
+        if (watchRes.ok) {
+          p3WatchlistCache = await watchRes.json();
+          renderP3Watchlist(p3WatchlistCache);
+        }
+      } catch (err) {
+        console.error("Error loading Portfolio 3 data:", err);
+      }
+    }
+
+    function renderP3Positions(positions, legs) {
+      const tbody = document.getElementById('p3-positions-tbody');
+      if (!tbody) return;
+
+      if (!positions || positions.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-sans">No active open positions in Portfolio 3. Coils trigger during 09:15–10:15 IST with volume pacing >= 3.12x.</td></tr>`;
+        return;
+      }
+
+      const legMap = {};
+      (legs || []).forEach(l => {
+        if (l.symbol && !legMap[l.symbol]) {
+          legMap[l.symbol] = l;
+        }
+      });
+
+      tbody.innerHTML = positions.map(p => {
+        const leg = legMap[p.symbol] || {};
+        const pnl = p.unrealized_pnl || 0;
+        const pnlClass = pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        const pnlSign = pnl >= 0 ? '+' : '';
+        const dayChg = typeof p.day_change_pct === 'number' ? p.day_change_pct : (parseFloat(p.day_change_pct) || 0.0);
+        const dayChgClass = dayChg >= 0 ? 'text-emerald-400 bg-emerald-950/70 border-emerald-500/30' : 'text-rose-400 bg-rose-950/70 border-rose-500/30';
+        const dayChgSign = dayChg >= 0 ? '+' : '';
+        const dayChgArrow = dayChg >= 0 ? '▲' : '▼';
+
+        const leg1Hit = leg.leg1_status === 'CLOSED';
+        const leg1Target = leg.leg1_target_price ? `₹${parseFloat(leg.leg1_target_price).toFixed(2)}` : (p.t1_price ? `₹${parseFloat(p.t1_price).toFixed(2)}` : '--');
+        const leg1Badge = leg1Hit ?
+          `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">🎯 TARGET HIT (+2.0R)</span>` :
+          `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">PENDING (+2.0R @ ${leg1Target})</span>`;
+
+        const leg2Sl = leg.leg2_sl ? `₹${parseFloat(leg.leg2_sl).toFixed(2)}` : (p.current_stop ? `₹${parseFloat(p.current_stop).toFixed(2)}` : '--');
+        const isBe = leg1Hit || (p.current_stop && p.current_stop >= p.entry_price);
+        const leg2Badge = leg.leg2_status === 'CLOSED' ?
+          `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-700 text-slate-300">CLOSED</span>` :
+          (isBe ?
+            `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">🏃 10 EMA TRAIL (SL: ${leg2Sl} [BE])</span>` :
+            `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700">RUNNER (SL: ${leg2Sl})</span>`);
+
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="p-3.5 font-bold text-white">
+              <button onclick="openStockChartModal('${p.symbol}')" class="hover:text-amber-400 underline decoration-amber-500/40 underline-offset-4">${p.symbol}</button>
+            </td>
+            <td class="p-3.5 text-slate-300 text-[11px] font-mono">${p.entry_date || '-'}</td>
+            <td class="p-3.5">
+              <div class="font-mono">₹${parseFloat(p.entry_price).toFixed(2)}</div>
+              <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <span class="text-xs font-mono font-bold text-white">LTP: ₹${parseFloat(p.current_price || p.entry_price).toFixed(2)}</span>
+                <span class="text-[10px] font-mono px-1.5 py-0.2 rounded border ${dayChgClass}">${dayChgArrow} ${dayChgSign}${dayChg.toFixed(2)}%</span>
+              </div>
+            </td>
+            <td class="p-3.5 font-mono text-slate-300">
+              <div>${p.shares || p.total_quantity || 0} shs</div>
+              <div class="text-[10px] text-slate-400">₹${((p.shares || p.total_quantity || 0) * (p.entry_price || 0)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+            </td>
+            <td class="p-3.5 font-mono text-rose-400 font-semibold">₹${parseFloat(p.current_stop || p.initial_sl || 0).toFixed(2)}</td>
+            <td class="p-3.5">${leg1Badge}</td>
+            <td class="p-3.5">${leg2Badge}</td>
+            <td class="p-3.5">
+              <div class="font-mono font-bold ${pnlClass}">${pnlSign}₹${pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+              <div class="text-[10px] text-slate-400 font-mono">(${pnlSign}${(p.return_pct || 0).toFixed(2)}%)</div>
+            </td>
+            <td class="p-3.5 text-right space-x-1">
+              <button onclick="openStockChartModal('${p.symbol}')" class="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] transition">📈 Chart</button>
+              <button onclick="closePositionModal('${p.symbol}', ${p.current_price || p.entry_price})" class="px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] transition">Close</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderP3Watchlist(watchlist) {
+      const tbody = document.getElementById('p3-watchlist-tbody');
+      if (!tbody) return;
+
+      if (!watchlist || watchlist.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-500 font-sans">No active coil candidates on watchlist. Click "Scan EOD Watchlist" to scan for setups.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = watchlist.map(w => {
+        const vduRatio = parseFloat(w.vdu_ratio) || 0.0;
+        const vduClass = vduRatio <= 0.5 ? 'text-emerald-400 bg-emerald-950/60 border-emerald-500/30' : (vduRatio <= 0.8 ? 'text-amber-400 bg-amber-950/60 border-amber-500/30' : 'text-slate-400');
+        const rangePct = parseFloat(w.t_minus_1_range_pct) || 0.0;
+        const rangeClass = rangePct <= 2.0 ? 'text-emerald-400' : 'text-amber-400';
+        const riskPerShare = (w.t_minus_1_high - w.initial_sl).toFixed(2);
+        const riskPct = ((w.t_minus_1_high - w.initial_sl) / w.t_minus_1_high * 100).toFixed(2);
+
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="p-3.5 font-bold text-white">
+              <button onclick="openStockChartModal('${w.symbol}')" class="hover:text-amber-400 underline decoration-amber-500/40 underline-offset-4">${w.symbol}</button>
+            </td>
+            <td class="p-3.5 font-mono text-slate-300 text-xs">
+              <div>₹${parseFloat(w.t_minus_1_close).toFixed(2)}</div>
+              <div class="text-[10px] text-slate-500">${w.t_minus_1_date || w.scan_date || '-'}</div>
+            </td>
+            <td class="p-3.5 font-mono text-emerald-300 font-bold text-xs">
+              ₹${parseFloat(w.t_minus_1_high).toFixed(2)}
+            </td>
+            <td class="p-3.5 font-mono text-rose-300 text-xs">
+              ₹${parseFloat(w.initial_sl).toFixed(2)}
+              <span class="text-[10px] text-slate-500 block">(-0.2% buf)</span>
+            </td>
+            <td class="p-3.5 font-mono text-xs text-slate-300">
+              ₹${riskPerShare}
+              <span class="text-[10px] text-slate-400 block">(${riskPct}%)</span>
+            </td>
+            <td class="p-3.5 font-mono text-xs">
+              <span class="px-2 py-0.5 rounded border ${vduClass}">
+                ${vduRatio.toFixed(2)}x
+              </span>
+            </td>
+            <td class="p-3.5 font-mono text-xs text-slate-300">
+              ${parseFloat(w.ema20_dist_pct).toFixed(2)}%
+              <span class="text-[10px] text-slate-500 block">EMA20: ₹${parseFloat(w.ema20).toFixed(1)}</span>
+            </td>
+            <td class="p-3.5 font-mono text-xs ${rangeClass}">
+              ${rangePct.toFixed(2)}%
+            </td>
+            <td class="p-3.5">
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                ${w.status || 'WATCHING'}
+              </span>
+            </td>
+            <td class="p-3.5 text-right space-x-1 whitespace-nowrap">
+              <button onclick="openStockChartModal('${w.symbol}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold transition">
+                📈 Chart
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function triggerP3WatchlistScan() {
+      showToast("Scanning NSE Universe for Pre-Breakout Coils (VDU, EMA, Range Contraction)...", "info");
+      try {
+        const res = await fetch('/api/portfolio/PORTFOLIO_3/scan-watchlist', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message || "Watchlist scan initiated!", "success");
+        setTimeout(loadP3Data, 3000);
+      } catch (err) {
+        showToast(`Scan error: ${err.message}`, "error");
+      }
+    }
+
+    async function triggerP3BreakoutCheck() {
+      showToast("Checking live 30m candles for breakout triggers & volume pacing >= 3.12x...", "info");
+      try {
+        const res = await fetch('/api/portfolio/PORTFOLIO_3/trigger-intraday?bypass_window=true&bypass_gate=true', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'SUCCESS') {
+          showToast(`Breakout check complete! Triggered: ${data.triggers_executed || 0}, Skipped: ${data.triggers_skipped || 0}`, "success");
+        } else {
+          showToast(data.detail || data.message || "Breakout check evaluated.", "info");
+        }
+        setTimeout(loadP3Data, 1500);
+      } catch (err) {
+        showToast(`Breakout check error: ${err.message}`, "error");
+      }
+    }
+
+    async function triggerP3Reconcile() {
+      showToast("Evaluating Split Exits (+2.0R Leg 1 & 10 EMA Leg 2 Runner)...", "info");
+      try {
+        const res = await fetch('/api/portfolio/PORTFOLIO_3/reconcile?bypass_gate=true', { method: 'POST' });
+        const data = await res.json();
+        const count = (data.closed_trades || []).length;
+        showToast(`Reconciliation complete. ${count} updates executed.`, "success");
+        setTimeout(loadP3Data, 1500);
+      } catch (err) {
+        showToast(`Reconcile error: ${err.message}`, "error");
+      }
+    }
+
+    // -------------------------------------------------------------------------
     // MASTER FILE FETCHED STOCKS EXPLORER & INTERACTIVE CANDLESTICK CHARTS
     // -------------------------------------------------------------------------
     async function loadFetchedStocksData() {
@@ -16651,6 +17156,9 @@
       }
       if (currentTab === 'tab-p2' && p2SignalsCache && p2SignalsCache.length > 0) {
         return p2SignalsCache.map(s => s.symbol);
+      }
+      if (currentTab === 'tab-p3' && p3WatchlistCache && p3WatchlistCache.length > 0) {
+        return p3WatchlistCache.map(s => s.symbol);
       }
       if (fetchedStocksCache && fetchedStocksCache.length > 0) {
         return fetchedStocksCache.map(r => r.symbol);
@@ -17323,7 +17831,7 @@
             <td class="p-3 font-bold text-white">
               <button onclick="openStockChartModal('${p.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">${p.symbol}</button>
             </td>
-            <td class="p-3 text-[11px] text-cyan-300">${(p.portfolio_type || '').includes('NIFTY') ? 'P2 (Nifty 500)' : 'P1 (6-Pillar)'}</td>
+            <td class="p-3 text-[11px] font-semibold ${(p.portfolio_type || '').includes('3') ? 'text-amber-400' : ((p.portfolio_type || '').includes('NIFTY') ? 'text-violet-300' : 'text-cyan-300')}">${(p.portfolio_type || '').includes('3') ? 'P3 (Pre-Breakout)' : ((p.portfolio_type || '').includes('NIFTY') ? 'P2 (Nifty 500)' : 'P1 (6-Pillar)')}</td>
             <td class="p-3 text-slate-200 text-[11px] font-mono">${p.entry_date || '-'}</td>
             <td class="p-3 text-cyan-300 text-[11px] font-mono">LTP @ ${updTime}</td>
             <td class="p-3">₹${(p.entry_price || 0).toFixed(2)}</td>
@@ -17361,7 +17869,7 @@
             <td class="p-3 font-bold text-white">
               <button onclick="openStockChartModal('${t.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">${t.symbol}</button>
             </td>
-            <td class="p-3 text-[11px] text-slate-400">${(t.portfolio_type || '').includes('NIFTY') ? 'P2 (Nifty 500)' : 'P1 (6-Pillar)'}</td>
+            <td class="p-3 text-[11px] font-semibold ${(t.portfolio_type || '').includes('3') ? 'text-amber-400' : ((t.portfolio_type || '').includes('NIFTY') ? 'text-violet-300' : 'text-slate-400')}">${(t.portfolio_type || '').includes('3') ? 'P3 (Pre-Breakout)' : ((t.portfolio_type || '').includes('NIFTY') ? 'P2 (Nifty 500)' : 'P1 (6-Pillar)')}</td>
             <td class="p-3 text-slate-300 text-[11px] font-mono">${t.entry_date || '-'}</td>
             <td class="p-3 text-slate-300 text-[11px] font-mono">${t.exit_date || '-'}</td>
             <td class="p-3">₹${(t.entry_price || 0).toFixed(2)}</td>
@@ -17858,6 +18366,7 @@
           const symUp = (symbol || '').toUpperCase();
           p1ActiveSet.delete(symUp);
           p2ActiveSet.delete(symUp);
+          p3ActiveSet.delete(symUp);
           showToast(`Position in ${symbol} closed & saved to Telegram Cloud Master File!`, 'success');
           await refreshAllData();
           await loadHistoryData();
