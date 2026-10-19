@@ -367,6 +367,12 @@
             <span id="badge-research-count" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-900/70 font-mono text-amber-200">50</span>
           </button>
 
+          <button onclick="switchTab('tab-test-mode')" id="nav-tab-test-mode" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
+            <i data-lucide="flask-conical" class="w-3.5 h-3.5 text-purple-400 shrink-0"></i>
+            <span>Test Mode & Lab</span>
+            <span class="px-1.5 py-0.2 rounded text-[10px] bg-purple-900/70 font-mono text-purple-200">NSE ALL</span>
+          </button>
+
           <button onclick="switchTab('tab-signals')" id="nav-tab-signals" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
             <i data-lucide="crosshair" class="w-3.5 h-3.5 text-cyan-400 shrink-0"></i>
             <span>Signals Screener</span>
@@ -1564,6 +1570,587 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- TAB: TEST MODE & UNIVERSAL STOCK DIAGNOSTIC LAB                   -->
+      <!-- ================================================================= -->
+      <div id="tab-test-mode" class="tab-content hidden space-y-4 sm:space-y-6">
+
+        <!-- 1. STANDARD SETUP CRITERIA & BENCHMARK BLUEPRINTS -->
+        <div class="bg-slate-900/90 border border-purple-500/30 rounded-2xl p-4 sm:p-6 shadow-xl relative overflow-hidden">
+          <div class="absolute -right-16 -top-16 w-56 h-56 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="p-2 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300">
+                  <i data-lucide="flask-conical" class="w-5 h-5"></i>
+                </span>
+                <div>
+                  <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                    <span>Test Mode: Stock Diagnostic Lab</span>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/40">GENUINE OHLCV VAULT</span>
+                  </h2>
+                  <p class="text-xs text-slate-400 mt-0.5">Test any NSE equity against institutional Buy Now, Breakout, and Pullback standard criteria. Zero mock numbers.</p>
+                </div>
+              </div>
+            </div>
+            
+            <div class="flex items-center gap-2 self-start lg:self-auto">
+              <button onclick="toggleBenchmarkRulebookModal()" class="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-xs text-slate-200 flex items-center gap-1.5 transition">
+                <i data-lucide="book-open" class="w-3.5 h-3.5 text-purple-400"></i>
+                <span>View Full Criteria Blueprints</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Strategy Criteria Preview Cards (Requirement 1: Display Standard Criteria First) -->
+          <div class="mt-4">
+            <div class="flex items-center justify-between mb-2.5">
+              <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <i data-lucide="layers" class="w-3.5 h-3.5 text-purple-400"></i>
+                <span>Standard Criteria & Threshold Blueprints (Required Benchmark Values)</span>
+              </span>
+              <span class="text-[11px] text-slate-400">Select card to view diagnostic rules</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <!-- Strategy 1: BUY NOW -->
+              <div id="card-bm-buy-now" onclick="switchActiveBenchmark('BUY_NOW')" class="cursor-pointer bg-slate-950/80 border-2 border-emerald-500/50 rounded-xl p-3.5 hover:border-emerald-400 transition relative group">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    1. BUY NOW CRITERIA
+                  </span>
+                  <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+                </div>
+                <h4 class="text-xs font-bold text-white mb-1">Institutional 6-Pillar & VDU</h4>
+                <p class="text-[11px] text-slate-400 line-clamp-2 leading-relaxed mb-2.5">
+                  Strict swing setup requiring bullish EMA stack, healthy RSI, volume dry-up contraction, tight base, and institutional liquidity.
+                </p>
+                <div class="space-y-1 text-[10px] font-mono">
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">Trend Alignment:</span>
+                    <span class="text-emerald-300 font-semibold">Close > 20 > 50 > 200 EMA</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">RSI (14) Momentum:</span>
+                    <span class="text-emerald-300 font-semibold">50.0 - 75.0 (Optimal)</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">T-1 Volume Dry-Up:</span>
+                    <span class="text-emerald-300 font-semibold"><= 0.80x 20D Avg</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">T-1 Daily Tightness:</span>
+                    <span class="text-emerald-300 font-semibold"><= 3.50% Range</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">52W High Proximity:</span>
+                    <span class="text-emerald-300 font-semibold">Within 15.0%</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">Min Market Cap / Vol:</span>
+                    <span class="text-emerald-300 font-semibold">>= ₹300 Cr | ₹1 Cr/d</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Strategy 2: BREAKOUT -->
+              <div id="card-bm-breakout" onclick="switchActiveBenchmark('BREAKOUT')" class="cursor-pointer bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 hover:border-cyan-400/50 transition relative group">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                    2. BREAKOUT CRITERIA
+                  </span>
+                  <i data-lucide="zap" class="w-4 h-4 text-cyan-400"></i>
+                </div>
+                <h4 class="text-xs font-bold text-white mb-1">Stage-2 Momentum Breakout</h4>
+                <p class="text-[11px] text-slate-400 line-clamp-2 leading-relaxed mb-2.5">
+                  High-energy expansion clearing key resistance pivots with massive institutional relative volume expansion.
+                </p>
+                <div class="space-y-1 text-[10px] font-mono">
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">20D Pivot Resistance:</span>
+                    <span class="text-cyan-300 font-semibold">LTP >= 20D Pivot High</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">Relative Volume Surge:</span>
+                    <span class="text-cyan-300 font-semibold">>= 1.50x 20D Avg Vol</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">Candle Range Expansion:</span>
+                    <span class="text-cyan-300 font-semibold">>= 1.20x 14D ATR</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">Closing Strength:</span>
+                    <span class="text-cyan-300 font-semibold">Upper 35% of Range</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">Base Proximity:</span>
+                    <span class="text-cyan-300 font-semibold">Distance to 20 EMA <= 5%</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">RSI Range:</span>
+                    <span class="text-cyan-300 font-semibold">55.0 - 80.0</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Strategy 3: PULLBACK -->
+              <div id="card-bm-pullback" onclick="switchActiveBenchmark('PULLBACK')" class="cursor-pointer bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 hover:border-amber-400/50 transition relative group">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    3. PULLBACK CRITERIA
+                  </span>
+                  <i data-lucide="trending-down" class="w-4 h-4 text-amber-400"></i>
+                </div>
+                <h4 class="text-xs font-bold text-white mb-1">EMA Retest & Orderly Dip</h4>
+                <p class="text-[11px] text-slate-400 line-clamp-2 leading-relaxed mb-2.5">
+                  Low-risk dip entries in established uptrends where price pulls back cleanly to rising 20 or 50 EMA on declining volume.
+                </p>
+                <div class="space-y-1 text-[10px] font-mono">
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">Structural Uptrend:</span>
+                    <span class="text-amber-300 font-semibold">50 EMA > 200 EMA</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">EMA Support Zone:</span>
+                    <span class="text-amber-300 font-semibold">Within 2.0% of 20 EMA</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">Dip Volume Drying Up:</span>
+                    <span class="text-amber-300 font-semibold"><= 0.90x 20D Avg Vol</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">Pullback RSI Range:</span>
+                    <span class="text-amber-300 font-semibold">42.0 - 58.0</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">Reversal Candlestick:</span>
+                    <span class="text-amber-300 font-semibold">Lower Shadow / Rejection</span>
+                  </div>
+                  <div class="flex justify-between text-slate-300">
+                    <span class="text-slate-400">Max Pullback Depth:</span>
+                    <span class="text-amber-300 font-semibold">Must hold above 50 EMA</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. UNIVERSAL NSE STOCK SEARCH & ANALYZE CONSOLE (Requirement 2 & 3) -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-4">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <i data-lucide="search" class="w-4 h-4 text-cyan-400"></i>
+                <span>Search Any NSE Stock for Complete Diagnostic</span>
+              </h3>
+              <p class="text-xs text-slate-400">Type any NSE symbol. If stored locally, it fetches instantly. If missing, it downloads live 2-year OHLCV candles on-demand and caches them in your Master Vault.</p>
+            </div>
+          </div>
+
+          <!-- Search Bar & Action Buttons -->
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 relative">
+            <div class="relative flex-1">
+              <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-3 text-slate-400"></i>
+              <input 
+                type="text" 
+                id="test-mode-search-input" 
+                placeholder="Enter NSE Symbol (e.g. RELIANCE, TCS, DIXON, SUZLON, ZOMATO, KAYNES, CDSL)..." 
+                autocomplete="off"
+                oninput="handleTestModeSearchInput(this.value)"
+                onkeydown="handleTestModeSearchKeydown(event)"
+                class="w-full bg-slate-950 border border-slate-700 focus:border-purple-500 rounded-xl pl-10 pr-10 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none transition font-mono uppercase"
+              >
+              <button 
+                id="btn-test-mode-clear" 
+                onclick="clearTestModeSearch()" 
+                class="hidden absolute right-3 top-2.5 text-slate-500 hover:text-slate-300"
+              >
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+
+              <!-- Dynamic Autocomplete Dropdown -->
+              <div 
+                id="test-mode-search-dropdown" 
+                class="hidden absolute left-0 right-0 top-full mt-1.5 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl max-h-72 overflow-y-auto custom-scroll z-50 divide-y divide-slate-800/80"
+              >
+                <!-- Populated via JS -->
+              </div>
+            </div>
+
+            <!-- Analyze Button -->
+            <button 
+              id="btn-test-mode-analyze" 
+              onclick="triggerTestModeAnalysis(false)" 
+              class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-600/20 transition active:scale-95 shrink-0"
+            >
+              <i data-lucide="play" class="w-4 h-4 fill-white"></i>
+              <span>Click to Analyze</span>
+            </button>
+
+            <!-- Force Live Sync Button -->
+            <button 
+              id="btn-test-mode-force-sync" 
+              onclick="triggerTestModeAnalysis(true)" 
+              title="Force download live 2-year OHLCV candles from Yahoo Finance and update SQLite Master Vault"
+              class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-xs sm:text-sm flex items-center justify-center gap-1.5 transition active:scale-95 shrink-0"
+            >
+              <i data-lucide="refresh-cw" id="icon-force-sync" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">Force Live Sync</span>
+            </button>
+          </div>
+
+          <!-- Quick Stock Chips -->
+          <div class="flex items-center gap-1.5 flex-wrap pt-1">
+            <span class="text-[11px] font-mono text-slate-400 mr-1 flex items-center gap-1">
+              <i data-lucide="sparkles" class="w-3 h-3 text-purple-400"></i>
+              <span>Quick Test:</span>
+            </span>
+            <button onclick="selectAndAnalyzeQuickStock('RELIANCE')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">RELIANCE</button>
+            <button onclick="selectAndAnalyzeQuickStock('TCS')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">TCS</button>
+            <button onclick="selectAndAnalyzeQuickStock('INFY')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">INFY</button>
+            <button onclick="selectAndAnalyzeQuickStock('HDFCBANK')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">HDFCBANK</button>
+            <button onclick="selectAndAnalyzeQuickStock('DIXON')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">DIXON</button>
+            <button onclick="selectAndAnalyzeQuickStock('KAYNES')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">KAYNES</button>
+            <button onclick="selectAndAnalyzeQuickStock('BSE')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">BSE</button>
+            <button onclick="selectAndAnalyzeQuickStock('SUZLON')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">SUZLON</button>
+            <button onclick="selectAndAnalyzeQuickStock('PERSISTENT')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">PERSISTENT</button>
+            <button onclick="selectAndAnalyzeQuickStock('ZOMATO')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">ZOMATO</button>
+            <button onclick="selectAndAnalyzeQuickStock('HAL')" class="px-2 py-0.5 rounded-lg text-xs font-mono bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 hover:border-purple-500/40 transition">HAL</button>
+          </div>
+        </div>
+
+        <!-- 3. LIVE ANALYSIS LOADING STATE -->
+        <div id="test-mode-loading" class="hidden bg-slate-900/80 border border-purple-500/30 rounded-2xl p-8 text-center space-y-3">
+          <div class="w-10 h-10 border-3 border-purple-500/30 border-t-purple-400 rounded-full animate-spin mx-auto"></div>
+          <h4 id="test-mode-loading-title" class="text-sm font-bold text-white">Analyzing Stock Data...</h4>
+          <p id="test-mode-loading-desc" class="text-xs text-slate-400 max-w-md mx-auto">Retrieving authentic OHLCV daily candles, verifying single master storage, running 6-pillar algorithms, and rendering chart...</p>
+        </div>
+
+        <!-- 4. DIAGNOSTIC RESULTS CONTAINER -->
+        <div id="test-mode-results" class="space-y-4 sm:space-y-6">
+
+          <!-- Telemetry & Source Bar -->
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span id="tm-source-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                <i data-lucide="database" class="w-3 h-3"></i>
+                <span id="tm-source-label">LOCAL_VAULT</span>
+              </span>
+              <span id="tm-bars-badge" class="text-slate-400 font-mono text-[11px]">495 Daily Bars</span>
+              <span class="text-slate-600">•</span>
+              <span id="tm-date-badge" class="text-slate-400 font-mono text-[11px]">Latest Bar: 2026-04-18</span>
+              <span class="text-slate-600">•</span>
+              <span id="tm-latency-badge" class="text-purple-400 font-mono text-[11px]">Calculated in 0.08s</span>
+            </div>
+
+            <!-- Authentic External Source Redirection Links -->
+            <div class="flex items-center gap-3">
+              <span class="text-slate-400 text-[11px]">Authentic Sources:</span>
+              <a 
+                id="tm-screener-link" 
+                href="https://www.screener.in/company/RELIANCE/consolidated/" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                class="font-mono font-semibold text-sky-400 hover:text-sky-300 hover:underline flex items-center gap-1"
+                title="View full audited financial statements on Screener.in"
+              >
+                <span>Screener.in Financials</span>
+                <i data-lucide="external-link" class="w-3 h-3"></i>
+              </a>
+              <span class="text-slate-600">•</span>
+              <a 
+                id="tm-nse-link" 
+                href="https://www.nseindia.com/get-quotes/equity?symbol=RELIANCE" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                class="font-mono font-semibold text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1"
+                title="View live trade quote on official NSE India portal"
+              >
+                <span>Official NSE Quote</span>
+                <i data-lucide="external-link" class="w-3 h-3"></i>
+              </a>
+            </div>
+          </div>
+
+          <!-- Stock Overview Header Banner -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 font-mono font-bold text-lg">
+                  <span id="tm-symbol-avatar">REL</span>
+                </div>
+                <div>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <h3 id="tm-symbol-title" class="text-xl sm:text-2xl font-black text-white font-mono">RELIANCE</h3>
+                    <span id="tm-sector-badge" class="px-2 py-0.5 rounded text-[11px] font-sans bg-slate-800 text-slate-300 border border-slate-700">Energy & Petrochemicals</span>
+                    <span id="tm-archetype-badge" class="px-2 py-0.5 rounded text-[11px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">Textbook VDU Coil at 20 EMA</span>
+                  </div>
+                  <div id="tm-company-name" class="text-xs text-slate-400 font-sans mt-0.5">Reliance Industries Limited</div>
+                </div>
+              </div>
+
+              <!-- Price & Daily Move Block -->
+              <div class="flex items-center gap-4 self-start lg:self-auto font-mono">
+                <div>
+                  <div class="text-[10px] uppercase text-slate-500 tracking-wider">LTP / Current Close</div>
+                  <div id="tm-ltp" class="text-xl sm:text-2xl font-black text-white">₹2,845.50</div>
+                </div>
+                <div>
+                  <div class="text-[10px] uppercase text-slate-500 tracking-wider">Day Change</div>
+                  <div id="tm-chg-pct" class="text-sm sm:text-base font-bold text-emerald-400">+1.85%</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fundamental & Technical Metrics Strip -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 pt-4 mt-4 border-t border-slate-800/80 font-mono text-center">
+              <div class="bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div class="text-[10px] text-slate-400 uppercase">Market Cap</div>
+                <div id="tm-mktcap" class="text-xs font-bold text-slate-200 mt-0.5">₹19,25,000 Cr</div>
+              </div>
+              <div class="bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div class="text-[10px] text-slate-400 uppercase">ROCE %</div>
+                <div id="tm-roce" class="text-xs font-bold text-emerald-400 mt-0.5">14.2%</div>
+              </div>
+              <div class="bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div class="text-[10px] text-slate-400 uppercase">ROE %</div>
+                <div id="tm-roe" class="text-xs font-bold text-emerald-400 mt-0.5">12.8%</div>
+              </div>
+              <div class="bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div class="text-[10px] text-slate-400 uppercase">Debt / Eq</div>
+                <div id="tm-de" class="text-xs font-bold text-slate-200 mt-0.5">0.42</div>
+              </div>
+              <div class="bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div class="text-[10px] text-slate-400 uppercase">P/E Ratio</div>
+                <div id="tm-pe" class="text-xs font-bold text-slate-200 mt-0.5">26.4</div>
+              </div>
+              <div class="bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div class="text-[10px] text-slate-400 uppercase">RSI (14)</div>
+                <div id="tm-rsi" class="text-xs font-bold text-cyan-400 mt-0.5">62.4</div>
+              </div>
+              <div class="bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div class="text-[10px] text-slate-400 uppercase">20D Pivot High</div>
+                <div id="tm-pivot20" class="text-xs font-bold text-slate-200 mt-0.5">₹2,860.00</div>
+              </div>
+              <div class="bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div class="text-[10px] text-slate-400 uppercase">52W High</div>
+                <div id="tm-52whigh" class="text-xs font-bold text-slate-200 mt-0.5">₹3,024.00</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Strategy Diagnostic Scoreboard (4 Verdict Cards) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <!-- Overall Score -->
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
+              <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+                <span>Overall Suitability</span>
+                <i data-lucide="award" class="w-4 h-4 text-purple-400"></i>
+              </div>
+              <div class="flex items-baseline gap-2 font-mono">
+                <span id="tm-overall-score" class="text-2xl font-black text-purple-400">85.7</span>
+                <span class="text-xs text-slate-500">/ 100</span>
+              </div>
+              <div id="tm-overall-badge" class="text-[11px] font-semibold text-purple-300 mt-1">HIGH CONVICTION CANDIDATE</div>
+            </div>
+
+            <!-- Buy Now Verdict -->
+            <div class="bg-slate-900/90 border border-emerald-500/30 rounded-2xl p-4">
+              <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+                <span class="text-emerald-400 font-semibold">1. Buy Now Strategy</span>
+                <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+              </div>
+              <div id="tm-bn-score" class="text-2xl font-black text-emerald-400 font-mono">85.7%</div>
+              <div id="tm-bn-verdict" class="text-[11px] font-bold text-emerald-300 mt-1">QUALIFIED BUY NOW</div>
+            </div>
+
+            <!-- Breakout Verdict -->
+            <div class="bg-slate-900/90 border border-cyan-500/30 rounded-2xl p-4">
+              <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+                <span class="text-cyan-400 font-semibold">2. Breakout Strategy</span>
+                <i data-lucide="zap" class="w-4 h-4 text-cyan-400"></i>
+              </div>
+              <div id="tm-bo-score" class="text-2xl font-black text-cyan-400 font-mono">80.0%</div>
+              <div id="tm-bo-verdict" class="text-[11px] font-bold text-cyan-300 mt-1">BREAKOUT TRIGGERED</div>
+            </div>
+
+            <!-- Pullback Verdict -->
+            <div class="bg-slate-900/90 border border-amber-500/30 rounded-2xl p-4">
+              <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+                <span class="text-amber-400 font-semibold">3. Pullback Strategy</span>
+                <i data-lucide="trending-down" class="w-4 h-4 text-amber-400"></i>
+              </div>
+              <div id="tm-pb-score" class="text-2xl font-black text-amber-400 font-mono">60.0%</div>
+              <div id="tm-pb-verdict" class="text-[11px] font-bold text-amber-300 mt-1">WATCH FOR EMA DIP</div>
+            </div>
+          </div>
+
+          <!-- Actionable Trade Plan Bar -->
+          <div class="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-purple-500/40 rounded-2xl p-4 sm:p-5 shadow-lg">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div class="flex items-center gap-2">
+                <span class="p-1.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  <i data-lucide="target" class="w-4 h-4"></i>
+                </span>
+                <div>
+                  <h4 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">Actionable Swing Trade Plan</h4>
+                  <p class="text-[11px] text-slate-400">Mathematically calculated execution levels using ATR stop buffer & 1:2.5 risk-reward ratio.</p>
+                </div>
+              </div>
+              <div class="text-[11px] font-mono text-purple-300 bg-purple-500/10 px-3 py-1 rounded-full border border-purple-500/20 self-start md:self-auto">
+                Alloc: <span id="tm-plan-alloc">5% - 8% Capital</span>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 font-mono">
+              <div class="bg-slate-900/90 border border-cyan-500/30 rounded-xl p-3">
+                <div class="text-[10px] text-cyan-400 uppercase font-semibold">⚡ Entry Trigger</div>
+                <div id="tm-plan-entry" class="text-base sm:text-lg font-bold text-white mt-0.5">₹2,845.50</div>
+                <div class="text-[10px] text-slate-400 mt-0.5">LTP / Breakout Line</div>
+              </div>
+              <div class="bg-slate-900/90 border border-rose-500/30 rounded-xl p-3">
+                <div class="text-[10px] text-rose-400 uppercase font-semibold">🛑 Stop Loss (ATR)</div>
+                <div id="tm-plan-sl" class="text-base sm:text-lg font-bold text-rose-300 mt-0.5">₹2,735.00</div>
+                <div id="tm-plan-sl-pct" class="text-[10px] text-rose-400/80 mt-0.5">-3.88% Risk</div>
+              </div>
+              <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-3">
+                <div class="text-[10px] text-emerald-400 uppercase font-semibold">🎯 Target 1 (2R)</div>
+                <div id="tm-plan-t1" class="text-base sm:text-lg font-bold text-emerald-300 mt-0.5">₹3,066.50</div>
+                <div id="tm-plan-t1-pct" class="text-[10px] text-emerald-400/80 mt-0.5">+7.76% Gain</div>
+              </div>
+              <div class="bg-slate-900/90 border border-violet-500/30 rounded-xl p-3">
+                <div class="text-[10px] text-violet-400 uppercase font-semibold">🚀 Target 2 (3R)</div>
+                <div id="tm-plan-t2" class="text-base sm:text-lg font-bold text-violet-300 mt-0.5">₹3,177.00</div>
+                <div id="tm-plan-t2-pct" class="text-[10px] text-violet-400/80 mt-0.5">+11.65% Gain</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. INTERACTIVE CANDLESTICK CHART CONTAINER (Requirement 3) -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800">
+              <div class="flex items-center gap-2">
+                <i data-lucide="line-chart" class="w-4 h-4 text-emerald-400"></i>
+                <h4 class="text-xs sm:text-sm font-bold text-white">Daily Candlestick Chart & Moving Average Overlay</h4>
+                <span class="text-[10px] font-mono text-slate-400">(Last 200 Trading Sessions)</span>
+              </div>
+              <div class="flex items-center gap-3 text-[11px] font-mono text-slate-300">
+                <span class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-cyan-400 inline-block"></span> EMA 20</span>
+                <span class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-amber-400 inline-block"></span> EMA 50</span>
+                <span class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-purple-400 inline-block"></span> EMA 200</span>
+                <label class="flex items-center gap-1 text-[11px] text-slate-400 cursor-pointer ml-2">
+                  <input type="checkbox" id="tm-toggle-trade-lines" checked onchange="toggleTestModeTradeLines()" class="rounded bg-slate-800 border-slate-700 text-purple-600 focus:ring-0">
+                  <span>Trade Lines</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Chart Crosshair HUD (Price / OHLCV / Moving Averages Legend) -->
+            <div id="test-mode-chart-legend" class="text-[11px] font-mono text-slate-400 flex flex-wrap gap-x-4 gap-y-1 bg-slate-950/60 px-3 py-1.5 rounded-lg border border-slate-800/80">
+              <span>Date: <strong id="hud-tm-date" class="text-slate-200">--</strong></span>
+              <span>O: <strong id="hud-tm-open" class="text-slate-200">--</strong></span>
+              <span>H: <strong id="hud-tm-high" class="text-slate-200">--</strong></span>
+              <span>L: <strong id="hud-tm-low" class="text-slate-200">--</strong></span>
+              <span>C: <strong id="hud-tm-close" class="text-slate-200">--</strong></span>
+              <span>Vol: <strong id="hud-tm-vol" class="text-slate-200">--</strong></span>
+              <span>EMA20: <strong id="hud-tm-ema20" class="text-cyan-400">--</strong></span>
+              <span>EMA50: <strong id="hud-tm-ema50" class="text-amber-400">--</strong></span>
+              <span>EMA200: <strong id="hud-tm-ema200" class="text-purple-400">--</strong></span>
+            </div>
+
+            <!-- The Chart Mount Container -->
+            <div id="test-mode-chart-mount" class="w-full h-[360px] sm:h-[400px] rounded-xl overflow-hidden bg-[#070a13] border border-slate-800/80 relative">
+              <!-- LightweightChart renders here -->
+            </div>
+          </div>
+
+          <!-- 6. SIDE-BY-SIDE CRITERIA AUDIT COMPARISON TABLE (Requirement 1 & 3) -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div>
+                <h4 class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                  <i data-lucide="clipboard-check" class="w-4 h-4 text-purple-400"></i>
+                  <span>Side-by-Side Criteria Comparison Audit (Standard vs Actual Stock Values)</span>
+                </h4>
+                <p class="text-xs text-slate-400 mt-0.5">Audits live stock values against institutional quantitative rules. Click tabs to switch setup criteria.</p>
+              </div>
+
+              <!-- Setup Switcher Tabs -->
+              <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 self-start sm:self-auto">
+                <button 
+                  id="btn-audit-tab-bn" 
+                  onclick="switchAuditTableTab('BUY_NOW')" 
+                  class="px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition"
+                >
+                  Buy Now Criteria
+                </button>
+                <button 
+                  id="btn-audit-tab-bo" 
+                  onclick="switchAuditTableTab('BREAKOUT')" 
+                  class="px-3 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition"
+                >
+                  Breakout Criteria
+                </button>
+                <button 
+                  id="btn-audit-tab-pb" 
+                  onclick="switchAuditTableTab('PULLBACK')" 
+                  class="px-3 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition"
+                >
+                  Pullback Criteria
+                </button>
+              </div>
+            </div>
+
+            <!-- Audit Table -->
+            <div class="overflow-x-auto custom-scroll">
+              <table class="w-full text-left text-xs text-slate-300">
+                <thead class="bg-slate-950/70 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                  <tr>
+                    <th class="py-2.5 px-3">#</th>
+                    <th class="py-2.5 px-3">Diagnostic Rule / Parameter</th>
+                    <th class="py-2.5 px-3 text-cyan-300">Standard Benchmark (Required)</th>
+                    <th class="py-2.5 px-3 font-bold text-white">Actual Stock Metric (Live)</th>
+                    <th class="py-2.5 px-3 text-center">Diagnostic Verdict</th>
+                    <th class="py-2.5 px-3">Quantitative & Institutional Rationale</th>
+                  </tr>
+                </thead>
+                <tbody id="tm-audit-table-body" class="divide-y divide-slate-800/60 font-mono">
+                  <!-- Populated dynamically via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- MODAL: FULL SETUP CRITERIA BLUEPRINTS                             -->
+      <!-- ================================================================= -->
+      <div id="modal-benchmark-rulebook" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-purple-500/40 rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+          <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <i data-lucide="book-open" class="w-5 h-5 text-purple-400"></i>
+              <h3 class="text-sm sm:text-base font-bold text-white">Institutional Quantitative Setup Blueprints</h3>
+            </div>
+            <button onclick="toggleBenchmarkRulebookModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+              <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+          </div>
+          <div id="modal-benchmark-content" class="p-5 overflow-y-auto custom-scroll space-y-6 text-xs text-slate-300">
+            <!-- Populated via JS -->
+          </div>
+          <div class="px-5 py-3 border-t border-slate-800 bg-slate-950/60 flex justify-end">
+            <button onclick="toggleBenchmarkRulebookModal()" class="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 font-semibold transition">
+              Close Blueprint
+            </button>
           </div>
         </div>
       </div>
@@ -6964,6 +7551,9 @@
             { id: 'tab-p1', name: 'P1: 6-Pillar', icon: 'layers' },
             { id: 'tab-p2', name: 'P2: Nifty 500', icon: 'trending-up' },
             { id: 'tab-charts', name: 'Charts & OHLCV', icon: 'candlestick-chart' },
+            { id: 'tab-screener', name: 'EQ Screener', icon: 'filter' },
+            { id: 'tab-research', name: 'Movers Research', icon: 'microscope' },
+            { id: 'tab-test-mode', name: 'Test Mode & Lab', icon: 'flask-conical' },
             { id: 'tab-signals', name: 'Signals Screener', icon: 'crosshair' },
             { id: 'tab-history', name: 'Trade History', icon: 'history' },
             { id: 'tab-scheduler', name: 'Vault & Cron', icon: 'cloud' },
@@ -13537,7 +14127,9 @@
           'bg-violet-500/15', 'text-violet-300', 'border-violet-500/40',
           'bg-emerald-500/15', 'text-emerald-300', 'border-emerald-500/40',
           'bg-indigo-500/15', 'text-indigo-300', 'border-indigo-500/40',
-          'bg-pink-500/15', 'text-pink-300', 'border-pink-500/40'
+          'bg-pink-500/15', 'text-pink-300', 'border-pink-500/40',
+          'bg-amber-500/15', 'text-amber-300', 'border-amber-500/40',
+          'bg-purple-500/15', 'text-purple-300', 'border-purple-500/40'
         );
         btn.classList.add('text-slate-400', 'border-transparent');
       });
@@ -13554,6 +14146,9 @@
         } else if (tabId === 'tab-research') {
           activeBtn.classList.add('bg-amber-500/15', 'text-amber-300', 'border-amber-500/40');
           if (typeof loadMoversResearch === 'function') loadMoversResearch();
+        } else if (tabId === 'tab-test-mode') {
+          activeBtn.classList.add('bg-purple-500/15', 'text-purple-300', 'border-purple-500/40');
+          if (typeof initTestModeTab === 'function') initTestModeTab();
         } else if (tabId === 'tab-analytics') {
           activeBtn.classList.add('bg-indigo-500/15', 'text-indigo-300', 'border-indigo-500/40');
         } else if (tabId === 'tab-ml-training') {
@@ -13582,6 +14177,7 @@
       if (tabId === 'tab-charts') loadFetchedStocksData();
       if (tabId === 'tab-signals') renderGlobalSignals();
       if (tabId === 'tab-research') loadMoversResearch();
+      if (tabId === 'tab-test-mode') initTestModeTab();
       if (tabId === 'tab-history') loadHistoryData();
       if (tabId === 'tab-scheduler') loadScanLogs();
       if (tabId === 'tab-analytics') loadAllEquityCurves();
@@ -18228,6 +18824,845 @@
 
       tbody.innerHTML = html;
       lucide.createIcons();
+    }
+
+    // =========================================================================
+    // TEST MODE & UNIVERSAL STOCK DIAGNOSTIC CONTROLLER
+    // =========================================================================
+    let testModeState = {
+      selectedSymbol: 'RELIANCE',
+      currentAnalysis: null,
+      benchmarks: null,
+      activeBenchmarkSetup: 'BUY_NOW',
+      activeAuditTab: 'BUY_NOW',
+      showTradeLines: true,
+      chartInstance: null,
+      candleSeries: null,
+      volumeSeries: null,
+      ema20Series: null,
+      ema50Series: null,
+      ema200Series: null,
+      priceLines: [],
+      searchDebounceTimer: null,
+      isLoading: false,
+      isInitialized: false
+    };
+
+    async function initTestModeTab() {
+      // 1. Load setup benchmarks if not already loaded
+      if (!testModeState.benchmarks) {
+        await loadTestModeBenchmarks();
+      }
+
+      // 2. Run initial analysis if first time loading tab
+      if (!testModeState.isInitialized) {
+        testModeState.isInitialized = true;
+        const searchInput = document.getElementById('test-mode-search-input');
+        if (searchInput && !searchInput.value) {
+          searchInput.value = testModeState.selectedSymbol;
+        }
+        await triggerTestModeAnalysis(false, testModeState.selectedSymbol);
+      } else if (testModeState.chartInstance) {
+        // Resize chart if container dimensions changed during tab switch
+        const mount = document.getElementById('test-mode-chart-mount');
+        if (mount && testModeState.chartInstance) {
+          testModeState.chartInstance.applyOptions({
+            width: mount.clientWidth,
+            height: mount.clientHeight || 390
+          });
+          testModeState.chartInstance.timeScale().fitContent();
+        }
+      }
+    }
+
+    async function loadTestModeBenchmarks() {
+      try {
+        const res = await fetch('/api/test-mode/benchmarks');
+        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        const data = await res.json();
+        testModeState.benchmarks = data.setups || {};
+        renderBenchmarkModalContent();
+      } catch (err) {
+        console.error('Failed to load test mode benchmarks:', err);
+      }
+    }
+
+    function renderBenchmarkModalContent() {
+      const container = document.getElementById('modal-benchmark-content');
+      if (!container || !testModeState.benchmarks) return;
+
+      let html = '';
+      const setups = ['BUY_NOW', 'BREAKOUT', 'PULLBACK'];
+      setups.forEach(key => {
+        const bm = testModeState.benchmarks[key];
+        if (!bm) return;
+
+        let badgeColor = 'emerald';
+        if (key === 'BREAKOUT') badgeColor = 'cyan';
+        if (key === 'PULLBACK') badgeColor = 'amber';
+
+        html += `
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+            <div class="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-${badgeColor}-500/20 text-${badgeColor}-300 border border-${badgeColor}-500/30">
+                  ${bm.tag || key}
+                </span>
+                <h4 class="text-xs sm:text-sm font-bold text-white">${escapeHtml(bm.name)}</h4>
+              </div>
+            </div>
+            <p class="text-xs text-slate-300 mb-3 leading-relaxed">${escapeHtml(bm.description)}</p>
+            <div class="space-y-2">
+              ${(bm.criteria || []).map((c, idx) => `
+                <div class="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
+                  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px]">
+                    <span class="font-semibold text-white">${idx + 1}. ${escapeHtml(c.field)}</span>
+                    <span class="font-mono font-bold text-${badgeColor}-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 self-start sm:self-auto">
+                      ${escapeHtml(c.standard_benchmark)}
+                    </span>
+                  </div>
+                  <div class="text-[10px] text-slate-400 mt-1 leading-normal font-sans">
+                    <strong class="text-slate-400">Institutional Rationale:</strong> ${escapeHtml(c.rationale)}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+      lucide.createIcons();
+    }
+
+    function toggleBenchmarkRulebookModal() {
+      const modal = document.getElementById('modal-benchmark-rulebook');
+      if (modal) {
+        modal.classList.toggle('hidden');
+      }
+    }
+
+    function switchActiveBenchmark(setupKey) {
+      testModeState.activeBenchmarkSetup = setupKey;
+
+      // Update card borders
+      const cards = {
+        'BUY_NOW': document.getElementById('card-bm-buy-now'),
+        'BREAKOUT': document.getElementById('card-bm-breakout'),
+        'PULLBACK': document.getElementById('card-bm-pullback')
+      };
+
+      Object.entries(cards).forEach(([key, card]) => {
+        if (!card) return;
+        if (key === setupKey) {
+          card.classList.add('border-2');
+          if (key === 'BUY_NOW') {
+            card.className = card.className.replace(/border-[a-z0-9\/-]+/g, '') + ' border-2 border-emerald-500/60 bg-slate-950';
+          } else if (key === 'BREAKOUT') {
+            card.className = card.className.replace(/border-[a-z0-9\/-]+/g, '') + ' border-2 border-cyan-500/60 bg-slate-950';
+          } else {
+            card.className = card.className.replace(/border-[a-z0-9\/-]+/g, '') + ' border-2 border-amber-500/60 bg-slate-950';
+          }
+        } else {
+          card.className = card.className.replace(/border-[a-z0-9\/-]+/g, '') + ' border border-slate-800 bg-slate-950/80';
+        }
+      });
+
+      // Also switch the side-by-side audit table to match
+      switchAuditTableTab(setupKey);
+    }
+
+    function switchAuditTableTab(setupKey) {
+      testModeState.activeAuditTab = setupKey;
+
+      const btnBn = document.getElementById('btn-audit-tab-bn');
+      const btnBo = document.getElementById('btn-audit-tab-bo');
+      const btnPb = document.getElementById('btn-audit-tab-pb');
+
+      if (btnBn) btnBn.className = setupKey === 'BUY_NOW'
+        ? 'px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition'
+        : 'px-3 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition';
+
+      if (btnBo) btnBo.className = setupKey === 'BREAKOUT'
+        ? 'px-3 py-1 rounded-lg text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition'
+        : 'px-3 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition';
+
+      if (btnPb) btnPb.className = setupKey === 'PULLBACK'
+        ? 'px-3 py-1 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 transition'
+        : 'px-3 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition';
+
+      renderTestModeAuditTable();
+    }
+
+    function handleTestModeSearchInput(val) {
+      const clearBtn = document.getElementById('btn-test-mode-clear');
+      if (clearBtn) {
+        if (val && val.trim().length > 0) {
+          clearBtn.classList.remove('hidden');
+        } else {
+          clearBtn.classList.add('hidden');
+        }
+      }
+
+      if (testModeState.searchDebounceTimer) {
+        clearTimeout(testModeState.searchDebounceTimer);
+      }
+
+      const q = (val || '').trim().toUpperCase();
+      if (!q) {
+        const dropdown = document.getElementById('test-mode-search-dropdown');
+        if (dropdown) dropdown.classList.add('hidden');
+        return;
+      }
+
+      testModeState.searchDebounceTimer = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/test-mode/search?q=${encodeURIComponent(q)}&limit=15`);
+          if (!res.ok) return;
+          const data = await res.json();
+          renderTestModeSearchDropdown(data.results || [], q);
+        } catch (err) {
+          console.warn('Search autocomplete notice:', err);
+        }
+      }, 180);
+    }
+
+    function renderTestModeSearchDropdown(results, query) {
+      const dropdown = document.getElementById('test-mode-search-dropdown');
+      if (!dropdown) return;
+
+      if (!results || results.length === 0) {
+        dropdown.innerHTML = `
+          <div class="p-3 text-xs text-slate-400 text-center">
+            <span>No exact index match for "${escapeHtml(query)}".</span>
+            <div class="mt-1 text-[11px] text-purple-300">
+              Click <strong>"Analyze Stock"</strong> to fetch & download live candles from NSE!
+            </div>
+          </div>
+        `;
+        dropdown.classList.remove('hidden');
+        return;
+      }
+
+      let html = '';
+      results.forEach(item => {
+        const inDbBadge = item.in_local_db
+          ? '<span class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">Master Vault</span>'
+          : '<span class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30">Live Downloadable</span>';
+
+        html += `
+          <div 
+            onclick="selectAndAnalyzeQuickStock('${escapeHtml(item.symbol)}')" 
+            class="px-3.5 py-2 hover:bg-slate-900 cursor-pointer flex items-center justify-between gap-2 transition"
+          >
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="font-mono font-bold text-white text-xs">${escapeHtml(item.symbol)}</span>
+                ${inDbBadge}
+              </div>
+              <div class="text-[11px] text-slate-400 truncate max-w-xs">${escapeHtml(item.name || item.symbol)}</div>
+            </div>
+            <div class="text-[10px] text-slate-400 font-sans text-right shrink-0">
+              ${escapeHtml(item.sector || 'NSE Equity')}
+            </div>
+          </div>
+        `;
+      });
+
+      dropdown.innerHTML = html;
+      dropdown.classList.remove('hidden');
+    }
+
+    function clearTestModeSearch() {
+      const input = document.getElementById('test-mode-search-input');
+      const clearBtn = document.getElementById('btn-test-mode-clear');
+      const dropdown = document.getElementById('test-mode-search-dropdown');
+      if (input) input.value = '';
+      if (clearBtn) clearBtn.classList.add('hidden');
+      if (dropdown) dropdown.classList.add('hidden');
+    }
+
+    function handleTestModeSearchKeydown(event) {
+      if (event.key === 'Enter') {
+        const dropdown = document.getElementById('test-mode-search-dropdown');
+        if (dropdown) dropdown.classList.add('hidden');
+        triggerTestModeAnalysis(false);
+      } else if (event.key === 'Escape') {
+        const dropdown = document.getElementById('test-mode-search-dropdown');
+        if (dropdown) dropdown.classList.add('hidden');
+      }
+    }
+
+    function selectAndAnalyzeQuickStock(symbol) {
+      const input = document.getElementById('test-mode-search-input');
+      const dropdown = document.getElementById('test-mode-search-dropdown');
+      if (input) input.value = symbol;
+      if (dropdown) dropdown.classList.add('hidden');
+      triggerTestModeAnalysis(false, symbol);
+    }
+
+    // Close search dropdown on click outside
+    document.addEventListener('click', (e) => {
+      const searchBox = document.getElementById('test-mode-search-input');
+      const dropdown = document.getElementById('test-mode-search-dropdown');
+      if (dropdown && searchBox && !searchBox.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.classList.add('hidden');
+      }
+    });
+
+    async function triggerTestModeAnalysis(forceDownload = false, symbolOverride = null) {
+      if (testModeState.isLoading) return;
+
+      let symbol = symbolOverride;
+      if (!symbol) {
+        const input = document.getElementById('test-mode-search-input');
+        symbol = input ? input.value.trim().toUpperCase() : '';
+      }
+
+      if (!symbol) {
+        symbol = 'RELIANCE';
+      }
+
+      // Sanitize symbol
+      symbol = symbol.replace('.NS', '').replace('NSE:', '').trim();
+      testModeState.selectedSymbol = symbol;
+      testModeState.isLoading = true;
+
+      const loadingEl = document.getElementById('test-mode-loading');
+      const resultsEl = document.getElementById('test-mode-results');
+      const syncIcon = document.getElementById('icon-force-sync');
+      const loadingTitle = document.getElementById('test-mode-loading-title');
+      const loadingDesc = document.getElementById('test-mode-loading-desc');
+
+      if (loadingTitle) loadingTitle.textContent = `Analyzing ${symbol} Diagnostics...`;
+      if (loadingDesc) {
+        loadingDesc.textContent = forceDownload 
+          ? `Forcing live 2-year OHLCV download for ${symbol} from Yahoo Finance & updating Master Storage...`
+          : `Checking Single Master Storage for ${symbol} or downloading genuine candles live on-demand...`;
+      }
+
+      if (loadingEl) loadingEl.classList.remove('hidden');
+      if (resultsEl) resultsEl.classList.add('hidden');
+      if (forceDownload && syncIcon) syncIcon.classList.add('animate-spin');
+
+      try {
+        const url = `/api/test-mode/analyze/${encodeURIComponent(symbol)}?force_download=${forceDownload}`;
+        const res = await fetch(url);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || `Analysis failed with HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        testModeState.currentAnalysis = data;
+        renderTestModeResults(data);
+
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (resultsEl) resultsEl.classList.remove('hidden');
+      } catch (err) {
+        console.error('Error running test mode diagnostic:', err);
+        if (loadingEl) {
+          loadingEl.innerHTML = `
+            <div class="text-rose-400 space-y-2 py-4">
+              <i data-lucide="alert-triangle" class="w-8 h-8 mx-auto text-rose-400"></i>
+              <h4 class="text-sm font-bold">Analysis Failed for ${escapeHtml(symbol)}</h4>
+              <p class="text-xs text-slate-400 max-w-md mx-auto">${escapeHtml(err.message)}</p>
+              <button onclick="triggerTestModeAnalysis(true, '${escapeHtml(symbol)}')" class="mt-2 px-3 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-semibold hover:bg-rose-500/30 transition">
+                Retry with Force Live Download
+              </button>
+            </div>
+          `;
+          lucide.createIcons();
+        }
+      } finally {
+        testModeState.isLoading = false;
+        if (syncIcon) syncIcon.classList.remove('animate-spin');
+      }
+    }
+
+    function renderTestModeResults(data) {
+      if (!data) return;
+
+      // 1. Telemetry Bar
+      const sourceBadge = document.getElementById('tm-source-badge');
+      const sourceLabel = document.getElementById('tm-source-label');
+      const barsBadge = document.getElementById('tm-bars-badge');
+      const dateBadge = document.getElementById('tm-date-badge');
+      const latencyBadge = document.getElementById('tm-latency-badge');
+
+      if (sourceLabel) sourceLabel.textContent = data.data_source || 'LOCAL_VAULT';
+      if (sourceBadge) {
+        if (data.data_source === 'LIVE_DOWNLOADED') {
+          sourceBadge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1';
+        } else {
+          sourceBadge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1';
+        }
+      }
+      if (barsBadge) barsBadge.textContent = `${data.bars_count || 0} Daily Bars`;
+      if (dateBadge) dateBadge.textContent = `Latest Bar: ${data.latest_bar_date || '--'}`;
+      if (latencyBadge) latencyBadge.textContent = `Computed in ${data.execution_time_sec || 0.05}s`;
+
+      // External Source Redirects (Zero-Mock Authentic links)
+      const screenerLink = document.getElementById('tm-screener-link');
+      const nseLink = document.getElementById('tm-nse-link');
+      if (screenerLink && data.fundamental_source_url) screenerLink.href = data.fundamental_source_url;
+      if (nseLink && data.nse_source_url) nseLink.href = data.nse_source_url;
+
+      // 2. Stock Header
+      const symAvatar = document.getElementById('tm-symbol-avatar');
+      const symTitle = document.getElementById('tm-symbol-title');
+      const compName = document.getElementById('tm-company-name');
+      const sectorBadge = document.getElementById('tm-sector-badge');
+      const archBadge = document.getElementById('tm-archetype-badge');
+      const ltpEl = document.getElementById('tm-ltp');
+      const chgEl = document.getElementById('tm-chg-pct');
+
+      if (symAvatar) symAvatar.textContent = (data.symbol || 'SYM').slice(0, 3);
+      if (symTitle) symTitle.textContent = data.symbol;
+      if (compName) compName.textContent = data.company_name || data.symbol;
+      if (sectorBadge) sectorBadge.textContent = data.sector || 'NSE Equity';
+      if (archBadge) archBadge.textContent = data.archetype || 'Base Building';
+
+      if (ltpEl) ltpEl.textContent = `₹${Number(data.current_price).toFixed(2)}`;
+      if (chgEl) {
+        const chg = Number(data.change_pct || 0);
+        chgEl.textContent = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`;
+        chgEl.className = chg >= 0 ? 'text-sm sm:text-base font-bold text-emerald-400' : 'text-sm sm:text-base font-bold text-rose-400';
+      }
+
+      // Fundamentals Strip
+      const f = data.fundamentals || {};
+      const mktCapEl = document.getElementById('tm-mktcap');
+      const roceEl = document.getElementById('tm-roce');
+      const roeEl = document.getElementById('tm-roe');
+      const deEl = document.getElementById('tm-de');
+      const peEl = document.getElementById('tm-pe');
+      const rsiEl = document.getElementById('tm-rsi');
+      const pivEl = document.getElementById('tm-pivot20');
+      const high52El = document.getElementById('tm-52whigh');
+
+      if (mktCapEl) mktCapEl.textContent = f.market_cap_cr ? `₹${Number(f.market_cap_cr).toLocaleString('en-IN', {maximumFractionDigits:0})} Cr` : 'N/A';
+      if (roceEl) {
+        const roce = f.roce_pct;
+        roceEl.textContent = roce !== null && roce !== undefined ? `${Number(roce).toFixed(1)}%` : 'N/A';
+        roceEl.className = (roce && roce >= 10) ? 'text-xs font-bold text-emerald-400 mt-0.5' : 'text-xs font-bold text-slate-300 mt-0.5';
+      }
+      if (roeEl) {
+        const roe = f.roe_pct;
+        roeEl.textContent = roe !== null && roe !== undefined ? `${Number(roe).toFixed(1)}%` : 'N/A';
+        roeEl.className = (roe && roe >= 10) ? 'text-xs font-bold text-emerald-400 mt-0.5' : 'text-xs font-bold text-slate-300 mt-0.5';
+      }
+      if (deEl) deEl.textContent = f.debt_to_equity !== null && f.debt_to_equity !== undefined ? Number(f.debt_to_equity).toFixed(2) : 'N/A';
+      if (peEl) peEl.textContent = f.pe_ratio !== null && f.pe_ratio !== undefined ? Number(f.pe_ratio).toFixed(1) : 'N/A';
+      if (rsiEl) rsiEl.textContent = data.rsi14 ? Number(data.rsi14).toFixed(1) : '--';
+      if (pivEl) pivEl.textContent = data.pivot_20d_high ? `₹${Number(data.pivot_20d_high).toFixed(2)}` : '--';
+      if (high52El) high52El.textContent = data.high_52w ? `₹${Number(data.high_52w).toFixed(2)}` : '--';
+
+      // 3. Scoreboard Cards
+      const ovScore = document.getElementById('tm-overall-score');
+      const ovBadge = document.getElementById('tm-overall-badge');
+      if (ovScore) ovScore.textContent = Number(data.overall_score || 0).toFixed(1);
+      if (ovBadge) {
+        const sc = Number(data.overall_score || 0);
+        if (sc >= 80) {
+          ovBadge.textContent = 'HIGH CONVICTION CANDIDATE';
+          ovBadge.className = 'text-[11px] font-bold text-emerald-400 mt-1';
+        } else if (sc >= 65) {
+          ovBadge.textContent = 'SETUP EMERGING / WATCHLIST';
+          ovBadge.className = 'text-[11px] font-bold text-cyan-400 mt-1';
+        } else if (sc >= 50) {
+          ovBadge.textContent = 'MODERATE / CONSOLIDATING';
+          ovBadge.className = 'text-[11px] font-bold text-amber-400 mt-1';
+        } else {
+          ovBadge.textContent = 'DO NOT TRADE / UNFAVORABLE';
+          ovBadge.className = 'text-[11px] font-bold text-rose-400 mt-1';
+        }
+      }
+
+      const bnScore = document.getElementById('tm-bn-score');
+      const bnVerd = document.getElementById('tm-bn-verdict');
+      if (bnScore) bnScore.textContent = `${Number(data.buy_now_score || 0).toFixed(1)}%`;
+      if (bnVerd) {
+        bnVerd.textContent = data.buy_now_verdict || 'NOT QUALIFIED';
+        bnVerd.className = data.buy_now_color === 'emerald' ? 'text-[11px] font-bold text-emerald-300 mt-1' :
+                           data.buy_now_color === 'cyan' ? 'text-[11px] font-bold text-cyan-300 mt-1' : 'text-[11px] font-bold text-slate-400 mt-1';
+      }
+
+      const boScore = document.getElementById('tm-bo-score');
+      const boVerd = document.getElementById('tm-bo-verdict');
+      if (boScore) boScore.textContent = `${Number(data.breakout_score || 0).toFixed(1)}%`;
+      if (boVerd) {
+        boVerd.textContent = data.breakout_verdict || 'NO BREAKOUT';
+        boVerd.className = data.breakout_color === 'emerald' ? 'text-[11px] font-bold text-emerald-300 mt-1' :
+                           data.breakout_color === 'cyan' ? 'text-[11px] font-bold text-cyan-300 mt-1' : 'text-[11px] font-bold text-slate-400 mt-1';
+      }
+
+      const pbScore = document.getElementById('tm-pb-score');
+      const pbVerd = document.getElementById('tm-pb-verdict');
+      if (pbScore) pbScore.textContent = `${Number(data.pullback_score || 0).toFixed(1)}%`;
+      if (pbVerd) {
+        pbVerd.textContent = data.pullback_verdict || 'NO PULLBACK PATTERN';
+        pbVerd.className = data.pullback_color === 'emerald' ? 'text-[11px] font-bold text-emerald-300 mt-1' :
+                           data.pullback_color === 'amber' ? 'text-[11px] font-bold text-amber-300 mt-1' : 'text-[11px] font-bold text-slate-400 mt-1';
+      }
+
+      // 4. Actionable Trade Plan
+      const tp = data.trade_plan || {};
+      const planEntry = document.getElementById('tm-plan-entry');
+      const planSl = document.getElementById('tm-plan-sl');
+      const planSlPct = document.getElementById('tm-plan-sl-pct');
+      const planT1 = document.getElementById('tm-plan-t1');
+      const planT1Pct = document.getElementById('tm-plan-t1-pct');
+      const planT2 = document.getElementById('tm-plan-t2');
+      const planT2Pct = document.getElementById('tm-plan-t2-pct');
+      const planAlloc = document.getElementById('tm-plan-alloc');
+
+      if (planEntry) planEntry.textContent = tp.entry_price ? `₹${Number(tp.entry_price).toFixed(2)}` : '--';
+      if (planSl) planSl.textContent = tp.stop_loss ? `₹${Number(tp.stop_loss).toFixed(2)}` : '--';
+      if (planSlPct) planSlPct.textContent = tp.stop_loss_pct ? `${tp.stop_loss_pct}% Risk` : '--';
+      if (planT1) planT1.textContent = tp.target_1 ? `₹${Number(tp.target_1).toFixed(2)}` : '--';
+      if (planT1Pct) planT1Pct.textContent = tp.target_1_pct ? `+${tp.target_1_pct}% Gain` : '--';
+      if (planT2) planT2.textContent = tp.target_2 ? `₹${Number(tp.target_2).toFixed(2)}` : '--';
+      if (planT2Pct) planT2Pct.textContent = tp.target_2_pct ? `+${tp.target_2_pct}% Gain` : '--';
+      if (planAlloc) planAlloc.textContent = tp.recommended_capital_allocation || '5% - 8% Capital';
+
+      // 5. Render Side-by-Side Audit Table
+      renderTestModeAuditTable();
+
+      // 6. Render Candlestick Chart
+      renderTestModeChart(data.candles || [], tp);
+
+      lucide.createIcons();
+    }
+
+    function renderTestModeAuditTable() {
+      const tbody = document.getElementById('tm-audit-table-body');
+      if (!tbody || !testModeState.currentAnalysis) return;
+
+      const data = testModeState.currentAnalysis;
+      const tab = testModeState.activeAuditTab || 'BUY_NOW';
+
+      let items = [];
+      if (tab === 'BUY_NOW') {
+        items = data.buy_now_audit || [];
+      } else if (tab === 'BREAKOUT') {
+        items = data.breakout_audit || [];
+      } else if (tab === 'PULLBACK') {
+        items = data.pullback_audit || [];
+      }
+
+      if (items.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-slate-500">No criteria audit items found for this setup.</td></tr>`;
+        return;
+      }
+
+      let html = '';
+      items.forEach((item, idx) => {
+        let statusBadge = '';
+        if (item.status === 'PASS') {
+          statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">PASS</span>';
+        } else if (item.status === 'NEAR') {
+          statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">NEAR</span>';
+        } else {
+          statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">FAIL</span>';
+        }
+
+        // Fetch rationale from benchmarks if available
+        let rationale = item.rationale;
+        if (!rationale && testModeState.benchmarks && testModeState.benchmarks[tab]) {
+          const bmMatch = (testModeState.benchmarks[tab].criteria || []).find(c => c.field === item.field || c.id === item.id);
+          if (bmMatch) rationale = bmMatch.rationale;
+        }
+        if (!rationale) rationale = 'Institutional filter to guarantee edge and statistical expectancy.';
+
+        html += `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-2.5 px-3 text-slate-500">${idx + 1}</td>
+            <td class="py-2.5 px-3 font-sans font-semibold text-white">${escapeHtml(item.field)}</td>
+            <td class="py-2.5 px-3 text-cyan-300 font-mono font-bold">${escapeHtml(item.standard || item.standard_benchmark || '--')}</td>
+            <td class="py-2.5 px-3 font-mono font-black text-white">${escapeHtml(item.actual || item.actual_value || '--')}</td>
+            <td class="py-2.5 px-3 text-center">${statusBadge}</td>
+            <td class="py-2.5 px-3 text-slate-300 font-sans text-[11px] leading-relaxed max-w-sm">${escapeHtml(rationale)}</td>
+          </tr>
+        `;
+      });
+
+      tbody.innerHTML = html;
+      lucide.createIcons();
+    }
+
+    function renderTestModeChart(candles, tradePlan) {
+      const container = document.getElementById('test-mode-chart-mount');
+      if (!container) return;
+
+      // Clean up previous chart instance
+      if (testModeState.chartInstance) {
+        try {
+          testModeState.chartInstance.remove();
+        } catch (e) {
+          console.warn('Chart remove notice:', e);
+        }
+        testModeState.chartInstance = null;
+        testModeState.candleSeries = null;
+        testModeState.volumeSeries = null;
+        testModeState.ema20Series = null;
+        testModeState.ema50Series = null;
+        testModeState.ema200Series = null;
+        testModeState.priceLines = [];
+      }
+
+      container.innerHTML = '';
+
+      if (typeof LightweightCharts === 'undefined' || !candles || candles.length === 0) {
+        container.innerHTML = `
+          <div class="h-full flex items-center justify-center text-slate-500 font-sans text-xs">
+            <span>Chart library unavailable or no candles to display</span>
+          </div>
+        `;
+        return;
+      }
+
+      const chartHeight = Math.max(320, (container.clientHeight || 390) - 2);
+
+      const chart = LightweightCharts.createChart(container, {
+        width: container.clientWidth || 800,
+        height: chartHeight,
+        handleScroll: {
+          mouseWheel: true,
+          pressedMouseMove: true,
+          horzTouchDrag: true,
+          vertTouchDrag: true
+        },
+        handleScale: {
+          mouseWheel: true,
+          pinch: true,
+          axisPressedMouseMove: { time: true, price: true },
+          axisDoubleClickReset: { time: true, price: true }
+        },
+        layout: {
+          background: { type: 'solid', color: '#070a13' },
+          textColor: '#cbd5e1',
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: 11
+        },
+        grid: {
+          vertLines: { color: '#1e293b' },
+          horzLines: { color: '#1e293b' }
+        },
+        crosshair: {
+          mode: LightweightCharts.CrosshairMode.Normal
+        },
+        rightPriceScale: {
+          borderColor: '#334155',
+          scaleMargins: { top: 0.08, bottom: 0.22 },
+          autoScale: true,
+          alignLabels: true
+        },
+        timeScale: {
+          visible: true,
+          borderVisible: true,
+          borderColor: '#334155',
+          ticksVisible: true,
+          timeVisible: false,
+          secondsVisible: false,
+          minimumHeight: 28,
+          rightOffset: 5
+        }
+      });
+
+      testModeState.chartInstance = chart;
+
+      // 1. Candlestick Series
+      const candleSeries = chart.addCandlestickSeries({
+        upColor: '#10b981',
+        downColor: '#f43f5e',
+        borderDownColor: '#f43f5e',
+        borderUpColor: '#10b981',
+        wickDownColor: '#f43f5e',
+        wickUpColor: '#10b981'
+      });
+      testModeState.candleSeries = candleSeries;
+
+      candleSeries.setData(candles.map(c => ({
+        time: c.time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close
+      })));
+
+      // 2. Moving Averages: EMA 20 (Cyan), EMA 50 (Amber), EMA 200 (Purple)
+      const ema20Series = chart.addLineSeries({ color: '#06b6d4', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, title: 'EMA 20' });
+      const ema50Series = chart.addLineSeries({ color: '#f59e0b', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, title: 'EMA 50' });
+      const ema200Series = chart.addLineSeries({ color: '#a855f7', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, title: 'EMA 200' });
+
+      testModeState.ema20Series = ema20Series;
+      testModeState.ema50Series = ema50Series;
+      testModeState.ema200Series = ema200Series;
+
+      ema20Series.setData(candles.filter(c => c.ema20 !== null && c.ema20 !== undefined).map(c => ({ time: c.time, value: c.ema20 })));
+      ema50Series.setData(candles.filter(c => c.ema50 !== null && c.ema50 !== undefined).map(c => ({ time: c.time, value: c.ema50 })));
+      ema200Series.setData(candles.filter(c => c.ema200 !== null && c.ema200 !== undefined).map(c => ({ time: c.time, value: c.ema200 })));
+
+      // 3. Volume Histogram
+      const volumeSeries = chart.addHistogramSeries({
+        priceFormat: { type: 'volume' },
+        priceScaleId: ''
+      });
+      testModeState.volumeSeries = volumeSeries;
+
+      volumeSeries.priceScale().applyOptions({
+        scaleMargins: { top: 0.82, bottom: 0 }
+      });
+      volumeSeries.setData(candles.map(c => ({
+        time: c.time,
+        value: c.volume,
+        color: c.close >= c.open ? 'rgba(16, 185, 129, 0.4)' : 'rgba(244, 63, 94, 0.4)'
+      })));
+
+      // 4. Trade Plan Price Lines
+      attachTestModeTradeLines(tradePlan);
+
+      // 5. Crosshair Move HUD Update
+      const lastCandle = candles[candles.length - 1];
+      updateTestModeHud(lastCandle);
+
+      chart.subscribeCrosshairMove(param => {
+        if (!param || !param.time || !param.seriesData) {
+          updateTestModeHud(lastCandle);
+          return;
+        }
+
+        const candleData = param.seriesData.get(candleSeries);
+        const volData = param.seriesData.get(volumeSeries);
+        const ema20Data = param.seriesData.get(ema20Series);
+        const ema50Data = param.seriesData.get(ema50Series);
+        const ema200Data = param.seriesData.get(ema200Series);
+
+        if (candleData) {
+          updateTestModeHud({
+            time: param.time,
+            open: candleData.open,
+            high: candleData.high,
+            low: candleData.low,
+            close: candleData.close,
+            volume: volData ? volData.value : null,
+            ema20: ema20Data ? ema20Data.value : null,
+            ema50: ema50Data ? ema50Data.value : null,
+            ema200: ema200Data ? ema200Data.value : null
+          });
+        }
+      });
+
+      // Fit content
+      chart.timeScale().fitContent();
+
+      // Handle window resizing
+      const resizeObserver = new ResizeObserver(entries => {
+        if (entries[0] && testModeState.chartInstance) {
+          const { width, height } = entries[0].contentRect;
+          testModeState.chartInstance.applyOptions({ width, height: Math.max(320, height) });
+        }
+      });
+      resizeObserver.observe(container);
+    }
+
+    function attachTestModeTradeLines(tradePlan) {
+      if (!testModeState.candleSeries || !tradePlan) return;
+
+      // Clear existing price lines
+      testModeState.priceLines.forEach(pl => {
+        try {
+          testModeState.candleSeries.removePriceLine(pl);
+        } catch (e) {}
+      });
+      testModeState.priceLines = [];
+
+      const toggleCheckbox = document.getElementById('tm-toggle-trade-lines');
+      const showLines = toggleCheckbox ? toggleCheckbox.checked : true;
+      if (!showLines) return;
+
+      if (tradePlan.entry_price) {
+        const plEntry = testModeState.candleSeries.createPriceLine({
+          price: tradePlan.entry_price,
+          color: '#06b6d4',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Solid,
+          axisLabelVisible: true,
+          title: `⚡ ENTRY ₹${tradePlan.entry_price}`
+        });
+        testModeState.priceLines.push(plEntry);
+      }
+
+      if (tradePlan.stop_loss) {
+        const plSl = testModeState.candleSeries.createPriceLine({
+          price: tradePlan.stop_loss,
+          color: '#f43f5e',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Solid,
+          axisLabelVisible: true,
+          title: `🛑 SL ₹${tradePlan.stop_loss} (${tradePlan.stop_loss_pct}%)`
+        });
+        testModeState.priceLines.push(plSl);
+      }
+
+      if (tradePlan.target_1) {
+        const plT1 = testModeState.candleSeries.createPriceLine({
+          price: tradePlan.target_1,
+          color: '#10b981',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `🎯 T1 ₹${tradePlan.target_1} (+${tradePlan.target_1_pct}%)`
+        });
+        testModeState.priceLines.push(plT1);
+      }
+
+      if (tradePlan.target_2) {
+        const plT2 = testModeState.candleSeries.createPriceLine({
+          price: tradePlan.target_2,
+          color: '#8b5cf6',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `🚀 T2 ₹${tradePlan.target_2} (+${tradePlan.target_2_pct}%)`
+        });
+        testModeState.priceLines.push(plT2);
+      }
+    }
+
+    function toggleTestModeTradeLines() {
+      if (testModeState.currentAnalysis && testModeState.currentAnalysis.trade_plan) {
+        attachTestModeTradeLines(testModeState.currentAnalysis.trade_plan);
+      }
+    }
+
+    function updateTestModeHud(c) {
+      if (!c) return;
+      const dEl = document.getElementById('hud-tm-date');
+      const oEl = document.getElementById('hud-tm-open');
+      const hEl = document.getElementById('hud-tm-high');
+      const lEl = document.getElementById('hud-tm-low');
+      const cEl = document.getElementById('hud-tm-close');
+      const vEl = document.getElementById('hud-tm-vol');
+      const e20El = document.getElementById('hud-tm-ema20');
+      const e50El = document.getElementById('hud-tm-ema50');
+      const e200El = document.getElementById('hud-tm-ema200');
+
+      if (dEl) dEl.textContent = c.time || '--';
+      if (oEl) oEl.textContent = c.open !== undefined && c.open !== null ? `₹${Number(c.open).toFixed(2)}` : '--';
+      if (hEl) hEl.textContent = c.high !== undefined && c.high !== null ? `₹${Number(c.high).toFixed(2)}` : '--';
+      if (lEl) lEl.textContent = c.low !== undefined && c.low !== null ? `₹${Number(c.low).toFixed(2)}` : '--';
+      if (cEl) {
+        cEl.textContent = c.close !== undefined && c.close !== null ? `₹${Number(c.close).toFixed(2)}` : '--';
+        if (c.open !== undefined && c.close !== undefined) {
+          cEl.className = c.close >= c.open ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold';
+        }
+      }
+      if (vEl) vEl.textContent = c.volume !== null && c.volume !== undefined ? Number(c.volume).toLocaleString('en-IN') : '--';
+      if (e20El) e20El.textContent = c.ema20 !== null && c.ema20 !== undefined ? `₹${Number(c.ema20).toFixed(2)}` : '--';
+      if (e50El) e50El.textContent = c.ema50 !== null && c.ema50 !== undefined ? `₹${Number(c.ema50).toFixed(2)}` : '--';
+      if (e200El) e200El.textContent = c.ema200 !== null && c.ema200 !== undefined ? `₹${Number(c.ema200).toFixed(2)}` : '--';
     }
 
     // Register Service Worker

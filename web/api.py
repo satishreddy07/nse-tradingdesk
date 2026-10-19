@@ -2192,5 +2192,41 @@ def trigger_movers_research_study(force_refresh: bool = True):
         return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
 
 
+# --------------------------------------------------------------------------
+# INSTITUTIONAL TEST MODE & SINGLE STOCK DIAGNOSTIC LAB ENDPOINTS
+# --------------------------------------------------------------------------
+@app.get("/api/test-mode/benchmarks")
+def get_test_mode_benchmarks():
+    """Returns standard criteria benchmarks for BUY NOW, BREAKOUT, and PULLBACK."""
+    from engines.stock_test_analyzer import stock_test_analyzer
+    return stock_test_analyzer.get_setup_benchmarks()
+
+
+@app.get("/api/test-mode/search")
+def search_test_mode_symbols(q: str = "", limit: int = 25):
+    """Searches across all known NSE equities for autocomplete."""
+    from engines.stock_test_analyzer import stock_test_analyzer
+    results = stock_test_analyzer.search_nse_stocks(query=q, limit=limit)
+    return {"status": "SUCCESS", "results": results, "count": len(results)}
+
+
+@app.get("/api/test-mode/analyze/{symbol}")
+def analyze_stock_endpoint(symbol: str, force_download: bool = False):
+    """
+    Performs full empirical diagnostic analysis on any given NSE stock:
+    - Automatically retrieves from Single Master Vault or downloads live from Yahoo Finance
+    - Compares stock actuals side-by-side with BUY NOW, BREAKOUT, and PULLBACK standards
+    - Generates actionable trade plan and candlestick chart data series
+    """
+    from engines.stock_test_analyzer import stock_test_analyzer
+    try:
+        report = stock_test_analyzer.analyze_stock(symbol, force_download=force_download)
+        return _sanitize_for_json(report)
+    except Exception as e:
+        logger.error(f"Error in analyze_stock_endpoint for {symbol}: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
+
+
+
 
 
