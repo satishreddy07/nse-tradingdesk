@@ -2102,6 +2102,62 @@ class StateEngine:
             "afternoon_305": a_status
         }
 
+    # --------------------------------------------------------------------------
+    # PERIODIC HALF-HOURLY SCAN TELEMETRY (Every 30 Mins during Market Hours)
+    # --------------------------------------------------------------------------
+    def record_periodic_30m_scan_outcome(
+        self,
+        job_type: str,
+        status: str,
+        stocks_count: int = 0,
+        buy_now_count: int = 0,
+        execution_time_sec: float = 0.0,
+        note: str = ""
+    ):
+        """Records timestamp, status, and metrics for every half-hourly automated run in SQLite."""
+        now_dt = now_ist()
+        today_str = now_dt.strftime("%Y-%m-%d")
+        now_str = format_ist(now_dt)
+
+        runs = self.get_kv("periodic_30m_runs_history") or []
+        if not isinstance(runs, list):
+            runs = []
+
+        entry = {
+            "timestamp": now_str,
+            "time_only": now_dt.strftime("%H:%M:%S IST"),
+            "date": today_str,
+            "job_type": job_type,
+            "status": status,
+            "stocks_count": int(stocks_count),
+            "buy_now_count": int(buy_now_count),
+            "execution_time_sec": round(float(execution_time_sec), 2),
+            "note": note
+        }
+        # Keep last 50 runs
+        runs = [entry] + runs[:49]
+        self.set_kv("periodic_30m_runs_history", runs)
+        if status == "SUCCESS":
+            self.set_kv("last_successful_30m_run_ist", now_str)
+
+    def get_periodic_30m_runs(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Returns structured history of recent 30-minute automated runs."""
+        runs = self.get_kv("periodic_30m_runs_history") or []
+        if not isinstance(runs, list):
+            return []
+        return runs[:limit]
+
+    def get_last_successful_30m_run_ist(self) -> str:
+        """Returns the timestamp of the last successful 30m automated run, or a descriptive placeholder."""
+        val = self.get_kv("last_successful_30m_run_ist")
+        if val and isinstance(val, str):
+            return val
+        runs = self.get_kv("periodic_30m_runs_history") or []
+        for r in runs:
+            if isinstance(r, dict) and r.get("status") == "SUCCESS":
+                return r.get("timestamp", "")
+        return "Scheduled (09:15-15:30 IST / 30m)"
+
 
 # Global Singleton Instance
 state_engine = StateEngine()

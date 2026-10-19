@@ -764,9 +764,19 @@ def scheduled_movers_research_job():
     if not can_trade:
         return
     try:
+        t0 = time.time()
         from engines.accumulation_research_engine import accumulation_research_engine
         logger.info("🔬 [30-Min Movers Research] Triggering periodic accumulation research scan...")
-        accumulation_research_engine.run_research_scan(force_refresh=True)
+        res = accumulation_research_engine.run_research_scan(force_refresh=True)
+        elapsed = time.time() - t0
+        state_engine.record_periodic_30m_scan_outcome(
+            job_type="MOVERS_RESEARCH_30M",
+            status="SUCCESS",
+            stocks_count=len(res.get("movers", [])) if res else 0,
+            buy_now_count=len([m for m in (res.get("movers", []) if res else []) if m.get("engine_bucket") == "BUY_NOW"]),
+            execution_time_sec=elapsed,
+            note=f"{len(res.get('movers', [])) if res else 0} positive movers analyzed"
+        )
     except Exception as e:
         logger.warning(f"30-Min Movers Research scan notice: {e}")
 
@@ -787,6 +797,7 @@ def scheduled_inhouse_scanner_job():
     if not can_trade:
         return
     try:
+        t0 = time.time()
         from engines.institutional_engine import InstitutionalEngine
         from engines.screener_comparison_engine import screener_comparison_engine
         logger.info("⚡ [30-Min In-House Broad Screener] Running broad cash equities 6-pillar scan & dual-entry execution...")
@@ -794,7 +805,16 @@ def scheduled_inhouse_scanner_job():
         signals = inst_engine.run(auto_execute=True, mode_override="periodic_30m")
         # Update dual-engine parity audit cache with fresh results
         screener_comparison_engine.run_comparison_audit(force_refresh=True)
+        elapsed = time.time() - t0
         b_now = int((signals["bucket"] == "BUY_NOW").sum()) if not signals.empty and "bucket" in signals.columns else 0
+        state_engine.record_periodic_30m_scan_outcome(
+            job_type="INHOUSE_30M_SCAN",
+            status="SUCCESS",
+            stocks_count=len(signals),
+            buy_now_count=b_now,
+            execution_time_sec=elapsed,
+            note=f"{b_now} BUY_NOW signals found out of {len(signals)} broad cash stocks analyzed"
+        )
         logger.info(f"✓ [30-Min In-House Screener] Scan complete. {len(signals)} evaluated, {b_now} BUY_NOW signals routed to Shadow & Portfolio 1.")
     except Exception as e:
         logger.error(f"30-Min In-House Screener execution error: {e}", exc_info=True)

@@ -2149,6 +2149,16 @@ def compare_screener_summary_endpoint():
         return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
 
 
+@app.get("/api/screener/periodic-runs")
+def get_periodic_runs_endpoint():
+    """Returns the history of half-hourly automated runs and timestamps."""
+    return {
+        "status": "SUCCESS",
+        "last_successful_30m_run_ist": state_engine.get_last_successful_30m_run_ist(),
+        "periodic_runs": state_engine.get_periodic_30m_runs(limit=30)
+    }
+
+
 # --------------------------------------------------------------------------
 # INSTITUTIONAL MOVERS & ACCUMULATION RESEARCH ENDPOINTS
 # --------------------------------------------------------------------------

@@ -322,6 +322,10 @@ class ScreenerComparisonEngine:
             "preset_name": preset_name,
             "active_universe_source": active_source,
 
+            # 30-Minute Periodic Automation Telemetry
+            "last_30m_run_timestamp_ist": state_engine.get_kv("last_successful_30m_run_ist") or audit_time_ist,
+            "periodic_30m_runs": state_engine.get_periodic_30m_runs(limit=10),
+
             # KPI Summary (Broad Universe Parity & Index Breakdown)
             "chartink_count": c_count,
             "inhouse_broad_analyzed": len(enriched_all_stocks),
