@@ -12,8 +12,15 @@ import pandas as pd
 import yfinance as yf
 from bs4 import BeautifulSoup
 from datetime import datetime
-from tabulate import tabulate
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+try:
+    from tabulate import tabulate
+except ImportError:
+    def tabulate(data, headers=None, **kwargs):
+        if hasattr(data, 'to_string'):
+            return data.to_string(index=False)
+        return str(data)
 
 if hasattr(sys.stdout, 'reconfigure'):
     try:
