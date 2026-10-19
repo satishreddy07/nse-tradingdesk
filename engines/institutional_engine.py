@@ -1897,6 +1897,17 @@ class InstitutionalEngine:
                 ai_res = ai_service.evaluate_swing_candidate(ai_request)
                 logger.info(f"🤖 [AI Gate Decision] {ticker}: decision={ai_res.final_decision}, reason={ai_res.reason_code}")
 
+                # If external AI provider was rate-limited or unavailable, fall back to Calibrated Quant ML model
+                is_ai_outage = (ai_res.status in ("AI_UNAVAILABLE", "AI_DISABLED") or "rate limit" in str(ai_res.summary or "").lower())
+                if ai_res.final_decision != "BUY_NOW" and is_ai_outage and ml_decision == "PASS_TO_AI" and ml_prob >= 0.55 and expected_r > 0.0:
+                    logger.info(
+                        f"⚡ [Quant ML Fallback] {ticker}: AI provider temporarily rate-limited ({ai_res.reason_code}). "
+                        f"Admitting via Calibrated Quant ML Model (Win Prob: {ml_prob*100:.0f}%, Score: {r['score']}, Expected R: {expected_r:.2f}R)."
+                    )
+                    ai_res.final_decision = "BUY_NOW"
+                    ai_res.reason_code = "QUANT_ML_APPROVED"
+                    ai_res.summary = f"Admitted via Calibrated Quant ML Model (Win Prob: {ml_prob*100:.0f}%, Score: {r['score']}, Expected R: {expected_r:.2f}R) during external AI provider rate-limiting."
+
                 # If AI returned DO_NOT_BUY
                 if ai_res.final_decision != "BUY_NOW":
                     swing_quant_ml_engine.record_decision_audit(
