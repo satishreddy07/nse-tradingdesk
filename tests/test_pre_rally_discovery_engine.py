@@ -231,3 +231,64 @@ def test_accumulation_engine_includes_pre_rally_patterns():
     from engines.accumulation_research_engine import accumulation_research_engine
     report = accumulation_research_engine.get_latest_research()
     assert "discovered_combinations_breakdown" in report or "common_findings" in report
+
+
+def test_expectancy_simulation_and_conflict_ordering():
+    """
+    Verifies that trade simulation strictly distinguishes MFE from realized return,
+    handles same-candle high/low conflicts conservatively, and accounts for transaction costs.
+    """
+    from scripts.reconcile_expectancy_audit import simulate_trade_path
+
+    # Synthetic 5-day price series
+    # Entry at 100 on Day 0
+    # Day 1: High 106 (+6%), Low 95 (-5%), Open 99
+    # Target is +5% (105), Stop is -3.5% (96.5)
+    # Both target and stop hit on Day 1! Conservative protocol MUST trigger stop first.
+    conflict_df = pd.DataFrame({
+        "Open": [100.0, 99.0],
+        "High": [101.0, 106.0],
+        "Low": [99.0, 95.0],
+        "Close": [100.0, 104.0]
+    })
+    res_conflict = simulate_trade_path(conflict_df, start_idx=0, entry_price=100.0, target_pct=5.0, stop_pct=-3.5, horizon=10, friction_pct=0.35)
+    assert res_conflict["exit_reason"] == "STOP_CONFLICT", f"Expected STOP_CONFLICT, got {res_conflict['exit_reason']}"
+    assert res_conflict["exit_price"] == 96.50
+    assert res_conflict["gross_return"] == -3.50
+    assert res_conflict["net_return"] == -3.85
+    assert res_conflict["is_win"] == 0
+
+    # Normal Win: Day 1 touches 105.5 with Low 98
+    win_df = pd.DataFrame({
+        "Open": [100.0, 101.0],
+        "High": [101.0, 105.5],
+        "Low": [99.0, 98.0],
+        "Close": [100.0, 105.0]
+    })
+    res_win = simulate_trade_path(win_df, start_idx=0, entry_price=100.0, target_pct=5.0, stop_pct=-3.5, horizon=10, friction_pct=0.35)
+    assert res_win["exit_reason"] == "PROFIT_TARGET"
+    assert res_win["exit_price"] == 105.0
+    assert res_win["gross_return"] == 5.0
+    assert res_win["net_return"] == 4.65
+    assert res_win["is_win"] == 1
+
+    # Theoretical binary formula check: 37.2% win rate on +5%/-3.5% with 0.35% friction MUST be negative
+    win_rate = 0.372
+    fixed_net = (win_rate * 5.0) + ((1.0 - win_rate) * -3.5) - 0.35
+    assert fixed_net < 0.0, f"Expected negative expectancy, got {fixed_net}"
+    assert round(fixed_net, 2) == -0.69
+
+
+def test_difference_in_proportions_confidence_interval():
+    """
+    Verifies that uncertainty intervals for win rate differences correctly identify
+    when candidate pattern lift is within random noise (crosses zero).
+    """
+    from scripts.reconcile_expectancy_audit import diff_in_proportions_ci
+
+    # Candidate: 74 wins in 199 (37.19%) vs Baseline: 246 wins in 711 (34.60%)
+    ci_low, ci_high = diff_in_proportions_ci(74 / 199, 199, 246 / 711, 711)
+    # The 95% CI must span from negative to positive (crosses 0)
+    assert ci_low < 0.0, f"Expected lower bound < 0, got {ci_low}"
+    assert ci_high > 0.0, f"Expected upper bound > 0, got {ci_high}"
+
