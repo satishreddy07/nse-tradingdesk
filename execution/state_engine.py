@@ -1760,13 +1760,50 @@ class StateEngine:
 
         with self._lock:
             with self._get_connection() as conn:
-                if portfolio_type:
+                if portfolio_type and str(portfolio_type).upper() != "ALL":
                     p_type = self._normalize_portfolio_type(portfolio_type)
-                    conn.execute("DELETE FROM active_positions WHERE portfolio_type = ?", (p_type,))
-                    conn.execute("DELETE FROM trade_history WHERE portfolio_type = ?", (p_type,))
+                    if "PORTFOLIO_3" in p_type or "BREAKOUT" in p_type:
+                        conn.execute("DELETE FROM active_positions WHERE portfolio_type IN ('PORTFOLIO_3_PRE_BREAKOUT', 'PORTFOLIO_3')")
+                        conn.execute("DELETE FROM trade_history WHERE portfolio_type IN ('PORTFOLIO_3_PRE_BREAKOUT', 'PORTFOLIO_3')")
+                        try:
+                            conn.execute("DELETE FROM p3_position_legs")
+                        except Exception:
+                            pass
+                        try:
+                            from engines.strategy_engine import _portfolio3_state, _state_lock, P3_MAX_SLOTS
+                            with _state_lock:
+                                _portfolio3_state["open_legs"] = {}
+                                _portfolio3_state["recent_triggers"] = []
+                                _portfolio3_state["recent_exits"] = []
+                                _portfolio3_state["active_positions_count"] = 0
+                                _portfolio3_state["active_slots_used"] = 0
+                                _portfolio3_state["available_slots"] = P3_MAX_SLOTS
+                        except Exception:
+                            pass
+                    elif "NIFTY" in p_type or "P2" in p_type:
+                        conn.execute("DELETE FROM active_positions WHERE portfolio_type IN ('NIFTY500_MOMENTUM', 'PORTFOLIO_2', 'P2_NIFTY500')")
+                        conn.execute("DELETE FROM trade_history WHERE portfolio_type IN ('NIFTY500_MOMENTUM', 'PORTFOLIO_2', 'P2_NIFTY500')")
+                    else:
+                        conn.execute("DELETE FROM active_positions WHERE portfolio_type IN ('INSTITUTIONAL_6PILLAR', 'PORTFOLIO_1', 'P1_SWING')")
+                        conn.execute("DELETE FROM trade_history WHERE portfolio_type IN ('INSTITUTIONAL_6PILLAR', 'PORTFOLIO_1', 'P1_SWING')")
                 else:
                     conn.execute("DELETE FROM active_positions")
                     conn.execute("DELETE FROM trade_history")
+                    try:
+                        conn.execute("DELETE FROM p3_position_legs")
+                    except Exception:
+                        pass
+                    try:
+                        from engines.strategy_engine import _portfolio3_state, _state_lock, P3_MAX_SLOTS
+                        with _state_lock:
+                            _portfolio3_state["open_legs"] = {}
+                            _portfolio3_state["recent_triggers"] = []
+                            _portfolio3_state["recent_exits"] = []
+                            _portfolio3_state["active_positions_count"] = 0
+                            _portfolio3_state["active_slots_used"] = 0
+                            _portfolio3_state["available_slots"] = P3_MAX_SLOTS
+                    except Exception:
+                        pass
                 conn.commit()
         now_str = format_ist()
         logger.info(f"User-authorized reset trades completed (portfolio={portfolio_type or 'ALL'}) at {now_str}.")

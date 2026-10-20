@@ -860,6 +860,10 @@
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
               <span>Reconcile Exits</span>
             </button>
+            <button onclick="resetPortfolioModal('PORTFOLIO_3_PRE_BREAKOUT')" class="px-3 py-2 rounded-lg bg-rose-950/60 hover:bg-rose-900/70 border border-rose-800 text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition">
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+              <span>Reset Desk</span>
+            </button>
           </div>
         </div>
 
@@ -3113,6 +3117,7 @@
                 <option value="ALL">All Portfolios</option>
                 <option value="INSTITUTIONAL_6PILLAR">Portfolio 1 (Institutional)</option>
                 <option value="NIFTY500_MOMENTUM">Portfolio 2 (Nifty 500)</option>
+                <option value="PORTFOLIO_3_PRE_BREAKOUT">Portfolio 3 (Pre-Breakout Coil)</option>
               </select>
               <select id="history-view-filter" onchange="loadHistoryData()" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 w-full sm:w-auto font-medium">
                 <option value="CLOSED_FIRST">🏁 Closed Trades First (Default)</option>
@@ -18471,20 +18476,25 @@
     }
 
     async function resetPortfolioModal(pType) {
-      const label = pType ? pType : "ALL PORTFOLIOS (P1 & P2)";
+      let label = "ALL PORTFOLIOS";
+      if (pType) {
+        if (pType.includes("PORTFOLIO_3") || pType.includes("BREAKOUT")) label = "Portfolio 3 (Pre-Breakout Coil Desk)";
+        else if (pType.includes("NIFTY")) label = "Portfolio 2 (Nifty 500 Compounding Desk)";
+        else label = "Portfolio 1 (Institutional 6-Pillar Desk)";
+      }
       if (!confirm(`Are you sure you want to reset ${label} PnL & trade history to ₹0.00 in the Single Master File?`)) return;
       try {
         const res = await fetch('/api/portfolio/reset', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ portfolio_type: pType })
+          body: JSON.stringify({ portfolio_type: pType, confirm_token: 'CONFIRM_USER_AUTHORIZED_RESET' })
         });
         const data = await res.json();
-        if (res.ok) {
-          showToast(data.message || "Portfolio PnL reset to ₹0.00!", "success");
+        if (res.ok && data.status === "SUCCESS") {
+          showToast(data.message || `${label} PnL reset to ₹0.00!`, "success");
           await refreshAllData();
         } else {
-          showToast("Failed to reset portfolio.", "error");
+          showToast(data.message || "Failed to reset portfolio.", "error");
         }
       } catch (e) {
         showToast(`Reset error: ${e.message}`, "error");
