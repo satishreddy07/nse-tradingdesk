@@ -2522,6 +2522,29 @@ class KotakSubscribeRequest(BaseModel):
     symbols: list[str]
 
 
+@app.get("/api/kotak/config")
+def get_kotak_config_endpoint():
+    """Returns saved Kotak Neo configuration details for UI setup modal."""
+    from core import config
+    from execution.state_engine import state_engine
+    saved_creds = state_engine.get_kv("KOTAK_NEO_CREDENTIALS") or {}
+    c_key = config.KOTAK_NEO_CONSUMER_KEY or saved_creds.get("consumer_key", "")
+    ucc_val = config.KOTAK_NEO_UCC or saved_creds.get("ucc", "")
+    mob_val = config.KOTAK_NEO_MOBILE_NUMBER or saved_creds.get("mobile_number", "")
+    has_sec = bool(config.KOTAK_NEO_TOTP_SECRET or saved_creds.get("totp_secret"))
+    has_mpin = bool(config.KOTAK_NEO_MPIN or saved_creds.get("mpin"))
+    env = config.KOTAK_NEO_ENVIRONMENT or saved_creds.get("environment", "prod")
+    return {
+        "status": "OK",
+        "consumer_key": c_key,
+        "ucc": ucc_val,
+        "mobile_number": mob_val,
+        "has_totp_secret": has_sec,
+        "has_mpin": has_mpin,
+        "environment": env
+    }
+
+
 @app.get("/api/kotak/status")
 def get_kotak_status_endpoint():
     """Returns Kotak Neo API SDK status, connection telemetry, and cached ticks count."""

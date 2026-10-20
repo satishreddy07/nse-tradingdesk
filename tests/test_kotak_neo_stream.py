@@ -91,6 +91,20 @@ def test_status_and_telemetry():
     assert status["cache_size"] >= 1
 
 
+def test_rest_api_config_endpoint(test_client):
+    """Tests GET /api/kotak/config endpoint returns configuration schema."""
+    response = test_client.get("/api/kotak/config")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "OK"
+    assert "consumer_key" in data
+    assert "ucc" in data
+    assert "mobile_number" in data
+    assert "has_totp_secret" in data
+    assert "has_mpin" in data
+    assert "environment" in data
+
+
 def test_rest_api_status_endpoint(test_client):
     """Tests GET /api/kotak/status endpoint."""
     response = test_client.get("/api/kotak/status")

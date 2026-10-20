@@ -227,6 +227,13 @@
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
 
 
+        <!-- Kotak Neo Live Stream Settings Button -->
+        <button onclick="openKotakSetupModal()" id="btn-kotak-setup" class="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-cyan-500/40 text-cyan-300 font-bold text-xs transition-all active:scale-95 whitespace-nowrap shadow-sm shadow-cyan-500/10 cursor-pointer" title="Configure Kotak Neo API & Stream">
+          <span id="kotak-header-dot" class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
+          <span class="hidden md:inline font-mono">Kotak Neo</span>
+          <span class="md:hidden font-mono">Kotak</span>
+        </button>
+
         <!-- Quick Scan Trigger Dropdown -->
         <div class="relative">
           <button id="btn-scan-menu" onclick="toggleScanMenu()" class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-black font-bold text-xs transition-all shadow-md shadow-cyan-500/20 active:scale-95 whitespace-nowrap">
@@ -22076,6 +22083,298 @@
           });
       });
     }
-  </script>
+  
+    // =========================================================================
+    // KOTAK NEO CREDENTIALS & STREAM MODAL CONTROLLER
+    // =========================================================================
+    async function openKotakSetupModal() {
+      const modal = document.getElementById('kotak-setup-modal');
+      if (!modal) return;
+      modal.style.display = 'flex';
+      modal.classList.remove('hidden');
+      await refreshKotakModalData();
+    }
+
+    function closeKotakSetupModal() {
+      const modal = document.getElementById('kotak-setup-modal');
+      if (!modal) return;
+      modal.style.display = 'none';
+      modal.classList.add('hidden');
+    }
+
+    async function refreshKotakModalData() {
+      try {
+        const [statRes, ipRes, cfgRes] = await Promise.all([
+          fetch('/api/kotak/status'),
+          fetch('/api/server-ip'),
+          fetch('/api/kotak/config')
+        ]);
+        const stat = await statRes.json();
+        const ipData = await ipRes.json();
+        const cfg = await cfgRes.json();
+
+        // Update Server IP
+        const ipEl = document.getElementById('kotak-modal-server-ip');
+        if (ipEl) ipEl.innerText = ipData.server_ip || '127.0.0.1';
+
+        // Update badge & header dot
+        const badge = document.getElementById('kotak-modal-status-badge');
+        const hDot = document.getElementById('kotak-header-dot');
+        if (stat.is_authenticated && (stat.is_streaming || stat.stream_mode === 'WEBSOCKET')) {
+          if (badge) {
+            badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-mono font-bold';
+            badge.innerText = 'STREAMING LIVE';
+          }
+          if (hDot) hDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
+        } else if (stat.is_authenticated) {
+          if (badge) {
+            badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 font-mono font-bold';
+            badge.innerText = 'AUTHENTICATED (STANDBY)';
+          }
+          if (hDot) hDot.className = 'w-2 h-2 rounded-full bg-cyan-400 shrink-0';
+        } else {
+          if (badge) {
+            badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-mono font-bold';
+            badge.innerText = 'OFFLINE';
+          }
+          if (hDot) hDot.className = 'w-2 h-2 rounded-full bg-slate-500 shrink-0';
+        }
+
+        // Telemetry
+        const mMode = document.getElementById('kotak-modal-mode');
+        const mTicks = document.getElementById('kotak-modal-ticks');
+        const mSyms = document.getElementById('kotak-modal-syms');
+        const mLast = document.getElementById('kotak-modal-last-tick');
+        if (mMode) mMode.innerText = stat.stream_mode || 'OFFLINE';
+        if (mTicks) mTicks.innerText = stat.ticks_received_total || 0;
+        if (mSyms) mSyms.innerText = stat.subscribed_symbols_count || 0;
+        if (mLast) mLast.innerText = stat.last_tick_time || '--';
+
+        // Prepopulate inputs if empty
+        const cKeyInput = document.getElementById('kotak-input-consumer-key');
+        const mobInput = document.getElementById('kotak-input-mobile');
+        const uccInput = document.getElementById('kotak-input-ucc');
+        const envInput = document.getElementById('kotak-input-env');
+
+        if (cKeyInput && !cKeyInput.value && cfg.consumer_key) cKeyInput.value = cfg.consumer_key;
+        if (mobInput && !mobInput.value && cfg.mobile_number) mobInput.value = cfg.mobile_number;
+        if (uccInput && !uccInput.value && cfg.ucc) uccInput.value = cfg.ucc;
+        if (envInput && cfg.environment) envInput.value = cfg.environment;
+
+        const mpinInput = document.getElementById('kotak-input-mpin');
+        if (mpinInput && !mpinInput.value && cfg.has_mpin) {
+          mpinInput.placeholder = '•••••• (Configured)';
+        }
+        const totpSecInput = document.getElementById('kotak-input-totp-secret');
+        if (totpSecInput && !totpSecInput.value && cfg.has_totp_secret) {
+          totpSecInput.placeholder = 'Base32 Secret Configured (Auto)';
+        }
+      } catch (err) {
+        console.error('Error fetching Kotak status:', err);
+      }
+    }
+
+    async function copyKotakServerIp() {
+      const ip = document.getElementById('kotak-modal-server-ip')?.innerText;
+      if (!ip) return;
+      try {
+        await navigator.clipboard.writeText(ip);
+        const btn = document.getElementById('btn-copy-server-ip');
+        if (btn) btn.innerText = '✓ Copied!';
+        setTimeout(() => { if (btn) btn.innerText = '📋 Copy IP'; }, 2000);
+      } catch (e) {
+        prompt('Copy Outbound Server IP:', ip);
+      }
+    }
+
+    async function submitKotakAuth() {
+      const btn = document.getElementById('btn-kotak-connect');
+      if (btn) btn.innerText = 'Connecting...';
+      try {
+        const payload = {
+          consumer_key: document.getElementById('kotak-input-consumer-key')?.value?.trim() || null,
+          mobile_number: document.getElementById('kotak-input-mobile')?.value?.trim() || null,
+          ucc: document.getElementById('kotak-input-ucc')?.value?.trim() || null,
+          mpin: document.getElementById('kotak-input-mpin')?.value?.trim() || null,
+          totp_secret: document.getElementById('kotak-input-totp-secret')?.value?.trim() || null,
+          totp: document.getElementById('kotak-input-totp')?.value?.trim() || null,
+          environment: document.getElementById('kotak-input-env')?.value || 'prod'
+        };
+
+        const res = await fetch('/api/kotak/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.status === 'SUCCESS') {
+          showToast(`✓ Kotak Neo Connected successfully for UCC: ${data.ucc || ''}!`, 'success');
+        } else {
+          showToast(`Kotak Neo Auth Notice: ${data.error || data.message || 'Check credentials.'}`, 'error');
+        }
+        await refreshKotakModalData();
+        await refreshAllData();
+      } catch (e) {
+        showToast(`Connection error: ${e.message}`, 'error');
+      } finally {
+        if (btn) btn.innerText = '⚡ Save & Connect Stream';
+      }
+    }
+
+    async function injectKotakTestTick(sym) {
+      try {
+        const ltp = sym === 'NIFTY 50' ? 25300.00 : 3060.00;
+        const res = await fetch(`/api/kotak/test-tick?symbol=${encodeURIComponent(sym)}&ltp=${ltp}`, {
+          method: 'POST'
+        });
+        const data = await res.json();
+        showToast(`⚡ Test Tick Injected: ${sym} ₹${ltp} (Total Ticks: ${data.ticks_total})`, 'success');
+        await refreshKotakModalData();
+        await pollLiveSpotTick();
+      } catch (e) {
+        showToast(`Test tick error: ${e.message}`, 'error');
+      }
+    }
+
+    async function disconnectKotakStream() {
+      try {
+        await fetch('/api/kotak/disconnect', { method: 'POST' });
+        showToast('Kotak Neo stream disconnected.', 'info');
+        await refreshKotakModalData();
+      } catch (e) {
+        showToast(`Disconnect error: ${e.message}`, 'error');
+      }
+    }
+</script>
+
+  <!-- ===================================================================== -->
+  <!-- KOTAK NEO API CREDENTIALS & STREAM SETUP MODAL                        -->
+  <!-- ===================================================================== -->
+  <div id="kotak-setup-modal" onclick="if(event.target === this) closeKotakSetupModal()" style="display: none;" class="hidden fixed inset-0 z-[120] bg-black/85 backdrop-blur-md items-center justify-center p-2 sm:p-4">
+    <div class="bg-[#0b0f19] border border-cyan-500/40 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] my-auto">
+      <!-- Modal Header -->
+      <div class="p-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-bold text-base shrink-0">
+            📡
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base font-extrabold text-white font-mono">Kotak Neo API Setup</h3>
+              <span id="kotak-modal-status-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-mono font-bold">OFFLINE</span>
+            </div>
+            <p class="text-xs text-slate-400 font-mono">Live SFeed WebSocket & Real-Time Tick Streamer</p>
+          </div>
+        </div>
+        <button onclick="closeKotakSetupModal()" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm flex items-center justify-center active:scale-95" aria-label="Close modal">
+          ✕
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-4 sm:p-5 overflow-y-auto custom-scroll space-y-4 text-xs font-mono">
+        <!-- Server Public IP Whitelisting Alert -->
+        <div class="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div class="text-[10px] text-cyan-400 font-bold uppercase tracking-wider flex items-center gap-1">
+              <span>🌐 Kotak Portal Whitelist IP</span>
+            </div>
+            <div class="text-sm font-bold text-white tracking-wide mt-0.5" id="kotak-modal-server-ip">
+              Loading server IP...
+            </div>
+            <div class="text-[10px] text-slate-400 mt-0.5">
+              Whitelist this outbound IP in your Kotak Developer Portal app settings.
+            </div>
+          </div>
+          <button onclick="copyKotakServerIp()" id="btn-copy-server-ip" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-xs transition active:scale-95 shrink-0 self-start sm:self-auto">
+            📋 Copy IP
+          </button>
+        </div>
+
+        <!-- Credentials Form -->
+        <div class="space-y-3">
+          <div>
+            <label class="block text-slate-300 text-[11px] font-bold mb-1">Consumer Key (API Key)</label>
+            <input type="text" id="kotak-input-consumer-key" placeholder="e.g. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 text-xs font-mono">
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-slate-300 text-[11px] font-bold mb-1">Registered Mobile Number</label>
+              <input type="text" id="kotak-input-mobile" placeholder="+91XXXXXXXXXX" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 text-xs font-mono">
+            </div>
+            <div>
+              <label class="block text-slate-300 text-[11px] font-bold mb-1">Unique Client Code (UCC)</label>
+              <input type="text" id="kotak-input-ucc" placeholder="e.g. ABC123" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 text-xs font-mono uppercase">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-slate-300 text-[11px] font-bold mb-1">6-Digit MPIN</label>
+              <input type="password" id="kotak-input-mpin" maxlength="6" placeholder="••••••" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 text-xs font-mono">
+            </div>
+            <div>
+              <label class="block text-slate-300 text-[11px] font-bold mb-1">Environment</label>
+              <select id="kotak-input-env" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
+                <option value="prod">Production (prod)</option>
+                <option value="uat">UAT / Testing</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-slate-300 text-[11px] font-bold">TOTP Secret Key (Recommended for 24/7 Auto-Login)</label>
+              <span class="text-[10px] text-emerald-400 font-semibold">Auto-Generates Daily OTP</span>
+            </div>
+            <input type="text" id="kotak-input-totp-secret" placeholder="Base32 key from authenticator app setup" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 text-xs font-mono uppercase">
+            <p class="text-[10px] text-slate-400 mt-1">If set, QuantDesk automatically computes TOTP at 08:58 AM IST so you never have to manually enter OTP every day.</p>
+          </div>
+
+          <div>
+            <label class="block text-slate-300 text-[11px] font-bold mb-1">Or Enter One-Time 6-Digit TOTP (Optional)</label>
+            <input type="text" id="kotak-input-totp" maxlength="6" placeholder="e.g. 123456 (leave empty if Secret Key provided)" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 text-xs font-mono">
+          </div>
+        </div>
+
+        <!-- Telemetry Stats -->
+        <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[10px]">
+          <div>
+            <div class="text-slate-500 uppercase">Stream Mode</div>
+            <div id="kotak-modal-mode" class="text-slate-200 font-bold mt-0.5">--</div>
+          </div>
+          <div>
+            <div class="text-slate-500 uppercase">Ticks Total</div>
+            <div id="kotak-modal-ticks" class="text-emerald-400 font-bold mt-0.5">0</div>
+          </div>
+          <div>
+            <div class="text-slate-500 uppercase">Tracked Syms</div>
+            <div id="kotak-modal-syms" class="text-cyan-400 font-bold mt-0.5">0</div>
+          </div>
+          <div>
+            <div class="text-slate-500 uppercase">Last Tick</div>
+            <div id="kotak-modal-last-tick" class="text-slate-300 font-bold mt-0.5 truncate">--</div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="pt-2 flex flex-col sm:flex-row gap-2">
+          <button onclick="submitKotakAuth()" id="btn-kotak-connect" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 transition active:scale-95 cursor-pointer">
+            <span>⚡ Save & Connect Stream</span>
+          </button>
+          <button onclick="injectKotakTestTick('RELIANCE')" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs transition active:scale-95 cursor-pointer">
+            Test Tick (RELIANCE)
+          </button>
+          <button onclick="injectKotakTestTick('NIFTY 50')" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs transition active:scale-95 cursor-pointer">
+            Test Tick (NIFTY)
+          </button>
+          <button onclick="disconnectKotakStream()" id="btn-kotak-disconnect" class="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 font-bold text-xs transition active:scale-95 cursor-pointer">
+            Disconnect
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
