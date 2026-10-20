@@ -501,7 +501,7 @@ class KotakNeoEngine:
             self._start_rest_streamer()
 
             # Connect WebSocket stream asynchronously in background (never blocks the HTTP response)
-            if config.KOTAK_NEO_AUTO_STREAM:
+            if getattr(config, "KOTAK_NEO_AUTO_STREAM", True):
                 threading.Thread(target=self.connect_stream, name="KotakNeoAsyncConnector", daemon=True).start()
 
             return {
