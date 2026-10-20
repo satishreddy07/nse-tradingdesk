@@ -302,6 +302,15 @@
     </div>
   </header>
 
+  <!-- NSE MARKET HOLIDAY NOTIFICATION BANNER -->
+  <div id="holiday-banner" class="hidden bg-gradient-to-r from-amber-950/95 via-amber-900/90 to-amber-950/95 border-b border-amber-500/50 px-3 sm:px-6 py-2 sm:py-2.5 text-center text-xs font-mono text-amber-200 shadow-lg">
+    <div class="max-w-[1920px] mx-auto flex items-center justify-center gap-2 flex-wrap">
+      <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold uppercase text-[10px]">🏛️ NSE EXCHANGE HOLIDAY</span>
+      <span class="font-bold text-white" id="holiday-banner-text">Market is closed today (Dussehra).</span>
+      <span class="text-amber-300/80">• Live market price stream & 08:45 AM pre-market auto-runs are on standby. Trading sessions resume next trading day at 08:45 AM IST.</span>
+    </div>
+  </div>
+
   <!-- MAIN VIEWPORT CONTAINER -->
   <main class="flex-1 w-full max-w-[1920px] mx-auto px-3 sm:px-4 md:px-6 2xl:px-8 py-4 sm:py-6 pb-24 lg:pb-10 space-y-4 sm:space-y-6">
 
@@ -8142,8 +8151,8 @@
     let currentModule = 'module-swing';
     let currentTab = 'tab-p1';
     let currentP1FilterBucket = 'ALL';
-    let p1SignalsCache = [];
-    let p2SignalsCache = [];
+    let p1SignalsCache = null;
+    let p2SignalsCache = null;
     let fetchedStocksCache = [];
     let allPositionsCache = [];
     let p1ActiveSet = new Set();
@@ -9217,11 +9226,14 @@
         const isAutoSuccess = (autoStatus === 'SUCCESS');
         const isAutoFailed = (autoStatus === 'FAILED');
 
-        const autoStatusPill = isAutoSuccess
-          ? `<span class="text-emerald-300 font-bold bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-500/50">✅ 08:45 AM AUTO RUN: SUCCESS (${autoTime})</span>`
-          : (isAutoFailed
-              ? `<span class="text-rose-300 font-bold bg-rose-950/80 px-1.5 py-0.5 rounded border border-rose-500/50">❌ 08:45 AM AUTO RUN: FAILED (${autoTime})</span>`
-              : `<span class="text-amber-300 font-semibold bg-amber-950/80 px-1.5 py-0.5 rounded border border-amber-500/40">⏳ 08:45 AM AUTO RUN: PENDING</span>`);
+        const isAutoHoliday = autoStatus === 'HOLIDAY' || (autoTel.note || '').includes('Closed') || (autoTel.note || '').includes('Holiday');
+        const autoStatusPill = isAutoHoliday
+          ? `<span class="text-amber-300 font-bold bg-amber-950/80 px-1.5 py-0.5 rounded border border-amber-500/50">🏖️ 08:45 AM AUTO RUN: NSE HOLIDAY (Standby)</span>`
+          : (isAutoSuccess
+            ? `<span class="text-emerald-300 font-bold bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-500/50">✅ 08:45 AM AUTO RUN: SUCCESS (${autoTime})</span>`
+            : (isAutoFailed
+                ? `<span class="text-rose-300 font-bold bg-rose-950/80 px-1.5 py-0.5 rounded border border-rose-500/50">❌ 08:45 AM AUTO RUN: FAILED (${autoTime})</span>`
+                : `<span class="text-amber-300 font-semibold bg-amber-950/80 px-1.5 py-0.5 rounded border border-amber-500/40">⏳ 08:45 AM AUTO RUN: PENDING</span>`));
 
         if (isLocked || data.is_premarket_locked) {
           lockBadge.className = "flex flex-wrap items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/40";
@@ -15964,9 +15976,29 @@
       // Market Status
       const mStatus = data.market_status || {};
       const fullStatus = mStatus.message || "Market Closed";
+      const isHol = mStatus.session_phase === 'HOLIDAY' || (mStatus.holiday_reason && mStatus.holiday_reason !== 'Saturday' && mStatus.holiday_reason !== 'Sunday');
+      const isWknd = mStatus.session_phase === 'WEEKEND';
       let shortStatus = mStatus.is_open ? "Market Open" : "Closed (Opens 09:15)";
-      if (mStatus.is_trading_day === false) {
-        shortStatus = "Market Closed (Holiday)";
+      if (isHol) {
+        shortStatus = `Market Closed (${mStatus.holiday_reason || 'Holiday'})`;
+      } else if (isWknd) {
+        shortStatus = `Market Closed (${mStatus.holiday_reason || 'Weekend'})`;
+      } else if (mStatus.session_phase === 'PRE_SESSION' || mStatus.session_phase === 'PRE_MARKET') {
+        shortStatus = "Closed (Opens 09:15)";
+      } else if (mStatus.session_phase === 'POST_MARKET') {
+        shortStatus = "Market Closed (Post-Market)";
+      }
+
+      // Holiday Banner Controller
+      const holBanner = document.getElementById('holiday-banner');
+      const holBannerText = document.getElementById('holiday-banner-text');
+      if (holBanner) {
+        if (isHol) {
+          holBanner.classList.remove('hidden');
+          if (holBannerText) holBannerText.innerText = `Market is closed today (${mStatus.holiday_reason || 'NSE Holiday'}).`;
+        } else {
+          holBanner.classList.add('hidden');
+        }
       }
       const statusEl = document.getElementById('market-status-text');
       const mobStatusEl = document.getElementById('mobile-market-status');
@@ -16183,7 +16215,7 @@
     // PORTFOLIO 1 DATA
     // -------------------------------------------------------------------------
     async function loadP1Data(forceSignals = false) {
-      const needSignals = forceSignals || !p1SignalsCache || wasScanRunning || (currentP1SubSection === 'p1-sec-signals');
+      const needSignals = forceSignals || !p1SignalsCache || (Array.isArray(p1SignalsCache) && p1SignalsCache.length === 0) || wasScanRunning || (currentP1SubSection === 'p1-sec-signals');
       const fetchList = [
         fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/summary'),
         fetch('/api/portfolio/INSTITUTIONAL_6PILLAR/positions')
@@ -16520,7 +16552,7 @@
     // PORTFOLIO 2 DATA
     // -------------------------------------------------------------------------
     async function loadP2Data(forceSignals = false) {
-      const needSignals = forceSignals || !p2SignalsCache || wasScanRunning;
+      const needSignals = forceSignals || !p2SignalsCache || (Array.isArray(p2SignalsCache) && p2SignalsCache.length === 0) || wasScanRunning;
       const fetchList = [
         fetch('/api/portfolio/NIFTY500_MOMENTUM/summary'),
         fetch('/api/portfolio/NIFTY500_MOMENTUM/positions')
