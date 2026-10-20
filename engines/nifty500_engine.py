@@ -86,8 +86,13 @@ def get_live_compounded_equity(initial_cash: float = P2_BASE_CAPITAL) -> Tuple[f
     open_trades = state_engine.get_active_positions(portfolio_type=PORTFOLIO_TYPE)
     open_slots_count = len(open_trades)
 
-    # Net realized profit added directly to capital base
-    total_equity = initial_cash + realized_pnl
+    # Net equity = Initial Capital + Realized PnL + Mark-to-Market Unrealized PnL
+    unrealized_pnl = sum(
+        (float(pos.get("current_price", pos.get("entry_price", 0.0))) - float(pos.get("entry_price", 0.0)))
+        * int(pos.get("quantity", 0))
+        for pos in open_trades
+    )
+    total_equity = initial_cash + realized_pnl + unrealized_pnl
     current_equity = max(total_equity, 10000.0)
     return current_equity, total_equity, open_slots_count
 

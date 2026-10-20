@@ -1614,7 +1614,12 @@ class SwingQuantMLEngine:
             X_tr_s = sc_eval.fit_transform(X_tr)
             X_val_s = sc_eval.transform(X_val)
 
-            clf_eval = HistGradientBoostingClassifier(max_iter=100, learning_rate=0.08, min_samples_leaf=3, random_state=42)
+            base_eval = HistGradientBoostingClassifier(max_iter=100, learning_rate=0.08, min_samples_leaf=5, random_state=42)
+            min_c = int(np.min(np.bincount(y_tr_c))) if len(np.bincount(y_tr_c)) > 1 else 0
+            if min_c >= 2:
+                clf_eval = CalibratedClassifierCV(estimator=base_eval, method="sigmoid", cv=min(3, min_c))
+            else:
+                clf_eval = base_eval
             clf_eval.fit(X_tr_s, y_tr_c)
             preds_val = clf_eval.predict_proba(X_val_s)[:, 1] if len(clf_eval.classes_) > 1 else np.full(len(X_val), float(np.mean(y_tr_c)))
             brier = float(np.mean((preds_val - y_val_c) ** 2))

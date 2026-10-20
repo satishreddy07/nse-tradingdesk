@@ -3328,6 +3328,7 @@ class NiftyAnalyticsEngine:
 
                     spot = float(d.get("spot_at_prediction") or 0.0)
                     score_t1 = float(d.get("composite_score") or 0.0)
+                    score_t5 = float(d.get("composite_score_t5") if d.get("composite_score_t5") is not None else (score_t1 * 1.05))
                     t1_v = d.get("t1_verdict") or "RANGE-BOUND / CONSOLIDATION"
                     t5_v = d.get("t5_verdict") or "RANGE-BOUND / CONSOLIDATION"
                     exp_c_1 = float(d.get("t1_expected_close") or spot)
@@ -3349,7 +3350,7 @@ class NiftyAnalyticsEngine:
                         "nifty_spot": spot,
                         "composite_score": score_t1,
                         "composite_score_t1": score_t1,
-                        "composite_score_t5": score_t1 * 1.05,
+                        "composite_score_t5": score_t5,
                         "is_premarket_locked": True,
                         "market_hours_locked": True,
                         "recompute_blocked": True,
@@ -3376,7 +3377,7 @@ class NiftyAnalyticsEngine:
                             "expected_pts": round(exp_c_5 - spot, 2),
                             "expected_pct": round(((exp_c_5 - spot) / max(1.0, spot)) * 100.0, 2),
                             "range_1sigma": [low_1s_5, high_1s_5],
-                            "basis_breakdown": {"verdict": t5_v, "composite_score": score_t1 * 1.05}
+                            "basis_breakdown": {"verdict": t5_v, "composite_score": score_t5}
                         }
                     }
                     return payload
@@ -3441,20 +3442,9 @@ class NiftyAnalyticsEngine:
             if not candidate and is_market_alive and lookup_date != today_str:
                 candidate = self._load_prediction_from_db(today_str)
 
-        # Check if candidate has an unclosed data_date (e.g. data_date == today_str while market is open or before 15:30)
-        is_candidate_contaminated = False
-        if candidate:
-            cand_data_date = str(candidate.get("data_date") or candidate.get("data_as_of_date") or "")
-            if cand_data_date == today_str and market_time < datetime.time(15, 30):
-                is_candidate_contaminated = True
-                logger.warning(
-                    f"⚠️ [PREDICTION SANITIZER] Candidate for {today_str} has unclosed data_date '{cand_data_date}'. "
-                    f"Intraday leakage detected! Forcing recalculation strictly on completed session data."
-                )
-
         # 1. STRICT MARKET-HOURS PREDICTION LOCK (09:00 AM – 03:30 PM IST):
         # Forecast NEVER repaints, mutates, or recalculates while market is alive under ANY circumstances.
-        if is_market_alive and candidate and not is_candidate_contaminated:
+        if is_market_alive and candidate:
             candidate["is_premarket_locked"] = True
             candidate["market_hours_locked"] = True
             candidate["recompute_blocked"] = True
@@ -3484,7 +3474,7 @@ class NiftyAnalyticsEngine:
             return candidate
 
         # 2. General locked or cached forecast outside market hours:
-        if not force_recalculate and candidate and not is_candidate_contaminated:
+        if not force_recalculate and candidate:
             if candidate.get("is_premarket_locked") or candidate.get("prediction_date") == today_str:
                 if "ai_analysis" not in candidate and getattr(config, "AI_ENABLED", True):
                     try:
@@ -3502,7 +3492,7 @@ class NiftyAnalyticsEngine:
 
         market_open = NSEMarketCalendar.can_execute_trades()
         cache_ttl = 300 if market_open else 3600
-        if not force_refresh and not force_recalculate and self._predictions_mem_cache and (now_ts - self._predictions_cache_ts) < cache_ttl and not is_candidate_contaminated:
+        if not force_refresh and not force_recalculate and self._predictions_mem_cache and (now_ts - self._predictions_cache_ts) < cache_ttl:
             if "ai_analysis" not in self._predictions_mem_cache and getattr(config, "AI_ENABLED", True):
                 try:
                     from ai_engine.service import ai_service
@@ -3515,7 +3505,7 @@ class NiftyAnalyticsEngine:
             return self._predictions_mem_cache
 
         # If not forcing recalculate or refresh, check general persisted predictions
-        if not force_refresh and not force_recalculate and not is_candidate_contaminated:
+        if not force_refresh and not force_recalculate:
             persisted = state_engine.get_kv("latest_nifty_predictions")
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
                 if "ai_analysis" not in persisted and getattr(config, "AI_ENABLED", True):
@@ -4741,8 +4731,8 @@ class NiftyAnalyticsEngine:
         if nifty_df is None or len(nifty_df) < 35:
             return {
                 "sessions_evaluated": 0,
-                "t1_hit_rate_pct": 72.0,
-                "t5_hit_rate_pct": 75.0,
+                "t1_hit_rate_pct": None,
+                "t5_hit_rate_pct": None,
                 "base_weights": {"technical": 0.25, "breadth": 0.20, "sectoral": 0.20, "global": 0.15, "macro": 0.12, "news_deriv": 0.08},
                 "learned_weights_t1": {"technical": 0.25, "breadth": 0.20, "sectoral": 0.20, "global": 0.15, "macro": 0.12, "news_deriv": 0.08},
                 "learned_weights_t5": {"technical": 0.28, "breadth": 0.18, "sectoral": 0.22, "global": 0.14, "macro": 0.10, "news_deriv": 0.08},
@@ -5101,9 +5091,9 @@ class NiftyAnalyticsEngine:
                         ))
                 conn.commit()
 
-        t1_rate = round((t1_hits / max(1, t1_evaluated)) * 100.0, 1) if t1_evaluated > 0 else 72.0
-        t5_rate = round((t5_hits / max(1, t5_evaluated)) * 100.0, 1) if t5_evaluated > 0 else 75.0
-        avg_err_1 = round(t1_err_sum / max(1, t1_evaluated), 1) if t1_evaluated > 0 else 68.0
+        t1_rate = round((t1_hits / max(1, t1_evaluated)) * 100.0, 1) if t1_evaluated > 0 else None
+        t5_rate = round((t5_hits / max(1, t5_evaluated)) * 100.0, 1) if t5_evaluated > 0 else None
+        avg_err_1 = round(t1_err_sum / max(1, t1_evaluated), 1) if t1_evaluated > 0 else None
 
         training_result = {
             "sessions_evaluated": t1_evaluated,
@@ -5118,13 +5108,16 @@ class NiftyAnalyticsEngine:
         }
         state_engine.set_kv("nifty_self_trained_weights", training_result)
         try:
+            t1_disp = f"{t1_rate:.1f}%" if t1_rate is not None else "PENDING"
+            t5_disp = f"{t5_rate:.1f}%" if t5_rate is not None else "PENDING"
+            err_disp = f"{avg_err_1:.1f} pts" if avg_err_1 is not None else "N/A"
             telegram_vault.send_alert_and_sync(
                 title="🎯 Nifty Daily Prediction Outcomes & Online Training Report",
                 message=(
                     f"Sessions Graded: {t1_evaluated} trading sessions\n"
-                    f"T+1 Hit Rate: {t1_rate}%\n"
-                    f"T+5 Hit Rate: {t5_rate}%\n"
-                    f"Avg T+1 Error: {avg_err_1} pts\n"
+                    f"T+1 Hit Rate: {t1_disp}\n"
+                    f"T+5 Hit Rate: {t5_disp}\n"
+                    f"Avg T+1 Error: {err_disp}\n"
                     f"Attribution Ledger Synced & Online Weights Updated."
                 ),
                 sync_db=True
@@ -5168,12 +5161,11 @@ class NiftyAnalyticsEngine:
                 ).fetchone()
 
                 if existing and existing[0]:
-                    if is_market_alive or pred_date == now_dt.strftime("%Y-%m-%d"):
-                        logger.info(
-                            f"🔒 [AUDIT INTEGRITY] Prediction for {pred_date} already exists in nifty_predictions_log "
-                            f"(T+1: {existing[0]} | T+5: {existing[1]}). Overwrite strictly prohibited."
-                        )
-                        return
+                    logger.info(
+                        f"🔒 [AUDIT INTEGRITY] Prediction for {pred_date} already exists in nifty_predictions_log "
+                        f"(T+1: {existing[0]} | T+5: {existing[1]}). Overwrite strictly prohibited."
+                    )
+                    return
 
                 conn.execute("""
                 INSERT INTO nifty_predictions_log (
@@ -5182,27 +5174,7 @@ class NiftyAnalyticsEngine:
                     t5_verdict, t5_prob_up, t5_prob_flat, t5_prob_down, t5_expected_close, t5_low_1s, t5_high_1s,
                     pillar_snapshots_json, target_date, data_date
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(prediction_date) DO UPDATE SET
-                    timestamp_ist = excluded.timestamp_ist,
-                    spot_at_prediction = excluded.spot_at_prediction,
-                    composite_score = excluded.composite_score,
-                    t1_verdict = excluded.t1_verdict,
-                    t1_prob_up = excluded.t1_prob_up,
-                    t1_prob_flat = excluded.t1_prob_flat,
-                    t1_prob_down = excluded.t1_prob_down,
-                    t1_expected_close = excluded.t1_expected_close,
-                    t1_low_1s = excluded.t1_low_1s,
-                    t1_high_1s = excluded.t1_high_1s,
-                    t5_verdict = excluded.t5_verdict,
-                    t5_prob_up = excluded.t5_prob_up,
-                    t5_prob_flat = excluded.t5_prob_flat,
-                    t5_prob_down = excluded.t5_prob_down,
-                    t5_expected_close = excluded.t5_expected_close,
-                    t5_low_1s = excluded.t5_low_1s,
-                    t5_high_1s = excluded.t5_high_1s,
-                    pillar_snapshots_json = COALESCE(excluded.pillar_snapshots_json, nifty_predictions_log.pillar_snapshots_json),
-                    target_date = excluded.target_date,
-                    data_date = excluded.data_date;
+                ON CONFLICT(prediction_date) DO NOTHING;
                 """, (
                     pred_date, ts_ist, spot, composite_score,
                     t1_verdict, t1_probs["up"], t1_probs["flat"], t1_probs["down"], t1_expected_close, t1_low_1s, t1_high_1s,
@@ -5625,7 +5597,7 @@ class NiftyAnalyticsEngine:
             })
 
         ts_close = format_ist()
-        if exit_pnl is not None and (not active_map or all(cmp_val is None or float(cmp_val) <= 0.0 for cmp_val in [active_map.get(l.get('strike'), {}).get(l.get('type', 'CE')) for l in legs])):
+        if exit_pnl is not None and (not primary_map or all(cmp_val is None or float(cmp_val) <= 0.0 for cmp_val in [primary_map.get(l.get('strike'), {}).get(l.get('type', 'CE')) for l in legs])):
             total_pnl = round(exit_pnl, 2)
         else:
             total_pnl = round(total_pnl, 2)

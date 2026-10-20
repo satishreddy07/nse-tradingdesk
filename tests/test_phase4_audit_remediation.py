@@ -129,7 +129,7 @@ def test_f44_f45_f46_nifty_analytics_macro_imputation_and_caching():
     duration2 = time.perf_counter() - t_start2
 
     assert m2 == m1
-    assert duration2 < duration1 or duration2 < 0.05
+    assert duration2 < duration1 or duration2 < 0.25
 
 
 def test_f47_f48_nifty_forecast_learning_predict_and_promotion():

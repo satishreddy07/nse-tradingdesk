@@ -9641,10 +9641,11 @@
       const mlm = data.ml_model_metadata || ste.ml_model_metadata || {};
       const trainStatus = document.getElementById('pred-train-status');
       if (trainStatus) {
-        const totalSamples = mlm.total_samples || ste.total_training_samples || ste.sessions_evaluated || 227;
-        const hitRate = (mlm.t1_hit_rate_pct || ste.t1_hit_rate_pct || 62.4).toFixed(1);
-        const r2Str = mlm.r2_score !== undefined ? ` • R² ${(mlm.r2_score || 0).toFixed(2)}` : '';
-        trainStatus.innerText = `TRAINED (${totalSamples} SESSIONS • ${hitRate}% T+1${r2Str})`;
+        const totalSamples = mlm.total_samples || ste.total_training_samples || ste.sessions_evaluated || 0;
+        const hrVal = (mlm.t1_hit_rate_pct !== undefined && mlm.t1_hit_rate_pct !== null) ? mlm.t1_hit_rate_pct : ((ste.t1_hit_rate_pct !== undefined && ste.t1_hit_rate_pct !== null) ? ste.t1_hit_rate_pct : null);
+        const hitRateStr = hrVal !== null ? `${hrVal.toFixed(1)}% T+1` : 'T+1 EVALUATION PENDING';
+        const r2Str = (mlm.r2_score !== undefined && mlm.r2_score !== null) ? ` • R² ${(mlm.r2_score || 0).toFixed(2)}` : '';
+        trainStatus.innerText = `TRAINED (${totalSamples} SESSIONS • ${hitRateStr}${r2Str})`;
       }
       const trainSubtext = document.getElementById('pred-train-subtext');
       if (trainSubtext && (mlm.total_samples || ste.total_training_samples)) {
@@ -9870,8 +9871,11 @@
       const ledTbody = document.getElementById('pred-ledger-tbody');
       const hitrateTag = document.getElementById('pred-ledger-hitrate-tag');
       const ledger = data.prediction_ledger || [];
-      if (hitrateTag && ste.t1_hit_rate_pct !== undefined) {
-        hitrateTag.innerText = `T+1 Hit Rate: ${(ste.t1_hit_rate_pct || 72).toFixed(1)}% | T+5 Hit Rate: ${(ste.t5_hit_rate_pct || 75).toFixed(1)}% (Avg Err: ${ste.avg_t1_error_pts || 68} pts)`;
+      if (hitrateTag) {
+        const t1Rate = (ste.t1_hit_rate_pct !== undefined && ste.t1_hit_rate_pct !== null) ? `${ste.t1_hit_rate_pct.toFixed(1)}%` : 'PENDING';
+        const t5Rate = (ste.t5_hit_rate_pct !== undefined && ste.t5_hit_rate_pct !== null) ? `${ste.t5_hit_rate_pct.toFixed(1)}%` : 'PENDING';
+        const avgErr = (ste.avg_t1_error_pts !== undefined && ste.avg_t1_error_pts !== null) ? `${ste.avg_t1_error_pts.toFixed(1)} pts` : 'N/A';
+        hitrateTag.innerText = `T+1 Hit Rate: ${t1Rate} | T+5 Hit Rate: ${t5Rate} (Avg Err: ${avgErr})`;
       }
 
       if (ledTbody) {

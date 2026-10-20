@@ -1255,7 +1255,7 @@ class ExecutionEngine:
         if (shares * entry) > max_pos_val:
             shares = int(max_pos_val / entry)
 
-        if (shares * entry) < min_pos_val or shares < 5:
+        if (shares * entry) < min_pos_val or shares < 1:
             shares = 0
 
         capital_at_risk = round(shares * risk_per_share, 2)

@@ -463,8 +463,6 @@ class NiftyPredictionLedger:
                         p_date = str(r["prediction_date"])
                         if r["actual_t1_close"] is not None and p_date not in closes:
                             closes[p_date] = float(r["actual_t1_close"])
-                        elif r["spot_at_prediction"] is not None and p_date not in closes:
-                            closes[p_date] = float(r["spot_at_prediction"])
         except Exception:
             pass
 

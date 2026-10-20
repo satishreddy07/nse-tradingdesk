@@ -1282,12 +1282,23 @@ class StateEngine:
 
                     # Slot capacity and cash risk validation (F-38)
                     from core.config import (
-                        P1_BASE_CAPITAL, P2_BASE_CAPITAL, P1_MAX_SLOTS, P2_MAX_SLOTS,
+                        P1_BASE_CAPITAL, P2_BASE_CAPITAL, P3_BASE_CAPITAL,
+                        P1_MAX_SLOTS, P2_MAX_SLOTS, P3_MAX_SLOTS,
+                        P3_ALLOCATION_CAP_PCT,
                         MAX_POSITION_CAP_PCT, MAX_SECTOR_POSITIONS, DAILY_LOSS_LIMIT_PCT
                     )
-                    is_p2 = "NIFTY" in p_type
-                    max_slots = P2_MAX_SLOTS if is_p2 else P1_MAX_SLOTS
-                    base_cap = P2_BASE_CAPITAL if is_p2 else P1_BASE_CAPITAL
+                    if "PORTFOLIO_3" in p_type or "PRE_BREAKOUT" in p_type or "COIL" in p_type:
+                        max_slots = P3_MAX_SLOTS
+                        base_cap = P3_BASE_CAPITAL
+                        pos_cap_pct = P3_ALLOCATION_CAP_PCT
+                    elif "NIFTY" in p_type or "P2" in p_type:
+                        max_slots = P2_MAX_SLOTS
+                        base_cap = P2_BASE_CAPITAL
+                        pos_cap_pct = MAX_POSITION_CAP_PCT
+                    else:
+                        max_slots = P1_MAX_SLOTS
+                        base_cap = P1_BASE_CAPITAL
+                        pos_cap_pct = MAX_POSITION_CAP_PCT
 
                     cur_cnt = conn.execute(
                         "SELECT COUNT(*) FROM active_positions WHERE portfolio_type = ?",
@@ -1297,13 +1308,13 @@ class StateEngine:
                         logger.warning(f"⚠️ [Slot Limit] Cannot open {sym_clean}: {p_type} already at {cur_cnt}/{max_slots} slots.")
                         return False
 
-                    # Position Capital Cap Gate (F-38: max 20% capital per position)
-                    max_pos_val = base_cap * MAX_POSITION_CAP_PCT
+                    # Position Capital Cap Gate (F-38: max allocation per position)
+                    max_pos_val = base_cap * pos_cap_pct
                     required_cash = entry_price * quantity
                     if required_cash > max_pos_val:
                         logger.warning(
                             f"⚠️ [Risk Gate] Blocked {sym_clean}: Position value ₹{required_cash:,.2f} "
-                            f"exceeds {MAX_POSITION_CAP_PCT*100:.0f}% capital cap (₹{max_pos_val:,.2f})."
+                            f"exceeds {pos_cap_pct*100:.0f}% capital cap (₹{max_pos_val:,.2f})."
                         )
                         return False
 
