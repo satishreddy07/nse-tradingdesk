@@ -225,8 +225,22 @@ def get_system_status():
     vault_info = telegram_vault.get_status()
     last_stream = state_engine.get_kv("last_price_stream", {})
 
+    try:
+        from scheduler.cron_scheduler import get_server_public_ip
+        srv_ip = get_server_public_ip(force=False)
+    except Exception:
+        srv_ip = "127.0.0.1"
+
+    try:
+        from engines.kotak_neo_engine import kotak_neo_engine
+        kotak_status = kotak_neo_engine.get_status()
+    except Exception:
+        kotak_status = {"status": "UNAVAILABLE", "is_streaming": False}
+
     return {
         "status": "ONLINE",
+        "server_ip": srv_ip,
+        "kotak_neo": kotak_status,
         "current_time_ist": curr_time,
         "market_status": scheduler_info["market_status"],
         "trading_gate_open": can_trade,
@@ -2488,3 +2502,252 @@ def trigger_prospective_update_trades():
 
 
 
+
+
+# ==============================================================================
+# KOTAK NEO API & REAL-TIME STREAMING ENDPOINTS
+# ==============================================================================
+
+class KotakAuthRequest(BaseModel):
+    consumer_key: Optional[str] = None
+    mobile_number: Optional[str] = None
+    ucc: Optional[str] = None
+    mpin: Optional[str] = None
+    totp: Optional[str] = None
+    totp_secret: Optional[str] = None
+    environment: Optional[str] = "prod"
+
+
+class KotakSubscribeRequest(BaseModel):
+    symbols: list[str]
+
+
+@app.get("/api/kotak/status")
+def get_kotak_status_endpoint():
+    """Returns Kotak Neo API SDK status, connection telemetry, and cached ticks count."""
+    from engines.kotak_neo_engine import kotak_neo_engine
+    return kotak_neo_engine.get_status()
+
+
+@app.post("/api/kotak/auth")
+def authenticate_kotak_neo_endpoint(payload: Optional[KotakAuthRequest] = None):
+    """
+    Authenticates with Kotak Neo API using credentials or automated TOTP.
+    Initiates live stream if successful.
+    """
+    from engines.kotak_neo_engine import kotak_neo_engine
+    req = payload or KotakAuthRequest()
+    res = kotak_neo_engine.login(
+        consumer_key=req.consumer_key,
+        mobile_number=req.mobile_number,
+        ucc=req.ucc,
+        mpin=req.mpin,
+        totp=req.totp,
+        totp_secret=req.totp_secret,
+        environment=req.environment
+    )
+    return res
+
+
+@app.post("/api/kotak/subscribe")
+def subscribe_kotak_symbols_endpoint(payload: KotakSubscribeRequest):
+    """Subscribes specified NSE trading symbols to Kotak Neo live feed."""
+    from engines.kotak_neo_engine import kotak_neo_engine
+    if not payload.symbols:
+        raise HTTPException(status_code=400, detail="No symbols provided.")
+    res = kotak_neo_engine.subscribe_symbols(payload.symbols)
+    return res
+
+
+@app.get("/api/kotak/quotes")
+def get_kotak_quotes_endpoint():
+    """Returns in-memory snapshot of all live ticks received from Kotak Neo."""
+    from engines.kotak_neo_engine import kotak_neo_engine
+    ticks = kotak_neo_engine.get_all_ticks()
+    return {
+        "status": "SUCCESS",
+        "count": len(ticks),
+        "quotes": ticks,
+        "timestamp_ist": format_ist()
+    }
+
+
+@app.post("/api/kotak/disconnect")
+def disconnect_kotak_endpoint():
+    """Disconnects Kotak Neo live stream."""
+    from engines.kotak_neo_engine import kotak_neo_engine
+    kotak_neo_engine.disconnect_stream()
+    return {"status": "SUCCESS", "message": "Kotak Neo stream disconnected."}
+
+
+@app.post("/api/kotak/sync-scrip")
+def sync_kotak_scrip_master_endpoint(background_tasks: BackgroundTasks):
+    """Triggers background synchronization of official Kotak Neo Scrip Master (NSE CM)."""
+    from engines.kotak_neo_engine import kotak_neo_engine
+    background_tasks.add_task(kotak_neo_engine.update_scrip_master)
+    return {
+        "status": "ACCEPTED",
+        "message": "Kotak Neo Scrip Master synchronization started in background."
+    }
+
+
+@app.get("/api/kotak/ping")
+def ping_kotak_connection_endpoint():
+    """
+    Diagnostic endpoint: Performs a live REST test query to Kotak Neo servers.
+    Verifies that session tokens and credentials are valid even when market is closed.
+    """
+    from engines.kotak_neo_engine import kotak_neo_engine
+    if not kotak_neo_engine._is_authenticated:
+        return {
+            "status": "NOT_AUTHENTICATED",
+            "connected": False,
+            "message": "Kotak Neo session is not authenticated. Please login first."
+        }
+    try:
+        raw_res = None
+        if kotak_neo_engine._client:
+            tokens = [{"instrument_token": "2885", "exchange_segment": "nse_cm"}]
+            try:
+                raw_res = kotak_neo_engine._client.quotes(instrument_tokens=tokens, quote_type="all")
+            except Exception as re_err:
+                raw_res = str(re_err)
+
+        quotes = kotak_neo_engine.fetch_rest_quotes(["RELIANCE"])
+        return {
+            "status": "SUCCESS" if quotes else "CONNECTED_EMPTY",
+            "connected": True,
+            "quotes": quotes,
+            "raw_response": raw_res,
+            "websocket_active": kotak_neo_engine.is_streaming_active(),
+            "timestamp_ist": format_ist(),
+            "message": "Connection to Kotak Neo servers verified successfully."
+        }
+    except Exception as e:
+        return {
+            "status": "ERROR",
+            "connected": False,
+            "error": str(e)
+        }
+
+
+@app.post("/api/kotak/test-tick")
+def inject_test_tick_endpoint(symbol: str = "RELIANCE", ltp: Optional[float] = None):
+    """
+    Injects a simulated tick to verify tick cache, UI counter, and data pipeline
+    outside market hours.
+    """
+    from engines.kotak_neo_engine import kotak_neo_engine
+    price = float(ltp or 2980.50)
+    kotak_neo_engine.inject_test_tick(symbol=symbol, ltp=price)
+    return {
+        "status": "SUCCESS",
+        "symbol": symbol,
+        "injected_price": price,
+        "ticks_total": kotak_neo_engine.get_status().get("ticks_received_total", 0),
+        "timestamp_ist": format_ist()
+    }
+
+
+# ==============================================================================
+# SERVER PUBLIC IP DETECTION ENDPOINT (FOR BROKER API WHITELISTING)
+# ==============================================================================
+@app.get("/api/server-ip")
+def get_server_ip_endpoint(refresh: bool = False):
+    """Returns the detected public server IP of the instance."""
+    from scheduler.cron_scheduler import get_server_public_ip
+    ip = get_server_public_ip(force=refresh)
+    return {
+        "status": "OK",
+        "server_ip": ip,
+        "timestamp_ist": format_ist()
+    }
+
+
+# ==============================================================================
+# CONTINUOUS MULTI-DESK LIVE STREAM ENDPOINT (POWERED BY KOTAK NEO)
+# ==============================================================================
+@app.get("/api/stream/continuous")
+def get_continuous_live_stream_endpoint():
+    """
+    Ultra-low latency continuous data stream endpoint powered by Kotak Neo API:
+    Streams live market prices, MTM valuations, trailing stops, Nifty 50 spot, VWAP levels,
+    and Options portfolio metrics continuously to frontend desks without Yahoo/NSE overhead.
+    """
+    from engines.kotak_neo_engine import kotak_neo_engine
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+
+    # Proactive Prime: If authenticated and WebSocket is offline, fetch REST quotes immediately for continuous streaming
+    if kotak_neo_engine._is_authenticated and not kotak_neo_engine._is_connected:
+        try:
+            active_syms = kotak_neo_engine._gather_active_market_symbols()
+            if active_syms:
+                kotak_neo_engine.fetch_rest_quotes(active_syms)
+        except Exception:
+            pass
+
+    all_ticks = kotak_neo_engine.get_all_ticks()
+    is_streaming = kotak_neo_engine.is_streaming_active()
+    stream_status = kotak_neo_engine.get_status()
+
+    # 1. Swing Trading: Active Positions with Kotak live LTP & MTM
+    active_positions = state_engine.get_active_positions()
+    positions_summary = []
+    total_unrealized_pnl = 0.0
+    for p in active_positions:
+        sym = (p.get("symbol") or "").strip().upper()
+        entry_px = float(p.get("entry_price") or 0.0)
+        qty = int(p.get("quantity") or 0)
+        curr_px = float(kotak_neo_engine.get_live_price(sym) or p.get("current_price") or entry_px)
+        pnl = round((curr_px - entry_px) * qty, 2)
+        total_unrealized_pnl += pnl
+        positions_summary.append({
+            "symbol": sym,
+            "ltp": curr_px,
+            "entry_price": entry_px,
+            "stop_loss": p.get("stop_loss"),
+            "highest_price": p.get("highest_price"),
+            "unrealized_pnl": pnl,
+            "pnl_pct": round(((curr_px - entry_px) / max(entry_px, 0.01)) * 100, 2),
+            "cloud_sync": p.get("cloud_sync", "SYNCED")
+        })
+
+    # 2. Intraday Desk: Real-time Nifty 50 & Bank Nifty Spot
+    nifty_spot = float(
+        kotak_neo_engine.get_live_price("NIFTY 50")
+        or kotak_neo_engine.get_live_price("NIFTY")
+        or kotak_neo_engine.get_live_price("^NSEI")
+        or 0.0
+    )
+    banknifty_spot = float(
+        kotak_neo_engine.get_live_price("NIFTY BANK")
+        or kotak_neo_engine.get_live_price("BANKNIFTY")
+        or 0.0
+    )
+
+    # 3. Options Desk: Portfolio Valuation
+    opt_portfolio = nifty_analytics_engine.get_options_portfolio()
+
+    return {
+        "status": "SUCCESS",
+        "source": "KOTAK_NEO_STREAM",
+        "is_streaming": is_streaming,
+        "stream_mode": stream_status.get("stream_mode", "OFFLINE"),
+        "is_authenticated": kotak_neo_engine._is_authenticated,
+        "ticks_total": len(all_ticks),
+        "timestamp_ist": format_ist(),
+        "swing": {
+            "positions_count": len(positions_summary),
+            "total_unrealized_pnl": round(total_unrealized_pnl, 2),
+            "positions": positions_summary
+        },
+        "intraday": {
+            "nifty_spot": nifty_spot,
+            "banknifty_spot": banknifty_spot
+        },
+        "options": {
+            "active_strategies_count": len(opt_portfolio.get("active_strategies", [])),
+            "total_unrealized_pnl": opt_portfolio.get("summary", {}).get("total_unrealized_pnl", 0.0),
+            "strategies": opt_portfolio.get("active_strategies", [])
+        }
+    }

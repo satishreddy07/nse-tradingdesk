@@ -40,3 +40,8 @@ models/registry/*.bundle
 .idea/
 .DS_Store
 Thumbs.db
+
+
+# Logs
+logs/
+*.log

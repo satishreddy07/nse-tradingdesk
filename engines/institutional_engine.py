@@ -2281,7 +2281,7 @@ def get_institutional_status() -> Dict[str, Any]:
     return state_copy
 
 
-def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, Any]:
+def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS", symbols: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Fast multi-threaded live price streamer & MTM updater (runs every 5 minutes during
     NSE market hours 09:15–15:30 IST and on manual 'Refresh Live Prices' click):
@@ -2294,32 +2294,36 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
     fetcher = DirectYahooFinanceFetcher(max_workers=24)
 
     active_positions = state_engine.get_active_positions()
-    pos_syms = [p["symbol"].strip().upper() for p in active_positions if p.get("symbol")]
-
-    sig_syms: List[str] = []
     scope_up = (scope or "ACTIVE_AND_SIGNALS").strip().upper()
-    if scope_up in ("ACTIVE_AND_SIGNALS", "ALL"):
-        p1_sigs = state_engine.get_latest_signals(portfolio_type="INSTITUTIONAL_6PILLAR")
-        p2_sigs = state_engine.get_latest_signals(portfolio_type="NIFTY500_MOMENTUM")
-        if scope_up == "ALL":
-            sig_syms = [s["symbol"].strip().upper() for s in (p1_sigs + p2_sigs) if s.get("symbol")]
-        else:
-            # Refresh all actionable buckets (BUY_NOW, PRE_BREAKOUT, WAIT_PULLBACK) + P2 signals
-            actionable_p1 = [
-                s["symbol"].strip().upper()
-                for s in p1_sigs
-                if s.get("symbol") and s.get("bucket") in ("BUY_NOW", "PRE_BREAKOUT", "WAIT_PULLBACK")
-            ]
-            p2_list = [s["symbol"].strip().upper() for s in p2_sigs if s.get("symbol")]
-            sig_syms = actionable_p1 + p2_list
 
-    ordered_syms: List[str] = []
-    seen = set()
-    for s in pos_syms + sig_syms:
-        # Strictly ignore non-NSE equities, commodity futures (=F), or indices (^)
-        if s and s not in seen and not s.startswith("^") and not s.endswith("=F") and "=" not in s:
-            seen.add(s)
-            ordered_syms.append(s)
+    if symbols:
+        ordered_syms = [s.strip().upper() for s in symbols if s and not s.startswith("^")]
+    else:
+        pos_syms = [p["symbol"].strip().upper() for p in active_positions if p.get("symbol")]
+
+        sig_syms: List[str] = []
+        if scope_up in ("ACTIVE_AND_SIGNALS", "ALL"):
+            p1_sigs = state_engine.get_latest_signals(portfolio_type="INSTITUTIONAL_6PILLAR")
+            p2_sigs = state_engine.get_latest_signals(portfolio_type="NIFTY500_MOMENTUM")
+            if scope_up == "ALL":
+                sig_syms = [s["symbol"].strip().upper() for s in (p1_sigs + p2_sigs) if s.get("symbol")]
+            else:
+                # Refresh all actionable buckets (BUY_NOW, PRE_BREAKOUT, WAIT_PULLBACK) + P2 signals
+                actionable_p1 = [
+                    s["symbol"].strip().upper()
+                    for s in p1_sigs
+                    if s.get("symbol") and s.get("bucket") in ("BUY_NOW", "PRE_BREAKOUT", "WAIT_PULLBACK")
+                ]
+                p2_list = [s["symbol"].strip().upper() for s in p2_sigs if s.get("symbol")]
+                sig_syms = actionable_p1 + p2_list
+
+        ordered_syms: List[str] = []
+        seen = set()
+        for s in pos_syms + sig_syms:
+            # Strictly ignore non-NSE equities, commodity futures (=F), or indices (^)
+            if s and s not in seen and not s.startswith("^") and not s.endswith("=F") and "=" not in s:
+                seen.add(s)
+                ordered_syms.append(s)
 
     if not ordered_syms:
         return {
@@ -2331,7 +2335,42 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
             "timestamp": format_ist()
         }
 
+    # Auto-subscribe active symbols to Kotak Neo live stream if engine is active
+    try:
+        from engines.kotak_neo_engine import kotak_neo_engine
+        kotak_neo_engine.subscribe_symbols(ordered_syms)
+    except Exception:
+        pass
+
     def _fetch_live_tick(sym: str) -> Tuple[str, Optional[pd.DataFrame], Optional[float], Optional[float]]:
+        # 1. Fast Path: In-Memory Kotak Neo Real-Time WebSocket Tick Cache
+        try:
+            from engines.kotak_neo_engine import kotak_neo_engine
+            kotak_tick = kotak_neo_engine.get_live_tick(sym)
+            if kotak_tick and kotak_tick.get("ltp") and float(kotak_tick["ltp"]) > 0:
+                k_ltp = float(kotak_tick["ltp"])
+                k_high = float(kotak_tick.get("high") or k_ltp)
+                cached_df, _ = state_engine.get_ohlcv_df(sym)
+                if cached_df is not None and not cached_df.empty:
+                    merged = cached_df.copy()
+                    today_d = now_ist().date()
+                    last_dt = pd.to_datetime(merged.index[-1]).date()
+                    if last_dt == today_d:
+                        merged.loc[merged.index[-1], "Close"] = k_ltp
+                        merged.loc[merged.index[-1], "High"] = max(float(merged.loc[merged.index[-1], "High"]), k_high)
+                    else:
+                        new_row = pd.DataFrame([{
+                            "Open": k_ltp,
+                            "High": k_high,
+                            "Low": float(kotak_tick.get("low") or k_ltp),
+                            "Close": k_ltp,
+                            "Volume": int(kotak_tick.get("volume") or 0)
+                        }], index=pd.DatetimeIndex([pd.to_datetime(now_ist())]))
+                        merged = pd.concat([merged, new_row])
+                    return sym, merged, k_ltp, k_high
+        except Exception:
+            pass
+
         try:
             cached_df, _ = state_engine.get_ohlcv_df(sym)
 
@@ -2418,6 +2457,13 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
             logger.debug(f"Reconcile during live price stream notice: {e}")
 
     elapsed = round(time.time() - t0, 2)
+    kotak_status = {}
+    try:
+        from engines.kotak_neo_engine import kotak_neo_engine
+        kotak_status = kotak_neo_engine.get_status()
+    except Exception:
+        pass
+
     stream_meta = {
         "status": "OK",
         "scope": scope_up,
@@ -2428,6 +2474,8 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS") -> Dict[str, A
         "reconciled_count": len(reconciled_events),
         "elapsed_sec": elapsed,
         "timestamp": now_str,
+        "kotak_neo_streaming": kotak_status.get("is_streaming", False),
+        "kotak_neo_ticks": kotak_status.get("ticks_received_total", 0),
         "prices": {k: v[0] for k, v in list(live_ltp_map.items())[:50]}
     }
     state_engine.set_kv("last_price_stream", stream_meta)

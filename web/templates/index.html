@@ -130,12 +130,14 @@
     /* Mobile Slide-Over Navigation Drawer Transitions */
     #mobile-nav-backdrop {
       opacity: 0;
-      pointer-events: none;
+      pointer-events: none !important;
       transition: opacity 0.25s ease-in-out;
+      display: none;
     }
     #mobile-nav-backdrop.open {
       opacity: 1;
-      pointer-events: auto;
+      pointer-events: auto !important;
+      display: block !important;
     }
     #mobile-nav-drawer {
       transform: translate3d(100%, 0, 0);
@@ -143,9 +145,13 @@
       will-change: transform;
       -webkit-backface-visibility: hidden;
       backface-visibility: hidden;
+      pointer-events: none !important;
+      display: none;
     }
     #mobile-nav-drawer.open {
       transform: translate3d(0, 0, 0);
+      pointer-events: auto !important;
+      display: flex !important;
     }
   </style>
 </head>
@@ -7980,9 +7986,9 @@
   </nav>
 
   <!-- MOBILE SLIDE-OVER NAVIGATION DRAWER & BACKDROP -->
-  <div id="mobile-nav-backdrop" onclick="toggleMobileDrawer(false)" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[90] transition-opacity"></div>
+  <div id="mobile-nav-backdrop" onclick="toggleMobileDrawer(false)" style="display: none;" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[90] transition-opacity pointer-events-none"></div>
 
-  <div id="mobile-nav-drawer" class="fixed top-0 right-0 bottom-0 w-[88vw] max-w-sm bg-[#0b0f19] border-l border-cyan-500/30 z-[100] shadow-2xl flex flex-col justify-between overflow-hidden">
+  <div id="mobile-nav-drawer" style="display: none;" class="fixed top-0 right-0 bottom-0 w-[88vw] max-w-sm bg-[#0b0f19] border-l border-cyan-500/30 z-[100] shadow-2xl flex flex-col justify-between overflow-hidden pointer-events-none">
     <!-- Drawer Header -->
     <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
       <div class="flex items-center gap-2.5">
@@ -8188,8 +8194,10 @@
     });
 
     function isClientInMarketKeepaliveWindow() {
-      // Checks if current IST time is Mon-Fri between 09:00 and 15:50 IST
+      // Allows active polling whenever user is actively viewing the tab (!document.hidden)
+      // or during trading hours Mon-Fri 09:00-15:50 IST
       try {
+        if (!document.hidden) return true;
         const now = new Date();
         const istParts = new Intl.DateTimeFormat('en-US', {
           timeZone: 'Asia/Kolkata',
@@ -8428,6 +8436,10 @@
       const isOpen = forceState !== null ? forceState : !drawer.classList.contains('open');
       const botNav = document.querySelector('nav.lg\\:hidden.fixed.bottom-0');
       if (isOpen) {
+        drawer.style.display = 'flex';
+        backdrop.style.display = 'block';
+        drawer.classList.remove('pointer-events-none');
+        backdrop.classList.remove('pointer-events-none');
         drawer.classList.add('open');
         backdrop.classList.add('open');
         document.body.classList.add('overflow-hidden');
@@ -8437,6 +8449,10 @@
       } else {
         drawer.classList.remove('open');
         backdrop.classList.remove('open');
+        drawer.classList.add('pointer-events-none');
+        backdrop.classList.add('pointer-events-none');
+        drawer.style.display = 'none';
+        backdrop.style.display = 'none';
         document.body.classList.remove('overflow-hidden');
         if (botNav) botNav.classList.remove('pointer-events-none');
         if (icon) icon.setAttribute('data-lucide', 'menu');
