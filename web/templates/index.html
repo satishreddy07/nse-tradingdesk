@@ -346,86 +346,123 @@
     <!-- =================================================================== -->
     <!-- MODULE 1: SWING TRADING DESK (HOUSES ALL 6 SWING SUB-TABS)          -->
     <!-- =================================================================== -->
-    <section id="module-swing" class="module-section space-y-4 sm:space-y-6">
+    <section id="module-swing" class="module-section space-y-4 sm:space-y-6">      <!-- SWING TRADING WORKSPACE HUB (Modern Categorized Navigation) -->
+      <div class="bg-[#0b0f19]/95 border border-slate-800/90 rounded-2xl p-2 sm:p-2.5 shadow-xl backdrop-blur-md">
+        <!-- Level 1: Workspace Category Switcher -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2.5 pb-2 border-b border-slate-800/80">
+          <div class="flex items-center gap-2 px-1">
+            <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+            <span class="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">Swing Trading Desks</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-cyan-400 border border-slate-700/60 hidden sm:inline">Modular Hub</span>
+          </div>
 
-      <!-- SWING TRADING SUB-NAVIGATION BAR (Single Non-Duplicated Segmented Strip) -->
-      <div class="bg-[#0b0f19]/90 border border-slate-800/90 rounded-2xl p-1.5 sm:p-2 shadow-lg">
-        <div class="flex items-center justify-between gap-2 mb-1 px-2 pt-0.5">
-          <span class="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-bold flex items-center gap-1">
-            <i data-lucide="trending-up" class="w-3 h-3"></i> Swing Trading Sub-Desks
-          </span>
-          <span class="text-[10px] font-mono text-slate-500 hidden sm:inline">Select Desk</span>
+          <!-- 4 Core Workspaces -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-slate-950/80 rounded-xl border border-slate-800/80">
+            <button onclick="switchSwingWorkspace('portfolios')" id="ws-btn-portfolios" class="ws-btn flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm cursor-pointer">
+              <i data-lucide="briefcase" class="w-3.5 h-3.5 shrink-0 text-cyan-400"></i>
+              <span>Portfolios</span>
+              <span class="text-[10px] font-mono px-1 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/50">3</span>
+            </button>
+
+            <button onclick="switchSwingWorkspace('screeners')" id="ws-btn-screeners" class="ws-btn flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent cursor-pointer">
+              <i data-lucide="search" class="w-3.5 h-3.5 shrink-0 text-emerald-400"></i>
+              <span>Screeners & Charts</span>
+            </button>
+
+            <button onclick="switchSwingWorkspace('analytics')" id="ws-btn-analytics" class="ws-btn flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent cursor-pointer">
+              <i data-lucide="line-chart" class="w-3.5 h-3.5 shrink-0 text-indigo-400"></i>
+              <span>Analytics & History</span>
+            </button>
+
+            <button onclick="switchSwingWorkspace('tools')" id="ws-btn-tools" class="ws-btn flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent cursor-pointer">
+              <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 shrink-0 text-blue-400"></i>
+              <span>System & Lab</span>
+            </button>
+          </div>
         </div>
-        <nav class="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs font-semibold">
-          <button onclick="switchTab('tab-p1')" id="nav-tab-p1" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shrink-0">
-            <i data-lucide="layers" class="w-3.5 h-3.5 shrink-0"></i>
-            <span>P1: 6-Pillar</span>
-            <span id="badge-p1-count" class="px-1.5 py-0.2 rounded text-[10px] bg-cyan-900/70 font-mono text-cyan-200">0</span>
-          </button>
 
-          <button onclick="switchTab('tab-p2')" id="nav-tab-p2" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="trending-up" class="w-3.5 h-3.5 text-violet-400 shrink-0"></i>
-            <span>P2: Nifty 500</span>
-            <span id="badge-p2-slots" class="px-1.5 py-0.2 rounded text-[10px] bg-violet-900/70 font-mono text-violet-200">0/10</span>
-          </button>
+        <!-- Level 2: Contextual Workspace Sub-Desks Strip -->
+        <div class="pt-2 px-1">
+          <!-- Workspace 1 Sub-Desks: Trading Portfolios -->
+          <nav id="ws-nav-portfolios" class="ws-subnav flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs font-semibold">
+            <button onclick="switchTab('tab-p1')" id="nav-tab-p1" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shrink-0 cursor-pointer">
+              <i data-lucide="layers" class="w-3.5 h-3.5 shrink-0"></i>
+              <span>P1: 6-Pillar</span>
+              <span id="badge-p1-count" class="px-1.5 py-0.2 rounded text-[10px] bg-cyan-900/70 font-mono text-cyan-200">0</span>
+            </button>
 
-          <button onclick="switchTab('tab-p3')" id="nav-tab-p3" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
-            <span>P3: Pre-Breakout</span>
-            <span id="badge-p3-slots" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-900/70 font-mono text-amber-200">0/10</span>
-          </button>
+            <button onclick="switchTab('tab-p2')" id="nav-tab-p2" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0 cursor-pointer">
+              <i data-lucide="trending-up" class="w-3.5 h-3.5 text-violet-400 shrink-0"></i>
+              <span>P2: Nifty 500</span>
+              <span id="badge-p2-slots" class="px-1.5 py-0.2 rounded text-[10px] bg-violet-900/70 font-mono text-violet-200">0/10</span>
+            </button>
 
-          <button onclick="switchTab('tab-charts')" id="nav-tab-charts" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="candlestick-chart" class="w-3.5 h-3.5 text-emerald-400 shrink-0"></i>
-            <span>Charts & OHLCV</span>
-            <span id="badge-master-stocks" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-900/70 font-mono text-emerald-200">--</span>
-          </button>
+            <button onclick="switchTab('tab-p3')" id="nav-tab-p3" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0 cursor-pointer">
+              <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
+              <span>P3: Pre-Breakout</span>
+              <span id="badge-p3-slots" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-900/70 font-mono text-amber-200">0/10</span>
+            </button>
+          </nav>
 
-          <button onclick="switchTab('tab-screener')" id="nav-tab-screener" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="filter" class="w-3.5 h-3.5 text-pink-400 shrink-0"></i>
-            <span>EQ-FINAL Screener</span>
-            <span id="badge-screener-count" class="px-1.5 py-0.2 rounded text-[10px] bg-pink-900/70 font-mono text-pink-200">792</span>
-          </button>
+          <!-- Workspace 2 Sub-Desks: Screeners & Charts -->
+          <nav id="ws-nav-screeners" class="ws-subnav hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs font-semibold">
+            <button onclick="switchTab('tab-screener')" id="nav-tab-screener" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0 cursor-pointer">
+              <i data-lucide="filter" class="w-3.5 h-3.5 text-pink-400 shrink-0"></i>
+              <span>EQ-FINAL Screener</span>
+              <span id="badge-screener-count" class="px-1.5 py-0.2 rounded text-[10px] bg-pink-900/70 font-mono text-pink-200">792</span>
+            </button>
 
-          <button onclick="switchTab('tab-research')" id="nav-tab-research" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="microscope" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
-            <span>Movers Research</span>
-            <span id="badge-research-count" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-900/70 font-mono text-amber-200">50</span>
-          </button>
+            <button onclick="switchTab('tab-charts')" id="nav-tab-charts" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0 cursor-pointer">
+              <i data-lucide="candlestick-chart" class="w-3.5 h-3.5 text-emerald-400 shrink-0"></i>
+              <span>Charts & OHLCV</span>
+              <span id="badge-master-stocks" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-900/70 font-mono text-emerald-200">--</span>
+            </button>
 
-          <button onclick="switchTab('tab-test-mode')" id="nav-tab-test-mode" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="flask-conical" class="w-3.5 h-3.5 text-purple-400 shrink-0"></i>
-            <span>Test Mode & Lab</span>
-            <span class="px-1.5 py-0.2 rounded text-[10px] bg-purple-900/70 font-mono text-purple-200">NSE ALL</span>
-          </button>
+            <button onclick="switchTab('tab-research')" id="nav-tab-research" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0 cursor-pointer">
+              <i data-lucide="microscope" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
+              <span>Movers Research</span>
+              <span id="badge-research-count" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-900/70 font-mono text-amber-200">50</span>
+            </button>
 
-          <button onclick="switchTab('tab-signals')" id="nav-tab-signals" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="crosshair" class="w-3.5 h-3.5 text-cyan-400 shrink-0"></i>
-            <span>Signals Screener</span>
-          </button>
+            <button onclick="switchTab('tab-signals')" id="nav-tab-signals" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0 cursor-pointer">
+              <i data-lucide="crosshair" class="w-3.5 h-3.5 text-cyan-400 shrink-0"></i>
+              <span>Signals Radar</span>
+            </button>
+          </nav>
 
+          <!-- Workspace 3 Sub-Desks: Analytics & History -->
+          <nav id="ws-nav-analytics" class="ws-subnav hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs font-semibold">
+            <button onclick="switchTab('tab-analytics')" id="nav-tab-analytics" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0 cursor-pointer">
+              <i data-lucide="line-chart" class="w-3.5 h-3.5 text-indigo-400 shrink-0"></i>
+              <span>Portfolio Analytics</span>
+            </button>
 
-          <button onclick="switchTab('tab-history')" id="nav-tab-history" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="history" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
-            <span>Trade History</span>
-          </button>
+            <button onclick="switchTab('tab-history')" id="nav-tab-history" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0 cursor-pointer">
+              <i data-lucide="history" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
+              <span>Trade History</span>
+            </button>
 
-          <button onclick="switchTab('tab-scheduler')" id="nav-tab-scheduler" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="cloud" class="w-3.5 h-3.5 text-blue-400 shrink-0"></i>
-            <span>Vault & Cron</span>
-          </button>
+            <button onclick="switchTab('tab-ml-training')" id="nav-tab-ml-training" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0 cursor-pointer">
+              <i data-lucide="brain-circuit" class="w-3.5 h-3.5 text-emerald-400 shrink-0"></i>
+              <span>ML Training Desk</span>
+              <span id="badge-ml-training-setups" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-900/70 font-mono text-emerald-200">0</span>
+            </button>
+          </nav>
 
-          <button onclick="switchTab('tab-analytics')" id="nav-tab-analytics" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="line-chart" class="w-3.5 h-3.5 text-indigo-400 shrink-0"></i>
-            <span>Portfolio Analytics</span>
-          </button>
+          <!-- Workspace 4 Sub-Desks: System & Lab -->
+          <nav id="ws-nav-tools" class="ws-subnav hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs font-semibold">
+            <button onclick="switchTab('tab-scheduler')" id="nav-tab-scheduler" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0 cursor-pointer">
+              <i data-lucide="cloud" class="w-3.5 h-3.5 text-blue-400 shrink-0"></i>
+              <span>Vault & Cron</span>
+            </button>
 
-          <button onclick="switchTab('tab-ml-training')" id="nav-tab-ml-training" class="tab-btn px-3 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0">
-            <i data-lucide="brain-circuit" class="w-3.5 h-3.5 text-emerald-400 shrink-0"></i>
-            <span>ML Training Desk</span>
-            <span id="badge-ml-training-setups" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-900/70 font-mono text-emerald-200">0</span>
-          </button>
-        </nav>
+            <button onclick="switchTab('tab-test-mode')" id="nav-tab-test-mode" class="tab-btn px-3 py-1.5 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent shrink-0 cursor-pointer">
+              <i data-lucide="flask-conical" class="w-3.5 h-3.5 text-purple-400 shrink-0"></i>
+              <span>Test Mode & Lab</span>
+              <span class="px-1.5 py-0.2 rounded text-[10px] bg-purple-900/70 font-mono text-purple-200">NSE ALL</span>
+            </button>
+          </nav>
+        </div>
       </div>
 
       <!-- ================================================================= -->
@@ -751,7 +788,29 @@
         </div>
       </div>
 
-      <!-- Active Holdings Section with 4-Tier Strategy Exits -->
+            <!-- Portfolio 2 Sub-Section View Switcher (Active Positions vs Candidate Setups) -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl p-3 sm:p-3.5 shadow-lg">
+        <div class="grid grid-cols-2 gap-2 w-full sm:flex sm:items-center sm:w-auto">
+          <button onclick="switchP2SubSection('positions')" id="p2-sub-btn-positions" class="p2-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all bg-violet-500/15 text-violet-300 border border-violet-500/40 shadow-sm cursor-pointer">
+            <i data-lucide="briefcase" class="w-3.5 h-3.5 shrink-0 text-violet-400"></i>
+            <span>Active Positions</span>
+            <span id="p2-sub-badge-positions" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-violet-950/80 text-violet-300 border border-violet-500/30">0 Open</span>
+          </button>
+          <button onclick="switchP2SubSection('signals')" id="p2-sub-btn-signals" class="p2-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent cursor-pointer">
+            <i data-lucide="target" class="w-3.5 h-3.5 shrink-0 text-violet-400"></i>
+            <span>7-Point Setups (3 PM)</span>
+            <span id="p2-sub-badge-signals" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">CANDIDATES</span>
+          </button>
+        </div>
+        <div class="text-[11px] font-mono text-slate-400 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse"></span>
+          <span>Dynamic 10-Slot Compounding Engine</span>
+        </div>
+      </div>
+
+      <!-- P2 View 1: Active Holdings Container -->
+      <div id="p2-sec-positions" class="space-y-4">
+<!-- Active Holdings Section with 4-Tier Strategy Exits -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
         <div class="p-4 sm:p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
           <div class="flex flex-wrap items-center gap-2">
@@ -796,8 +855,11 @@
           </table>
         </div>
       </div>
+      </div>
 
-      <!-- Qualifying Candidate Signals for 3:00 PM MOC -->
+      <!-- P2 View 2: Qualifying Candidate Signals Container -->
+      <div id="p2-sec-signals" class="hidden space-y-4">
+<!-- Qualifying Candidate Signals for 3:00 PM MOC -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
         <div class="flex items-center justify-between mb-4">
           <div>
@@ -832,6 +894,7 @@
             </tbody>
           </table>
         </div>
+      </div>
       </div>
 
     </div>
@@ -952,7 +1015,29 @@
           </div>
         </div>
 
-        <!-- Active Holdings Section with Split Exit Tracking -->
+              <!-- Portfolio 3 Sub-Section View Switcher (Active Positions vs Pre-Breakout Watchlist) -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl p-3 sm:p-3.5 shadow-lg">
+        <div class="grid grid-cols-2 gap-2 w-full sm:flex sm:items-center sm:w-auto">
+          <button onclick="switchP3SubSection('positions')" id="p3-sub-btn-positions" class="p3-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all bg-amber-500/15 text-amber-300 border border-amber-500/40 shadow-sm cursor-pointer">
+            <i data-lucide="briefcase" class="w-3.5 h-3.5 shrink-0 text-amber-400"></i>
+            <span>Active Positions</span>
+            <span id="p3-sub-badge-positions" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-950/80 text-amber-300 border border-amber-500/30">0 Open</span>
+          </button>
+          <button onclick="switchP3SubSection('watchlist')" id="p3-sub-btn-watchlist" class="p3-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent cursor-pointer">
+            <i data-lucide="crosshair" class="w-3.5 h-3.5 shrink-0 text-amber-400"></i>
+            <span>Pre-Breakout Coils</span>
+            <span id="p3-sub-badge-watchlist" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">WATCHLIST</span>
+          </button>
+        </div>
+        <div class="text-[11px] font-mono text-slate-400 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+          <span>Dual-Leg Split Exit Execution Desk</span>
+        </div>
+      </div>
+
+      <!-- P3 View 1: Active Holdings Container -->
+      <div id="p3-sec-positions" class="space-y-4">
+<!-- Active Holdings Section with Split Exit Tracking -->
         <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
           <div class="p-4 sm:p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2">
@@ -996,8 +1081,11 @@
             </table>
           </div>
         </div>
+      </div>
 
-        <!-- Pre-Breakout Coil Watchlist Section -->
+      <!-- P3 View 2: Pre-Breakout Coil Watchlist Container -->
+      <div id="p3-sec-watchlist" class="hidden space-y-4">
+<!-- Pre-Breakout Coil Watchlist Section -->
         <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
             <div>
@@ -1044,6 +1132,7 @@
             </table>
           </div>
         </div>
+      </div>
 
       </div>
 
@@ -8495,25 +8584,48 @@
       if (linksEl) {
         let html = '';
         if (currentModule === 'module-swing') {
-          const swingTabs = [
-            { id: 'tab-p1', name: 'P1: 6-Pillar', icon: 'layers' },
-            { id: 'tab-p2', name: 'P2: Nifty 500', icon: 'trending-up' },
-            { id: 'tab-p3', name: 'P3: Pre-Breakout', icon: 'zap' },
-            { id: 'tab-charts', name: 'Charts & OHLCV', icon: 'candlestick-chart' },
-            { id: 'tab-screener', name: 'EQ Screener', icon: 'filter' },
-            { id: 'tab-research', name: 'Movers Research', icon: 'microscope' },
-            { id: 'tab-test-mode', name: 'Test Mode & Lab', icon: 'flask-conical' },
-            { id: 'tab-signals', name: 'Signals Screener', icon: 'crosshair' },
-            { id: 'tab-history', name: 'Trade History', icon: 'history' },
-            { id: 'tab-scheduler', name: 'Vault & Cron', icon: 'cloud' },
-            { id: 'tab-analytics', name: 'Analytics', icon: 'line-chart' },
-            { id: 'tab-ml-training', name: 'ML Training Desk', icon: 'brain-circuit' }
+          const swingGroups = [
+            {
+              title: 'PORTFOLIOS',
+              tabs: [
+                { id: 'tab-p1', name: 'P1: 6-Pillar', icon: 'layers' },
+                { id: 'tab-p2', name: 'P2: Nifty 500', icon: 'trending-up' },
+                { id: 'tab-p3', name: 'P3: Pre-Breakout', icon: 'zap' }
+              ]
+            },
+            {
+              title: 'SCREENERS & CHARTS',
+              tabs: [
+                { id: 'tab-screener', name: 'EQ Screener', icon: 'filter' },
+                { id: 'tab-charts', name: 'Charts & OHLCV', icon: 'candlestick-chart' },
+                { id: 'tab-research', name: 'Movers Research', icon: 'microscope' },
+                { id: 'tab-signals', name: 'Signals Screener', icon: 'crosshair' }
+              ]
+            },
+            {
+              title: 'ANALYTICS & LEDGER',
+              tabs: [
+                { id: 'tab-analytics', name: 'Portfolio Analytics', icon: 'line-chart' },
+                { id: 'tab-history', name: 'Trade History', icon: 'history' },
+                { id: 'tab-ml-training', name: 'ML Training Desk', icon: 'brain-circuit' }
+              ]
+            },
+            {
+              title: 'SYSTEM & OPERATIONS',
+              tabs: [
+                { id: 'tab-scheduler', name: 'Vault & Cron', icon: 'cloud' },
+                { id: 'tab-test-mode', name: 'Test Mode & Lab', icon: 'flask-conical' }
+              ]
+            }
           ];
-          html = swingTabs.map(t => {
-            const isAct = t.id === currentTab;
-            const cls = isAct ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold' : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800';
-            return `<button onclick="switchTab('${t.id}'); toggleMobileDrawer(false);" class="p-2 rounded-lg border text-left text-xs transition flex items-center gap-1.5 ${cls}"><i data-lucide="${t.icon}" class="w-3.5 h-3.5 shrink-0"></i><span class="truncate">${t.name}</span></button>`;
-          }).join('');
+          html = swingGroups.map(grp => `
+            <div class="col-span-2 pt-2 pb-1 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold border-b border-slate-800/60">${grp.title}</div>
+            ${grp.tabs.map(t => {
+              const isAct = t.id === currentTab;
+              const cls = isAct ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold' : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800';
+              return `<button onclick="switchTab('${t.id}'); toggleMobileDrawer(false);" class="p-2 rounded-lg border text-left text-xs transition flex items-center gap-1.5 ${cls}"><i data-lucide="${t.icon}" class="w-3.5 h-3.5 shrink-0"></i><span class="truncate">${t.name}</span></button>`;
+            }).join('')}
+          `).join('');
         } else if (currentModule === 'module-ml-performance') {
           const mlTabs = [
             { id: 'overview', name: 'Overview' },
@@ -15047,6 +15159,58 @@
       }
     }
 
+    let currentP2SubSection = 'positions';
+    function switchP2SubSection(secId) {
+      currentP2SubSection = secId;
+      ['positions', 'signals'].forEach(id => {
+        const sec = document.getElementById(`p2-sec-${id}`);
+        const btn = document.getElementById(`p2-sub-btn-${id}`);
+        if (sec) {
+          if (id === secId) sec.classList.remove('hidden');
+          else sec.classList.add('hidden');
+        }
+        if (btn) {
+          if (id === secId) {
+            btn.className = 'p2-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all bg-violet-500/15 text-violet-300 border border-violet-500/40 shadow-sm cursor-pointer';
+          } else {
+            btn.className = 'p2-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent cursor-pointer';
+          }
+        }
+      });
+      if (window.lucide) lucide.createIcons();
+    }
+
+    let currentP3SubSection = 'positions';
+    function switchP3SubSection(secId) {
+      currentP3SubSection = secId;
+      ['positions', 'watchlist'].forEach(id => {
+        const sec = document.getElementById(`p3-sec-${id}`);
+        const btn = document.getElementById(`p3-sub-btn-${id}`);
+        if (sec) {
+          if (id === secId) sec.classList.remove('hidden');
+          else sec.classList.add('hidden');
+        }
+        if (btn) {
+          if (id === secId) {
+            btn.className = 'p3-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all bg-amber-500/15 text-amber-300 border border-amber-500/40 shadow-sm cursor-pointer';
+          } else {
+            btn.className = 'p3-sub-btn flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent cursor-pointer';
+          }
+        }
+      });
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function switchSwingWorkspace(wsKey) {
+      const defaultTabs = {
+        'portfolios': 'tab-p1',
+        'screeners': 'tab-screener',
+        'analytics': 'tab-analytics',
+        'tools': 'tab-scheduler'
+      };
+      switchTab(defaultTabs[wsKey] || 'tab-p1');
+    }
+
     async function loadAllEquityCurves() {
       try {
         const res = await fetch('/api/portfolio/equity-curves');
@@ -15079,6 +15243,43 @@
       document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
       const targetTab = document.getElementById(tabId);
       if (targetTab) targetTab.classList.remove('hidden');
+
+      // Dynamic Workspace Syncer for Swing Trading Desks
+      const SWING_TAB_TO_WORKSPACE = {
+        'tab-p1': 'portfolios',
+        'tab-p2': 'portfolios',
+        'tab-p3': 'portfolios',
+        'tab-screener': 'screeners',
+        'tab-charts': 'screeners',
+        'tab-research': 'screeners',
+        'tab-signals': 'screeners',
+        'tab-analytics': 'analytics',
+        'tab-history': 'analytics',
+        'tab-ml-training': 'analytics',
+        'tab-scheduler': 'tools',
+        'tab-test-mode': 'tools'
+      };
+
+      const activeWs = SWING_TAB_TO_WORKSPACE[tabId] || 'portfolios';
+      ['portfolios', 'screeners', 'analytics', 'tools'].forEach(ws => {
+        const wsBtn = document.getElementById(`ws-btn-${ws}`);
+        const wsNav = document.getElementById(`ws-nav-${ws}`);
+        if (ws === activeWs) {
+          if (wsBtn) {
+            wsBtn.className = 'ws-btn flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm cursor-pointer';
+          }
+          if (wsNav) {
+            wsNav.classList.remove('hidden');
+          }
+        } else {
+          if (wsBtn) {
+            wsBtn.className = 'ws-btn flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent cursor-pointer';
+          }
+          if (wsNav) {
+            wsNav.classList.add('hidden');
+          }
+        }
+      });
 
       document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.remove(
@@ -16576,6 +16777,7 @@
         document.getElementById('p2-kpi-slots').innerText = `${sum.active_slots || 0} / ${sum.max_slots || 10}`;
         document.getElementById('badge-p2-slots').innerText = `${sum.active_slots || 0}/${sum.max_slots || 10}`;
         document.getElementById('p2-active-count-tag').innerText = `${sum.active_slots || 0} Open`;
+        const p2SubBadgePos = document.getElementById('p2-sub-badge-positions'); if (p2SubBadgePos) p2SubBadgePos.innerText = `${sum.active_slots || 0} Open`;
         document.getElementById('p2-kpi-slotcap').innerText = `Slot Cap: ₹${(sum.slot_cap_inr || 10000).toLocaleString('en-IN', { maximumFractionDigits: 0 })} (10%)`;
         document.getElementById('p2-kpi-risk').innerText = `₹${(sum.risk_per_trade_inr || 1500).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
         
@@ -16757,6 +16959,8 @@
 
           const activeCountTag = document.getElementById('p3-active-count-tag');
           if (activeCountTag) activeCountTag.innerText = `${sum.active_positions_count || 0} Open`;
+          const p3SubBadgePos = document.getElementById('p3-sub-badge-positions'); if (p3SubBadgePos) p3SubBadgePos.innerText = `${sum.active_positions_count || 0} Open`;
+          const p3SubBadgeWat = document.getElementById('p3-sub-badge-watchlist'); if (p3SubBadgeWat) p3SubBadgeWat.innerText = `${sum.watchlist_count || 0} Coils`;
 
           const riskEl = document.getElementById('p3-kpi-risk');
           if (riskEl) riskEl.innerText = `₹${(sum.risk_per_trade_inr || 2000).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
