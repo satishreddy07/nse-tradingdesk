@@ -315,6 +315,25 @@
     </div>
   </header>
 
+  <!-- KOTAK NEO LIVE STREAM STATUS BANNER (CLICKABLE TO OPEN MODAL) -->
+  <div id="kotak-stream-banner" class="bg-gradient-to-r from-slate-950 via-[#0a1120] to-slate-950 border-b border-cyan-500/30 px-3 sm:px-6 py-1.5 text-xs font-mono text-cyan-200 shadow-sm">
+    <div class="max-w-[1920px] mx-auto flex items-center justify-between gap-2 flex-wrap">
+      <div class="flex items-center gap-2">
+        <span id="kotak-banner-dot" class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
+        <span class="font-bold text-white font-mono">📡 Kotak Neo API Stream:</span>
+        <span id="kotak-banner-status-text" class="text-slate-300">Offline (Click Configure to Connect)</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="injectKotakTestTick('NIFTY 50')" class="hidden sm:inline-flex px-2 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition active:scale-95 cursor-pointer" title="Inject simulated Nifty tick to verify real-time stream">
+          Test Tick
+        </button>
+        <button onclick="openKotakSetupModal()" id="btn-kotak-banner-action" class="px-2.5 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-[11px] transition active:scale-95 cursor-pointer flex items-center gap-1">
+          <span>⚡ Configure Credentials</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- NSE MARKET HOLIDAY NOTIFICATION BANNER -->
   <div id="holiday-banner" class="hidden bg-gradient-to-r from-amber-950/95 via-amber-900/90 to-amber-950/95 border-b border-amber-500/50 px-3 sm:px-6 py-2 sm:py-2.5 text-center text-xs font-mono text-amber-200 shadow-lg">
     <div class="max-w-[1920px] mx-auto flex items-center justify-center gap-2 flex-wrap">
@@ -8123,6 +8142,17 @@
 
       <!-- Quick Execution Actions -->
       <div class="space-y-1.5">
+        <div class="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold mb-1">Live Feed Broker</div>
+        <button onclick="openKotakSetupModal(); toggleMobileDrawer(false);" class="w-full text-left px-3 py-2.5 rounded-lg bg-cyan-950/40 border border-cyan-500/40 hover:bg-cyan-900/40 flex items-center justify-between text-cyan-300 font-bold">
+          <span class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-slate-500 shrink-0" id="drawer-kotak-dot"></span>
+            <span>📡 Kotak Neo API Stream</span>
+          </span>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700" id="drawer-kotak-badge">SETUP</span>
+        </button>
+      </div>
+
+      <div class="space-y-1.5">
         <div class="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold mb-1">Quick Scans</div>
         <button onclick="triggerScan('MORNING_1020AM'); toggleMobileDrawer(false);" class="w-full text-left px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 flex items-center justify-between text-slate-200">
           <span>🌅 Run Morning Scan (10:20 AM)</span>
@@ -8297,6 +8327,13 @@
           pollLiveSpotTick();
         }
       }, 4000);
+
+      // Continuous Kotak Neo Stream Poller (3 seconds)
+      setInterval(() => {
+        if (!document.hidden) {
+          pollContinuousKotakStream();
+        }
+      }, 3000);
 
       // 2. 15-Second Options & Intraday Streamer (Active Desk Aware)
       setInterval(() => {
@@ -16053,7 +16090,46 @@
       if (p1StreamBadge) p1StreamBadge.innerText = streamText;
       if (p2StreamBadge) p2StreamBadge.innerText = streamText;
 
+      // Kotak Neo Live Stream Status Banner & Header Dot
+      const kNeo = data.kotak_neo || {};
+      const kDot = document.getElementById('kotak-header-dot');
+      const bDot = document.getElementById('kotak-banner-dot');
+      const bText = document.getElementById('kotak-banner-status-text');
+      const bBtn = document.getElementById('btn-kotak-banner-action');
+      const dKotakDot = document.getElementById('drawer-kotak-dot');
+      const dKotakBadge = document.getElementById('drawer-kotak-badge');
 
+      if (kNeo.is_authenticated && (kNeo.is_streaming || kNeo.stream_mode === 'WEBSOCKET')) {
+        if (kDot) kDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
+        if (bDot) bDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
+        if (bText) bText.innerHTML = `<span class="text-emerald-400 font-bold">STREAMING LIVE</span> • Mode: <span class="text-white">${kNeo.stream_mode}</span> • Ticks: <span class="text-cyan-400 font-bold">${kNeo.ticks_received_total || 0}</span> • Tracked: <span class="text-slate-300">${kNeo.subscribed_symbols_count || 0}</span>`;
+        if (bBtn) bBtn.innerHTML = '<span>⚙️ Manage Stream</span>';
+        if (dKotakDot) dKotakDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
+        if (dKotakBadge) {
+          dKotakBadge.innerText = 'STREAMING';
+          dKotakBadge.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        }
+      } else if (kNeo.is_authenticated) {
+        if (kDot) kDot.className = 'w-2 h-2 rounded-full bg-cyan-400 shrink-0';
+        if (bDot) bDot.className = 'w-2 h-2 rounded-full bg-cyan-400 shrink-0';
+        if (bText) bText.innerHTML = `<span class="text-cyan-400 font-bold">AUTHENTICATED (STANDBY)</span> • Ready for market ticks`;
+        if (bBtn) bBtn.innerHTML = '<span>⚙️ Manage Stream</span>';
+        if (dKotakDot) dKotakDot.className = 'w-2 h-2 rounded-full bg-cyan-400 shrink-0';
+        if (dKotakBadge) {
+          dKotakBadge.innerText = 'ONLINE';
+          dKotakBadge.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
+        }
+      } else {
+        if (kDot) kDot.className = 'w-2 h-2 rounded-full bg-slate-500 shrink-0';
+        if (bDot) bDot.className = 'w-2 h-2 rounded-full bg-slate-500 shrink-0';
+        if (bText) bText.innerHTML = `<span class="text-slate-400 font-bold">OFFLINE</span> • Zero live WebSocket ticks • Click to configure credentials`;
+        if (bBtn) bBtn.innerHTML = '<span>⚡ Configure Credentials</span>';
+        if (dKotakDot) dKotakDot.className = 'w-2 h-2 rounded-full bg-slate-500 shrink-0';
+        if (dKotakBadge) {
+          dKotakBadge.innerText = 'SETUP';
+          dKotakBadge.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700';
+        }
+      }
 
       // Next Scan
       const nextScan = data.next_scan || {};
@@ -22087,6 +22163,35 @@
     // =========================================================================
     // KOTAK NEO CREDENTIALS & STREAM MODAL CONTROLLER
     // =========================================================================
+    async function pollContinuousKotakStream() {
+      try {
+        const res = await fetch('/api/stream/continuous');
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        // Update live spot if present
+        if (data.intraday && data.intraday.nifty_spot > 0) {
+          const spot = Number(data.intraday.nifty_spot);
+          const formatted = '₹' + spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const spotEl = document.getElementById('opt-kpi-spot');
+          if (spotEl) spotEl.innerText = formatted;
+          const intraBadge = document.getElementById('intraday-spot-badge');
+          if (intraBadge) intraBadge.innerText = `NIFTY: ${formatted}`;
+        }
+
+        // If modal open, live update tick counter
+        const modal = document.getElementById('kotak-setup-modal');
+        if (modal && modal.style.display !== 'none' && !modal.classList.contains('hidden')) {
+          const mMode = document.getElementById('kotak-modal-mode');
+          const mTicks = document.getElementById('kotak-modal-ticks');
+          if (mMode) mMode.innerText = data.stream_mode || 'OFFLINE';
+          if (mTicks) mTicks.innerText = data.ticks_total || 0;
+        }
+      } catch (e) {
+        // quiet ignore
+      }
+    }
+
     async function openKotakSetupModal() {
       const modal = document.getElementById('kotak-setup-modal');
       if (!modal) return;

@@ -333,6 +333,16 @@ class KotakNeoEngine:
         if t_code:
             t_code = t_code.replace(" ", "").strip()
 
+        # Always persist whatever credentials were provided or resolved to SQLite KV store
+        merged_creds = dict(saved_creds)
+        if c_key: merged_creds["consumer_key"] = c_key
+        if clean_mob: merged_creds["mobile_number"] = clean_mob
+        if u_code: merged_creds["ucc"] = u_code
+        if m_pin: merged_creds["mpin"] = m_pin
+        if t_sec: merged_creds["totp_secret"] = t_sec
+        if env: merged_creds["environment"] = env
+        state_engine.set_kv("KOTAK_NEO_CREDENTIALS", merged_creds)
+
         # Helper to extract readable, detailed error message from API response
         def _extract_err(resp_obj: Any, default_err: str) -> str:
             if not resp_obj:
