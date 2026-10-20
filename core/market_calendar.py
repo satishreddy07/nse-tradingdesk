@@ -369,6 +369,7 @@ class NSEMarketCalendar:
         if current_date.weekday() >= 5:
             return {
                 "is_open": False,
+                "is_trading_day": False,
                 "session_phase": "WEEKEND",
                 "holiday_reason": "Saturday" if current_date.weekday() == 5 else "Sunday",
                 "message": "Market is closed for the weekend.",
@@ -382,6 +383,7 @@ class NSEMarketCalendar:
             reason = cls.NSE_HOLIDAYS[date_str]
             return {
                 "is_open": False,
+                "is_trading_day": False,
                 "session_phase": "HOLIDAY",
                 "holiday_reason": reason,
                 "message": f"Market is closed today ({reason}).",
@@ -397,6 +399,7 @@ class NSEMarketCalendar:
         if current_time < t_pre:
             return {
                 "is_open": False,
+                "is_trading_day": True,
                 "session_phase": "PRE_SESSION",
                 "holiday_reason": None,
                 "message": "Market opens at 09:15 AM IST (24/7 Dedicated Host).",
@@ -407,6 +410,7 @@ class NSEMarketCalendar:
         elif current_time < t_open:
             return {
                 "is_open": False,
+                "is_trading_day": True,
                 "session_phase": "PRE_MARKET",
                 "holiday_reason": None,
                 "message": "Pre-Market Session (09:00 - 09:15 IST) • 24/7 Host Online.",
@@ -417,6 +421,7 @@ class NSEMarketCalendar:
         elif current_time <= t_close:
             return {
                 "is_open": True,
+                "is_trading_day": True,
                 "session_phase": "REGULAR_HOURS",
                 "holiday_reason": None,
                 "message": "Live NSE Trading Session active (09:15 - 15:30 IST).",
@@ -427,6 +432,7 @@ class NSEMarketCalendar:
         else:
             return {
                 "is_open": False,
+                "is_trading_day": True,
                 "session_phase": "POST_MARKET",
                 "holiday_reason": None,
                 "message": "Market closed at 03:30 PM IST.",
