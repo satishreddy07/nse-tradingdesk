@@ -2316,6 +2316,10 @@ class StateEngine:
                                 }
 
         current_time_str = now_dt.strftime("%H:%M")
+        from core.market_calendar import NSEMarketCalendar
+        is_trading = NSEMarketCalendar.is_trading_day(now_dt.date())
+        m_stat = NSEMarketCalendar.get_market_status(now_dt)
+        closed_reason = m_stat.get("holiday_reason") or ("Weekend" if now_dt.weekday() >= 5 else "Market Closed")
 
         # 08:45 AM Pre-Market Forecast Lock Auto Run
         p_status = telemetry.get("premarket_0845")
@@ -2335,6 +2339,16 @@ class StateEngine:
                     "execution_time_sec": float(locked_pred.get("execution_time_sec") or 1.2),
                     "note": f"Locked: T+1 {locked_pred.get('t1_forecast', {}).get('verdict')} | T+5 {locked_pred.get('t5_forecast', {}).get('verdict')}"
                 }
+            elif not is_trading:
+                p_status = {
+                    "status": "HOLIDAY",
+                    "timestamp": "--",
+                    "date": today_str,
+                    "buy_now_count": 0,
+                    "total_scanned": 0,
+                    "execution_time_sec": 0.0,
+                    "note": f"Market Closed ({closed_reason}) • Auto-runs resume next trading day at 08:45 AM IST"
+                }
             else:
                 is_past_0845 = current_time_str >= "08:45"
                 p_status = {
@@ -2348,27 +2362,47 @@ class StateEngine:
 
         m_status = telemetry.get("morning_1020")
         if not m_status:
-            is_past = current_time_str >= "10:20"
-            m_status = {
-                "status": "PENDING" if not is_past else "AWAITING_TRIGGER",
-                "timestamp": "--",
-                "date": today_str,
-                "buy_now_count": 0,
-                "total_scanned": 0,
-                "note": "Scheduled for 10:20 AM IST Mon-Fri" if not is_past else "Ready to trigger (Market Open)"
-            }
+            if not is_trading:
+                m_status = {
+                    "status": "HOLIDAY",
+                    "timestamp": "--",
+                    "date": today_str,
+                    "buy_now_count": 0,
+                    "total_scanned": 0,
+                    "note": f"Market Closed ({closed_reason}) • 10:20 AM scan resumes next trading day"
+                }
+            else:
+                is_past = current_time_str >= "10:20"
+                m_status = {
+                    "status": "PENDING" if not is_past else "AWAITING_TRIGGER",
+                    "timestamp": "--",
+                    "date": today_str,
+                    "buy_now_count": 0,
+                    "total_scanned": 0,
+                    "note": "Scheduled for 10:20 AM IST Mon-Fri" if not is_past else "Ready to trigger (Market Open)"
+                }
 
         a_status = telemetry.get("afternoon_305")
         if not a_status:
-            is_past = current_time_str >= "15:00"
-            a_status = {
-                "status": "PENDING" if not is_past else "AWAITING_TRIGGER",
-                "timestamp": "--",
-                "date": today_str,
-                "buy_now_count": 0,
-                "total_scanned": 0,
-                "note": "Scheduled for 03:00 PM IST Mon-Fri" if not is_past else "Ready to trigger (MOC Window)"
-            }
+            if not is_trading:
+                a_status = {
+                    "status": "HOLIDAY",
+                    "timestamp": "--",
+                    "date": today_str,
+                    "buy_now_count": 0,
+                    "total_scanned": 0,
+                    "note": f"Market Closed ({closed_reason}) • 03:00 PM scan resumes next trading day"
+                }
+            else:
+                is_past = current_time_str >= "15:00"
+                a_status = {
+                    "status": "PENDING" if not is_past else "AWAITING_TRIGGER",
+                    "timestamp": "--",
+                    "date": today_str,
+                    "buy_now_count": 0,
+                    "total_scanned": 0,
+                    "note": "Scheduled for 03:00 PM IST Mon-Fri" if not is_past else "Ready to trigger (MOC Window)"
+                }
 
         return {
             "date": today_str,
