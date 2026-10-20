@@ -995,6 +995,7 @@
               <h3 class="font-bold text-white text-sm flex items-center gap-2">
                 <i data-lucide="crosshair" class="w-4 h-4 text-amber-400"></i>
                 <span>Pre-Breakout Coil Watchlist (T-1 Ingestion)</span>
+                <span id="p3-watchlist-timestamp-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-emerald-400 border border-slate-700 hidden">Auto Run: --</span>
               </h3>
               <p class="text-xs text-slate-400">VDU ≤ 0.8x 20 SMA Vol • 20 EMA Proximity ±3.8% • Range Contraction ≤ 3.2% • Trend: Close ≥ 20 EMA > 50 SMA</p>
             </div>
@@ -16768,6 +16769,17 @@
           const checkTs = sum.last_intraday_check_timestamp ? (sum.last_intraday_check_timestamp.includes('T') ? sum.last_intraday_check_timestamp.split('T')[1].substring(0, 8) : sum.last_intraday_check_timestamp) : '--';
           if (document.getElementById('p3-last-scan')) document.getElementById('p3-last-scan').innerText = `EOD Scan: ${scanTs}`;
           if (document.getElementById('p3-last-check')) document.getElementById('p3-last-check').innerText = `Check: ${checkTs}`;
+
+          const scanBadge = document.getElementById('p3-watchlist-timestamp-badge');
+          if (scanBadge) {
+            if (sum.last_scan_timestamp) {
+              const displayTs = sum.last_scan_timestamp.includes('T') ? sum.last_scan_timestamp.split('T')[1].substring(0, 8) : sum.last_scan_timestamp;
+              scanBadge.innerText = `✅ Ingested: ${displayTs}`;
+              scanBadge.classList.remove('hidden');
+            } else {
+              scanBadge.classList.add('hidden');
+            }
+          }
         }
 
         if (posRes.ok && legRes.ok) {

@@ -232,6 +232,15 @@ def scheduled_live_price_stream_job():
                 portfolio3_strategy_engine.reconcile_open_positions()
             except Exception as p3e:
                 logger.debug(f"5m Portfolio 3 position reconciliation notice: {p3e}")
+
+            # 7. Evaluate Portfolio 3 Intraday Breakout Triggers (09:15 - 10:15 IST)
+            try:
+                from engines.strategy_engine import portfolio3_strategy_engine
+                is_win, _ = portfolio3_strategy_engine.is_intraday_window_active()
+                if is_win:
+                    portfolio3_strategy_engine.run_intraday_breakout_cycle(bypass_window=False, bypass_gate=False)
+            except Exception as e_p3_trig:
+                logger.debug(f"5m Portfolio 3 breakout trigger check notice: {e_p3_trig}")
         except Exception as e:
             logger.warning(f"5m option chain sync & auto-trade warning: {e}")
 
@@ -322,6 +331,20 @@ def scheduled_premarket_nifty_prediction_job():
                 )
             except Exception as e_opt:
                 logger.warning(f"08:45 AM Options Strategy Deployment notice: {e_opt}")
+
+        # Ingest Portfolio 3 Pre-Breakout Coils at 08:45 AM Pre-Market
+        try:
+            from engines.strategy_engine import portfolio3_strategy_engine
+            logger.info("📋 [08:45 AM Pre-Market] Ingesting Portfolio 3 Pre-Breakout Coils...")
+            execution_queue.submit_task(
+                task_fn=portfolio3_strategy_engine.ingest_prebreakout_watchlist,
+                task_name="Portfolio 3 08:45 AM Watchlist Ingestion",
+                task_type="P3_EOD_WATCHLIST",
+                kwargs={"sync_cloud": True},
+                deduplicate=True
+            )
+        except Exception as e_p3_ingest:
+            logger.warning(f"08:45 AM Portfolio 3 Watchlist notice: {e_p3_ingest}")
     except Exception as e:
         logger.warning(f"08:45 AM Pre-Market Prediction Job error: {e}")
         state_engine.record_scheduled_scan_outcome(
@@ -1213,6 +1236,16 @@ def start_scheduler():
             name="10:15 AM Portfolio 3 Intraday Breakout Validation",
             replace_existing=True,
             misfire_grace_time=180
+        )
+
+        # Job 8B: 08:45 AM Pre-Market Portfolio 3 Pre-Breakout Coil Watchlist Ingestion (Mon-Fri)
+        _scheduler.add_job(
+            scheduled_p3_eod_watchlist_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=8, minute=45, timezone=IST),
+            id="job_p3_premarket_watchlist_0845",
+            name="08:45 AM Pre-Market Portfolio 3 Coil Watchlist Ingestion",
+            replace_existing=True,
+            misfire_grace_time=300
         )
 
         # Job 9: Portfolio 3 EOD Pre-Breakout Watchlist Ingestion (Mon-Fri, 16:05 IST)

@@ -359,6 +359,21 @@ class Portfolio3StrategyEngine:
                     _portfolio3_state["active_slots_used"] = pos_count
                     _portfolio3_state["available_slots"] = max(0, self.max_slots - pos_count)
                     _portfolio3_state["open_legs"] = open_legs
+
+                    # Restore timestamps from KV or DB if missing in memory
+                    if not _portfolio3_state.get("last_scan_timestamp"):
+                        saved_scan = state_engine.get_kv("p3_last_scan_timestamp")
+                        if not saved_scan:
+                            max_u = conn.execute("SELECT MAX(updated_at) FROM p3_prebreakout_watchlist").fetchone()
+                            if max_u and max_u[0]:
+                                saved_scan = max_u[0]
+                        if saved_scan:
+                            _portfolio3_state["last_scan_timestamp"] = saved_scan
+
+                    if not _portfolio3_state.get("last_intraday_check_timestamp"):
+                        saved_check = state_engine.get_kv("p3_last_intraday_check_timestamp")
+                        if saved_check:
+                            _portfolio3_state["last_intraday_check_timestamp"] = saved_check
             except Exception as e:
                 logger.error(f"Error syncing Portfolio 3 state from DB: {e}")
 
@@ -494,10 +509,22 @@ class Portfolio3StrategyEngine:
         elapsed = round(time.time() - start_t, 2)
         logger.info(f"✓ [Portfolio 3 Watchlist Ingested] {len(candidates)} coil candidates saved in {elapsed}s.")
 
-        # Update in-memory state
+        # Update in-memory state & persistent KV
         with _state_lock:
             _portfolio3_state["last_scan_timestamp"] = now_str
             _portfolio3_state["watchlist_count"] = inserted_count
+        state_engine.set_kv("p3_last_scan_timestamp", now_str)
+        try:
+            state_engine.record_system_activity(
+                category="PORTFOLIO_3",
+                action="Pre-Breakout Coil Watchlist Ingestion",
+                status="SUCCESS",
+                summary=f"P3 Coil Watchlist Ingestion complete: {len(candidates)} candidates saved at {now_str}.",
+                details={"count": len(candidates), "top_candidates": [c["symbol"] for c in candidates[:10]]},
+                execution_sec=elapsed
+            )
+        except Exception:
+            pass
 
         if sync_cloud and candidates:
             tickers_summary = ", ".join([c["symbol"] for c in candidates[:10]])
@@ -1287,6 +1314,7 @@ class Portfolio3StrategyEngine:
         with _state_lock:
             _portfolio3_state["last_intraday_check_timestamp"] = now_str
             _portfolio3_state["status"] = "IDLE"
+        state_engine.set_kv("p3_last_intraday_check_timestamp", now_str)
 
         return {
             "status": "SUCCESS",
