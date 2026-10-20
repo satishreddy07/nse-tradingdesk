@@ -34,6 +34,17 @@ from engines.strategy_engine import (
     PORTFOLIO_TYPE
 )
 from execution.state_engine import state_engine
+from unittest.mock import patch
+
+@pytest.fixture(autouse=True)
+def cleanup_p3_db():
+    with patch("core.telegram_vault.telegram_vault.send_alert_and_sync"), \
+         patch("core.telegram_vault.telegram_vault.backup_master_file_to_cloud"):
+        yield
+        try:
+            state_engine.reset_portfolio_trades(PORTFOLIO_TYPE, confirm_token="CONFIRM_USER_AUTHORIZED_RESET")
+        except Exception:
+            pass
 
 
 def generate_synthetic_coil_df(
