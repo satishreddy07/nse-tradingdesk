@@ -587,6 +587,52 @@ class NiftyAnalyticsEngine:
             "is_monthly_rolled_to_next": is_rolled,
         }
 
+    @classmethod
+    def _resolve_strategy_ltp_map(
+        cls,
+        strat_dict: dict,
+        weekly_exp_date: str,
+        monthly_exp_date: str,
+        weekly_ltp_map: dict,
+        monthly_ltp_map: dict
+    ):
+        """
+        Intelligently resolves which option chain LTP map (weekly or monthly) corresponds
+        to the strategy's true contract expiry, preventing weekly/monthly cross-contamination.
+        Returns (primary_map, fallback_map, resolved_source_label).
+        """
+        strat_exp_str = str(strat_dict.get("expiry_date") or "").strip()
+        strat_exp_d = cls._parse_nse_expiry_date(strat_exp_str)
+        w_exp_d = cls._parse_nse_expiry_date(weekly_exp_date) if weekly_exp_date else None
+        m_exp_d = cls._parse_nse_expiry_date(monthly_exp_date) if monthly_exp_date else None
+
+        # 1. Exact string match
+        if strat_exp_str and monthly_exp_date and strat_exp_str.upper() == str(monthly_exp_date).strip().upper():
+            return monthly_ltp_map, weekly_ltp_map, f"MONTHLY_EXACT ({monthly_exp_date})"
+        if strat_exp_str and weekly_exp_date and strat_exp_str.upper() == str(weekly_exp_date).strip().upper():
+            return weekly_ltp_map, monthly_ltp_map, f"WEEKLY_EXACT ({weekly_exp_date})"
+
+        # 2. Date proximity match (handles holiday shifts, e.g. 29-Oct vs 27-Oct)
+        if strat_exp_d and w_exp_d and m_exp_d:
+            days_to_w = abs((strat_exp_d - w_exp_d).days)
+            days_to_m = abs((strat_exp_d - m_exp_d).days)
+            if days_to_w < days_to_m:
+                return weekly_ltp_map, monthly_ltp_map, f"WEEKLY_PROXIMITY ({weekly_exp_date}, delta={days_to_w}d)"
+            else:
+                return monthly_ltp_map, weekly_ltp_map, f"MONTHLY_PROXIMITY ({monthly_exp_date}, delta={days_to_m}d)"
+        elif strat_exp_d and w_exp_d:
+            if abs((strat_exp_d - w_exp_d).days) <= 5:
+                return weekly_ltp_map, monthly_ltp_map, f"WEEKLY_NEAR ({weekly_exp_date})"
+        elif strat_exp_d and m_exp_d:
+            if abs((strat_exp_d - m_exp_d).days) <= 10:
+                return monthly_ltp_map, weekly_ltp_map, f"MONTHLY_NEAR ({monthly_exp_date})"
+
+        # 3. Fallback to expiry_type tag if dates cannot be parsed
+        if str(strat_dict.get("expiry_type")).upper() == "MONTHLY" and monthly_ltp_map:
+            return monthly_ltp_map, weekly_ltp_map, f"MONTHLY_TAG_FALLBACK ({monthly_exp_date})"
+
+        return weekly_ltp_map, monthly_ltp_map, f"WEEKLY_TAG_FALLBACK ({weekly_exp_date})" 
+
     @staticmethod
     def _filter_df_to_completed_session(df: Optional[pd.DataFrame], cutoff_date: datetime.date) -> Optional[pd.DataFrame]:
         """
@@ -5527,8 +5573,12 @@ class NiftyAnalyticsEngine:
                 if ce_val is not None: monthly_ltp_map[stk]["CE"] = float(ce_val)
                 if pe_val is not None: monthly_ltp_map[stk]["PE"] = float(pe_val)
 
-        is_monthly = (d.get("expiry_type") == "MONTHLY")
-        active_map = monthly_ltp_map if is_monthly else weekly_ltp_map
+        weekly_exp_date = opt_chain_data.get("weekly", {}).get("expiry", "") if opt_chain_data else ""
+        monthly_exp_date = opt_chain_data.get("monthly", {}).get("expiry", "") if opt_chain_data else ""
+
+        primary_map, fallback_map, _ = self._resolve_strategy_ltp_map(
+            d, weekly_exp_date, monthly_exp_date, weekly_ltp_map, monthly_ltp_map
+        )
 
         legs = json.loads(d.get("legs_json") or "[]")
         total_pnl = 0.0
@@ -5539,7 +5589,15 @@ class NiftyAnalyticsEngine:
             action = leg.get("action", "BUY")
             qty = leg.get("qty", NIFTY_LOT_SIZE)
             entry_px = float(leg.get("entry_price", leg.get("price", 0.0)))
-            cmp_val = active_map.get(stk, {}).get(opt_type)
+            try:
+                stk_int = int(round(float(stk)))
+            except (ValueError, TypeError):
+                stk_int = stk
+            cmp_val = primary_map.get(stk_int, {}).get(opt_type)
+            if cmp_val is None:
+                cmp_val = primary_map.get(stk, {}).get(opt_type)
+            if cmp_val is None:
+                cmp_val = fallback_map.get(stk_int, {}).get(opt_type) or fallback_map.get(stk, {}).get(opt_type)
             if cmp_val is None or float(cmp_val) <= 0.0:
                 if exit_pnl is not None:
                     cmp = entry_px
@@ -5844,12 +5902,10 @@ class NiftyAnalyticsEngine:
             monthly_exp_date = opt_chain_data.get("monthly", {}).get("expiry", "") if opt_chain_data else ""
             weekly_exp_date = opt_chain_data.get("weekly", {}).get("expiry", "") if opt_chain_data else ""
 
-            is_monthly = (
-                d.get("expiry_type") == "MONTHLY"
-                or (bool(monthly_exp_date) and d.get("expiry_date") == monthly_exp_date)
+            primary_map, fallback_map, resolved_source = self._resolve_strategy_ltp_map(
+                d, weekly_exp_date, monthly_exp_date, weekly_ltp_map, monthly_ltp_map
             )
-
-            active_map = monthly_ltp_map if is_monthly else weekly_ltp_map
+            d["pricing_source"] = resolved_source
 
             strat_unrealized = 0.0
             updated_legs = []
@@ -5867,9 +5923,11 @@ class NiftyAnalyticsEngine:
                 except (ValueError, TypeError):
                     stk_int = stk
 
-                val = active_map.get(stk_int, {}).get(opt_type)
+                val = primary_map.get(stk_int, {}).get(opt_type)
                 if val is None:
-                    val = active_map.get(stk, {}).get(opt_type)
+                    val = primary_map.get(stk, {}).get(opt_type)
+                if val is None:
+                    val = fallback_map.get(stk_int, {}).get(opt_type) or fallback_map.get(stk, {}).get(opt_type)
 
                 leg_quote_available = (val is not None and float(val) > 0.0)
                 if leg_quote_available:
@@ -5884,7 +5942,7 @@ class NiftyAnalyticsEngine:
                 iv_key = f"{opt_type}_IV"
                 leg_iv = leg.get("iv")
                 if not leg_iv or float(leg_iv) <= 0.0:
-                    leg_iv = active_map.get(stk_int, {}).get(iv_key) or base_iv
+                    leg_iv = primary_map.get(stk_int, {}).get(iv_key) or fallback_map.get(stk_int, {}).get(iv_key) or base_iv
 
                 updated_legs.append({
                     **leg,
