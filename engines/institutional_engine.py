@@ -111,7 +111,7 @@ def get_intraday_volume_factor(dt_ist: Optional[datetime.datetime] = None) -> fl
     elapsed_mins = (dt_ist - market_open).total_seconds() / 60.0
     fraction_day = elapsed_mins / 375.0
     vol_factor = 0.5 * fraction_day + 0.5 * math.sin(fraction_day * math.pi / 2.0)
-    return max(0.1, min(1.0, vol_factor))
+    return max(0.01, min(1.0, vol_factor))
 
 
 # ==============================================================================

@@ -1096,14 +1096,18 @@
               </h3>
               <p class="text-xs text-slate-400">VDU ≤ 0.8x 20 SMA Vol • 20 EMA Proximity ±3.8% • Range Contraction ≤ 3.2% • Trend: Close ≥ 20 EMA > 50 SMA</p>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1">
+                <button onclick="setP3WatchlistFilter(false)" id="btn-p3-filter-active" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500 text-black font-bold transition">Active Setups</button>
+                <button onclick="setP3WatchlistFilter(true)" id="btn-p3-filter-all" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">All Today (Inc. Invalidated)</button>
+              </div>
               <button onclick="triggerP3WatchlistScan()" class="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-semibold text-xs flex items-center gap-1 transition">
                 <i data-lucide="refresh-cw" class="w-3 h-3"></i>
                 <span>Re-Scan EOD Watchlist</span>
               </button>
               <button onclick="triggerP3BreakoutCheck()" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs flex items-center gap-1 transition">
-                <i data-lucide="play" class="w-3 h-3"></i>
-                <span>Trigger Intraday Now</span>
+                <i data-lucide="zap" class="w-3 h-3 text-emerald-400"></i>
+                <span>Auto Execute Breakout</span>
               </button>
             </div>
           </div>
@@ -1115,6 +1119,7 @@
                   <th class="p-3.5">Stock Symbol</th>
                   <th class="p-3.5">T-1 Close & Date</th>
                   <th class="p-3.5">Breakout Trigger (H_T-1)</th>
+                  <th class="p-3.5 text-emerald-400 font-bold">Live LTP & Spread</th>
                   <th class="p-3.5">Initial SL (L_T-1 × 0.998)</th>
                   <th class="p-3.5">Risk / Share</th>
                   <th class="p-3.5">VDU Ratio (≤0.8x)</th>
@@ -1126,7 +1131,7 @@
               </thead>
               <tbody id="p3-watchlist-tbody" class="divide-y divide-slate-800/60 font-mono">
                 <tr>
-                  <td colspan="10" class="p-8 text-center text-slate-500 font-sans">No active coil candidates on watchlist. Click "Scan EOD Watchlist" to scan for setups.</td>
+                  <td colspan="11" class="p-8 text-center text-slate-500 font-sans">No active coil candidates on watchlist. Click "Scan EOD Watchlist" to scan for setups.</td>
                 </tr>
               </tbody>
             </table>
@@ -17052,13 +17057,30 @@
     let p3WatchlistCache = [];
     let p3PositionsCache = [];
     let p3LegsCache = [];
+    let p3WatchlistShowAll = false;
+
+    function setP3WatchlistFilter(showAll) {
+      p3WatchlistShowAll = showAll;
+      const btnAct = document.getElementById('btn-p3-filter-active');
+      const btnAll = document.getElementById('btn-p3-filter-all');
+      if (btnAct && btnAll) {
+        if (!showAll) {
+          btnAct.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500 text-black font-bold transition';
+          btnAll.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+        } else {
+          btnAct.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+          btnAll.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500 text-black font-bold transition';
+        }
+      }
+      loadP3Data();
+    }
 
     async function loadP3Data(forceSignals = false) {
       try {
         const [sumRes, posRes, watchRes, legRes] = await Promise.all([
           fetch('/api/portfolio/PORTFOLIO_3/summary'),
           fetch('/api/portfolio/PORTFOLIO_3/positions'),
-          fetch('/api/portfolio/PORTFOLIO_3/watchlist'),
+          fetch('/api/portfolio/PORTFOLIO_3/watchlist?include_all=' + (p3WatchlistShowAll ? 'true' : 'false')),
           fetch('/api/portfolio/PORTFOLIO_3/legs')
         ]);
 
@@ -17236,7 +17258,7 @@
       if (!tbody) return;
 
       if (!watchlist || watchlist.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-500 font-sans">No active coil candidates on watchlist. Click "Scan EOD Watchlist" to scan for setups.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11" class="p-8 text-center text-slate-500 font-sans">No active coil candidates on watchlist. Click "Scan EOD Watchlist" to scan for setups.</td></tr>`;
         return;
       }
 

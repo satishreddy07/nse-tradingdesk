@@ -545,20 +545,46 @@ class Portfolio3StrategyEngine:
 
         return candidates
 
-    def get_active_watchlist(self) -> List[Dict[str, Any]]:
-        """Returns the list of currently active watchlist candidates."""
+    def get_active_watchlist(self, include_all: bool = False) -> List[Dict[str, Any]]:
+        """Returns the list of currently active watchlist candidates enriched with live LTP and spreads."""
+        from execution.state_engine import state_engine
         with self._get_connection() as conn:
-            rows = conn.execute("""
-            SELECT * FROM p3_prebreakout_watchlist
-            WHERE status = 'WATCHING'
-            AND id IN (
-                SELECT MAX(id) FROM p3_prebreakout_watchlist
-                WHERE status = 'WATCHING'
-                GROUP BY symbol
-            )
-            ORDER BY id DESC
-            """).fetchall()
-            return [dict(r) for r in rows]
+            if include_all:
+                rows = conn.execute("""
+                SELECT * FROM p3_prebreakout_watchlist
+                WHERE scan_date >= date('now', '-2 days')
+                AND id IN (
+                    SELECT MAX(id) FROM p3_prebreakout_watchlist
+                    GROUP BY symbol
+                )
+                ORDER BY id DESC
+                """).fetchall()
+            else:
+                rows = conn.execute("""
+                SELECT * FROM p3_prebreakout_watchlist
+                WHERE status IN ('WATCHING', 'TRIGGERED')
+                AND id IN (
+                    SELECT MAX(id) FROM p3_prebreakout_watchlist
+                    WHERE status IN ('WATCHING', 'TRIGGERED')
+                    GROUP BY symbol
+                )
+                ORDER BY id DESC
+                """).fetchall()
+            items = [dict(r) for r in rows]
+
+        for item in items:
+            sym = item.get('symbol', '')
+            live_info = state_engine._live_prices.get(sym, {})
+            ltp = live_info.get('ltp') or live_info.get('close') or item.get('t_minus_1_close')
+            item['current_price'] = ltp
+            item['ltp'] = ltp
+            item['day_change_pct'] = live_info.get('day_change_pct', 0.0)
+            trigger_high = float(item.get('trigger_high') or item.get('t_minus_1_high') or 0.0)
+            if trigger_high > 0 and ltp:
+                item['distance_to_trigger_pct'] = round((float(ltp) - trigger_high) / trigger_high * 100, 2)
+            else:
+                item['distance_to_trigger_pct'] = 0.0
+        return items
 
     # --------------------------------------------------------------------------
     # 2. LIVE INTRADAY TRIGGER & VALIDATION (09:15 - 10:15 IST)
@@ -691,7 +717,8 @@ class Portfolio3StrategyEngine:
         trigger_level = round(trigger_high * 1.001, 2)
         price_crossed = (ltp >= trigger_level) or (day_high >= trigger_level) or (ltp > trigger_high)
         pacing = calculate_volume_pacing(live_vol, avg_vol_20, now_dt)
-        volume_confirmed = (pacing >= self.volume_pacing_threshold)
+        # Auto breakout confirmation: pacing meets threshold OR price clearly crosses trigger with >=1.2x pacing
+        volume_confirmed = (pacing >= self.volume_pacing_threshold) or (price_crossed and pacing >= 1.2)
 
         should_enter = price_crossed and volume_confirmed
 
