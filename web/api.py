@@ -375,9 +375,13 @@ def get_portfolio_positions(portfolio_type: str):
         p_type = state_engine._normalize_portfolio_type(portfolio_type)
         positions = state_engine.get_active_positions(portfolio_type=p_type)
 
+    from engines.kotak_neo_engine import kotak_neo_engine
     for p in positions:
+        sym = (p.get("symbol") or "").strip().upper()
+        live_px = kotak_neo_engine.get_live_price(sym)
         ep = float(p["entry_price"])
-        cp = float(p.get("current_price") or ep)
+        cp = float(live_px or p.get("current_price") or ep)
+        p["current_price"] = cp
         sl = float(p["stop_loss"])
         qty = int(p["quantity"])
         p["unrealized_pnl"] = round((cp - ep) * qty, 2)
@@ -385,6 +389,12 @@ def get_portfolio_positions(portfolio_type: str):
         p["stop_distance_pct"] = round(((cp - sl) / cp) * 100.0, 2)
         r_unit = max(0.01, ep - float(p.get("original_stop_loss") or sl))
         p["current_r"] = round((cp - ep) / r_unit, 2)
+        tick = kotak_neo_engine.get_live_tick(sym)
+        if tick:
+            if tick.get("change_pct") is not None:
+                p["day_change_pct"] = tick["change_pct"]
+            if tick.get("updated_at"):
+                p["price_updated_at"] = tick["updated_at"]
 
     return positions
 
@@ -2724,14 +2734,22 @@ def get_continuous_live_stream_endpoint():
         curr_px = float(kotak_neo_engine.get_live_price(sym) or p.get("current_price") or entry_px)
         pnl = round((curr_px - entry_px) * qty, 2)
         total_unrealized_pnl += pnl
+        tick = kotak_neo_engine.get_live_tick(sym)
+        chg_pct = tick.get("change_pct") if tick else None
+        r_unit = max(0.01, entry_px - float(p.get("original_stop_loss") or p.get("stop_loss") or (entry_px * 0.95)))
         positions_summary.append({
             "symbol": sym,
             "ltp": curr_px,
             "entry_price": entry_px,
-            "stop_loss": p.get("stop_loss"),
-            "highest_price": p.get("highest_price"),
+            "stop_loss": float(p.get("stop_loss") or 0.0),
+            "highest_price": float(p.get("highest_price") or curr_px),
+            "quantity": qty,
+            "position_value": round(curr_px * qty, 2),
             "unrealized_pnl": pnl,
             "pnl_pct": round(((curr_px - entry_px) / max(entry_px, 0.01)) * 100, 2),
+            "current_r": round((curr_px - entry_px) / r_unit, 2),
+            "day_change_pct": chg_pct,
+            "updated_at": tick.get("updated_at") if tick else format_ist(),
             "cloud_sync": p.get("cloud_sync", "SYNCED")
         })
 
@@ -2757,7 +2775,7 @@ def get_continuous_live_stream_endpoint():
         "is_streaming": is_streaming,
         "stream_mode": stream_status.get("stream_mode", "OFFLINE"),
         "is_authenticated": kotak_neo_engine._is_authenticated,
-        "ticks_total": len(all_ticks),
+        "ticks_total": stream_status.get("ticks_received_total", len(all_ticks)),
         "timestamp_ist": format_ist(),
         "swing": {
             "positions_count": len(positions_summary),

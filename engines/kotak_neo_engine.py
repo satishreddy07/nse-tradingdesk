@@ -109,7 +109,12 @@ SEED_SYMBOL_TO_TOKEN: Dict[str, str] = {
     "FSL": "14304",
     "IIFL": "11809",
     "UTTAMSUGAR": "14144",
-    "RPEL": "18029"
+    "RPEL": "18029",
+    "SUPRIYA": "7390",
+    "LAURUSLABS": "19234",
+    "PNB": "10666",
+    "GLAND": "1186",
+    "RADICO": "10990"
 }
 
 
@@ -212,25 +217,26 @@ class KotakNeoEngine:
             df = pd.read_csv(io.StringIO(resp.text), low_memory=False)
             df = df.rename(columns=lambda x: str(x).strip())
 
-            # Typical columns in Kotak scrip master:
-            # pSymbolName, pSecurityToken, pTrdSymbol, pGroup, pExchSeg
-            sym_col = next((c for c in ("pSymbolName", "pSymbol", "pTrdSymbol", "Symbol") if c in df.columns), None)
-            tok_col = next((c for c in ("pSecurityToken", "Token", "instrument_token") if c in df.columns), None)
+            # Official columns in Kotak Neo transformed scrip master:
+            # Token is in `pSymbol` (e.g. 26000, 2885, 7390)
+            # Symbol name is in `pSymbolName` (e.g. NIFTY, RELIANCE, SUPRIYA) or `pTrdSymbol` (SUPRIYA-EQ)
+            tok_col = "pSymbol" if "pSymbol" in df.columns else next((c for c in ("pSecurityToken", "Token", "instrument_token") if c in df.columns), None)
+            sym_col = "pSymbolName" if "pSymbolName" in df.columns else next((c for c in ("pTrdSymbol", "Symbol", "pSymbol") if c in df.columns and c != tok_col), None)
             grp_col = next((c for c in ("pGroup", "Series", "Group") if c in df.columns), None)
 
             if not sym_col or not tok_col:
                 return {"status": "FAILED", "message": f"Required columns missing in CSV: {df.columns.tolist()}"}
 
             if grp_col and grp_col in df.columns:
-                # Filter for Equity series (EQ or BE)
-                df = df[df[grp_col].astype(str).str.strip().str.upper().isin(["EQ", "BE", "SM"])]
+                # Include Equity series (EQ, BE, SM) as well as index scrips (where group is NaN/None)
+                df = df[df[grp_col].astype(str).str.strip().str.upper().isin(["EQ", "BE", "SM", "NAN", "NONE"]) | df[grp_col].isna()]
 
             count = 0
             with self._lock:
                 for _, row in df.iterrows():
                     s_raw = str(row[sym_col]).strip().upper()
                     t_raw = str(row[tok_col]).strip()
-                    if s_raw and t_raw and t_raw != "nan":
+                    if s_raw and t_raw and t_raw != "nan" and s_raw != "nan":
                         # Clean symbol (e.g., RELIANCE-EQ -> RELIANCE)
                         clean_sym = s_raw.split("-")[0].strip()
                         self._symbol_to_token[clean_sym] = t_raw
@@ -244,6 +250,16 @@ class KotakNeoEngine:
                 "updated_at": format_ist()
             })
             logger.info(f"✓ Kotak Scrip Master synchronized: {count} symbols mapped.")
+
+            # Immediately subscribe all active portfolio positions and screened signals
+            try:
+                active_syms = self._gather_active_market_symbols()
+                if active_syms:
+                    logger.info(f"📡 [Kotak Neo] Auto-subscribing {len(active_syms)} active market symbols after scrip sync: {active_syms[:8]}...")
+                    self.subscribe_symbols(active_syms)
+            except Exception as sub_err:
+                logger.debug(f"Post-sync auto-subscribe notice: {sub_err}")
+
             return {"status": "SUCCESS", "symbols_mapped": count}
         except Exception as e:
             logger.error(f"Error updating Kotak scrip master: {e}", exc_info=True)

@@ -16812,20 +16812,20 @@
           : `<span title="${syncTitle}" class="quant-badge inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 font-medium whitespace-nowrap"><span>☁️</span> <span>Vault Synced</span></span>`;
 
         return `
-          <tr class="hover:bg-slate-800/30 transition">
+          <tr id="pos-row-${p.symbol}" data-symbol="${p.symbol}" class="hover:bg-slate-800/30 transition">
             <td class="p-3.5 font-bold text-white flex items-center gap-1.5">
               <button onclick="openStockChartModal('${p.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">${p.symbol}</button>
               <span class="text-[10px] px-1 rounded bg-slate-800 text-slate-400 font-normal">${p.sector || 'NSE'}</span>
             </td>
             <td class="p-3.5 text-slate-300 text-[11px] font-mono">
               <div>${p.entry_date || '-'}</div>
-              <div class="text-[10px] text-cyan-400/80">LTP @ ${ltpTime || 'Live'} IST</div>
+              <div id="pos-time-${p.symbol}" class="text-[10px] text-cyan-400/80">LTP @ ${ltpTime || 'Live'} IST</div>
             </td>
             <td class="p-3.5">
               <div class="text-slate-300">Entry: ₹${p.entry_price.toFixed(2)}</div>
               <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                <span class="text-[11px] font-bold text-white">LTP: ₹${ltp.toFixed(2)}</span>
-                <span class="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dayChgClass}" title="Today's Session Change">
+                <span id="pos-ltp-${p.symbol}" class="text-[11px] font-bold text-white">LTP: ₹${ltp.toFixed(2)}</span>
+                <span id="pos-daychg-${p.symbol}" class="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dayChgClass}" title="Today's Session Change">
                   ${dayChgArrow} ${dayChgSign}${dayChg.toFixed(2)}%
                 </span>
               </div>
@@ -16837,13 +16837,13 @@
             </td>
             <td class="p-3.5">
               <div>${p.quantity} shs</div>
-              <div class="text-[11px] text-slate-400">₹${(p.quantity * ltp).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+              <div id="pos-val-${p.symbol}" class="text-[11px] text-slate-400">₹${(p.quantity * ltp).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
             </td>
-            <td class="p-3.5 ${pnlClass} font-bold font-mono">
-              ${pnlSign}₹${pnl.toFixed(2)}
-              <div class="text-[10px] font-normal">(${pnlSign}${(p.return_pct || 0).toFixed(2)}%)</div>
+            <td id="pos-pnl-cell-${p.symbol}" class="p-3.5 ${pnlClass} font-bold font-mono">
+              <span id="pos-pnl-${p.symbol}">${pnlSign}₹${pnl.toFixed(2)}</span>
+              <div id="pos-pnl-pct-${p.symbol}" class="text-[10px] font-normal">(${pnlSign}${(p.return_pct || 0).toFixed(2)}%)</div>
             </td>
-            <td class="p-3.5 font-bold ${p.current_r >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+            <td id="pos-r-${p.symbol}" class="p-3.5 font-bold ${p.current_r >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
               ${p.current_r >= 0 ? '+' : ''}${(p.current_r || 0).toFixed(2)} R
             </td>
             <td class="p-3.5">${t1Badge}</td>
