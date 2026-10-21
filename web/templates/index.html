@@ -5102,9 +5102,9 @@
               <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shrink-0">MODULE 4 • NIFTY 50 DEEP OPTION CHAIN DESK</span>
               <span id="opt-stream-pill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 max-w-full overflow-hidden shrink-0">
                 <span id="opt-stream-dot" class="w-2 h-2 rounded-full bg-slate-400 shrink-0"></span>
-                <span id="opt-stream-text" class="truncate">NSE DIRECT FEED (PAPER) • Spot ₹--</span>
+                <span id="opt-stream-text" class="truncate">NSE LIVE FEED • Spot ₹--</span>
               </span>
-              <span id="opt-nse-timestamp" class="text-[10px] sm:text-[11px] font-mono text-cyan-400 truncate max-w-full">🎯 Live NSE Feed • Paper Mode</span>
+              <span id="opt-nse-timestamp" class="text-[10px] sm:text-[11px] font-mono text-cyan-400 truncate max-w-full">🎯 Live NSE Option Chain</span>
             </div>
             <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Nifty 50 Current Weekly & Monthly Option Chain • Deep OI & Skew Analysis</h2>
             <p class="text-xs text-slate-400 mt-0.5">
@@ -8453,6 +8453,31 @@
     });
 
     let lastSpotPrice = null;
+
+    function updateOptionsDeskStreamIndicator(spotPrice, isLive, source) {
+      const streamTextEl = document.getElementById('opt-stream-text');
+      const streamPillEl = document.getElementById('opt-stream-pill');
+      const streamDotEl = document.getElementById('opt-stream-dot');
+      if (!streamTextEl) return;
+
+      const spot = Number(spotPrice) || 0;
+      const formatted = spot > 0 ? `₹${spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--';
+      
+      const isMarketOpen = (isLive !== undefined && isLive !== null) 
+        ? Boolean(isLive) 
+        : (typeof window.isServerMarketOpen === 'boolean' ? window.isServerMarketOpen : true);
+
+      if (isMarketOpen) {
+        if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 max-w-full overflow-hidden shrink-0";
+        if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0";
+        streamTextEl.innerText = `⚡ NSE LIVE FEED: Spot ${formatted}`;
+      } else {
+        if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 max-w-full overflow-hidden shrink-0";
+        if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-slate-400 shrink-0";
+        streamTextEl.innerText = `● MARKET CLOSED: Spot ${formatted}`;
+      }
+    }
+
     async function pollLiveSpotTick() {
       if (document.hidden) return;
       try {
@@ -8491,21 +8516,8 @@
           }
 
           // Update Options Desk Stream Indicator
-          const streamTextEl = document.getElementById('opt-stream-text');
-          const streamPillEl = document.getElementById('opt-stream-pill');
-          const streamDotEl = document.getElementById('opt-stream-dot');
-          const isMarketOpen = Boolean(data.is_live && data.market_status === 'OPEN');
-          if (streamTextEl) {
-            if (isMarketOpen) {
-              if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 max-w-full overflow-hidden shrink-0";
-              if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0";
-              streamTextEl.innerText = `⚡ NSE DIRECT (PAPER): Spot ${formatted}`;
-            } else {
-              if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 max-w-full overflow-hidden shrink-0";
-              if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-slate-400 shrink-0";
-              streamTextEl.innerText = `MARKET CLOSED: Spot ${formatted}`;
-            }
-          }
+          const isMarketOpen = Boolean(data.is_live && (data.market_status === 'OPEN' || data.session_phase === 'REGULAR_HOURS'));
+          updateOptionsDeskStreamIndicator(spot, isMarketOpen, data.source);
 
           // Update Intraday Desk Top Spot Badge if present
           const intraSpotBadge = document.getElementById('intraday-spot-badge');
@@ -11228,31 +11240,25 @@
       if (document.getElementById('opt-lbl-weekly-exp')) document.getElementById('opt-lbl-weekly-exp').innerText = w.expiry || '--';
       if (document.getElementById('opt-lbl-monthly-exp')) document.getElementById('opt-lbl-monthly-exp').innerText = m.expiry || '--';
       if (document.getElementById('opt-nse-timestamp')) {
-        document.getElementById('opt-nse-timestamp').innerText = `🎯 NSE Data: ${data.nse_timestamp || '--'} • Paper Mode`;
+        document.getElementById('opt-nse-timestamp').innerText = `🎯 Live NSE Data: ${data.nse_timestamp || '--'}`;
       }
-      if (document.getElementById('opt-stream-text') && data.spot_price) {
-        const streamTextEl = document.getElementById('opt-stream-text');
-        const streamPillEl = document.getElementById('opt-stream-pill');
-        const streamDotEl = document.getElementById('opt-stream-dot');
-        const formatted = `₹${Number(data.spot_price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        const isMarketOpen = Boolean(data.is_live || (data.market_status && data.market_status.is_open));
-        if (isMarketOpen) {
-          if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 max-w-full overflow-hidden shrink-0";
-          if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0";
-          streamTextEl.innerText = `⚡ NSE DIRECT (PAPER): Spot ${formatted}`;
-        } else {
-          if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 max-w-full overflow-hidden shrink-0";
-          if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-slate-400 shrink-0";
-          streamTextEl.innerText = `MARKET CLOSED: Spot ${formatted}`;
-        }
-      }
+
+      const canonicalSpot = (lastSpotPrice && lastSpotPrice > 0) ? lastSpotPrice : Number(active.spot_price || data.spot_price || 0);
+      const isMarketOpen = Boolean(
+        data.is_live || 
+        (data.market_status && data.market_status.is_open) || 
+        (typeof window.isServerMarketOpen === 'boolean' ? window.isServerMarketOpen : true)
+      );
+      updateOptionsDeskStreamIndicator(canonicalSpot, isMarketOpen, data.source);
 
       const pcr = active.pcr || {};
       const walls = active.walls_and_pain || {};
       const strad = active.straddle || {};
       const vol = active.volatility_and_gex || {};
 
-      if (document.getElementById('opt-kpi-spot')) document.getElementById('opt-kpi-spot').innerText = `₹${Number(active.spot_price || data.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      if (document.getElementById('opt-kpi-spot') && canonicalSpot > 0) {
+        document.getElementById('opt-kpi-spot').innerText = `₹${canonicalSpot.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      }
       if (document.getElementById('opt-kpi-atm')) document.getElementById('opt-kpi-atm').innerText = `ATM Strike: ${active.atm_strike || '--'} (${active.expiry || '--'})`;
 
       if (document.getElementById('opt-kpi-overall-pcr')) document.getElementById('opt-kpi-overall-pcr').innerText = Number(pcr.overall_oi_pcr || 0).toFixed(3);
