@@ -572,18 +572,21 @@ class Portfolio3StrategyEngine:
                 """).fetchall()
             items = [dict(r) for r in rows]
 
-        for item in items:
-            sym = item.get('symbol', '')
-            live_info = state_engine._live_prices.get(sym, {})
-            ltp = live_info.get('ltp') or live_info.get('close') or item.get('t_minus_1_close')
-            item['current_price'] = ltp
-            item['ltp'] = ltp
-            item['day_change_pct'] = live_info.get('day_change_pct', 0.0)
-            trigger_high = float(item.get('trigger_high') or item.get('t_minus_1_high') or 0.0)
-            if trigger_high > 0 and ltp:
-                item['distance_to_trigger_pct'] = round((float(ltp) - trigger_high) / trigger_high * 100, 2)
-            else:
-                item['distance_to_trigger_pct'] = 0.0
+        with self._get_connection() as c2:
+            for item in items:
+                sym = item.get('symbol', '')
+                pos_row = c2.execute("SELECT current_price FROM active_positions WHERE symbol = ?", (sym,)).fetchone()
+                sig_row = c2.execute("SELECT close, intraday_pct FROM latest_signals WHERE symbol = ?", (sym,)).fetchone()
+                ltp = (pos_row[0] if pos_row and pos_row[0] else None) or (sig_row[0] if sig_row and sig_row[0] else None) or item.get('t_minus_1_close')
+                day_chg = sig_row[1] if sig_row and sig_row[1] is not None else 0.0
+                item['current_price'] = ltp
+                item['ltp'] = ltp
+                item['day_change_pct'] = day_chg
+                trigger_high = float(item.get('trigger_high') or item.get('t_minus_1_high') or 0.0)
+                if trigger_high > 0 and ltp:
+                    item['distance_to_trigger_pct'] = round((float(ltp) - trigger_high) / trigger_high * 100, 2)
+                else:
+                    item['distance_to_trigger_pct'] = 0.0
         return items
 
     # --------------------------------------------------------------------------
