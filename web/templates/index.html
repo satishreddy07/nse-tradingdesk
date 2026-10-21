@@ -1098,8 +1098,14 @@
             </div>
             <div class="flex items-center gap-2 flex-wrap">
               <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1">
-                <button onclick="setP3WatchlistFilter(false)" id="btn-p3-filter-active" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500 text-black font-bold transition">Active Setups</button>
-                <button onclick="setP3WatchlistFilter(true)" id="btn-p3-filter-all" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">All Today (Inc. Invalidated)</button>
+                <button onclick="setP3WatchlistFilter(false)" id="btn-p3-filter-active" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500 text-black font-bold transition flex items-center gap-1.5">
+                  <span>Active Setups</span>
+                  <span id="p3-filter-active-count" class="px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-black font-mono font-extrabold">--</span>
+                </button>
+                <button onclick="setP3WatchlistFilter(true)" id="btn-p3-filter-all" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition flex items-center gap-1.5">
+                  <span>All Today (Inc. Invalidated)</span>
+                  <span id="p3-filter-all-count" class="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-400 font-mono font-bold">--</span>
+                </button>
               </div>
               <button onclick="triggerP3WatchlistScan()" class="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-semibold text-xs flex items-center gap-1 transition">
                 <i data-lucide="refresh-cw" class="w-3 h-3"></i>
@@ -17063,13 +17069,19 @@
       p3WatchlistShowAll = showAll;
       const btnAct = document.getElementById('btn-p3-filter-active');
       const btnAll = document.getElementById('btn-p3-filter-all');
+      const countAct = document.getElementById('p3-filter-active-count');
+      const countAll = document.getElementById('p3-filter-all-count');
       if (btnAct && btnAll) {
         if (!showAll) {
-          btnAct.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500 text-black font-bold transition';
-          btnAll.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+          btnAct.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500 text-black font-bold transition flex items-center gap-1.5';
+          btnAll.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition flex items-center gap-1.5';
+          if (countAct) countAct.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-black font-mono font-extrabold';
+          if (countAll) countAll.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-400 font-mono font-bold';
         } else {
-          btnAct.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
-          btnAll.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500 text-black font-bold transition';
+          btnAct.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition flex items-center gap-1.5';
+          btnAll.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500 text-black font-bold transition flex items-center gap-1.5';
+          if (countAct) countAct.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-400 font-mono font-bold';
+          if (countAll) countAll.className = 'px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-black font-mono font-extrabold';
         }
       }
       loadP3Data();
@@ -17077,10 +17089,11 @@
 
     async function loadP3Data(forceSignals = false) {
       try {
-        const [sumRes, posRes, watchRes, legRes] = await Promise.all([
+        const [sumRes, posRes, watchRes, allWatchRes, legRes] = await Promise.all([
           fetch('/api/portfolio/PORTFOLIO_3/summary'),
           fetch('/api/portfolio/PORTFOLIO_3/positions'),
           fetch('/api/portfolio/PORTFOLIO_3/watchlist?include_all=' + (p3WatchlistShowAll ? 'true' : 'false')),
+          fetch('/api/portfolio/PORTFOLIO_3/watchlist?include_all=true'),
           fetch('/api/portfolio/PORTFOLIO_3/legs')
         ]);
 
@@ -17169,6 +17182,16 @@
           p3LegsCache = legs || [];
           p3ActiveSet = new Set((positions || []).map(p => (p.symbol || '').toUpperCase()));
           renderP3Positions(p3PositionsCache, p3LegsCache);
+        }
+
+        if (allWatchRes && allWatchRes.ok) {
+          const allItems = await allWatchRes.json();
+          const activeCnt = (allItems || []).filter(x => x.status !== 'INVALIDATED').length;
+          const totalCnt = (allItems || []).length;
+          const actCountEl = document.getElementById('p3-filter-active-count');
+          if (actCountEl) actCountEl.innerText = activeCnt;
+          const allCountEl = document.getElementById('p3-filter-all-count');
+          if (allCountEl) allCountEl.innerText = totalCnt;
         }
 
         if (watchRes.ok) {
@@ -17270,8 +17293,83 @@
         const riskPerShare = (w.t_minus_1_high - w.initial_sl).toFixed(2);
         const riskPct = ((w.t_minus_1_high - w.initial_sl) / w.t_minus_1_high * 100).toFixed(2);
 
+        const ltp = parseFloat(w.ltp || w.current_price || w.t_minus_1_close || 0.0);
+        const triggerHigh = parseFloat(w.trigger_high || w.t_minus_1_high || 0.0);
+        const isTriggerCrossed = triggerHigh > 0 && ltp >= triggerHigh;
+        const distPct = parseFloat(w.distance_to_trigger_pct !== undefined ? w.distance_to_trigger_pct : ((ltp - triggerHigh) / triggerHigh * 100));
+        const distSign = distPct > 0 ? '+' : '';
+        const spreadClass = isTriggerCrossed ?
+          'text-emerald-300 bg-emerald-950/70 border-emerald-500/40 font-bold' :
+          'text-slate-300 bg-slate-900 border-slate-700 font-medium';
+
+        const dayChg = parseFloat(w.day_change_pct) || 0.0;
+        const dayChgClass = dayChg >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        const dayChgSign = dayChg >= 0 ? '+' : '';
+        const dayChgArrow = dayChg >= 0 ? '▲' : '▼';
+
+        let statusHtml = '';
+        let rowClass = 'hover:bg-slate-800/30 transition';
+        let actionBtnHtml = '';
+
+        if (w.status === 'INVALIDATED') {
+          rowClass = 'hover:bg-slate-800/20 bg-rose-950/10 transition opacity-80';
+          let reason = 'Below 20 EMA';
+          if (w.ema20 && ltp < parseFloat(w.ema20)) {
+            reason = `Below 20 EMA (₹${ltp.toFixed(1)} < ₹${parseFloat(w.ema20).toFixed(1)})`;
+          } else if (w.base_low && ltp < parseFloat(w.base_low)) {
+            reason = `Broke Base Low (₹${ltp.toFixed(1)} < ₹${parseFloat(w.base_low).toFixed(1)})`;
+          }
+          statusHtml = `
+            <div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 inline-flex items-center gap-1">
+                <span>🚫 INVALIDATED</span>
+              </span>
+              <div class="text-[10px] font-sans text-rose-400 mt-1 leading-tight">
+                ${reason}
+              </div>
+            </div>
+          `;
+        } else if (w.status === 'TRIGGERED') {
+          statusHtml = `
+            <div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1">
+                <span>🎯 TRIGGERED</span>
+              </span>
+              <div class="text-[10px] text-emerald-400 font-mono mt-0.5">Position Active</div>
+            </div>
+          `;
+          actionBtnHtml = `
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30">
+              Active
+            </span>
+          `;
+        } else {
+          // WATCHING
+          if (isTriggerCrossed) {
+            statusHtml = `
+              <div>
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 inline-flex items-center gap-1 animate-pulse">
+                  <span>⚡ TRIGGER CROSSED</span>
+                </span>
+                <div class="text-[10px] text-cyan-400 font-mono mt-0.5">Awaiting Vol Pacing</div>
+              </div>
+            `;
+            actionBtnHtml = `
+              <button onclick="triggerP3BreakoutCheck()" class="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition">
+                ⚡ Auto Execute
+              </button>
+            `;
+          } else {
+            statusHtml = `
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                👀 WATCHING
+              </span>
+            `;
+          }
+        }
+
         return `
-          <tr class="hover:bg-slate-800/30 transition">
+          <tr class="${rowClass}">
             <td class="p-3.5 font-bold text-white">
               <button onclick="openStockChartModal('${w.symbol}')" class="hover:text-amber-400 underline decoration-amber-500/40 underline-offset-4">${w.symbol}</button>
             </td>
@@ -17280,7 +17378,18 @@
               <div class="text-[10px] text-slate-500">${w.t_minus_1_date || w.scan_date || '-'}</div>
             </td>
             <td class="p-3.5 font-mono text-emerald-300 font-bold text-xs">
-              ₹${parseFloat(w.t_minus_1_high).toFixed(2)}
+              ₹${triggerHigh.toFixed(2)}
+            </td>
+            <td class="p-3.5 font-mono">
+              <div class="font-bold text-white text-xs flex items-center gap-1.5">
+                <span>₹${ltp.toFixed(2)}</span>
+                <span class="text-[10px] ${dayChgClass} font-normal">(${dayChgArrow}${dayChgSign}${dayChg.toFixed(2)}%)</span>
+              </div>
+              <div class="mt-1">
+                <span class="px-1.5 py-0.5 rounded text-[10px] border ${spreadClass}">
+                  ${distSign}${distPct.toFixed(2)}% vs trig
+                </span>
+              </div>
             </td>
             <td class="p-3.5 font-mono text-rose-300 text-xs">
               ₹${parseFloat(w.initial_sl).toFixed(2)}
@@ -17303,11 +17412,10 @@
               ${rangePct.toFixed(2)}%
             </td>
             <td class="p-3.5">
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                ${w.status || 'WATCHING'}
-              </span>
+              ${statusHtml}
             </td>
             <td class="p-3.5 text-right space-x-1 whitespace-nowrap">
+              ${actionBtnHtml}
               <button onclick="openStockChartModal('${w.symbol}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold transition">
                 📈 Chart
               </button>

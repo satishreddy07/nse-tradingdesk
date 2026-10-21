@@ -137,6 +137,16 @@ def test_ui_templates_optimizations():
     assert 'z-[100]' in html
     assert 'translate3d(100%, 0, 0)' in html
 
+    # 4. Portfolio 3 Watchlist filter counts & LTP column
+    assert 'id="btn-p3-filter-active"' in html
+    assert 'id="btn-p3-filter-all"' in html
+    assert 'id="p3-filter-active-count"' in html
+    assert 'id="p3-filter-all-count"' in html
+    assert 'Live LTP & Spread' in html
+    assert '🚫 INVALIDATED' in html
+    assert 'Below 20 EMA' in html
+    assert '⚡ Auto Execute' in html
+
 
 def test_groq_llama_model_registration():
     """Verifies that LLaMA 3.3 and 3.1 models are recognized and routed to Groq."""

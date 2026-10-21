@@ -578,7 +578,11 @@ class Portfolio3StrategyEngine:
                 pos_row = c2.execute("SELECT current_price FROM active_positions WHERE symbol = ?", (sym,)).fetchone()
                 sig_row = c2.execute("SELECT close, intraday_pct FROM latest_signals WHERE symbol = ?", (sym,)).fetchone()
                 ltp = (pos_row[0] if pos_row and pos_row[0] else None) or (sig_row[0] if sig_row and sig_row[0] else None) or item.get('t_minus_1_close')
-                day_chg = sig_row[1] if sig_row and sig_row[1] is not None else 0.0
+                t1_close = float(item.get('t_minus_1_close') or 0.0)
+                if ltp and t1_close > 0:
+                    day_chg = round((float(ltp) - t1_close) / t1_close * 100, 2)
+                else:
+                    day_chg = sig_row[1] if sig_row and sig_row[1] is not None else 0.0
                 item['current_price'] = ltp
                 item['ltp'] = ltp
                 item['day_change_pct'] = day_chg
