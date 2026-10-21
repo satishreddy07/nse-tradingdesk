@@ -642,6 +642,7 @@ class ClosePositionRequest(BaseModel):
     exit_reason: str = "MANUAL_DISCRETIONARY"
     notes: str = ""
     portfolio_type: Optional[str] = None
+    bypass_gate: bool = False
 
 
 class OpenPositionRequest(BaseModel):
@@ -717,12 +718,13 @@ def open_new_position(req: OpenPositionRequest):
 
 @app.post("/api/position/close", dependencies=[Depends(verify_admin_key)])
 def close_active_position(req: ClosePositionRequest):
-    can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
-    if not can_trade:
-        raise HTTPException(
-            status_code=403,
-            detail=gate_msg
-        )
+    if not req.bypass_gate:
+        can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
+        if not can_trade:
+            raise HTTPException(
+                status_code=403,
+                detail=gate_msg
+            )
 
     sym = req.symbol.strip().upper()
     active_rows = state_engine.get_active_positions(portfolio_type=req.portfolio_type)
@@ -740,6 +742,7 @@ def close_active_position(req: ClosePositionRequest):
         exit_price=exit_px,
         exit_reason=req.exit_reason,
         notes=req.notes,
+        bypass_gate=req.bypass_gate,
         portfolio_type=p_type
     )
     if not res:
@@ -2797,10 +2800,12 @@ def get_continuous_live_stream_endpoint():
     # 4. Near-ATM Option Ticks for Real-Time Strike Streaming
     opt_ticks = kotak_neo_engine.get_near_atm_option_ticks(spot_price=nifty_spot, strike_range=12)
 
+    is_market_open, _ = NSEMarketCalendar.can_execute_trades()
     return {
         "status": "SUCCESS",
         "source": "KOTAK_NEO_STREAM",
         "is_streaming": is_streaming,
+        "is_market_open": is_market_open,
         "stream_mode": stream_status.get("stream_mode", "OFFLINE"),
         "is_authenticated": kotak_neo_engine._is_authenticated,
         "ticks_total": stream_status.get("ticks_received_total", len(all_ticks)),
