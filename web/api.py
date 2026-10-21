@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional, List
 
 import numpy as np
 
-from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Depends
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Depends, Body
 from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -85,6 +85,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Startup Telegram restore notice: {e}")
     start_scheduler()
+
+    # Auto-login Kotak Neo on boot from saved credentials
+    try:
+        import threading
+        from engines.kotak_neo_engine import kotak_neo_engine
+        from execution.state_engine import state_engine
+        from core import config
+        saved = state_engine.get_kv("KOTAK_NEO_CREDENTIALS") or {}
+        if (saved.get("consumer_key") or config.KOTAK_NEO_CONSUMER_KEY) and (saved.get("ucc") or config.KOTAK_NEO_UCC) and (saved.get("totp_secret") or config.KOTAK_NEO_TOTP_SECRET):
+            logger.info("🔐 Auto-authenticating Kotak Neo session on boot from saved credentials...")
+            threading.Thread(target=kotak_neo_engine.login, name="KotakNeoBootLogin", daemon=True).start()
+    except Exception as ke:
+        logger.warning(f"Startup Kotak Neo auto-login notice: {ke}")
+
     yield
     logger.info("Shutting down Quant Trading Desk services...")
     shutdown_scheduler()
@@ -188,7 +202,14 @@ def index(request: Request):
     index_file = TEMPLATES_DIR / "index.html"
     if index_file.exists():
         with open(index_file, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+            return HTMLResponse(
+                content=f.read(),
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0"
+                }
+            )
     return HTMLResponse("<h1>Quant Trading Desk</h1><p>index.html not found</p>")
 
 
@@ -225,8 +246,22 @@ def get_system_status():
     vault_info = telegram_vault.get_status()
     last_stream = state_engine.get_kv("last_price_stream", {})
 
+    try:
+        from scheduler.cron_scheduler import get_server_public_ip
+        srv_ip = get_server_public_ip(force=False)
+    except Exception:
+        srv_ip = "127.0.0.1"
+
+    try:
+        from engines.kotak_neo_engine import kotak_neo_engine
+        kotak_status = kotak_neo_engine.get_status()
+    except Exception:
+        kotak_status = {"status": "UNAVAILABLE", "is_streaming": False}
+
     return {
         "status": "ONLINE",
+        "server_ip": srv_ip,
+        "kotak_neo": kotak_status,
         "current_time_ist": curr_time,
         "market_status": scheduler_info["market_status"],
         "trading_gate_open": can_trade,
@@ -361,9 +396,13 @@ def get_portfolio_positions(portfolio_type: str):
         p_type = state_engine._normalize_portfolio_type(portfolio_type)
         positions = state_engine.get_active_positions(portfolio_type=p_type)
 
+    from engines.kotak_neo_engine import kotak_neo_engine
     for p in positions:
+        sym = (p.get("symbol") or "").strip().upper()
+        live_px = kotak_neo_engine.get_live_price(sym)
         ep = float(p["entry_price"])
-        cp = float(p.get("current_price") or ep)
+        cp = float(live_px or p.get("current_price") or ep)
+        p["current_price"] = cp
         sl = float(p["stop_loss"])
         qty = int(p["quantity"])
         p["unrealized_pnl"] = round((cp - ep) * qty, 2)
@@ -371,6 +410,12 @@ def get_portfolio_positions(portfolio_type: str):
         p["stop_distance_pct"] = round(((cp - sl) / cp) * 100.0, 2)
         r_unit = max(0.01, ep - float(p.get("original_stop_loss") or sl))
         p["current_r"] = round((cp - ep) / r_unit, 2)
+        tick = kotak_neo_engine.get_live_tick(sym)
+        if tick:
+            if tick.get("change_pct") is not None:
+                p["day_change_pct"] = tick["change_pct"]
+            if tick.get("updated_at"):
+                p["price_updated_at"] = tick["updated_at"]
         p["shares"] = qty
         p["total_quantity"] = qty
         p["current_stop"] = sl
@@ -597,6 +642,7 @@ class ClosePositionRequest(BaseModel):
     exit_reason: str = "MANUAL_DISCRETIONARY"
     notes: str = ""
     portfolio_type: Optional[str] = None
+    bypass_gate: bool = False
 
 
 class OpenPositionRequest(BaseModel):
@@ -672,12 +718,13 @@ def open_new_position(req: OpenPositionRequest):
 
 @app.post("/api/position/close", dependencies=[Depends(verify_admin_key)])
 def close_active_position(req: ClosePositionRequest):
-    can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
-    if not can_trade:
-        raise HTTPException(
-            status_code=403,
-            detail=gate_msg
-        )
+    if not req.bypass_gate:
+        can_trade, gate_msg = NSEMarketCalendar.can_execute_trades()
+        if not can_trade:
+            raise HTTPException(
+                status_code=403,
+                detail=gate_msg
+            )
 
     sym = req.symbol.strip().upper()
     active_rows = state_engine.get_active_positions(portfolio_type=req.portfolio_type)
@@ -695,6 +742,7 @@ def close_active_position(req: ClosePositionRequest):
         exit_price=exit_px,
         exit_reason=req.exit_reason,
         notes=req.notes,
+        bypass_gate=req.bypass_gate,
         portfolio_type=p_type
     )
     if not res:
@@ -878,6 +926,62 @@ def capture_nifty_intraday_snapshot(slot_override: Optional[str] = None, interva
     """Manually or automatically captures a live Weekly Option Expiry snapshot and syncs to Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     return nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override=slot_override, sync_cloud=True, interval_mode=interval_mode)
+
+
+@app.get("/api/nifty/options/strike-depth")
+def get_nifty_option_strike_depth(
+    strike: int,
+    option_type: str = "CE",
+    expiry: Optional[str] = None,
+    expiry_type: str = "weekly",
+    force_refresh: bool = False
+):
+    """
+    Returns real-time 5-level Bid/Ask Market Depth, Order Book Imbalance (OBI),
+    Micro-Price, and institutional flow bias for a specific Nifty option strike.
+    Powered by Kotak Neo SFeed Level-2 depth with REST quotes fallback.
+    Strictly zero fake numbers or hardcoded fallbacks.
+    """
+    from engines.kotak_neo_engine import kotak_neo_engine
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+
+    opt_type_clean = option_type.upper().strip()
+    exp_target = (expiry or "").strip()
+
+    if not exp_target:
+        try:
+            chain = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
+            if expiry_type.lower() == "monthly":
+                exp_target = chain.get("monthly", {}).get("expiry", "")
+            else:
+                exp_target = chain.get("weekly", {}).get("expiry", "")
+        except Exception as e:
+            logger.debug(f"Could not resolve expiry for depth request: {e}")
+
+    depth = kotak_neo_engine.get_option_depth(
+        strike=strike,
+        opt_type=opt_type_clean,
+        expiry=exp_target,
+        force_refresh=force_refresh
+    )
+    depth["expiry_type"] = expiry_type.lower()
+    return _sanitize_for_json(depth)
+
+
+@app.get("/api/nifty/intraday/order-flow")
+def get_nifty_intraday_order_flow(force_refresh: bool = False):
+    """
+    Returns real-time Near-ATM Institutional Order Flow Pulse, Aggregate Order Book Imbalance,
+    Call vs Put Depth Volume Ratio, Spread Liquidity Vacuum Risk, and strike-by-strike depth.
+    Powered exclusively by Kotak Neo API.
+    """
+    from engines.intraday_analytics_engine import intraday_analytics_engine
+    try:
+        data = intraday_analytics_engine.compute_order_flow_market_depth(force_refresh=force_refresh)
+        return _sanitize_for_json(data)
+    except Exception as e:
+        logger.error(f"Error computing order flow market depth: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
 
 
 @app.get("/api/nifty/minute-chart")
@@ -2491,4 +2595,460 @@ def trigger_prospective_update_trades():
 
 
 
+
+
+
+# ==============================================================================
+# KOTAK NEO API & REAL-TIME STREAMING ENDPOINTS
+# ==============================================================================
+
+class KotakAuthRequest(BaseModel):
+    consumer_key: Optional[str] = None
+    mobile_number: Optional[str] = None
+    ucc: Optional[str] = None
+    mpin: Optional[str] = None
+    totp: Optional[str] = None
+    totp_secret: Optional[str] = None
+    environment: Optional[str] = "prod"
+
+
+class KotakSubscribeRequest(BaseModel):
+    symbols: list[str]
+
+
+@app.get("/api/kotak/config")
+def get_kotak_config_endpoint():
+    """Returns saved Kotak Neo configuration details for UI setup modal."""
+    from core import config
+    from execution.state_engine import state_engine
+    saved_creds = state_engine.get_kv("KOTAK_NEO_CREDENTIALS") or {}
+    c_key = config.KOTAK_NEO_CONSUMER_KEY or saved_creds.get("consumer_key", "")
+    ucc_val = config.KOTAK_NEO_UCC or saved_creds.get("ucc", "")
+    mob_val = config.KOTAK_NEO_MOBILE_NUMBER or saved_creds.get("mobile_number", "")
+    has_sec = bool(config.KOTAK_NEO_TOTP_SECRET or saved_creds.get("totp_secret"))
+    has_mpin = bool(config.KOTAK_NEO_MPIN or saved_creds.get("mpin"))
+    env = config.KOTAK_NEO_ENVIRONMENT or saved_creds.get("environment", "prod")
+    return {
+        "status": "OK",
+        "consumer_key": c_key,
+        "ucc": ucc_val,
+        "mobile_number": mob_val,
+        "has_totp_secret": has_sec,
+        "has_mpin": has_mpin,
+        "environment": env
+    }
+
+
+@app.get("/api/kotak/status")
+def get_kotak_status_endpoint():
+    """Returns Kotak Neo API SDK status, connection telemetry, and cached ticks count."""
+    from engines.kotak_neo_engine import kotak_neo_engine
+    return kotak_neo_engine.get_status()
+
+
+@app.post("/api/kotak/auth")
+def authenticate_kotak_neo_endpoint(payload: Optional[KotakAuthRequest] = None):
+    """
+    Authenticates with Kotak Neo API using credentials or automated TOTP.
+    Initiates live stream if successful.
+    """
+    from engines.kotak_neo_engine import kotak_neo_engine
+    req = payload or KotakAuthRequest()
+    res = kotak_neo_engine.login(
+        consumer_key=req.consumer_key,
+        mobile_number=req.mobile_number,
+        ucc=req.ucc,
+        mpin=req.mpin,
+        totp=req.totp,
+        totp_secret=req.totp_secret,
+        environment=req.environment
+    )
+    return res
+
+
+@app.post("/api/kotak/subscribe")
+def subscribe_kotak_symbols_endpoint(payload: KotakSubscribeRequest):
+    """Subscribes specified NSE trading symbols to Kotak Neo live feed."""
+    from engines.kotak_neo_engine import kotak_neo_engine
+    if not payload.symbols:
+        raise HTTPException(status_code=400, detail="No symbols provided.")
+    res = kotak_neo_engine.subscribe_symbols(payload.symbols)
+    return res
+
+
+@app.get("/api/kotak/quotes")
+def get_kotak_quotes_endpoint():
+    """Returns in-memory snapshot of all live ticks received from Kotak Neo."""
+    from engines.kotak_neo_engine import kotak_neo_engine
+    ticks = kotak_neo_engine.get_all_ticks()
+    return {
+        "status": "SUCCESS",
+        "count": len(ticks),
+        "quotes": ticks,
+        "timestamp_ist": format_ist()
+    }
+
+
+@app.post("/api/kotak/disconnect")
+def disconnect_kotak_endpoint():
+    """Disconnects Kotak Neo live stream."""
+    from engines.kotak_neo_engine import kotak_neo_engine
+    kotak_neo_engine.disconnect_stream()
+    return {"status": "SUCCESS", "message": "Kotak Neo stream disconnected."}
+
+
+@app.post("/api/kotak/sync-scrip")
+def sync_kotak_scrip_master_endpoint(background_tasks: BackgroundTasks):
+    """Triggers background synchronization of official Kotak Neo Scrip Master (NSE CM)."""
+    from engines.kotak_neo_engine import kotak_neo_engine
+    background_tasks.add_task(kotak_neo_engine.update_scrip_master)
+    return {
+        "status": "ACCEPTED",
+        "message": "Kotak Neo Scrip Master synchronization started in background."
+    }
+
+
+@app.get("/api/kotak/ping")
+def ping_kotak_connection_endpoint():
+    """
+    Diagnostic endpoint: Performs a live REST test query to Kotak Neo servers.
+    Verifies that session tokens and credentials are valid even when market is closed.
+    """
+    from engines.kotak_neo_engine import kotak_neo_engine
+    if not kotak_neo_engine._is_authenticated:
+        return {
+            "status": "NOT_AUTHENTICATED",
+            "connected": False,
+            "message": "Kotak Neo session is not authenticated. Please login first."
+        }
+    try:
+        raw_res = None
+        if kotak_neo_engine._client:
+            tokens = [{"instrument_token": "2885", "exchange_segment": "nse_cm"}]
+            try:
+                raw_res = kotak_neo_engine._client.quotes(instrument_tokens=tokens, quote_type="all")
+            except Exception as re_err:
+                raw_res = str(re_err)
+
+        quotes = kotak_neo_engine.fetch_rest_quotes(["RELIANCE"])
+        return {
+            "status": "SUCCESS" if quotes else "CONNECTED_EMPTY",
+            "connected": True,
+            "quotes": quotes,
+            "raw_response": raw_res,
+            "websocket_active": kotak_neo_engine.is_streaming_active(),
+            "timestamp_ist": format_ist(),
+            "message": "Connection to Kotak Neo servers verified successfully."
+        }
+    except Exception as e:
+        return {
+            "status": "ERROR",
+            "connected": False,
+            "error": str(e)
+        }
+
+
+@app.post("/api/kotak/test-tick")
+def inject_test_tick_endpoint(symbol: str = "RELIANCE", ltp: Optional[float] = None):
+    """
+    Injects a simulated tick to verify tick cache, UI counter, and data pipeline
+    outside market hours.
+    """
+    from engines.kotak_neo_engine import kotak_neo_engine
+    price = float(ltp or 2980.50)
+    kotak_neo_engine.inject_test_tick(symbol=symbol, ltp=price)
+    return {
+        "status": "SUCCESS",
+        "symbol": symbol,
+        "injected_price": price,
+        "ticks_total": kotak_neo_engine.get_status().get("ticks_received_total", 0),
+        "timestamp_ist": format_ist()
+    }
+
+
+# ==============================================================================
+# SERVER PUBLIC IP DETECTION ENDPOINT (FOR BROKER API WHITELISTING)
+# ==============================================================================
+@app.get("/api/server-ip")
+def get_server_ip_endpoint(refresh: bool = False):
+    """Returns the detected public server IP of the instance."""
+    from scheduler.cron_scheduler import get_server_public_ip
+    ip = get_server_public_ip(force=refresh)
+    return {
+        "status": "OK",
+        "server_ip": ip,
+        "timestamp_ist": format_ist()
+    }
+
+
+# ==============================================================================
+# CONTINUOUS MULTI-DESK LIVE STREAM ENDPOINT (POWERED BY KOTAK NEO)
+# ==============================================================================
+@app.get("/api/stream/continuous")
+def get_continuous_live_stream_endpoint():
+    """
+    Ultra-low latency continuous data stream endpoint powered by Kotak Neo API:
+    Streams live market prices, MTM valuations, trailing stops, Nifty 50 spot, VWAP levels,
+    and Options portfolio metrics continuously to frontend desks without Yahoo/NSE overhead.
+    """
+    from engines.kotak_neo_engine import kotak_neo_engine
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+
+    # Ensure background hybrid REST streamer is active without blocking the HTTP response thread
+    if kotak_neo_engine._is_authenticated:
+        kotak_neo_engine._start_rest_streamer()
+
+    all_ticks = kotak_neo_engine.get_all_ticks()
+    is_streaming = kotak_neo_engine.is_streaming_active()
+    stream_status = kotak_neo_engine.get_status()
+
+    # 1. Swing Trading: Active Positions with Kotak live LTP & MTM
+    active_positions = state_engine.get_active_positions()
+    positions_summary = []
+    total_unrealized_pnl = 0.0
+    for p in active_positions:
+        sym = (p.get("symbol") or "").strip().upper()
+        entry_px = float(p.get("entry_price") or 0.0)
+        qty = int(p.get("quantity") or 0)
+        curr_px = float(kotak_neo_engine.get_live_price(sym) or p.get("current_price") or entry_px)
+        pnl = round((curr_px - entry_px) * qty, 2)
+        total_unrealized_pnl += pnl
+        tick = kotak_neo_engine.get_live_tick(sym)
+        chg_pct = tick.get("change_pct") if tick else None
+        r_unit = max(0.01, entry_px - float(p.get("original_stop_loss") or p.get("stop_loss") or (entry_px * 0.95)))
+        positions_summary.append({
+            "symbol": sym,
+            "ltp": curr_px,
+            "entry_price": entry_px,
+            "stop_loss": float(p.get("stop_loss") or 0.0),
+            "highest_price": float(p.get("highest_price") or curr_px),
+            "quantity": qty,
+            "position_value": round(curr_px * qty, 2),
+            "unrealized_pnl": pnl,
+            "pnl_pct": round(((curr_px - entry_px) / max(entry_px, 0.01)) * 100, 2),
+            "current_r": round((curr_px - entry_px) / r_unit, 2),
+            "day_change_pct": chg_pct,
+            "updated_at": tick.get("updated_at") if tick else format_ist(),
+            "cloud_sync": p.get("cloud_sync", "SYNCED")
+        })
+
+    # 2. Intraday Desk: Real-time Nifty 50 & Bank Nifty Spot
+    nifty_spot = float(
+        kotak_neo_engine.get_live_price("NIFTY 50")
+        or kotak_neo_engine.get_live_price("NIFTY")
+        or kotak_neo_engine.get_live_price("^NSEI")
+        or 0.0
+    )
+    banknifty_spot = float(
+        kotak_neo_engine.get_live_price("NIFTY BANK")
+        or kotak_neo_engine.get_live_price("BANKNIFTY")
+        or 0.0
+    )
+
+    # 3. Options Desk: Portfolio Valuation
+    opt_portfolio = nifty_analytics_engine.get_options_portfolio()
+
+    # 4. Near-ATM Option Ticks for Real-Time Strike Streaming
+    opt_ticks = kotak_neo_engine.get_near_atm_option_ticks(spot_price=nifty_spot, strike_range=12)
+
+    # 5. Commodities Desk: Active MCX Contracts Live Quotes & Metrics
+    from engines.commodities_engine import commodities_engine
+    if kotak_neo_engine._is_authenticated:
+        try:
+            mcx_contracts = commodities_engine.get_active_contracts()
+            mcx_tokens = [str(c.get("token")) for c in mcx_contracts.values() if c.get("token")]
+            kotak_neo_engine.subscribe_mcx_tokens(mcx_tokens)
+        except Exception:
+            pass
+
+    commodities_data = commodities_engine.get_streaming_payload()
+    if isinstance(commodities_data, dict):
+        commodities_data["stream_mode"] = stream_status.get("stream_mode", "OFFLINE")
+        commodities_data["ticks_total"] = stream_status.get("ticks_received_total", len(all_ticks))
+
+    is_market_open, _ = NSEMarketCalendar.can_execute_trades()
+    return {
+        "status": "SUCCESS",
+        "source": "KOTAK_NEO_STREAM",
+        "is_streaming": is_streaming,
+        "is_market_open": is_market_open,
+        "stream_mode": stream_status.get("stream_mode", "OFFLINE"),
+        "is_authenticated": kotak_neo_engine._is_authenticated,
+        "ticks_total": stream_status.get("ticks_received_total", len(all_ticks)),
+        "timestamp_ist": format_ist(),
+        "swing": {
+            "positions_count": len(positions_summary),
+            "total_unrealized_pnl": round(total_unrealized_pnl, 2),
+            "positions": positions_summary
+        },
+        "intraday": {
+            "nifty_spot": nifty_spot,
+            "banknifty_spot": banknifty_spot
+        },
+        "options": {
+            "active_strategies_count": len(opt_portfolio.get("active_strategies", [])),
+            "total_unrealized_pnl": opt_portfolio.get("summary", {}).get("total_unrealized_pnl", 0.0),
+            "strategies": opt_portfolio.get("active_strategies", [])
+        },
+        "options_ticks": opt_ticks,
+        "commodities": commodities_data,
+        "equity_ticks": {
+            s: {
+                "ltp": t.get("ltp"),
+                "change_pct": t.get("change_pct"),
+                "high": t.get("high"),
+                "low": t.get("low"),
+                "open": t.get("open"),
+                "close": t.get("close"),
+                "volume": t.get("volume"),
+                "updated_at": t.get("updated_at")
+            }
+            for s, t in all_ticks.items()
+            if isinstance(t, dict) and t.get("ltp")
+        }
+    }
+
+
+# --------------------------------------------------------------------------
+# MCX COMMODITIES DESK API ENDPOINTS (POWERED BY KOTAK NEO)
+# --------------------------------------------------------------------------
+@app.get("/api/commodities/quotes")
+def get_commodities_quotes(force_refresh: bool = False):
+    """
+    Returns authentic live quotes, pivots, range progress, and OI buildup
+    for active MCX contracts (Crude Oil, Natural Gas, Gold, Silver, Copper, Zinc)
+    streamed directly from Kotak Neo API.
+    """
+    from engines.commodities_engine import commodities_engine
+    return commodities_engine.fetch_live_quotes(force_refresh=force_refresh)
+
+
+@app.get("/api/commodities/depth")
+def get_commodity_depth(symbol: str = "CRUDEOIL"):
+    """
+    Returns authentic live 5-level market depth (bids & asks) and pivot metrics
+    for a specific MCX commodity contract directly from Kotak Neo.
+    """
+    from engines.commodities_engine import commodities_engine
+    return commodities_engine.get_symbol_depth(symbol)
+
+
+@app.get("/api/commodities/summary")
+def get_commodities_summary():
+    """
+    Returns high-level MCX sector summaries (Energy, Bullion, Base Metals)
+    and top market gainers/losers.
+    """
+    from engines.commodities_engine import commodities_engine
+    payload = commodities_engine.fetch_live_quotes(force_refresh=False)
+    return {
+        "status": "SUCCESS",
+        "is_mcx_open": payload.get("is_mcx_open"),
+        "market_status_text": payload.get("market_status_text"),
+        "summary": payload.get("summary", {}),
+        "top_gainer": payload.get("top_gainer"),
+        "top_loser": payload.get("top_loser"),
+        "contracts_count": payload.get("contracts_count", 0),
+        "timestamp": payload.get("timestamp")
+    }
+
+
+@app.post("/api/commodities/refresh")
+def refresh_commodities_data():
+    """
+    Forces immediate scrip rediscovery and live quote refresh from Kotak Neo API.
+    """
+    from engines.commodities_engine import commodities_engine
+    commodities_engine.discover_active_contracts(force=True)
+    return commodities_engine.fetch_live_quotes(force_refresh=True)
+
+
+# --------------------------------------------------------------------------
+# MCX COMMODITIES OPTION CHAIN & STRATEGY BUILDER ENDPOINTS
+# --------------------------------------------------------------------------
+@app.get("/api/commodities/options/expiries")
+def get_commodity_option_expiries(underlying: str = "CRUDEOIL"):
+    """
+    Returns official active option expiries for MCX commodity contracts (Crude Oil, Natural Gas, Gold Mini, etc.).
+    """
+    from engines.commodities_engine import commodities_engine
+    expiries = commodities_engine.get_available_option_expiries(underlying=underlying)
+    return {
+        "status": "SUCCESS",
+        "underlying": underlying.upper(),
+        "expiries": expiries,
+    }
+
+
+@app.get("/api/commodities/options/chain")
+def get_commodity_option_chain(
+    underlying: str = "CRUDEOIL",
+    expiry: Optional[str] = None,
+    count: int = 16,
+    force_refresh: bool = False
+):
+    """
+    Returns authentic live MCX Option Chain from Kotak Neo API (`mcx_fo`), including
+    PCR (Overall, Near-ATM, Exact ATM), Max Pain, Call/Put Walls, ATM Straddle,
+    Black-Scholes IV, and Full Greeks (Δ, Γ, Θ, Vega).
+    """
+    from engines.commodities_engine import commodities_engine
+    return commodities_engine.fetch_commodity_option_chain(
+        underlying=underlying,
+        expiry=expiry,
+        count=count,
+        force_refresh=force_refresh
+    )
+
+
+@app.post("/api/commodities/options/strategy/analyze")
+def analyze_commodity_strategy_endpoint(payload: Dict[str, Any] = Body(...)):
+    """
+    Analyzes a multi-leg commodity options strategy and returns dual-curve payoff graph data,
+    Max Profit/Loss, Breakevens, POP, Net Premium, and Net Greeks.
+    """
+    from engines.commodities_engine import commodities_engine
+    underlying = payload.get("underlying", "CRUDEOIL")
+    legs = payload.get("legs", [])
+    target_days = float(payload.get("target_days", 0.0))
+    iv_shift_pct = float(payload.get("iv_shift_pct", 0.0))
+    return commodities_engine.analyze_commodity_strategy(
+        underlying=underlying,
+        legs=legs,
+        target_days=target_days,
+        iv_shift_pct=iv_shift_pct
+    )
+
+
+@app.post("/api/commodities/options/strategy/deploy")
+def deploy_commodity_strategy_endpoint(payload: Dict[str, Any] = Body(...)):
+    """
+    Deploys a multi-leg commodity strategy for real-time paper execution and tracking.
+    """
+    from engines.commodities_engine import commodities_engine
+    return commodities_engine.deploy_commodity_strategy(payload)
+
+
+@app.get("/api/commodities/options/strategy/deployed")
+def get_deployed_commodity_strategies_endpoint():
+    """
+    Returns all active and squared-off deployed commodity strategies with live P&L.
+    """
+    from engines.commodities_engine import commodities_engine
+    strategies = commodities_engine.get_deployed_commodity_strategies()
+    return {
+        "status": "SUCCESS",
+        "strategies": strategies,
+        "count": len(strategies),
+    }
+
+
+@app.post("/api/commodities/options/strategy/squareoff")
+def square_off_commodity_strategy_endpoint(payload: Dict[str, Any] = Body(...)):
+    """
+    Squares off an active deployed commodity strategy.
+    """
+    from engines.commodities_engine import commodities_engine
+    strategy_id = payload.get("strategy_id", "")
+    return commodities_engine.square_off_commodity_strategy(strategy_id)
 

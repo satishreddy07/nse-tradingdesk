@@ -548,6 +548,10 @@ class Portfolio3StrategyEngine:
     def get_active_watchlist(self, include_all: bool = False) -> List[Dict[str, Any]]:
         """Returns the list of currently active watchlist candidates enriched with live LTP and spreads."""
         from execution.state_engine import state_engine
+        try:
+            from engines.kotak_neo_engine import kotak_neo_engine
+        except ImportError:
+            kotak_neo_engine = None
         with self._get_connection() as conn:
             if include_all:
                 rows = conn.execute("""
@@ -575,9 +579,10 @@ class Portfolio3StrategyEngine:
         with self._get_connection() as c2:
             for item in items:
                 sym = item.get('symbol', '')
+                k_ltp = kotak_neo_engine.get_live_price(sym) if kotak_neo_engine else None
                 pos_row = c2.execute("SELECT current_price FROM active_positions WHERE symbol = ?", (sym,)).fetchone()
                 sig_row = c2.execute("SELECT close, intraday_pct FROM latest_signals WHERE symbol = ?", (sym,)).fetchone()
-                ltp = (pos_row[0] if pos_row and pos_row[0] else None) or (sig_row[0] if sig_row and sig_row[0] else None) or item.get('t_minus_1_close')
+                ltp = k_ltp or (pos_row[0] if pos_row and pos_row[0] else None) or (sig_row[0] if sig_row and sig_row[0] else None) or item.get('t_minus_1_close')
                 t1_close = float(item.get('t_minus_1_close') or 0.0)
                 if ltp and t1_close > 0:
                     day_chg = round((float(ltp) - t1_close) / t1_close * 100, 2)
@@ -627,6 +632,28 @@ class Portfolio3StrategyEngine:
         quotes: Dict[str, Dict[str, Any]] = {}
         if not symbols:
             return quotes
+
+        # Kotak Neo Direct Path: Zero Yahoo scraping when Kotak Neo is active
+        try:
+            from engines.kotak_neo_engine import kotak_neo_engine
+            if kotak_neo_engine._is_authenticated:
+                kotak_neo_engine.fetch_rest_quotes(symbols)
+                for sym in symbols:
+                    clean_sym = sym.replace(".NS", "").replace(".BO", "").strip().upper()
+                    tick = kotak_neo_engine.get_live_tick(clean_sym)
+                    if tick and tick.get("ltp"):
+                        quotes[clean_sym] = {
+                            "symbol": clean_sym,
+                            "ltp": float(tick["ltp"]),
+                            "high": float(tick.get("high") or tick["ltp"]),
+                            "low": float(tick.get("low") or tick["ltp"]),
+                            "volume": int(tick.get("volume") or 0),
+                            "change_pct": float(tick.get("change_pct") or 0.0),
+                            "timestamp": tick.get("updated_at")
+                        }
+                return quotes
+        except Exception:
+            pass
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"

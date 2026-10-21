@@ -439,7 +439,7 @@ class MLPerformanceEngine:
             "metrics": t5_meta.get("metrics", {"directional_accuracy": 45.0, "brier_score": 0.6456, "return_mae_pct": 1.68, "baseline_brier": 1.0427}),
             "warnings_and_limitations": [
                 "5-day forward label autocorrelation: Enforces 5-bar purged CV to prevent multi-day leakage.",
-                "Weekly expiry theta acceleration: Option strike pricing shifts rapidly into Thursday settlement."
+                "Weekly expiry theta acceleration: Option strike pricing shifts rapidly into Tuesday settlement."
             ]
         })
 

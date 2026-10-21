@@ -112,6 +112,53 @@ def get_keepalive_target_url() -> str:
     return f"http://127.0.0.1:{port}/health?source=render_keepalive"
 
 
+_cached_server_ip: Optional[str] = None
+_cached_server_ip_time: float = 0.0
+_server_ip_lock = threading.Lock()
+
+
+def get_server_public_ip(force: bool = False) -> str:
+    """
+    Detects the public outbound IPv4 of the server instance (e.g. Render container or local).
+    Uses multiple fast external IP echo providers (api.ipify.org, ifconfig.me, icanhazip.com).
+    Caches result in-memory for 1 hour to prevent unnecessary external requests and zero latency.
+    """
+    global _cached_server_ip, _cached_server_ip_time
+    now = time.time()
+    with _server_ip_lock:
+        if not force and _cached_server_ip and (now - _cached_server_ip_time < 3600):
+            return _cached_server_ip
+
+    providers = [
+        "https://api.ipify.org",
+        "https://ifconfig.me/ip",
+        "https://icanhazip.com"
+    ]
+    for url in providers:
+        try:
+            resp = requests.get(url, timeout=3.0, headers={"User-Agent": "curl/7.68.0"})
+            if resp.status_code == 200:
+                ip_cand = resp.text.strip()
+                if ip_cand and len(ip_cand) <= 45 and ("." in ip_cand or ":" in ip_cand):
+                    with _server_ip_lock:
+                        _cached_server_ip = ip_cand
+                        _cached_server_ip_time = time.time()
+                    try:
+                        state_engine.set_kv("RENDER_SERVER_IP", ip_cand)
+                    except Exception:
+                        pass
+                    logger.info(f"🌐 [Server Public IP] Detected instance outbound IP: {ip_cand}")
+                    return ip_cand
+        except Exception:
+            continue
+
+    with _server_ip_lock:
+        if not _cached_server_ip:
+            _cached_server_ip = "127.0.0.1"
+            _cached_server_ip_time = time.time()
+        return _cached_server_ip
+
+
 def scheduled_nse_holiday_sync_job():
     """
     08:55 AM IST Weekday Job (and Startup Task):
@@ -996,6 +1043,30 @@ def scheduled_p3_eod_watchlist_job():
         logger.warning(f"Portfolio 3 EOD watchlist ingestion error: {e}")
 
 
+def scheduled_kotak_session_job():
+    """
+    08:58 AM IST Pre-Market Job (Mon-Fri):
+    Authenticates Kotak Neo session via TOTP and connects live market stream.
+    Ensures live streaming is active and ticks are primed before 09:15 AM market open.
+    """
+    current_dt = now_ist()
+    if not NSEMarketCalendar.is_trading_day(current_dt.date()):
+        return
+    try:
+        from engines.kotak_neo_engine import kotak_neo_engine
+        from core import config
+        saved_creds = state_engine.get_kv("KOTAK_NEO_CREDENTIALS") or {}
+        if config.KOTAK_NEO_ENABLED or saved_creds.get("consumer_key"):
+            logger.info("🔑 [08:58 AM Kotak Neo Session Init] Authenticating Kotak Neo session...")
+            res = kotak_neo_engine.login()
+            if res.get("status") == "SUCCESS":
+                logger.info(f"✓ [Kotak Neo Session Init] Login successful for UCC: {res.get('ucc')}. Live stream active.")
+            else:
+                logger.warning(f"⚠️ [Kotak Neo Session Init] Login status: {res.get('status')} - {res.get('error')}")
+    except Exception as e:
+        logger.warning(f"Kotak Neo scheduled session job notice: {e}")
+
+
 def start_scheduler():
     """Initializes and starts the BackgroundScheduler with IST triggers & Render Anti-Sleep Guard."""
     global _scheduler
@@ -1024,6 +1095,16 @@ def start_scheduler():
             trigger=CronTrigger(day_of_week="mon-fri", hour=8, minute=45, timezone=IST),
             id="job_premarket_prediction_0845",
             name="08:45 AM Official Pre-Market Forecast Lock & Bulletin",
+            replace_existing=True,
+            misfire_grace_time=300
+        )
+
+        # Job 0A-0: Daily Kotak Neo Session Init & Live Stream Connect at 08:58 AM IST Mon-Fri
+        _scheduler.add_job(
+            scheduled_kotak_session_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=8, minute=58, timezone=IST),
+            id="job_kotak_session_0858",
+            name="08:58 AM Kotak Neo Live Stream Session Init",
             replace_existing=True,
             misfire_grace_time=300
         )
@@ -1259,8 +1340,10 @@ def start_scheduler():
         )
 
         _scheduler.start()
-        # Trigger an immediate live price refresh, and Nifty 50m option capture if in market hours
+        # Trigger an immediate keep-alive check, live price refresh, Kotak Neo stream init, server IP detection, and Nifty 50m option capture if in market hours
+        threading.Thread(target=get_server_public_ip, daemon=True, name="ServerIPDetection").start()
         threading.Thread(target=scheduled_live_price_stream_job, daemon=True).start()
+        threading.Thread(target=scheduled_kotak_session_job, daemon=True, name="KotakNeoStartupInit").start()
         threading.Thread(target=scheduled_nifty_intraday_50min_job, daemon=True).start()
         # Launch dedicated continuous Intraday Watchdog
         threading.Thread(target=_intraday_collector_watchdog, daemon=True, name="IntradayWatchdog").start()

@@ -104,6 +104,10 @@ def test_backup_api_endpoints(temp_db_and_backup_dir, monkeypatch):
     monkeypatch.setattr(telegram_vault, "backup_master_file_to_cloud", lambda *a, **kw: {"status": "SUCCESS"})
     monkeypatch.setattr(telegram_vault, "send_message", lambda *a, **kw: None)
 
+    from core.telegram_vault import telegram_vault
+    monkeypatch.setattr(telegram_vault, "backup_master_file_to_cloud", lambda *a, **kw: {"status": "SUCCESS"})
+    monkeypatch.setattr(telegram_vault, "send_message", lambda *a, **kw: None)
+
     client = TestClient(app)
     post_res = client.post("/api/system/backup/daily")
     assert post_res.status_code == 200

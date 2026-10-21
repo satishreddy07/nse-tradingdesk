@@ -130,3 +130,16 @@ def calc_regulatory_options_cost(premium: float, qty: int, is_sell: bool = True)
     gst = OPTIONS_GST_RATE * (brokerage + ex_fee + sebi)
     return round(stt + ex_fee + sebi + stamp + brokerage + gst, 2)
 
+
+
+# ==============================================================================
+# Kotak Neo API & Real-Time Market Streaming Configuration
+# ==============================================================================
+KOTAK_NEO_ENABLED = os.environ.get("KOTAK_NEO_ENABLED", "true").lower() in ("true", "1", "yes")
+KOTAK_NEO_CONSUMER_KEY = os.environ.get("KOTAK_NEO_CONSUMER_KEY", "")
+KOTAK_NEO_MOBILE_NUMBER = os.environ.get("KOTAK_NEO_MOBILE_NUMBER", "")
+KOTAK_NEO_UCC = os.environ.get("KOTAK_NEO_UCC", "")
+KOTAK_NEO_MPIN = os.environ.get("KOTAK_NEO_MPIN", "")
+KOTAK_NEO_TOTP_SECRET = os.environ.get("KOTAK_NEO_TOTP_SECRET", "")
+KOTAK_NEO_ENVIRONMENT = os.environ.get("KOTAK_NEO_ENVIRONMENT", "prod")
+KOTAK_NEO_AUTO_STREAM = os.environ.get("KOTAK_NEO_AUTO_STREAM", "true").lower() in ("true", "1", "yes")
