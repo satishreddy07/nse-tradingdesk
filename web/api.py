@@ -202,7 +202,14 @@ def index(request: Request):
     index_file = TEMPLATES_DIR / "index.html"
     if index_file.exists():
         with open(index_file, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+            return HTMLResponse(
+                content=f.read(),
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0"
+                }
+            )
     return HTMLResponse("<h1>Quant Trading Desk</h1><p>index.html not found</p>")
 
 
@@ -2812,5 +2819,19 @@ def get_continuous_live_stream_endpoint():
             "total_unrealized_pnl": opt_portfolio.get("summary", {}).get("total_unrealized_pnl", 0.0),
             "strategies": opt_portfolio.get("active_strategies", [])
         },
-        "options_ticks": opt_ticks
+        "options_ticks": opt_ticks,
+        "equity_ticks": {
+            s: {
+                "ltp": t.get("ltp"),
+                "change_pct": t.get("change_pct"),
+                "high": t.get("high"),
+                "low": t.get("low"),
+                "open": t.get("open"),
+                "close": t.get("close"),
+                "volume": t.get("volume"),
+                "updated_at": t.get("updated_at")
+            }
+            for s, t in all_ticks.items()
+            if isinstance(t, dict) and t.get("ltp")
+        }
     }

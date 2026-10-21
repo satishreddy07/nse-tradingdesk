@@ -8460,12 +8460,13 @@
         }
       }, 4000);
 
-      // Continuous Kotak Neo Stream Poller (3 seconds)
+      // Continuous Kotak Neo Stream Poller (Immediate + Every 2 seconds)
+      pollContinuousKotakStream();
       setInterval(() => {
         if (!document.hidden) {
           pollContinuousKotakStream();
         }
-      }, 3000);
+      }, 2000);
 
       // 2. 15-Second Options & Intraday Streamer (Active Desk Aware)
       setInterval(() => {
@@ -8522,7 +8523,7 @@
       if (isMarketOpen) {
         if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 max-w-full overflow-hidden shrink-0";
         if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0";
-        streamTextEl.innerText = `⚡ NSE LIVE FEED: Spot ${formatted}`;
+        streamTextEl.innerText = `⚡ KOTAK NEO LIVE STREAM: Spot ${formatted}`;
       } else {
         if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 max-w-full overflow-hidden shrink-0";
         if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-slate-400 shrink-0";
@@ -11292,6 +11293,10 @@
 
     function renderOptionsChainUI(data) {
       if (!data || data.status !== 'OK') return;
+
+      const optTbodyEl = document.getElementById('opt-chain-tbody');
+      const optContainerEl = optTbodyEl ? (optTbodyEl.closest('.overflow-x-auto') || optTbodyEl.parentElement) : null;
+      const optPrevScrollTop = optContainerEl ? optContainerEl.scrollTop : 0;
 
       const w = data.weekly || {};
       const m = data.monthly || {};
@@ -16964,7 +16969,7 @@
             <td class="p-3 text-cyan-400 font-bold">${(s.score || 0).toFixed(1)}</td>
             <td class="p-3 text-purple-400">${(s.ml_prob || 0).toFixed(2)}</td>
             <td class="p-3 font-bold text-slate-200">${s.tier || 'A'}</td>
-            <td class="p-3">₹${(s.close || 0).toFixed(2)}</td>
+            <td id="sig-ltp-${s.symbol}" data-prev-ltp="${s.close || 0}" class="p-3 font-semibold text-white transition-all duration-300">₹${(s.close || 0).toFixed(2)}</td>
             <td class="p-3 text-rose-400">₹${(s.sl || 0).toFixed(2)}</td>
             <td class="p-3">
               <span class="text-amber-400">₹${(s.t1 || 0).toFixed(2)}</span> / 
@@ -17525,7 +17530,7 @@
             </td>
             <td class="p-3.5 font-mono">
               <div class="font-bold text-white text-xs flex items-center gap-1.5">
-                <span>₹${ltp.toFixed(2)}</span>
+                <span id="p3-ltp-${w.symbol}" data-prev-ltp="${ltp}" class="transition-all duration-300">₹${ltp.toFixed(2)}</span>
                 <span class="text-[10px] ${dayChgClass} font-normal">(${dayChgArrow}${dayChgSign}${dayChg.toFixed(2)}%)</span>
               </div>
               <div class="mt-1">
@@ -22822,11 +22827,53 @@
           });
         }
 
-        // 5. Live Option Chain analytics background refresh (every 30s)
+        // 3b. Real-time Equity Ticks across all tables on page (Signals, Watchlists, Screeners)
+        if (data.equity_ticks && typeof data.equity_ticks === 'object') {
+          Object.entries(data.equity_ticks).forEach(([sym, tick]) => {
+            const ltp = Number(tick.ltp);
+            if (!ltp) return;
+
+            // Update in P1 Signals table
+            const sigEl = document.getElementById(`sig-ltp-${sym}`);
+            if (sigEl) {
+              const oldLtp = parseFloat(sigEl.getAttribute('data-prev-ltp') || '0');
+              sigEl.innerText = `₹${ltp.toFixed(2)}`;
+              sigEl.setAttribute('data-prev-ltp', ltp);
+              if (oldLtp > 0 && Math.abs(ltp - oldLtp) > 0.01) {
+                const flashCls = ltp >= oldLtp ? 'bg-emerald-500/30 text-emerald-300 font-extrabold' : 'bg-rose-500/30 text-rose-300 font-extrabold';
+                sigEl.classList.add(flashCls, 'rounded', 'px-1');
+                setTimeout(() => sigEl.classList.remove(flashCls, 'rounded', 'px-1'), 750);
+              }
+            }
+
+            // Update in P3 Watchlist table
+            const p3El = document.getElementById(`p3-ltp-${sym}`);
+            if (p3El) {
+              const oldLtp = parseFloat(p3El.getAttribute('data-prev-ltp') || '0');
+              p3El.innerText = `₹${ltp.toFixed(2)}`;
+              p3El.setAttribute('data-prev-ltp', ltp);
+              if (oldLtp > 0 && Math.abs(ltp - oldLtp) > 0.01) {
+                const flashCls = ltp >= oldLtp ? 'bg-emerald-500/30 text-emerald-300' : 'bg-rose-500/30 text-rose-300';
+                p3El.classList.add(flashCls, 'rounded', 'px-1');
+                setTimeout(() => p3El.classList.remove(flashCls, 'rounded', 'px-1'), 750);
+              }
+            }
+          });
+        }
+
+        // 3c. Dynamic Holdings Sync: Reload table if active positions count changed
+        if (data.swing && Array.isArray(data.swing.positions)) {
+          const currentTableRows = document.querySelectorAll('#p1-positions-tbody tr[data-symbol]');
+          if (currentTableRows.length > 0 && currentTableRows.length !== data.swing.positions.length) {
+            loadP1Data(false);
+          }
+        }
+
+        // 5. Live Option Chain dynamic refresh when user is on Options Desk (every 4s)
         if (typeof currentModule !== 'undefined' && currentModule === 'module-options') {
           window._optChainPollCounter = (window._optChainPollCounter || 0) + 1;
-          if (window._optChainPollCounter % 10 === 0) {
-            loadOptionsChainDesk(false, false);
+          if (window._optChainPollCounter % 2 === 0) {
+            loadOptionsChainDesk(true, false);
           }
         }
 
