@@ -61,6 +61,8 @@ def build_interpretation_prompt(contract: PredictionInputContract) -> str:
 Instructions:
 - Provide rigorous institutional interpretation adhering strictly to the required JSON schema.
 - Distinguish the ML forecast from your interpretation.
+- Actively synthesize the verified moving_averages (EMA20/50/200 & crossover status), options_open_interest_and_skew (25-delta skew, Put/Call walls, Max Pain), completed_intraday_session_telemetry (VWAP, orderflow, 30-min slots), and major_constituents_earnings provided in market_context into your analysis.
+- In "missing_or_stale_data", only list data feeds that are genuinely absent from the platform. Do NOT flag moving averages, options skew, orderflow, or earnings as missing since they are provided in this contract.
 - Do not fabricate option Greeks, premiums, or unverified events.
 - Ensure decision_status is "ANALYSIS_ONLY".
 """

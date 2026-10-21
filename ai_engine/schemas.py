@@ -43,6 +43,10 @@ class MarketContextItem(BaseModel):
     us_vix_term_structure: Optional[str] = Field(None, description="US VIX term structure (CONTANGO_STABLE / BACKWARDATION)")
     futures_relative_move: Optional[Dict[str, Any]] = Field(None, description="E-mini futures momentum & Nifty fair value gap")
     recent_news_events: Optional[List[Dict[str, str]]] = None
+    moving_averages: Optional[Dict[str, Any]] = Field(None, description="Key structural moving averages (EMA20, EMA50, EMA200, crossover status, distance %)")
+    options_open_interest_and_skew: Optional[Dict[str, Any]] = Field(None, description="Live Options chain OI distribution, 25-delta skew, Put/Call walls, and GEX")
+    completed_intraday_session_telemetry: Optional[Dict[str, Any]] = Field(None, description="Previous completed session intraday VWAP, range, orderflow imbalance, and 30-min slots")
+    major_constituents_earnings: Optional[List[Dict[str, Any]]] = Field(None, description="Corporate earnings calendar for top Nifty 50 constituents")
 
 
 class PredictionInputContract(BaseModel):

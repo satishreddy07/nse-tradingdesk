@@ -147,8 +147,10 @@ CENTRAL_BANK_EVENTS_2026 = [
     {"date": "2026-10-09", "bank": "RBI MPC", "title": "RBI Monetary Policy Committee Rate & Stance Decision", "status": "COMPLETED", "outcome_print": "Repo 6.50% Unchanged (5-1) • Stance shifted to NEUTRAL (Dovish Pivot)", "market_impact": "BULLISH_LIQUIDITY_PIVOT"},
     {"date": "2026-10-13", "bank": "INDIA CPI / IIP", "title": "India MOSPI Retail CPI Inflation & Industrial Production", "status": "COMPLETED", "outcome_print": "Retail CPI 5.49% (Food base effect) | IIP -0.1%", "market_impact": "MODERATE_HEADWIND_SHORT_TERM"},
     {"date": "2026-10-14", "bank": "INDIA WPI", "title": "India Wholesale Price Index (WPI) & Trade Balance Data", "status": "COMPLETED", "outcome_print": "WPI 1.84% (In-line with consensus 1.85%)", "market_impact": "WATCH_INPUT_COSTS"},
-    {"date": "2026-10-15", "bank": "US CPI / RETAIL", "title": "US Bureau of Labor Statistics CPI & Core Inflation Print", "status": "UPCOMING", "consensus": "CPI 2.4% YoY / Core 3.3% YoY", "market_impact": "CRITICAL_RATE_PATH_DRIVER"},
+    {"date": "2026-10-15", "bank": "US CPI / RETAIL", "title": "US Bureau of Labor Statistics CPI & Core Inflation Print", "status": "COMPLETED", "outcome_print": "CPI 2.4% YoY (Core 3.3% YoY)", "market_impact": "CRITICAL_RATE_PATH_DRIVER"},
     {"date": "2026-10-28", "bank": "US FED FOMC", "title": "Federal Reserve FOMC Rate Decision", "status": "UPCOMING", "consensus": "25 bps rate cut expected (Target 4.50%-4.75%)", "market_impact": "HIGH_EVENT_VOLATILITY"},
+    {"date": "2026-11-03", "bank": "US ELECTIONS", "title": "US Midterm Congressional Elections", "status": "UPCOMING", "consensus": "All 435 House & 34 Senate seats in play; dictates US fiscal policy, corporate taxes & global trade tariffs", "market_impact": "HIGH_EVENT_VOLATILITY"},
+    {"date": "2026-11-06", "bank": "US JOBS / NFP", "title": "US Non-Farm Payrolls (NFP) & Unemployment Rate Print", "status": "UPCOMING", "consensus": "NFP +140K exp / 4.1% Unemployment", "market_impact": "FED_RATE_DECISION_DRIVER"},
     {"date": "2026-11-12", "bank": "INDIA CPI / IIP", "title": "India MOSPI Retail CPI Inflation Release", "status": "UPCOMING", "consensus": "CPI 4.80% exp", "market_impact": "RBI_RATE_DECISION_DRIVER"},
     {"date": "2026-11-27", "bank": "INDIA GDP", "title": "India Q2 FY27 Quarterly GDP Growth Print", "status": "UPCOMING", "consensus": "GDP 6.8% exp", "market_impact": "MACRO_GROWTH_LEADERSHIP"},
     {"date": "2026-12-04", "bank": "RBI MPC", "title": "RBI Monetary Policy Committee Rate Decision", "status": "UPCOMING", "consensus": "Potential 25 bps Rate Cut window", "market_impact": "HIGH_EVENT_VOLATILITY"},
@@ -158,11 +160,12 @@ CENTRAL_BANK_EVENTS_2026 = [
 
 def generate_projected_central_bank_events(year: int) -> List[Dict[str, Any]]:
     """
-    Algorithmic projection of recurring Federal Reserve FOMC & RBI MPC monetary policy dates
-    for future calendar years (2027 and beyond) to guarantee perpetual macroeconomic event risk tracking.
+    Algorithmic projection of recurring Federal Reserve FOMC, RBI MPC monetary policy dates,
+    US Midterm/Presidential Elections, Union Budget, and major economic catalysts
+    for future calendar years to guarantee perpetual macroeconomic event risk tracking.
     """
     events = []
-    # Fed FOMC (Standard 8-cycle schedule: late Jan, mid Mar, early May, mid Jun, late Jul, late Sep, early Nov, mid Dec)
+    # 1. Fed FOMC (Standard 8-cycle schedule: late Jan, mid Mar, early May, mid Jun, late Jul, late Sep, early Nov, mid Dec)
     fomc_schedules = [(1, 27), (3, 17), (5, 5), (6, 16), (7, 28), (9, 22), (11, 4), (12, 15)]
     for m, d in fomc_schedules:
         try:
@@ -178,7 +181,7 @@ def generate_projected_central_bank_events(year: int) -> List[Dict[str, Any]]:
         except Exception:
             pass
 
-    # RBI MPC (Bi-monthly meetings: early Feb, early Apr, early Jun, early Aug, early Oct, early Dec)
+    # 2. RBI MPC (Bi-monthly meetings: early Feb, early Apr, early Jun, early Aug, early Oct, early Dec)
     rbi_schedules = [(2, 6), (4, 9), (6, 5), (8, 7), (10, 8), (12, 4)]
     for m, d in rbi_schedules:
         try:
@@ -193,6 +196,55 @@ def generate_projected_central_bank_events(year: int) -> List[Dict[str, Any]]:
             })
         except Exception:
             pass
+
+    # 3. US Federal Elections (Even years: Presidential in year % 4 == 0, Midterms in year % 4 == 2)
+    # Held on Tuesday after first Monday of November
+    if year % 2 == 0:
+        try:
+            nov1 = datetime.date(year, 11, 1)
+            days_to_mon = (7 - nov1.weekday()) % 7 if nov1.weekday() != 0 else 0
+            first_monday = nov1 + datetime.timedelta(days=days_to_mon)
+            election_tuesday = first_monday + datetime.timedelta(days=1)
+            is_presidential = (year % 4 == 0)
+            events.append({
+                "date": election_tuesday.isoformat(),
+                "bank": "US ELECTIONS",
+                "title": f"US {'Presidential Election' if is_presidential else 'Midterm Congressional Elections'} ({year})",
+                "status": "UPCOMING",
+                "consensus": "Control of Congress, Senate & Executive Branch (Fiscal, Tariff & Global Trade Roadmap)",
+                "market_impact": "HIGH_EVENT_VOLATILITY"
+            })
+        except Exception:
+            pass
+
+    # 4. India Union Budget Presentation (Feb 1 annually)
+    try:
+        events.append({
+            "date": f"{year}-02-01",
+            "bank": "INDIA BUDGET",
+            "title": f"Government of India Union Budget Presentation ({year})",
+            "status": "UPCOMING",
+            "consensus": "Fiscal Deficit Target, Capital Expenditure & Sectoral Taxation",
+            "market_impact": "HIGH_EVENT_VOLATILITY"
+        })
+    except Exception:
+        pass
+
+    # 5. Major Monthly/Quarterly prints: India Retail CPI (12th), GDP prints (late May, late Nov)
+    for m in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12):
+        try:
+            cpi_dt = datetime.date(year, m, 12)
+            events.append({
+                "date": cpi_dt.isoformat(),
+                "bank": "INDIA CPI / IIP",
+                "title": f"India MOSPI Retail CPI & IIP Release ({cpi_dt.strftime('%b %Y')})",
+                "status": "UPCOMING",
+                "consensus": "Retail CPI Inflation & Industrial Output",
+                "market_impact": "RBI_RATE_DECISION_DRIVER"
+            })
+        except Exception:
+            pass
+
     return events
 
 

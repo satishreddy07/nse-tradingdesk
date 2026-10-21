@@ -175,40 +175,35 @@
         </a>
       </div>
 
-      <!-- Desktop Primary Module Switcher (Swing | Intraday | Predictions | Options | ML Perf) -->
-      <div class="hidden lg:flex items-center bg-slate-900/90 p-1 rounded-xl border border-slate-800 gap-1 shrink-0">
-        <button onclick="switchModule('module-swing')" id="desk-mod-swing" class="mod-btn px-2 2xl:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all bg-cyan-500 text-black shadow-md shadow-cyan-500/20 whitespace-nowrap">
+      <!-- Desktop Primary Module Switcher (Streamlined Segmented Control) -->
+      <div class="hidden lg:flex items-center bg-slate-900/95 p-1 rounded-xl border border-slate-800 gap-0.5 shrink-0 shadow-inner">
+        <button onclick="switchModule('module-swing')" id="desk-mod-swing" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all bg-cyan-500 text-black shadow-md shadow-cyan-500/20 whitespace-nowrap">
           <i data-lucide="trending-up" class="w-3.5 h-3.5 stroke-[2.5]"></i>
-          <span class="hidden 2xl:inline">Swing Trading</span>
-          <span class="2xl:hidden">Swing</span>
+          <span>Swing</span>
         </button>
-        <button onclick="switchModule('module-intraday')" id="desk-mod-intraday" class="mod-btn px-2 2xl:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-intraday')" id="desk-mod-intraday" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
           <span>Intraday</span>
-          <span class="hidden 2xl:inline text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">LIVE</span>
+          <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">LIVE</span>
         </button>
-        <button onclick="switchModule('module-predictions')" id="desk-mod-predictions" class="mod-btn px-2 2xl:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-predictions')" id="desk-mod-predictions" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="brain-circuit" class="w-3.5 h-3.5 text-purple-400"></i>
           <span>Predictions</span>
-          <span class="hidden 2xl:inline text-[9px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">ML</span>
+          <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">ML</span>
         </button>
-        <button onclick="switchModule('module-options')" id="desk-mod-options" class="mod-btn px-2 2xl:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-options')" id="desk-mod-options" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="flame" class="w-3.5 h-3.5 text-emerald-400"></i>
-          <span class="hidden 2xl:inline">Options Desk</span>
-          <span class="2xl:hidden">Options</span>
-          <span class="hidden 2xl:inline text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">VIX</span>
+          <span>Options Desk</span>
+          <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">VTX</span>
         </button>
-        <button onclick="switchModule('module-ml-performance')" id="desk-mod-ml-performance" class="mod-btn px-2 2xl:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-ml-performance')" id="desk-mod-ml-performance" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="gauge" class="w-3.5 h-3.5 text-rose-400"></i>
           <span class="hidden 2xl:inline">ML Performance</span>
           <span class="2xl:hidden">ML Perf</span>
-          <span class="hidden 2xl:inline text-[9px] font-mono px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">AUDIT</span>
         </button>
-        <button onclick="switchModule('module-commodities')" id="desk-mod-commodities" class="mod-btn px-2 2xl:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-commodities')" id="desk-mod-commodities" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="droplet" class="w-3.5 h-3.5 text-amber-400"></i>
-          <span class="hidden 2xl:inline">Commodities</span>
-          <span class="2xl:hidden">MCX</span>
-          <span class="hidden 2xl:inline text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">MCX</span>
+          <span>MCX</span>
         </button>
       </div>
 
@@ -9485,6 +9480,34 @@
       }
     }
 
+    // Unified Nifty Spot / ATM Strike State Tracker (Guarantees zero flicker or jitter)
+    window._latestSpotAtmState = { spot: null, atmStrike: null, expiry: null, diffStr: '' };
+    window.updateNiftySpotAtmCard = function(spot, atmStrike, expiry, diffStr) {
+      const s = window._latestSpotAtmState;
+      if (spot && spot > 0) s.spot = spot;
+      if (atmStrike) s.atmStrike = atmStrike;
+      if (expiry && expiry !== '--') s.expiry = expiry;
+      if (diffStr) s.diffStr = diffStr;
+
+      const spotEl = document.getElementById('opt-kpi-spot');
+      if (spotEl && s.spot > 0) {
+        const formatted = '₹' + s.spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (spotEl.innerText !== formatted) {
+          spotEl.innerText = formatted;
+        }
+      }
+
+      const atmEl = document.getElementById('opt-kpi-atm');
+      if (atmEl && s.atmStrike) {
+        const exp = s.expiry ? ` (${s.expiry})` : '';
+        const diff = s.diffStr ? ` • ${s.diffStr}` : '';
+        const newText = `ATM Strike: ${s.atmStrike}${exp}${diff}`;
+        if (atmEl.innerText !== newText) {
+          atmEl.innerText = newText;
+        }
+      }
+    };
+
     async function pollLiveSpotTick() {
       if (document.hidden) return;
       try {
@@ -9499,28 +9522,9 @@
           const sign = chgPts >= 0 ? '+' : '';
           const diffStr = `${sign}${chgPts.toFixed(1)} (${sign}${chgPct.toFixed(2)}%)`;
 
-          // Update Options Desk Spot KPI with subtle tick flash
-          const spotEl = document.getElementById('opt-kpi-spot');
-          if (spotEl) {
-            spotEl.innerText = formatted;
-            if (lastSpotPrice !== null && Math.abs(spot - lastSpotPrice) >= 0.05) {
-              const flashColor = spot > lastSpotPrice ? 'text-emerald-400' : 'text-rose-400';
-              spotEl.classList.remove('text-white', 'text-emerald-400', 'text-rose-400');
-              spotEl.classList.add(flashColor);
-              setTimeout(() => {
-                spotEl.classList.remove('text-emerald-400', 'text-rose-400');
-                spotEl.classList.add('text-white');
-              }, 750);
-            }
-          }
+          // Update Options Desk Spot & ATM KPI via unified non-flickering controller
           lastSpotPrice = spot;
-
-          // Update ATM Strike KPI
-          const atmEl = document.getElementById('opt-kpi-atm');
-          if (atmEl && data.atm_strike) {
-            const expText = (niftyOptionsChainCache?.weekly?.expiry) || '--';
-            atmEl.innerText = `ATM Strike: ${data.atm_strike} (${expText}) • ${diffStr}`;
-          }
+          updateNiftySpotAtmCard(spot, data.atm_strike, (niftyOptionsChainCache?.weekly?.expiry), diffStr);
 
           // Update Options Desk Stream Indicator
           const isMarketOpen = Boolean(data.is_live && (data.market_status === 'OPEN' || data.session_phase === 'REGULAR_HOURS'));
@@ -12481,10 +12485,8 @@
       const strad = active.straddle || {};
       const vol = active.volatility_and_gex || {};
 
-      if (document.getElementById('opt-kpi-spot') && canonicalSpot > 0) {
-        document.getElementById('opt-kpi-spot').innerText = `₹${canonicalSpot.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-      }
-      if (document.getElementById('opt-kpi-atm')) document.getElementById('opt-kpi-atm').innerText = `ATM Strike: ${active.atm_strike || '--'} (${active.expiry || '--'})`;
+      // Update Spot & ATM KPI smoothly preserving live diff
+      updateNiftySpotAtmCard(canonicalSpot, active.atm_strike, active.expiry, null);
 
       if (document.getElementById('opt-kpi-overall-pcr')) document.getElementById('opt-kpi-overall-pcr').innerText = Number(pcr.overall_oi_pcr || 0).toFixed(3);
       if (document.getElementById('opt-kpi-vol-pcr')) document.getElementById('opt-kpi-vol-pcr').innerText = `Vol PCR: ${Number(pcr.overall_vol_pcr || 0).toFixed(2)}`;
@@ -24095,8 +24097,7 @@
           if (data.intraday && data.intraday.nifty_spot > 0) {
             const spot = Number(data.intraday.nifty_spot);
             const formatted = '₹' + spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            const spotEl = document.getElementById('opt-kpi-spot');
-            if (spotEl) spotEl.innerText = formatted;
+            updateNiftySpotAtmCard(spot, null, null, null);
             const intraBadge = document.getElementById('intraday-spot-badge');
             if (intraBadge) intraBadge.innerText = `NIFTY: ${formatted}`;
 
