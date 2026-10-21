@@ -9440,6 +9440,12 @@
           if (modTarget === 'module-options' && typeof loadOptionsChainDesk === 'function') loadOptionsChainDesk(false);
           else if (modTarget === 'module-intraday' && typeof loadIntradayExpiryDesk === 'function') loadIntradayExpiryDesk(false);
         }
+        const subtabParam = urlParams.get('subtab');
+        if (subtabParam && typeof switchOptionsSubTab === 'function') {
+          setTimeout(() => {
+            switchOptionsSubTab(subtabParam);
+          }, 200);
+        }
         const depthK = urlParams.get('depth_strike');
         if (depthK && typeof openOptionDepthModal === 'function') {
           setTimeout(() => {
