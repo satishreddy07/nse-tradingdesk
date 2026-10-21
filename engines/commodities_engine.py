@@ -297,7 +297,7 @@ class CommoditiesEngine:
 
         # Option Chain & Expiries Caches
         self._option_chain_cache: Dict[Tuple[str, str], Tuple[float, Dict[str, Any]]] = {}
-        self._option_chain_cache_ttl: float = 2.0
+        self._option_chain_cache_ttl: float = 8.0
         self._option_expiries_cache: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
         self._option_expiries_cache_ttl: float = 3600.0  # 1 hour
         self._deployed_strategies: List[Dict[str, Any]] = []
@@ -1039,7 +1039,7 @@ class CommoditiesEngine:
                 from engines.kotak_neo_engine import kotak_neo_engine
                 tok = str(contract.get("token", "")).strip()
                 if tok and kotak_neo_engine._is_authenticated and kotak_neo_engine._client:
-                    quotes_res = kotak_neo_engine._client.quotes([tok], quote_type="all")
+                    quotes_res = kotak_neo_engine._client.quotes([{"instrument_token": tok, "exchange_segment": "mcx_fo"}], quote_type="all")
                     if isinstance(quotes_res, list) and quotes_res:
                         q_data = quotes_res[0]
                         depth_pl = self._extract_depth_payload(q_data, depth)
@@ -1243,6 +1243,9 @@ class CommoditiesEngine:
             if not force_refresh and cache_key in self._option_chain_cache:
                 c_ts, c_data = self._option_chain_cache[cache_key]
                 if (now_ts - c_ts) < self._option_chain_cache_ttl:
+                    live_spot = self.get_live_price(underlying)
+                    if live_spot > 0:
+                        c_data["spot_price"] = round(live_spot, 2)
                     return c_data
 
         spot_price = self.get_live_price(underlying)
@@ -1287,6 +1290,13 @@ class CommoditiesEngine:
                         )
         except Exception as api_err:
             logger.warning(f"Kotak Neo MCX option chain API error for {underlying}: {api_err}")
+            with self._lock:
+                if cache_key in self._option_chain_cache:
+                    _, c_data = self._option_chain_cache[cache_key]
+                    live_spot = self.get_live_price(underlying)
+                    if live_spot > 0:
+                        c_data["spot_price"] = round(live_spot, 2)
+                    return c_data
 
         # Check if valid option chain returned
         has_valid_data = isinstance(chain_res, dict) and (chain_res.get("call") or chain_res.get("put"))
@@ -1320,6 +1330,13 @@ class CommoditiesEngine:
 
             all_k = sorted(set(calls_by_k.keys()) | set(puts_by_k.keys()))
         else:
+            with self._lock:
+                if cache_key in self._option_chain_cache:
+                    _, c_data = self._option_chain_cache[cache_key]
+                    live_spot = self.get_live_price(underlying)
+                    if live_spot > 0:
+                        c_data["spot_price"] = round(live_spot, 2)
+                    return c_data
             # Fallback to persisted KV or generate synthetic options grid
             persisted = state_engine.get_kv(f"latest_commodity_option_chain_{underlying}_{expiry_iso}")
             if not persisted:

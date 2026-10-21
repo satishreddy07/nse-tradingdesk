@@ -1982,13 +1982,25 @@ class KotakNeoEngine:
             "expiry": target_expiry_iso or expiry
         }
 
-    def fetch_live_option_chain(self, underlying: str = "NIFTY", count: int = 32) -> Dict[str, Any]:
+    def fetch_live_option_chain(self, underlying: str = "NIFTY", count: int = 32, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Fetches the 100% authentic, real-time live Option Chain from Kotak Neo API.
         Retrieves official NSE contract expiries via client.expiries(), then pulls
         strike-by-strike quotes, LTP, cur/prev OI, and volume for Weekly and Monthly expiries.
         Zero synthetic or simulated numbers. If data is unavailable, returns UNAVAILABLE.
         """
+        now_ts = time.time()
+        with self._lock:
+            cached = getattr(self, "_live_option_chain_cache", None)
+            if not force_refresh and cached:
+                c_ts, c_data = cached
+                if (now_ts - c_ts) < 8.0:
+                    res = dict(c_data)
+                    live_spot = self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY")
+                    if live_spot and float(live_spot) > 0:
+                        res["spot_price"] = round(float(live_spot), 2)
+                    return res
+
         if not self._is_authenticated or not self._client:
             try:
                 login_res = self.login()
@@ -2001,10 +2013,26 @@ class KotakNeoEngine:
             return {"status": "UNAVAILABLE", "message": "Kotak Neo client not available"}
 
         try:
-            # 1. Official NSE Expiries from Kotak Neo
-            exp_data = self._client.expiries(exchange="nse_fo", underlying=underlying)
-            exp_list = exp_data.get("expiries", []) if isinstance(exp_data, dict) else (exp_data if isinstance(exp_data, list) else [])
+            # 1. Official NSE Expiries from Kotak Neo (cached 1 hr)
+            cached_exp = getattr(self, "_cached_nse_expiries", None)
+            exp_list = []
+            if cached_exp and (now_ts - cached_exp[0]) < 3600.0:
+                exp_list = cached_exp[1]
+            else:
+                exp_data = self._client.expiries(exchange="nse_fo", underlying=underlying)
+                exp_list = exp_data.get("expiries", []) if isinstance(exp_data, dict) else (exp_data if isinstance(exp_data, list) else [])
+                if exp_list:
+                    self._cached_nse_expiries = (now_ts, exp_list)
             if not exp_list:
+                with self._lock:
+                    cached = getattr(self, "_live_option_chain_cache", None)
+                    if cached:
+                        _, c_data = cached
+                        res = dict(c_data)
+                        live_spot = self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY")
+                        if live_spot and float(live_spot) > 0:
+                            res["spot_price"] = round(float(live_spot), 2)
+                        return res
                 return {"status": "UNAVAILABLE", "message": f"No active option expiries found for {underlying}"}
 
             weekly_iso = exp_list[0]
@@ -2047,6 +2075,15 @@ class KotakNeoEngine:
                 m_chain = w_chain
 
             if not isinstance(w_chain, dict) or not w_chain.get("call") or not w_chain.get("put"):
+                with self._lock:
+                    cached = getattr(self, "_live_option_chain_cache", None)
+                    if cached:
+                        _, c_data = cached
+                        res = dict(c_data)
+                        live_spot = self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY")
+                        if live_spot and float(live_spot) > 0:
+                            res["spot_price"] = round(float(live_spot), 2)
+                        return res
                 return {"status": "UNAVAILABLE", "message": "Kotak Neo weekly option chain response empty"}
 
             spot_price = float(w_chain.get("spot", {}).get("ltp") or 0.0)
@@ -2175,8 +2212,9 @@ class KotakNeoEngine:
             w_rows = _parse_chain_rows(w_chain, weekly_iso)
             m_rows = _parse_chain_rows(m_chain, monthly_iso) if m_chain != w_chain else w_rows
 
-            return {
+            payload = {
                 "status": "OK",
+                "underlying": underlying,
                 "spot_price": spot_price,
                 "weekly_exp": weekly_label,
                 "weekly_iso": weekly_iso,
@@ -2187,8 +2225,20 @@ class KotakNeoEngine:
                 "monthly_rows": m_rows,
                 "fetched_at": format_ist()
             }
+            with self._lock:
+                self._live_option_chain_cache = (now_ts, dict(payload))
+            return payload
         except Exception as e:
             logger.error(f"Error in fetch_live_option_chain: {e}", exc_info=True)
+            with self._lock:
+                cached = getattr(self, "_live_option_chain_cache", None)
+                if cached:
+                    _, c_data = cached
+                    res = dict(c_data)
+                    live_spot = self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY")
+                    if live_spot and float(live_spot) > 0:
+                        res["spot_price"] = round(float(live_spot), 2)
+                    return res
             return {"status": "UNAVAILABLE", "message": f"Kotak Neo Option Chain error: {e}"}
 
     @staticmethod

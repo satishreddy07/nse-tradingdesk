@@ -1153,8 +1153,8 @@ class NiftyAnalyticsEngine:
 
         # Kotak Neo Stream: ZERO DELAYED SCRAPING (NSE / Yahoo)
         if kotak_spot and float(kotak_spot) > 0:
-            # Short 1.5s cache to avoid redundant millisecond re-computations
-            if not force_refresh and self._option_chain_mem_cache and (now_ts - self._option_chain_cache_ts) < 1.5:
+            ttl = 8.0 if market_open else 60.0
+            if not force_refresh and self._option_chain_mem_cache and (now_ts - self._option_chain_cache_ts) < ttl:
                 return self._option_chain_mem_cache
 
             try:
@@ -1166,6 +1166,8 @@ class NiftyAnalyticsEngine:
                         self._option_chain_cache = live_chain
                         self._option_chain_cache_ts = now_ts
                     return live_chain
+                elif self._option_chain_mem_cache:
+                    return self._option_chain_mem_cache
             except Exception as e:
                 logger.error(f"Error generating Kotak live option chain: {e}")
                 if self._option_chain_mem_cache:
