@@ -329,12 +329,15 @@ def build_prediction_context(
                 })
             vwap_res = intraday_analytics_engine.compute_vwap_and_orb()
             of_res = intraday_analytics_engine.compute_order_flow_market_depth(spot_price=spot)
+            live_spot_dict = nifty_analytics_engine.get_live_nifty_spot()
+            day_hi = safe_optional_float(live_spot_dict.get("day_high")) or safe_optional_float(vwap_res.get("orb_30m", {}).get("high"))
+            day_lo = safe_optional_float(live_spot_dict.get("day_low")) or safe_optional_float(vwap_res.get("orb_30m", {}).get("low"))
             intraday_session_payload = {
                 "completed_trading_date": cutoff_str,
-                "intraday_vwap": safe_optional_float(vwap_res.get("nifty_vwap")),
-                "day_high": safe_optional_float(vwap_res.get("day_high")),
-                "day_low": safe_optional_float(vwap_res.get("day_low")),
-                "session_bias": vwap_res.get("session_bias", "NEUTRAL"),
+                "intraday_vwap": safe_optional_float(vwap_res.get("vwap")),
+                "day_high": day_hi,
+                "day_low": day_lo,
+                "session_bias": vwap_res.get("vwap_regime", "NEUTRAL"),
                 "orderflow_obi_ratio": safe_optional_float(of_res.get("obi_ratio")),
                 "orderflow_flow_regime": of_res.get("flow_regime", "BALANCED_TWO_WAY_AUCTION"),
                 "total_slots_recorded": len(compact_slots),

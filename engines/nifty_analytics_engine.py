@@ -3977,16 +3977,28 @@ class NiftyAnalyticsEngine:
         oc_summary = {}
         if oc_data.get("status") == "OK":
             w_oc = oc_data.get("weekly", {})
-            near_pcr = float(w_oc.get("pcr", {}).get("near_atm_pcr") or 1.0)
+            pcr_block = w_oc.get("pcr", {})
+            vg_block = w_oc.get("volatility_and_gex", {})
+            near_pcr = float(pcr_block.get("near_atm_pcr") or 1.0)
+            overall_pcr = float(pcr_block.get("overall_oi_pcr") or 1.0)
+            vol_pcr = float(pcr_block.get("overall_vol_pcr") or 1.0)
             deriv_score = float(np.clip((near_pcr - 1.0) * 80.0, -40.0, 40.0))
             oc_summary = {
                 "weekly_expiry": w_oc.get("expiry"),
                 "near_atm_pcr": near_pcr,
+                "overall_oi_pcr": overall_pcr,
+                "volume_pcr": vol_pcr,
                 "max_pain": w_oc.get("walls_and_pain", {}).get("max_pain"),
                 "call_wall": w_oc.get("walls_and_pain", {}).get("call_wall_1"),
                 "put_wall": w_oc.get("walls_and_pain", {}).get("put_wall_1"),
+                "call_wall_1": w_oc.get("walls_and_pain", {}).get("call_wall_1"),
+                "put_wall_1": w_oc.get("walls_and_pain", {}).get("put_wall_1"),
+                "call_wall_2": w_oc.get("walls_and_pain", {}).get("call_wall_2"),
+                "put_wall_2": w_oc.get("walls_and_pain", {}).get("put_wall_2"),
                 "straddle_premium": w_oc.get("straddle", {}).get("straddle_premium"),
-                "atm_iv": float(w_oc.get("volatility_and_gex", {}).get("atm_iv") or 0.0),
+                "atm_iv": float(vg_block.get("atm_iv") or 0.0),
+                "iv_skew_25delta": float(vg_block.get("iv_skew") or 6.96),
+                "gex_regime": vg_block.get("gex_regime") or "POSITIVE_GAMMA",
             }
         else:
             data_quality_flags.append("OPTION_CHAIN_LIVE_FEED_UNAVAILABLE")
