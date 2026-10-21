@@ -4641,7 +4641,19 @@ class NiftyAnalyticsEngine:
             return {"status": "ERROR", "message": "EOD candle fetch failed"}
 
         last_row = n50_df.iloc[-1]
-        eod_close = float(last_row.get("close", 0.0))
+        eod_close = float(last_row.get("Close") if "Close" in last_row else (last_row.get("close") or 0.0))
+        if eod_close <= 0:
+            cached_n50, _ = state_engine.get_ohlcv_df("^NSEI")
+            if cached_n50 is not None and not cached_n50.empty:
+                c_row = cached_n50.iloc[-1]
+                eod_close = float(c_row.get("Close") if "Close" in c_row else (c_row.get("close") or 0.0))
+        if eod_close <= 0:
+            live_spot = self.get_live_nifty_spot()
+            if live_spot and float(live_spot.get("price") or 0) > 0:
+                eod_close = float(live_spot["price"])
+        if eod_close <= 0:
+            logger.warning("Could not determine valid Nifty EOD close price (>0). Evaluation skipped.")
+            return {"status": "ERROR", "message": "Invalid EOD close price <= 0"}
 
         pre_spot = float(locked_pred.get("premarket_spot_price") or locked_pred.get("spot_price") or eod_close)
         actual_change_pts = round(eod_close - pre_spot, 2)

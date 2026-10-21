@@ -10073,12 +10073,12 @@
                 : `<span class="quant-badge inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap">⏳ PENDING</span>`);
 
             const s0 = Number(r.spot_at_prediction || 0);
-            const act1 = r.actual_t1_close ? Number(r.actual_t1_close) : null;
+            const act1 = (r.actual_t1_close !== null && r.actual_t1_close !== undefined && Number(r.actual_t1_close) > 0) ? Number(r.actual_t1_close) : null;
             const exp1 = Number(r.t1_expected_close || 0);
-            const ret1 = r.t1_actual_return_pct !== null && r.t1_actual_return_pct !== undefined
+            const ret1 = (r.t1_actual_return_pct !== null && r.t1_actual_return_pct !== undefined && act1 !== null)
               ? Number(r.t1_actual_return_pct)
               : (act1 ? Number(((act1 - s0) / s0 * 100).toFixed(2)) : null);
-            const err1 = r.t1_error_pts !== null && r.t1_error_pts !== undefined
+            const err1 = (r.t1_error_pts !== null && r.t1_error_pts !== undefined && act1 !== null)
               ? Number(r.t1_error_pts)
               : (act1 ? Number((act1 - exp1).toFixed(1)) : null);
 
