@@ -11284,11 +11284,12 @@
         const streamPillEl = document.getElementById('opt-stream-pill');
         const streamDotEl = document.getElementById('opt-stream-dot');
         const formatted = `₹${Number(data.spot_price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        const isMarketOpen = Boolean(data.is_live || (data.market_status && data.market_status.is_open));
+        const isMarketOpen = Boolean(data.is_live || (data.market_status && data.market_status.is_open) || data.source === 'KOTAK_NEO_STREAM');
+        const isKotak = data.source === 'KOTAK_NEO_STREAM';
         if (isMarketOpen) {
           if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 max-w-full overflow-hidden shrink-0";
           if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0";
-          streamTextEl.innerText = `⚡ NSE DIRECT (PAPER): Spot ${formatted}`;
+          streamTextEl.innerText = isKotak ? `⚡ KOTAK NEO LIVE STREAM: Spot ${formatted}` : `⚡ NSE DIRECT (PAPER): Spot ${formatted}`;
         } else {
           if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 max-w-full overflow-hidden shrink-0";
           if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-slate-400 shrink-0";
@@ -17251,6 +17252,18 @@
         if (watchRes.ok) {
           p3WatchlistCache = await watchRes.json();
           renderP3Watchlist(p3WatchlistCache);
+
+          // Update dynamic filter counters
+          fetch('/api/portfolio/PORTFOLIO_3/watchlist?include_all=true').then(r => r.json()).then(allData => {
+            if (Array.isArray(allData)) {
+              const activeCount = allData.filter(d => d.status === 'WATCHING' || d.status === 'TRIGGERED').length;
+              const allCount = allData.length;
+              const elAct = document.getElementById('p3-filter-active-count');
+              const elAll = document.getElementById('p3-filter-all-count');
+              if (elAct) elAct.innerText = activeCount;
+              if (elAll) elAll.innerText = allCount;
+            }
+          }).catch(() => {});
         }
       } catch (err) {
         console.error("Error loading Portfolio 3 data:", err);
@@ -17335,7 +17348,7 @@
       if (!tbody) return;
 
       if (!watchlist || watchlist.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-500 font-sans">No active coil candidates on watchlist. Click "Scan EOD Watchlist" to scan for setups.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11" class="p-8 text-center text-slate-500 font-sans">No coil candidates found for selected filter. Click "All Today" or "Re-Scan EOD Watchlist" to inspect setups.</td></tr>`;
         return;
       }
 
@@ -17344,11 +17357,61 @@
         const vduClass = vduRatio <= 0.5 ? 'text-emerald-400 bg-emerald-950/60 border-emerald-500/30' : (vduRatio <= 0.8 ? 'text-amber-400 bg-amber-950/60 border-amber-500/30' : 'text-slate-400');
         const rangePct = parseFloat(w.t_minus_1_range_pct) || 0.0;
         const rangeClass = rangePct <= 2.0 ? 'text-emerald-400' : 'text-amber-400';
-        const riskPerShare = (w.t_minus_1_high - w.initial_sl).toFixed(2);
-        const riskPct = ((w.t_minus_1_high - w.initial_sl) / w.t_minus_1_high * 100).toFixed(2);
+        const triggerHigh = parseFloat(w.trigger_high || w.t_minus_1_high || 0.0);
+        const initialSl = parseFloat(w.initial_sl || 0.0);
+        const riskPerShare = (triggerHigh - initialSl).toFixed(2);
+        const riskPct = triggerHigh > 0 ? ((triggerHigh - initialSl) / triggerHigh * 100).toFixed(2) : '0.00';
+
+        // Live LTP & Spread
+        const ltpVal = parseFloat(w.current_price || w.ltp || w.t_minus_1_close || 0.0);
+        const distPct = triggerHigh > 0 ? ((ltpVal - triggerHigh) / triggerHigh * 100) : 0.0;
+        const isTriggerHit = (ltpVal >= triggerHigh) && (triggerHigh > 0);
+        const distSign = distPct >= 0 ? '+' : '';
+        const distBadgeClass = isTriggerHit 
+          ? 'text-emerald-400 bg-emerald-950/80 border-emerald-500/40 font-bold' 
+          : 'text-slate-400 bg-slate-900/80 border-slate-800';
+
+        // Status Badge with Detailed Reason for Invalidated setups
+        let statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">WATCHING</span>`;
+        const ema20Val = parseFloat(w.ema20 || 0.0);
+        const baseLowVal = parseFloat(w.base_low || w.t_minus_1_low || 0.0);
+
+        if (w.status === 'TRIGGERED' || isTriggerHit) {
+          statusBadge = `
+            <div class="space-y-0.5">
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1 w-max">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                TRIGGER HIT
+              </span>
+              <span class="text-[9px] font-mono text-emerald-400/80 block">Breakout Confirmed</span>
+            </div>
+          `;
+        } else if (w.status === 'INVALIDATED') {
+          let invalText = 'Breached 20 EMA';
+          if (ema20Val > 0 && ltpVal < ema20Val) {
+            invalText = `Below 20 EMA (₹${ltpVal.toFixed(1)} < ₹${ema20Val.toFixed(1)})`;
+          } else if (baseLowVal > 0 && ltpVal < baseLowVal) {
+            invalText = `Broke Base Low (₹${ltpVal.toFixed(1)} < ₹${baseLowVal.toFixed(1)})`;
+          }
+          statusBadge = `
+            <div class="space-y-0.5">
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold flex items-center gap-1 w-max">
+                🚫 INVALIDATED
+              </span>
+              <span class="text-[9px] font-mono text-rose-400 font-semibold block">${invalText}</span>
+            </div>
+          `;
+        } else if (w.status === 'EXPIRED') {
+          statusBadge = `
+            <div class="space-y-0.5">
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700">⌛ EXPIRED</span>
+              <span class="text-[9px] font-mono text-slate-500 block">2 Days Without Breakout</span>
+            </div>
+          `;
+        }
 
         return `
-          <tr class="hover:bg-slate-800/30 transition">
+          <tr class="hover:bg-slate-800/30 transition ${w.status === 'INVALIDATED' ? 'bg-rose-950/10 opacity-75' : ''}">
             <td class="p-3.5 font-bold text-white">
               <button onclick="openStockChartModal('${w.symbol}')" class="hover:text-amber-400 underline decoration-amber-500/40 underline-offset-4">${w.symbol}</button>
             </td>
@@ -17356,11 +17419,17 @@
               <div>₹${parseFloat(w.t_minus_1_close).toFixed(2)}</div>
               <div class="text-[10px] text-slate-500">${w.t_minus_1_date || w.scan_date || '-'}</div>
             </td>
-            <td class="p-3.5 font-mono text-emerald-300 font-bold text-xs">
-              ₹${parseFloat(w.t_minus_1_high).toFixed(2)}
+            <td class="p-3.5 font-mono text-amber-300 font-bold text-xs whitespace-nowrap">
+              ₹${triggerHigh.toFixed(2)}
+            </td>
+            <td class="p-3.5 font-mono text-xs whitespace-nowrap">
+              <div class="font-bold ${isTriggerHit ? 'text-emerald-400' : 'text-white'}">₹${ltpVal.toFixed(2)}</div>
+              <span class="text-[10px] px-1.5 py-0.2 rounded border ${distBadgeClass}">
+                ${distSign}${distPct.toFixed(2)}% vs trig
+              </span>
             </td>
             <td class="p-3.5 font-mono text-rose-300 text-xs">
-              ₹${parseFloat(w.initial_sl).toFixed(2)}
+              ₹${initialSl.toFixed(2)}
               <span class="text-[10px] text-slate-500 block">(-0.2% buf)</span>
             </td>
             <td class="p-3.5 font-mono text-xs text-slate-300">
@@ -17380,11 +17449,14 @@
               ${rangePct.toFixed(2)}%
             </td>
             <td class="p-3.5">
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                ${w.status || 'WATCHING'}
-              </span>
+              ${statusBadge}
             </td>
             <td class="p-3.5 text-right space-x-1 whitespace-nowrap">
+              ${(isTriggerHit || w.status === 'TRIGGERED') && w.status !== 'INVALIDATED' ? `
+                <button onclick="triggerP3BreakoutCheck()" class="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition">
+                  ⚡ Auto Execute
+                </button>
+              ` : ''}
               <button onclick="openStockChartModal('${w.symbol}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold transition">
                 📈 Chart
               </button>
@@ -22491,7 +22563,7 @@
         if (!res.ok) return;
         const data = await res.json();
         
-        // Update live spot if present
+        // 1. Update live spot if present
         if (data.intraday && data.intraday.nifty_spot > 0) {
           const spot = Number(data.intraday.nifty_spot);
           const formatted = '₹' + spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -22501,13 +22573,99 @@
           if (intraBadge) intraBadge.innerText = `NIFTY: ${formatted}`;
         }
 
-        // If modal open, live update tick counter
+        // 2. Update Active Holdings Stream Badge
+        const streamBadge = document.getElementById('p1-price-stream-badge');
+        if (streamBadge) {
+          if (data.is_streaming) {
+            const mode = data.stream_mode === 'WEBSOCKET' ? 'WS' : 'REST';
+            const tickCount = (data.ticks_total || 0).toLocaleString();
+            streamBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 font-bold inline-flex items-center gap-1.5 shadow-sm';
+            streamBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block"></span> ⚡ Kotak Neo Live Stream (${mode}: ${tickCount} ticks)`;
+          } else {
+            streamBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700';
+            streamBadge.innerText = '🔴 Stream Standby';
+          }
+        }
+
+        // 3. Real-Time Active Holdings Live Cell Updates
+        if (data.swing && Array.isArray(data.swing.positions)) {
+          data.swing.positions.forEach(pos => {
+            const sym = pos.symbol;
+            const ltpEl = document.getElementById(`pos-ltp-${sym}`);
+            const valEl = document.getElementById(`pos-val-${sym}`);
+            const pnlCell = document.getElementById(`pos-pnl-cell-${sym}`);
+            const pnlEl = document.getElementById(`pos-pnl-${sym}`);
+            const pnlPctEl = document.getElementById(`pos-pnl-pct-${sym}`);
+            const rEl = document.getElementById(`pos-r-${sym}`);
+            const timeEl = document.getElementById(`pos-time-${sym}`);
+            const dayChgEl = document.getElementById(`pos-daychg-${sym}`);
+
+            if (ltpEl && pos.ltp) {
+              const oldLtp = parseFloat(ltpEl.getAttribute('data-prev-ltp') || '0');
+              const newLtp = Number(pos.ltp);
+              ltpEl.innerText = `LTP: ₹${newLtp.toFixed(2)}`;
+              ltpEl.setAttribute('data-prev-ltp', newLtp);
+
+              if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.001) {
+                const flashCls = newLtp >= oldLtp ? 'text-emerald-400' : 'text-rose-400';
+                ltpEl.classList.add(flashCls);
+                setTimeout(() => ltpEl.classList.remove(flashCls), 1000);
+              }
+            }
+
+            if (valEl && pos.position_value) {
+              valEl.innerText = `₹${Math.round(pos.position_value).toLocaleString('en-IN')}`;
+            }
+
+            const pnl = pos.unrealized_pnl || 0;
+            const pnlPct = pos.pnl_pct || 0;
+            const isPos = pnl >= 0;
+            const sign = isPos ? '+' : '';
+
+            if (pnlCell) {
+              pnlCell.className = `p-3.5 ${isPos ? 'text-emerald-400' : 'text-rose-400'} font-bold font-mono`;
+            }
+            if (pnlEl) {
+              pnlEl.innerText = `${sign}₹${pnl.toFixed(2)}`;
+            }
+            if (pnlPctEl) {
+              pnlPctEl.innerText = `(${sign}${pnlPct.toFixed(2)}%)`;
+            }
+            if (rEl && pos.current_r !== undefined) {
+              const rVal = Number(pos.current_r || 0);
+              rEl.className = `p-3.5 font-bold ${rVal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+              rEl.innerText = `${rVal >= 0 ? '+' : ''}${rVal.toFixed(2)} R`;
+            }
+            if (timeEl && pos.updated_at) {
+              const tStr = String(pos.updated_at).slice(11, 19);
+              timeEl.innerText = `LTP @ ${tStr || 'Live'} IST`;
+            }
+            if (dayChgEl && pos.day_change_pct !== null && pos.day_change_pct !== undefined) {
+              const dc = Number(pos.day_change_pct);
+              const dcSign = dc >= 0 ? '+' : '';
+              const dcArr = dc >= 0 ? '▲' : '▼';
+              const dcCls = dc >= 0 ? 'text-emerald-400 bg-emerald-950/70 border-emerald-500/30' : 'text-rose-400 bg-rose-950/70 border-rose-500/30';
+              dayChgEl.className = `text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dcCls}`;
+              dayChgEl.innerText = `${dcArr} ${dcSign}${dc.toFixed(2)}%`;
+            }
+          });
+        }
+
+        // 4. Live Option Chain dynamic refresh when user is on Options Desk
+        if (typeof currentModule !== 'undefined' && currentModule === 'module-options') {
+          window._optChainPollCounter = (window._optChainPollCounter || 0) + 1;
+          if (window._optChainPollCounter % 4 === 0) {
+            loadOptionsChainDesk(false);
+          }
+        }
+
+        // 5. If modal open, live update tick counter
         const modal = document.getElementById('kotak-setup-modal');
         if (modal && modal.style.display !== 'none' && !modal.classList.contains('hidden')) {
           const mMode = document.getElementById('kotak-modal-mode');
           const mTicks = document.getElementById('kotak-modal-ticks');
           if (mMode) mMode.innerText = data.stream_mode || 'OFFLINE';
-          if (mTicks) mTicks.innerText = data.ticks_total || 0;
+          if (mTicks) mTicks.innerText = (data.ticks_total || 0).toLocaleString();
         }
       } catch (e) {
         // quiet ignore
