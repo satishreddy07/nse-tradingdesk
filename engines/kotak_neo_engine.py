@@ -689,6 +689,18 @@ class KotakNeoEngine:
                     except Exception as foe:
                         logger.warning(f"Error subscribing FO scrips: {foe}")
 
+                # Subscribe MCX Commodity scrips to WebSocket SFeed
+                try:
+                    from engines.commodities_engine import commodities_engine
+                    mcx_contracts = commodities_engine.get_active_contracts()
+                    mcx_tokens = [str(c.get("token")) for c in mcx_contracts.values() if c.get("token")]
+                    if mcx_tokens and hasattr(ws, "subscribe_scrips") and WsToken:
+                        mcx_subs = [WsToken("mcx_fo", str(t)) for t in mcx_tokens]
+                        await ws.subscribe_scrips(mcx_subs)
+                        logger.info(f"📡 [Kotak Neo SFeed] Subscribed {len(mcx_subs)} MCX Commodity scrips to WebSocket: {mcx_tokens}")
+                except Exception as me:
+                    logger.warning(f"Error subscribing MCX scrips: {me}")
+
                 # Background task for dynamic subscription requests
                 sub_task = asyncio.create_task(self._dynamic_subscription_worker(ws))
 
@@ -729,10 +741,14 @@ class KotakNeoEngine:
                     continue
                 eq_tokens = item.get("equities", [])
                 idx_tokens = item.get("indices", [])
+                mcx_tokens = item.get("mcx", [])
                 if eq_tokens and hasattr(ws, "subscribe_scrips") and WsToken:
                     await ws.subscribe_scrips([WsToken("nse_cm", t) for t in eq_tokens])
                 if idx_tokens and hasattr(ws, "subscribe_index") and WsToken:
                     await ws.subscribe_index([WsToken("nse_cm", t) for t in idx_tokens])
+                if mcx_tokens and hasattr(ws, "subscribe_scrips") and WsToken:
+                    await ws.subscribe_scrips([WsToken("mcx_fo", t) for t in mcx_tokens])
+                    logger.info(f"📡 [Kotak Neo SFeed] Dynamically subscribed {len(mcx_tokens)} MCX scrips: {mcx_tokens}")
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -804,6 +820,22 @@ class KotakNeoEngine:
         tok = str(getattr(message, "instrument_token", "") or getattr(message, "tk", "") or "").strip()
         trading_symbol = getattr(message, "trading_symbol", None) or getattr(message, "name", None) or getattr(message, "ts", None)
         ts_str = str(trading_symbol).strip().upper() if trading_symbol else ""
+
+        # Check if message is an MCX Commodity Contract
+        try:
+            from engines.commodities_engine import commodities_engine
+            if commodities_engine.is_commodity_token(tok) or (ts_str and commodities_engine.is_commodity_symbol(ts_str)):
+                parsed_comm = commodities_engine.process_ws_tick(tok, ts_str, message)
+                if parsed_comm:
+                    with self._lock:
+                        sym_key = parsed_comm.get("trading_symbol") or ts_str or tok
+                        self._live_ticks[sym_key] = parsed_comm
+                        self._live_ticks[parsed_comm["base_symbol"]] = parsed_comm
+                        self._ticks_received_count += 1
+                        self._last_tick_time_ist = now_str
+                    return
+        except Exception as c_err:
+            logger.debug(f"MCX WS tick handling notice: {c_err}")
 
         opt_info = self._option_token_to_contract.get(tok)
         if not opt_info and ts_str:
@@ -983,6 +1015,23 @@ class KotakNeoEngine:
 
                 tok = str(item.get("tk") or item.get("instrument_token") or "").strip()
                 raw_sym = str(item.get("ts") or item.get("trading_symbol") or "").strip().upper()
+
+                # Check if MCX Commodity contract
+                try:
+                    from engines.commodities_engine import commodities_engine
+                    if commodities_engine.is_commodity_token(tok) or (raw_sym and commodities_engine.is_commodity_symbol(raw_sym)):
+                        parsed_comm = commodities_engine.process_ws_tick(tok, raw_sym, item)
+                        if parsed_comm:
+                            with self._lock:
+                                sym_key = parsed_comm.get("trading_symbol") or raw_sym or tok
+                                self._live_ticks[sym_key] = parsed_comm
+                                self._live_ticks[parsed_comm["base_symbol"]] = parsed_comm
+                                self._ticks_received_count += 1
+                                self._last_tick_time_ist = now_str
+                            ticks_updated += 1
+                            continue
+                except Exception:
+                    pass
 
                 # Check if option contract
                 opt_info = self._option_token_to_contract.get(tok)
@@ -1178,6 +1227,31 @@ class KotakNeoEngine:
                 return {"status": "FAILED", "error": str(e)}
 
         return {"status": "QUEUED_OFFLINE", "count": len(tokens_to_sub), "symbols": new_symbols}
+
+    def subscribe_mcx_tokens(self, tokens: List[str]):
+        """Dispatches new MCX commodity tokens to active SFeed WebSocket stream."""
+        if not tokens:
+            return
+        clean_tokens = [str(t).strip() for t in tokens if str(t).strip()]
+        new_tokens = []
+        with self._lock:
+            for t in clean_tokens:
+                if t not in self._subscribed_tokens:
+                    self._subscribed_tokens.add(t)
+                    new_tokens.append(t)
+
+        if not new_tokens:
+            return
+
+        if self._loop and self._loop.is_running() and self._sub_queue:
+            try:
+                self._loop.call_soon_threadsafe(
+                    self._sub_queue.put_nowait,
+                    {"mcx": new_tokens}
+                )
+                logger.info(f"📡 [Kotak Neo SFeed] Dispatched {len(new_tokens)} new MCX tokens to WebSocket: {new_tokens}")
+            except Exception as e:
+                logger.warning(f"Error dispatching MCX tokens to WS queue: {e}")
 
     def _gather_active_market_symbols(self) -> List[str]:
         """Gathers all symbols currently relevant for active streaming."""
@@ -1881,8 +1955,8 @@ class KotakNeoEngine:
                         except Exception:
                             pass
 
-                    # Continuously stream active MCX commodities during MCX hours
-                    if is_mcx_active:
+                    # Continuously stream active MCX commodities during MCX hours (fallback when WS offline or quiet)
+                    if is_mcx_active and not self.is_streaming_active():
                         try:
                             commodities_engine.fetch_live_quotes(force_refresh=True)
                         except Exception:

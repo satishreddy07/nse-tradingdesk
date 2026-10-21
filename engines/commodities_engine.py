@@ -226,6 +226,8 @@ class CommoditiesEngine:
         self._quotes_cache: Dict[str, Dict[str, Any]] = {}
         self._last_quotes_fetch_ts: float = 0.0
         self._quotes_cache_ttl: float = 2.0  # 2.0s cache for fast streaming responses
+        self._fetch_lock = threading.Lock()
+        self._is_bg_fetching: bool = False
 
         # Option Chain & Expiries Caches
         self._option_chain_cache: Dict[Tuple[str, str], Tuple[float, Dict[str, Any]]] = {}
@@ -307,6 +309,11 @@ class CommoditiesEngine:
     # --------------------------------------------------------------------------
     # DYNAMIC CONTRACT DISCOVERY
     # --------------------------------------------------------------------------
+    def get_active_contracts(self) -> Dict[str, Dict[str, Any]]:
+        """Returns the dictionary of currently configured active MCX contracts."""
+        with self._lock:
+            return dict(self._active_contracts)
+
     def discover_active_contracts(self, force: bool = False) -> Dict[str, Dict[str, Any]]:
         """
         Queries Kotak Neo API (`search_scrip`) to discover active near-month FUTCOM contracts.
@@ -386,17 +393,186 @@ class CommoditiesEngine:
         return self._active_contracts
 
     # --------------------------------------------------------------------------
+    # COMMODITY TICK PROCESSING & WEBSOCKET STREAMING
+    # --------------------------------------------------------------------------
+    def is_commodity_token(self, token: str) -> bool:
+        """Checks if a given instrument token belongs to an active MCX commodity contract."""
+        tok = str(token or "").strip()
+        if not tok:
+            return False
+        with self._lock:
+            return any(str(c.get("token", "")).strip() == tok for c in self._active_contracts.values())
+
+    def is_commodity_symbol(self, symbol: str) -> bool:
+        """Checks if a given symbol string belongs to an active MCX commodity contract."""
+        sym = str(symbol or "").strip().upper()
+        if not sym:
+            return False
+        with self._lock:
+            for b, c in self._active_contracts.items():
+                if b == sym or str(c.get("trading_symbol", "")).strip().upper() == sym:
+                    return True
+        return False
+
+    def process_ws_tick(self, token: str, trading_symbol: str, message: Any) -> Optional[Dict[str, Any]]:
+        """
+        Processes an authentic real-time WebSocket tick from Kotak Neo for an MCX commodity.
+        Calculates floor pivots, day range %, intraday regime, and OI sentiment instantly.
+        Updates in-memory quotes cache with zero latency.
+        """
+        tok = str(token or "").strip()
+        ts_str = str(trading_symbol or "").strip().upper()
+
+        base_sym = None
+        with self._lock:
+            for b, c in self._active_contracts.items():
+                if str(c.get("token", "")).strip() == tok:
+                    base_sym = b
+                    break
+                if ts_str and (str(c.get("trading_symbol", "")).strip().upper() == ts_str or b == ts_str):
+                    base_sym = b
+                    break
+
+        if not base_sym:
+            return None
+
+        with self._lock:
+            contract = dict(self._active_contracts[base_sym])
+            prev_quote = dict(self._quotes_cache.get(base_sym, {}))
+
+        # Extract LTP
+        raw_ltp = getattr(message, "last_traded_price", None) or (message.get("ltp") if isinstance(message, dict) else None)
+        if raw_ltp is None:
+            for pk in ("lastPrice", "close", "c"):
+                v = getattr(message, pk, None) or (message.get(pk) if isinstance(message, dict) else None)
+                if v is not None:
+                    raw_ltp = v
+                    break
+
+        if raw_ltp is None:
+            return None
+
+        try:
+            ltp = float(raw_ltp)
+            if ltp <= 0:
+                return None
+
+            raw_high = getattr(message, "high_price", None) or (message.get("h") if isinstance(message, dict) else None)
+            raw_low = getattr(message, "low_price", None) or (message.get("lo") if isinstance(message, dict) else None)
+            raw_open = getattr(message, "open_price", None) or (message.get("op") if isinstance(message, dict) else None)
+            raw_close = getattr(message, "close_price", None) or (message.get("c") if isinstance(message, dict) else None)
+            raw_vol = getattr(message, "volume_traded_today", None) or (message.get("v") if isinstance(message, dict) else None)
+            raw_oi = getattr(message, "open_interest", None) or (message.get("oi") if isinstance(message, dict) else None)
+            raw_chg = getattr(message, "net_change_percent", None) or (message.get("nc") if isinstance(message, dict) else None)
+
+            high_px = float(raw_high) if raw_high is not None else float(prev_quote.get("high") or ltp)
+            low_px = float(raw_low) if raw_low is not None else float(prev_quote.get("low") or ltp)
+            open_px = float(raw_open) if raw_open is not None else float(prev_quote.get("open") or ltp)
+            close_px = float(raw_close) if raw_close is not None else float(prev_quote.get("close") or ltp)
+            vol = int(float(raw_vol)) if raw_vol is not None else int(float(prev_quote.get("volume") or 0))
+            oi = int(float(raw_oi)) if raw_oi is not None else int(float(prev_quote.get("open_interest") or 0))
+
+            chg = round(ltp - close_px, 2) if close_px > 0 else 0.0
+            chg_pct = round(float(raw_chg), 2) if raw_chg is not None else (round((chg / close_px) * 100.0, 2) if close_px > 0 else 0.0)
+
+            # Floor Pivot Points
+            pivot = round((high_px + low_px + close_px) / 3.0, 2)
+            r1 = round((2.0 * pivot) - low_px, 2)
+            s1 = round((2.0 * pivot) - high_px, 2)
+            r2 = round(pivot + (high_px - low_px), 2)
+            s2 = round(pivot - (high_px - low_px), 2)
+
+            # Range progress %
+            rng = high_px - low_px
+            range_pct = round(((ltp - low_px) / rng) * 100.0, 1) if rng > 0 else 50.0
+
+            # Trend regime
+            if rng > 0 and ltp >= high_px * 0.998:
+                trend_regime = "BULLISH_BREAKOUT"
+            elif rng > 0 and ltp <= low_px * 1.002:
+                trend_regime = "BEARISH_BREAKDOWN"
+            elif ltp > pivot and chg_pct > 0.15:
+                trend_regime = "BULLISH_MOMENTUM"
+            elif ltp < pivot and chg_pct < -0.15:
+                trend_regime = "BEARISH_PULLBACK"
+            else:
+                trend_regime = "CONSOLIDATION"
+
+            # OI interpretation
+            prev_oi = prev_quote.get("open_interest", oi)
+            oi_diff = oi - prev_oi
+            if chg_pct > 0.05 and oi_diff >= 0:
+                oi_interpretation, oi_sentiment = "LONG_BUILDUP", "BULLISH"
+            elif chg_pct < -0.05 and oi_diff >= 0:
+                oi_interpretation, oi_sentiment = "SHORT_BUILDUP", "BEARISH"
+            elif chg_pct < -0.05 and oi_diff < 0:
+                oi_interpretation, oi_sentiment = "LONG_UNWINDING", "BEARISH"
+            elif chg_pct > 0.05 and oi_diff < 0:
+                oi_interpretation, oi_sentiment = "SHORT_COVERING", "BULLISH"
+            else:
+                oi_interpretation = prev_quote.get("oi_interpretation", "NEUTRAL")
+                oi_sentiment = prev_quote.get("oi_sentiment", "NEUTRAL")
+
+            ts_now_ist = format_ist()
+            quote_dict = {
+                "base_symbol": base_sym,
+                "display_name": contract["display_name"],
+                "sector": contract["sector"],
+                "unit": contract["unit"],
+                "lot_size": contract["lot_size"],
+                "token": tok or contract.get("token", ""),
+                "trading_symbol": ts_str or contract.get("trading_symbol", ""),
+                "description": contract.get("description", ""),
+                "ltp": round(ltp, 2),
+                "change": round(chg, 2),
+                "change_pct": round(chg_pct, 2),
+                "open": round(open_px, 2),
+                "high": round(high_px, 2),
+                "low": round(low_px, 2),
+                "close": round(close_px, 2),
+                "volume": vol,
+                "open_interest": oi,
+                "pivot": pivot,
+                "r1": r1,
+                "s1": s1,
+                "r2": r2,
+                "s2": s2,
+                "range_pct": range_pct,
+                "trend_regime": trend_regime,
+                "oi_interpretation": oi_interpretation,
+                "oi_sentiment": oi_sentiment,
+                "updated_at": ts_now_ist,
+                "depth": prev_quote.get("depth", {"bids": [], "asks": [], "total_buy": 0, "total_sell": 0}),
+                "source": "KOTAK_NEO_MCX_LIVE_WS",
+            }
+
+            now_ts = time.time()
+            with self._lock:
+                self._quotes_cache[base_sym] = quote_dict
+                self._last_quotes_fetch_ts = now_ts
+
+            return quote_dict
+        except Exception as e:
+            logger.debug(f"MCX WS tick parse error for {base_sym}: {e}")
+            return None
+
+    # --------------------------------------------------------------------------
     # LIVE QUOTES & TECHNICAL ANALYSIS
     # --------------------------------------------------------------------------
     def fetch_live_quotes(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Fetches authentic live quotes from Kotak Neo API for all active MCX commodities.
         Computes floor pivots, range progress, volume, and OI buildup dynamics.
+        Protected with non-blocking mutex to prevent socket exhaustion and race conditions.
         """
         now_ts = time.time()
         with self._lock:
             if not force_refresh and self._quotes_cache and (now_ts - self._last_quotes_fetch_ts) < self._quotes_cache_ttl:
                 return self._build_response_payload()
+
+        # Non-blocking lock: if another thread is already fetching, return cache immediately
+        if not self._fetch_lock.acquire(blocking=False):
+            return self._build_response_payload()
 
         try:
             from engines.kotak_neo_engine import kotak_neo_engine
@@ -560,7 +736,11 @@ class CommoditiesEngine:
                 pass
 
         except Exception as e:
-            logger.error(f"Error fetching MCX commodities quotes: {e}", exc_info=True)
+            logger.warning(f"Error fetching MCX commodities quotes: {e}")
+            with self._lock:
+                self._last_quotes_fetch_ts = time.time()
+        finally:
+            self._fetch_lock.release()
 
         return self._build_response_payload()
 
@@ -626,21 +806,29 @@ class CommoditiesEngine:
     def get_streaming_payload(self) -> Dict[str, Any]:
         """
         Ultra-fast in-memory retrieval (< 1ms) for continuous live WebSocket/polling stream.
-        Triggers an async refresh if the cache is stale and MCX is currently open.
+        Safely triggers an asynchronous refresh if the cache is older than 4s.
         """
         now_ts = time.time()
         is_open, _ = self.is_mcx_open()
 
-        if is_open and (now_ts - self._last_quotes_fetch_ts) > 3.0:
-            # Trigger quote refresh in background to avoid blocking the stream loop
-            threading.Thread(
-                target=self.fetch_live_quotes,
-                args=(False,),
-                name="CommoditiesAsyncRefresh",
-                daemon=True
-            ).start()
+        if is_open and (now_ts - self._last_quotes_fetch_ts) > 4.0:
+            if not self._is_bg_fetching:
+                self._is_bg_fetching = True
+                threading.Thread(
+                    target=self._run_bg_quotes_fetch,
+                    name="CommoditiesBgRefresh",
+                    daemon=True
+                ).start()
 
         return self._build_response_payload()
+
+    def _run_bg_quotes_fetch(self):
+        try:
+            self.fetch_live_quotes(force_refresh=True)
+        except Exception as e:
+            logger.debug(f"Commodities background fetch notice: {e}")
+        finally:
+            self._is_bg_fetching = False
 
     # --------------------------------------------------------------------------
     # COMMODITY PRICE LOOKUP

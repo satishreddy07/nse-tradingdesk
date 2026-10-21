@@ -2797,7 +2797,18 @@ def get_continuous_live_stream_endpoint():
 
     # 5. Commodities Desk: Active MCX Contracts Live Quotes & Metrics
     from engines.commodities_engine import commodities_engine
+    if kotak_neo_engine._is_authenticated:
+        try:
+            mcx_contracts = commodities_engine.get_active_contracts()
+            mcx_tokens = [str(c.get("token")) for c in mcx_contracts.values() if c.get("token")]
+            kotak_neo_engine.subscribe_mcx_tokens(mcx_tokens)
+        except Exception:
+            pass
+
     commodities_data = commodities_engine.get_streaming_payload()
+    if isinstance(commodities_data, dict):
+        commodities_data["stream_mode"] = stream_status.get("stream_mode", "OFFLINE")
+        commodities_data["ticks_total"] = stream_status.get("ticks_received_total", len(all_ticks))
 
     is_market_open, _ = NSEMarketCalendar.can_execute_trades()
     return {
