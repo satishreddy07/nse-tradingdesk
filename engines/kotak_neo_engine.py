@@ -26,6 +26,9 @@ import time
 from typing import Dict, Any, List, Optional, Tuple, Set
 import requests
 import pandas as pd
+import re
+
+OPTION_SYMBOL_REGEX = re.compile(r'NIFTY.*?(?P<strike>\d{4,5})(?P<type>CE|PE)$', re.IGNORECASE)
 
 try:
     import pyotp
@@ -147,8 +150,12 @@ class KotakNeoEngine:
         # Live Real-time Tick Cache: { "RELIANCE": { ltp, high, low, volume, vwap, ... } }
         self._live_ticks: Dict[str, Dict[str, Any]] = {}
 
-        # Option Ticks Cache: { (strike, opt_type): ltp } e.g. (25000, "CE"): 145.50
-        self._option_ticks: Dict[Tuple[int, str], float] = {}
+        # Option Ticks Cache: { (strike, opt_type): { strike, type, symbol, token, ltp, high, low, volume, oi, ... } }
+        self._option_ticks: Dict[Tuple[int, str], Dict[str, Any]] = {}
+        self._option_token_to_contract: Dict[str, Tuple[int, str, str]] = {}  # token -> (strike, opt_type, trading_symbol)
+        self._contract_to_option_token: Dict[Tuple[int, str], str] = {}       # (strike, opt_type) -> token
+        self._symbol_to_option_contract: Dict[str, Tuple[int, str, str]] = {} # symbol -> (strike, opt_type, token)
+        self._load_cached_option_tokens()
 
         # Subscribed Items Tracker
         self._subscribed_symbols: Set[str] = set()
@@ -175,6 +182,30 @@ class KotakNeoEngine:
     # --------------------------------------------------------------------------
     # SCRIP MASTER MAPPING
     # --------------------------------------------------------------------------
+    def _load_cached_option_tokens(self):
+        """Loads pre-mapped Nifty option contracts into memory for real-time FO streaming."""
+        tokens_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "nifty_oct_tokens.json")
+        if os.path.exists(tokens_file):
+            try:
+                with open(tokens_file, "r") as f:
+                    data = json.load(f)
+                with self._lock:
+                    for k, item in data.items():
+                        parts = k.split("_")
+                        if len(parts) == 2:
+                            strike = int(parts[0])
+                            opt_type = parts[1].upper()
+                            tok = str(item.get("token", "")).strip()
+                            sym = str(item.get("symbol", "")).strip().upper()
+                            if tok:
+                                self._option_token_to_contract[tok] = (strike, opt_type, sym)
+                                self._contract_to_option_token[(strike, opt_type)] = tok
+                                if sym:
+                                    self._symbol_to_option_contract[sym] = (strike, opt_type, tok)
+                logger.info(f"Loaded {len(self._option_token_to_contract)} Nifty option contracts for streaming.")
+            except Exception as e:
+                logger.debug(f"Option tokens load notice: {e}")
+
     def _load_cached_scrip_master(self):
         """Loads cached scrip master from SQLite KV or local file if present."""
         try:
@@ -643,6 +674,16 @@ class KotakNeoEngine:
                 if initial_syms:
                     await self._async_subscribe_symbols(ws, initial_syms)
 
+                # Subscribe all mapped Nifty Option FO scrips to WebSocket SFeed
+                fo_tokens = list(self._option_token_to_contract.keys())
+                if fo_tokens and hasattr(ws, "subscribe_scrips") and WsToken:
+                    try:
+                        fo_subs = [WsToken("nse_fo", str(t)) for t in fo_tokens]
+                        await ws.subscribe_scrips(fo_subs)
+                        logger.info(f"📡 [Kotak Neo SFeed] Subscribed {len(fo_subs)} Nifty Option FO scrips to WebSocket.")
+                    except Exception as foe:
+                        logger.warning(f"Error subscribing FO scrips: {foe}")
+
                 # Background task for dynamic subscription requests
                 sub_task = asyncio.create_task(self._dynamic_subscription_worker(ws))
 
@@ -753,6 +794,68 @@ class KotakNeoEngine:
             return
 
         now_str = format_ist()
+
+        # Check if message is an Option Contract (by token or symbol)
+        tok = str(getattr(message, "instrument_token", "") or getattr(message, "tk", "") or "").strip()
+        trading_symbol = getattr(message, "trading_symbol", None) or getattr(message, "name", None) or getattr(message, "ts", None)
+        ts_str = str(trading_symbol).strip().upper() if trading_symbol else ""
+
+        opt_info = self._option_token_to_contract.get(tok)
+        if not opt_info and ts_str:
+            m = OPTION_SYMBOL_REGEX.search(ts_str)
+            if m:
+                opt_info = (int(m.group("strike")), m.group("type").upper(), ts_str)
+
+        if opt_info:
+            try:
+                strike, opt_type, full_sym = opt_info
+                raw_ltp = getattr(message, "last_traded_price", None) or (message.get("ltp") if isinstance(message, dict) else None)
+                if raw_ltp is not None:
+                    ltp_val = round(float(raw_ltp), 2)
+                    if ltp_val > 0:
+                        raw_high = getattr(message, "high_price", None) or (message.get("h") if isinstance(message, dict) else None)
+                        raw_low = getattr(message, "low_price", None) or (message.get("lo") if isinstance(message, dict) else None)
+                        raw_open = getattr(message, "open_price", None) or (message.get("op") if isinstance(message, dict) else None)
+                        raw_close = getattr(message, "close_price", None) or (message.get("c") if isinstance(message, dict) else None)
+                        raw_vol = getattr(message, "volume_traded_today", None) or (message.get("v") if isinstance(message, dict) else None)
+                        raw_oi = getattr(message, "open_interest", None) or (message.get("oi") if isinstance(message, dict) else None)
+                        raw_oic = getattr(message, "changeinOpenInterest", None) or (message.get("oic") if isinstance(message, dict) else None)
+                        raw_chg = getattr(message, "net_change_percent", None) or (message.get("nc") if isinstance(message, dict) else None)
+                        raw_time = getattr(message, "last_trade_time", "") or (message.get("ltt", "") if isinstance(message, dict) else "")
+
+                        high_val = round(float(raw_high), 2) if raw_high is not None else ltp_val
+                        low_val = round(float(raw_low), 2) if raw_low is not None else ltp_val
+                        vol_val = int(raw_vol) if raw_vol is not None else None
+                        oi_val = int(raw_oi) if raw_oi is not None else None
+                        oic_val = int(raw_oic) if raw_oic is not None else None
+                        chg_pct = round(float(raw_chg), 2) if raw_chg is not None else None
+
+                        with self._lock:
+                            self._option_ticks[(strike, opt_type)] = {
+                                "strike": strike,
+                                "type": opt_type,
+                                "symbol": full_sym,
+                                "token": tok,
+                                "ltp": ltp_val,
+                                "high": high_val,
+                                "low": low_val,
+                                "open": round(float(raw_open), 2) if raw_open is not None else None,
+                                "close": round(float(raw_close), 2) if raw_close is not None else None,
+                                "volume": vol_val,
+                                "oi": oi_val,
+                                "oi_change": oic_val,
+                                "change_pct": chg_pct,
+                                "last_traded_time": str(raw_time or ""),
+                                "updated_at": now_str,
+                                "source": "KOTAK_NEO_WS_FO"
+                            }
+                            self._live_ticks[full_sym] = self._option_ticks[(strike, opt_type)]
+                            self._ticks_received_count += 1
+                            self._last_tick_time_ist = now_str
+                        return
+            except Exception as oe:
+                logger.debug(f"Option tick parse notice ({tok}): {oe}")
+                return
 
         # 1. Pydantic Model: SFeedScrip (Equity Live Quotes)
         if SFeedScrip and isinstance(message, SFeedScrip):
@@ -875,6 +978,49 @@ class KotakNeoEngine:
 
                 tok = str(item.get("tk") or item.get("instrument_token") or "").strip()
                 raw_sym = str(item.get("ts") or item.get("trading_symbol") or "").strip().upper()
+
+                # Check if option contract
+                opt_info = self._option_token_to_contract.get(tok)
+                if not opt_info and raw_sym:
+                    m = OPTION_SYMBOL_REGEX.search(raw_sym)
+                    if m:
+                        opt_info = (int(m.group("strike")), m.group("type").upper(), raw_sym)
+
+                if opt_info:
+                    k, opt_type, full_sym = opt_info
+                    for pk in ("ltp", "last_traded_price", "close", "lastPrice"):
+                        if pk in item and item[pk] is not None:
+                            try:
+                                ltp_v = float(item[pk])
+                                if ltp_v > 0:
+                                    h_v = float(item.get("h") or item.get("highPrice") or ltp_v)
+                                    l_v = float(item.get("lo") or item.get("lowPrice") or ltp_v)
+                                    v_v = int(item.get("v") or item.get("volume") or 0)
+                                    oi_v = int(item.get("oi") or item.get("openInterest") or 0)
+                                    oic_v = int(item.get("oic") or item.get("changeinOpenInterest") or 0)
+                                    nc_v = float(item.get("nc") or item.get("net_change_percentage") or 0.0)
+                                    with self._lock:
+                                        self._option_ticks[(k, opt_type)] = {
+                                            "strike": k,
+                                            "type": opt_type,
+                                            "symbol": full_sym,
+                                            "token": tok,
+                                            "ltp": round(ltp_v, 2),
+                                            "high": round(h_v, 2),
+                                            "low": round(l_v, 2),
+                                            "volume": v_v,
+                                            "oi": oi_v,
+                                            "oi_change": oic_v,
+                                            "change_pct": round(nc_v, 2),
+                                            "updated_at": now_str,
+                                            "source": "KOTAK_NEO_REST_FO"
+                                        }
+                                        self._live_ticks[full_sym] = self._option_ticks[(k, opt_type)]
+                                    ticks_updated += 1
+                                    break
+                            except Exception:
+                                pass
+                    continue
 
                 sym = raw_sym.split("-")[0].strip() if raw_sym else None
                 if not sym and tok:
@@ -1094,12 +1240,18 @@ class KotakNeoEngine:
         with self._lock:
             return {k: dict(v) for k, v in self._live_ticks.items()}
 
+    def get_option_tick(self, strike: int, opt_type: str) -> Optional[Dict[str, Any]]:
+        """Returns full live option tick dictionary or None."""
+        with self._lock:
+            tick = self._option_ticks.get((int(strike), opt_type.upper()))
+            return dict(tick) if tick else None
+
     def get_option_price(self, strike: int, opt_type: str) -> Optional[float]:
         """Returns real-time LTP for Nifty option strike and type (CE/PE)."""
         with self._lock:
-            val = self._option_ticks.get((int(strike), opt_type.upper()))
-            if val is not None:
-                return val
+            tick = self._option_ticks.get((int(strike), opt_type.upper()))
+            if tick and tick.get("ltp"):
+                return float(tick["ltp"])
             for k, v in self._live_ticks.items():
                 if str(strike) in k and opt_type.upper() in k:
                     if v.get("ltp"):
@@ -1109,7 +1261,131 @@ class KotakNeoEngine:
     def set_option_price(self, strike: int, opt_type: str, ltp: float):
         """Sets real-time LTP for Nifty option strike and type in cache."""
         with self._lock:
-            self._option_ticks[(int(strike), opt_type.upper())] = round(float(ltp), 2)
+            key = (int(strike), opt_type.upper())
+            if key not in self._option_ticks:
+                self._option_ticks[key] = {}
+            self._option_ticks[key]["ltp"] = round(float(ltp), 2)
+            self._option_ticks[key]["strike"] = int(strike)
+            self._option_ticks[key]["type"] = opt_type.upper()
+            self._option_ticks[key]["updated_at"] = format_ist()
+
+    def get_all_option_ticks(self) -> Dict[str, Dict[str, Any]]:
+        """Returns snapshot of all option ticks."""
+        with self._lock:
+            return {f"{k[0]}_{k[1]}": dict(v) for k, v in self._option_ticks.items()}
+
+    def get_near_atm_option_ticks(self, spot_price: Optional[float] = None, strike_range: int = 12) -> Dict[str, Dict[str, Any]]:
+        """Returns near-ATM option ticks for continuous UI streaming."""
+        spot = spot_price or self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY") or 23000.0
+        atm = int(round(spot / 50.0) * 50)
+        min_k = atm - strike_range * 50
+        max_k = atm + strike_range * 50
+        with self._lock:
+            return {
+                f"{k[0]}_{k[1]}": dict(v)
+                for k, v in self._option_ticks.items()
+                if min_k <= k[0] <= max_k
+            }
+
+    def fetch_option_quotes(self, near_atm_only: bool = True) -> Dict[str, Any]:
+        """
+        Fetches live Kotak Neo REST quotes for near-ATM Nifty options contracts.
+        Updates self._option_ticks and self._live_ticks.
+        """
+        if not self._client or not self._is_authenticated:
+            return {}
+
+        spot = self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY") or 23000.0
+        atm = int(round(spot / 50.0) * 50)
+        
+        tokens_to_fetch = []
+        token_to_contract = {}
+        with self._lock:
+            for (k, opt_type), tok in self._contract_to_option_token.items():
+                if not near_atm_only or (atm - 600 <= k <= atm + 600):
+                    tokens_to_fetch.append({"instrument_token": str(tok), "exchange_segment": "nse_fo"})
+                    token_to_contract[str(tok)] = (k, opt_type)
+
+        if not tokens_to_fetch:
+            return {}
+
+        try:
+            res = self._client.quotes(instrument_tokens=tokens_to_fetch, quote_type="all")
+            items = []
+            if isinstance(res, list): items = res
+            elif isinstance(res, dict) and "data" in res and isinstance(res["data"], list): items = res["data"]
+            elif isinstance(res, dict) and "data" in res and isinstance(res["data"], dict): items = [res["data"]]
+            elif isinstance(res, dict) and any(k in res for k in ("ltp", "last_traded_price", "close")): items = [res]
+
+            now_str = format_ist()
+            updated_count = 0
+            for item in items:
+                if not isinstance(item, dict): continue
+                tok = str(item.get("tk") or item.get("instrument_token") or "")
+                raw_sym = str(item.get("ts") or item.get("trading_symbol") or "").strip().upper()
+                
+                c_info = token_to_contract.get(tok)
+                if not c_info and raw_sym:
+                    m = OPTION_SYMBOL_REGEX.search(raw_sym)
+                    if m:
+                        c_info = (int(m.group("strike")), m.group("type").upper())
+
+                if not c_info:
+                    continue
+
+                k, opt_type = c_info
+                
+                ltp_val = None
+                for pk in ("ltp", "last_traded_price", "close", "lastPrice"):
+                    if pk in item and item[pk] is not None:
+                        try:
+                            val = float(item[pk])
+                            if val > 0:
+                                ltp_val = round(val, 2)
+                                break
+                        except Exception: pass
+
+                if ltp_val is not None:
+                    high_val = float(item.get("h") or item.get("highPrice") or ltp_val)
+                    low_val = float(item.get("lo") or item.get("lowPrice") or ltp_val)
+                    open_val = float(item.get("op") or item.get("open") or ltp_val)
+                    vol_val = int(item.get("v") or item.get("volume") or 0)
+                    oi_val = int(item.get("oi") or item.get("openInterest") or 0)
+                    oic_val = int(item.get("oic") or item.get("changeinOpenInterest") or 0)
+                    chg_pct = float(item.get("nc") or item.get("net_change_percentage") or 0.0)
+                    chg_val = float(item.get("change") or item.get("net_change") or 0.0)
+
+                    with self._lock:
+                        full_sym = raw_sym or f"NIFTY_{k}_{opt_type}"
+                        tick_dict = {
+                            "strike": k,
+                            "type": opt_type,
+                            "symbol": full_sym,
+                            "token": tok,
+                            "ltp": ltp_val,
+                            "high": round(high_val, 2),
+                            "low": round(low_val, 2),
+                            "open": round(open_val, 2),
+                            "volume": vol_val,
+                            "oi": oi_val,
+                            "oi_change": oic_val,
+                            "change": round(chg_val, 2),
+                            "change_pct": round(chg_pct, 2),
+                            "updated_at": now_str,
+                            "source": "KOTAK_NEO_REST_FO"
+                        }
+                        self._option_ticks[(k, opt_type)] = tick_dict
+                        self._live_ticks[full_sym] = tick_dict
+                    updated_count += 1
+
+            if updated_count > 0:
+                with self._lock:
+                    self._ticks_received_count += updated_count
+                    self._last_tick_time_ist = now_str
+            return {f"{k[0]}_{k[1]}": dict(v) for k, v in self._option_ticks.items()}
+        except Exception as e:
+            logger.debug(f"Kotak Neo FO quotes fetch notice: {e}")
+            return {}
 
     def is_streaming_active(self) -> bool:
         """Returns True if engine is actively streaming live market data via WebSocket or REST."""
@@ -1338,6 +1614,11 @@ class KotakNeoEngine:
                         syms = self._gather_active_market_symbols()
                         if syms:
                             self.fetch_rest_quotes(syms)
+                        # Continuously poll near-ATM option contracts every loop
+                        try:
+                            self.fetch_option_quotes(near_atm_only=True)
+                        except Exception:
+                            pass
             except Exception as e:
                 logger.debug(f"Kotak Neo REST stream loop notice: {e}")
 

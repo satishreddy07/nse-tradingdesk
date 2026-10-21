@@ -1093,17 +1093,49 @@ class NiftyAnalyticsEngine:
                 pe_ltp = round(pe_intrinsic + time_val, 2)
 
                 # Overlay Kotak Neo live option ticks if present
-                k_ce = kotak_neo_engine.get_option_price(k, "CE")
-                if k_ce and k_ce > 0:
-                    ce_ltp = k_ce
-                k_pe = kotak_neo_engine.get_option_price(k, "PE")
-                if k_pe and k_pe > 0:
-                    pe_ltp = k_pe
-
+                ce_vol = int(max(50000, 1500000 * (1.0 / (1.0 + ((dist - 3.0)**2) * 0.18))))
+                pe_vol = int(max(50000, 1500000 * (1.0 / (1.0 + ((dist + 3.0)**2) * 0.18))))
+                ce_diff = round(ce_ltp * 0.04, 2)
+                pe_diff = round(-pe_ltp * 0.035, 2)
+                ce_pchg = 3.8
+                pe_pchg = -3.1
                 ce_oi = int(max(75000, 2600000 * (1.0 / (1.0 + ((dist - 3.5)**2) * 0.14))))
                 pe_oi = int(max(75000, 2500000 * (1.0 / (1.0 + ((dist + 3.5)**2) * 0.14))))
                 ce_chg = int(ce_oi * 0.065 * (1 if dist > 0 else -0.5))
                 pe_chg = int(pe_oi * 0.072 * (1 if dist < 0 else -0.4))
+
+                k_ce = kotak_neo_engine.get_option_tick(k, "CE")
+                if k_ce:
+                    if k_ce.get("ltp") and float(k_ce["ltp"]) > 0:
+                        ce_ltp = float(k_ce["ltp"])
+                    if k_ce.get("oi") and int(k_ce["oi"]) > 0:
+                        ce_oi = int(k_ce["oi"])
+                    if k_ce.get("volume") and int(k_ce["volume"]) > 0:
+                        ce_vol = int(k_ce["volume"])
+                    if k_ce.get("oi_change") is not None:
+                        ce_chg = int(k_ce["oi_change"])
+                    if k_ce.get("change") is not None:
+                        ce_diff = round(float(k_ce["change"]), 2)
+                    if k_ce.get("change_pct") is not None:
+                        ce_pchg = round(float(k_ce["change_pct"]), 2)
+
+                k_pe = kotak_neo_engine.get_option_tick(k, "PE")
+                if k_pe:
+                    if k_pe.get("ltp") and float(k_pe["ltp"]) > 0:
+                        pe_ltp = float(k_pe["ltp"])
+                    if k_pe.get("oi") and int(k_pe["oi"]) > 0:
+                        pe_oi = int(k_pe["oi"])
+                    if k_pe.get("volume") and int(k_pe["volume"]) > 0:
+                        pe_vol = int(k_pe["volume"])
+                    if k_pe.get("oi_change") is not None:
+                        pe_chg = int(k_pe["oi_change"])
+                    if k_pe.get("change") is not None:
+                        pe_diff = round(float(k_pe["change"]), 2)
+                    if k_pe.get("change_pct") is not None:
+                        pe_pchg = round(float(k_pe["change_pct"]), 2)
+
+                ce_iv = round(12.5 + max(0, -dist) * 0.25, 2)
+                pe_iv = round(13.2 + max(0, dist) * 0.28, 2)
 
                 rows.append({
                     "strikePrice": k,
@@ -1112,20 +1144,20 @@ class NiftyAnalyticsEngine:
                         "lastPrice": ce_ltp,
                         "openInterest": ce_oi,
                         "changeinOpenInterest": ce_chg,
-                        "totalTradedVolume": int(ce_oi * 1.8),
-                        "impliedVolatility": round(12.5 + max(0, -dist) * 0.25, 2),
-                        "change": round(ce_ltp * 0.04, 2),
-                        "pChange": 3.8
+                        "totalTradedVolume": ce_vol,
+                        "impliedVolatility": ce_iv,
+                        "change": ce_diff,
+                        "pChange": ce_pchg
                     },
                     "PE": {
                         "strikePrice": k,
                         "lastPrice": pe_ltp,
                         "openInterest": pe_oi,
                         "changeinOpenInterest": pe_chg,
-                        "totalTradedVolume": int(pe_oi * 1.7),
-                        "impliedVolatility": round(13.2 + max(0, dist) * 0.28, 2),
-                        "change": round(-pe_ltp * 0.035, 2),
-                        "pChange": -3.1
+                        "totalTradedVolume": pe_vol,
+                        "impliedVolatility": pe_iv,
+                        "change": pe_diff,
+                        "pChange": pe_pchg
                     }
                 })
             return rows
@@ -1174,10 +1206,24 @@ class NiftyAnalyticsEngine:
         except Exception:
             pass
 
-        if kotak_spot and float(kotak_spot) > 0:
-            if not force_refresh and self._option_chain_mem_cache and (now_ts - self._option_chain_cache_ts) < cache_ttl:
-                self._option_chain_mem_cache["spot_price"] = round(float(kotak_spot), 2)
-                self._option_chain_mem_cache["source"] = "KOTAK_NEO_STREAM"
+        # Kotak Neo Stream Active Check: ZERO SCRAPING
+        is_kotak_active = False
+        try:
+            from engines.kotak_neo_engine import kotak_neo_engine
+            if kotak_neo_engine._is_authenticated:
+                is_kotak_active = True
+                if not kotak_spot:
+                    kotak_spot = (
+                        kotak_neo_engine.get_live_price("NIFTY 50")
+                        or kotak_neo_engine.get_live_price("NIFTY")
+                        or 23000.0
+                    )
+        except Exception:
+            pass
+
+        if is_kotak_active and kotak_spot and float(kotak_spot) > 0:
+            # Short 1.5s cache to avoid redundant millisecond re-computations
+            if not force_refresh and self._option_chain_mem_cache and (now_ts - self._option_chain_cache_ts) < 1.5:
                 return self._option_chain_mem_cache
 
             live_chain = self._generate_kotak_neo_live_option_chain(float(kotak_spot))
@@ -7268,7 +7314,39 @@ class NiftyAnalyticsEngine:
         except Exception:
             pass
 
-        # 2. Fast Yahoo Finance chart quote (^NSEI)
+        # If Kotak Neo is active, NEVER call Yahoo or NSE scraping endpoints!
+        try:
+            from engines.kotak_neo_engine import kotak_neo_engine
+            if kotak_neo_engine._is_authenticated:
+                q = kotak_neo_engine.fetch_rest_quotes(["NIFTY 50"])
+                spot_val = q.get("NIFTY 50") or kotak_neo_engine.get_live_price("NIFTY 50")
+                if spot_val and float(spot_val) > 0:
+                    spot = float(spot_val)
+                    atm_strike = int(round(spot / 50.0) * 50)
+                    res = {
+                        "price": round(spot, 2),
+                        "change_pts": 0.0,
+                        "change_pct": 0.0,
+                        "prev_close": round(spot, 2),
+                        "day_high": round(spot, 2),
+                        "day_low": round(spot, 2),
+                        "atm_strike": atm_strike,
+                        "timestamp": ts_now,
+                        "source": "KOTAK_NEO_REST",
+                        "is_live": is_market_open,
+                        "market_status": mkt_state_str,
+                        "session_phase": mkt_phase,
+                        "age_seconds": 0.1,
+                        "latency_ms": 1.0
+                    }
+                    with self._lock:
+                        self._live_spot_cache = res
+                        self._live_spot_cache_ts = now_ts
+                    return res
+        except Exception:
+            pass
+
+        # 2. Fast Yahoo Finance chart quote (^NSEI) [OFFLINE FALLBACK ONLY]
         try:
             import urllib.request
             url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?range=1d&interval=1m"

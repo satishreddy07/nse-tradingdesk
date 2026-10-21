@@ -11475,13 +11475,13 @@
             <td class="p-2 whitespace-nowrap col-ce">${formatBuildupBadge(s.ce_buildup, true)}</td>
             <td class="p-2 col-ce">
               <div class="flex items-center justify-between gap-1">
-                <span class="font-bold text-white">${(s.ce_oi || 0).toLocaleString('en-IN')}</span>
+                <span id="opt-ce-oi-${s.strike}" class="font-bold text-white">${(s.ce_oi || 0).toLocaleString('en-IN')}</span>
                 ${isCw1 ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[9px] bg-rose-500 text-black font-bold whitespace-nowrap">CW1</span>' : ''}
               </div>
               <div class="w-full h-1 bg-slate-800 rounded overflow-hidden mt-0.5"><div class="bg-rose-500 h-full" style="width:${ceBarPct}%"></div></div>
             </td>
             <td class="p-2 font-bold whitespace-nowrap ${(s.ce_chg_oi || 0) >= 0 ? 'text-rose-400' : 'text-emerald-400'} col-ce">${(s.ce_chg_oi || 0) >= 0 ? '+' : ''}${(s.ce_chg_oi || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2 text-slate-400 whitespace-nowrap col-ce">${(s.ce_vol || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 text-slate-400 whitespace-nowrap col-ce"><span id="opt-ce-vol-${s.strike}">${(s.ce_vol || 0).toLocaleString('en-IN')}</span></td>
             <td class="p-2 text-slate-300 whitespace-nowrap col-ce">${Number(s.ce_iv || 0).toFixed(1)}%</td>
             <td class="p-2 whitespace-nowrap col-ce">
               <div class="flex items-center justify-between gap-1.5">
@@ -11489,7 +11489,7 @@
                   <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'BUY', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Buy ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition">+B</button>
                   <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'SELL', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Sell ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition">+S</button>
                 </div>
-                <span class="font-semibold text-white whitespace-nowrap">₹${Number(s.ce_ltp || 0).toFixed(2)} <span class="text-[10px] ${(s.ce_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.ce_pchg || 0) >= 0 ? '+' : ''}${Number(s.ce_pchg || 0).toFixed(0)}%)</span></span>
+                <span id="opt-ce-ltp-${s.strike}" data-prev-ltp="${s.ce_ltp || 0}" class="font-semibold text-white whitespace-nowrap transition-all duration-300">₹${Number(s.ce_ltp || 0).toFixed(2)} <span id="opt-ce-pchg-${s.strike}" class="text-[10px] ${(s.ce_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.ce_pchg || 0) >= 0 ? '+' : ''}${Number(s.ce_pchg || 0).toFixed(0)}%)</span></span>
               </div>
             </td>
             <td class="p-2 text-center bg-slate-900/95 border-x border-slate-800 font-extrabold whitespace-nowrap ${isAtm ? 'text-amber-300 text-sm' : 'text-white'} col-strike">
@@ -11501,7 +11501,7 @@
             </td>
             <td class="p-2 whitespace-nowrap col-pe">
               <div class="flex items-center justify-between gap-1.5">
-                <span class="font-semibold text-white whitespace-nowrap">₹${Number(s.pe_ltp || 0).toFixed(2)} <span class="text-[10px] ${(s.pe_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.pe_pchg || 0) >= 0 ? '+' : ''}${Number(s.pe_pchg || 0).toFixed(0)}%)</span></span>
+                <span id="opt-pe-ltp-${s.strike}" data-prev-ltp="${s.pe_ltp || 0}" class="font-semibold text-white whitespace-nowrap transition-all duration-300">₹${Number(s.pe_ltp || 0).toFixed(2)} <span id="opt-pe-pchg-${s.strike}" class="text-[10px] ${(s.pe_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.pe_pchg || 0) >= 0 ? '+' : ''}${Number(s.pe_pchg || 0).toFixed(0)}%)</span></span>
                 <div class="flex items-center gap-1 shrink-0">
                   <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'BUY', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Buy ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition">+B</button>
                   <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'SELL', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Sell ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition">+S</button>
@@ -11509,11 +11509,11 @@
               </div>
             </td>
             <td class="p-2 text-slate-300 whitespace-nowrap col-pe">${Number(s.pe_iv || 0).toFixed(1)}%</td>
-            <td class="p-2 text-slate-400 whitespace-nowrap col-pe">${(s.pe_vol || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 text-slate-400 whitespace-nowrap col-pe"><span id="opt-pe-vol-${s.strike}">${(s.pe_vol || 0).toLocaleString('en-IN')}</span></td>
             <td class="p-2 font-bold whitespace-nowrap ${(s.pe_chg_oi || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'} col-pe">${(s.pe_chg_oi || 0) >= 0 ? '+' : ''}${(s.pe_chg_oi || 0).toLocaleString('en-IN')}</td>
             <td class="p-2 col-pe">
               <div class="flex items-center justify-between gap-1">
-                <span class="font-bold text-white">${(s.pe_oi || 0).toLocaleString('en-IN')}</span>
+                <span id="opt-pe-oi-${s.strike}" class="font-bold text-white">${(s.pe_oi || 0).toLocaleString('en-IN')}</span>
                 ${isPw1 ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[9px] bg-emerald-500 text-black font-bold whitespace-nowrap">PW1</span>' : ''}
               </div>
               <div class="w-full h-1 bg-slate-800 rounded overflow-hidden mt-0.5"><div class="bg-emerald-500 h-full" style="width:${peBarPct}%"></div></div>
@@ -16860,7 +16860,7 @@
             <td class="p-3.5">
               <div class="text-slate-300">Entry: ₹${p.entry_price.toFixed(2)}</div>
               <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                <span id="pos-ltp-${p.symbol}" class="text-[11px] font-bold text-white">LTP: ₹${ltp.toFixed(2)}</span>
+                <span id="pos-ltp-${p.symbol}" data-prev-ltp="${ltp}" class="text-[11px] font-bold text-white transition-colors duration-300">LTP: ₹${ltp.toFixed(2)}</span>
                 <span id="pos-daychg-${p.symbol}" class="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dayChgClass}" title="Today's Session Change">
                   ${dayChgArrow} ${dayChgSign}${dayChg.toFixed(2)}%
                 </span>
@@ -22713,8 +22713,9 @@
         const res = await fetch('/api/stream/continuous');
         if (!res.ok) return;
         const data = await res.json();
+        const tickCount = (data.ticks_total || 0).toLocaleString();
         
-        // 1. Update live spot if present
+        // 1. Update live spot and Options Desk Live Stream Badge
         if (data.intraday && data.intraday.nifty_spot > 0) {
           const spot = Number(data.intraday.nifty_spot);
           const formatted = '₹' + spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -22722,6 +22723,19 @@
           if (spotEl) spotEl.innerText = formatted;
           const intraBadge = document.getElementById('intraday-spot-badge');
           if (intraBadge) intraBadge.innerText = `NIFTY: ${formatted}`;
+
+          const streamTextEl = document.getElementById('opt-stream-text');
+          const streamPillEl = document.getElementById('opt-stream-pill');
+          const streamDotEl = document.getElementById('opt-stream-dot');
+          if (streamTextEl) {
+            streamTextEl.innerText = `⚡ KOTAK NEO LIVE STREAM: Spot ${formatted} (${tickCount} ticks)`;
+          }
+          if (streamPillEl) {
+            streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 max-w-full overflow-hidden shrink-0";
+          }
+          if (streamDotEl) {
+            streamDotEl.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0";
+          }
         }
 
         // 2. Update Active Holdings Stream Badge
@@ -22729,7 +22743,6 @@
         if (streamBadge) {
           if (data.is_streaming) {
             const mode = data.stream_mode === 'WEBSOCKET' ? 'WS' : 'REST';
-            const tickCount = (data.ticks_total || 0).toLocaleString();
             streamBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 font-bold inline-flex items-center gap-1.5 shadow-sm';
             streamBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block"></span> ⚡ Kotak Neo Live Stream (${mode}: ${tickCount} ticks)`;
           } else {
@@ -22738,75 +22751,131 @@
           }
         }
 
-        // 3. Real-Time Active Holdings Live Cell Updates
-        if (data.swing && Array.isArray(data.swing.positions)) {
-          data.swing.positions.forEach(pos => {
-            const sym = pos.symbol;
-            const ltpEl = document.getElementById(`pos-ltp-${sym}`);
-            const valEl = document.getElementById(`pos-val-${sym}`);
-            const pnlCell = document.getElementById(`pos-pnl-cell-${sym}`);
-            const pnlEl = document.getElementById(`pos-pnl-${sym}`);
-            const pnlPctEl = document.getElementById(`pos-pnl-pct-${sym}`);
-            const rEl = document.getElementById(`pos-r-${sym}`);
-            const timeEl = document.getElementById(`pos-time-${sym}`);
-            const dayChgEl = document.getElementById(`pos-daychg-${sym}`);
+        // 3. Real-Time Active Holdings Live Cell Updates with Visual Flashes
+        if (data.swing) {
+          // Update top KPI Unrealized PnL summary
+          if (typeof data.swing.total_unrealized_pnl === 'number') {
+            const unEl = document.getElementById('p1-kpi-unrealized');
+            if (unEl) {
+              const unPnl = data.swing.total_unrealized_pnl;
+              const sign = unPnl >= 0 ? '+' : '';
+              unEl.innerText = `${sign}₹${unPnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+              unEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${unPnl > 0 ? 'text-emerald-400' : (unPnl < 0 ? 'text-rose-400' : 'text-slate-200')}`;
+            }
+          }
 
-            if (ltpEl && pos.ltp) {
+          if (Array.isArray(data.swing.positions)) {
+            data.swing.positions.forEach(pos => {
+              const sym = pos.symbol;
+              const ltpEl = document.getElementById(`pos-ltp-${sym}`);
+              const valEl = document.getElementById(`pos-val-${sym}`);
+              const pnlCell = document.getElementById(`pos-pnl-cell-${sym}`);
+              const pnlEl = document.getElementById(`pos-pnl-${sym}`);
+              const pnlPctEl = document.getElementById(`pos-pnl-pct-${sym}`);
+              const rEl = document.getElementById(`pos-r-${sym}`);
+              const timeEl = document.getElementById(`pos-time-${sym}`);
+              const dayChgEl = document.getElementById(`pos-daychg-${sym}`);
+
+              if (ltpEl && pos.ltp) {
+                const oldLtp = parseFloat(ltpEl.getAttribute('data-prev-ltp') || '0');
+                const newLtp = Number(pos.ltp);
+                ltpEl.innerText = `LTP: ₹${newLtp.toFixed(2)}`;
+                ltpEl.setAttribute('data-prev-ltp', newLtp);
+
+                if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.01) {
+                  const flashCls = newLtp >= oldLtp ? 'text-emerald-400 font-extrabold' : 'text-rose-400 font-extrabold';
+                  ltpEl.className = `text-[11px] ${flashCls}`;
+                  if (pnlCell) {
+                    const pnlBg = newLtp >= oldLtp ? 'bg-emerald-500/20' : 'bg-rose-500/20';
+                    pnlCell.classList.add(pnlBg);
+                    setTimeout(() => pnlCell.classList.remove(pnlBg), 900);
+                  }
+                  setTimeout(() => {
+                    ltpEl.className = 'text-[11px] font-bold text-white';
+                  }, 900);
+                }
+              }
+
+              if (valEl && pos.position_value) {
+                valEl.innerText = `₹${Math.round(pos.position_value).toLocaleString('en-IN')}`;
+              }
+
+              const pnl = pos.unrealized_pnl || 0;
+              const pnlPct = pos.pnl_pct || 0;
+              const isPos = pnl >= 0;
+              const sign = isPos ? '+' : '';
+
+              if (pnlCell) {
+                pnlCell.className = `p-3.5 ${isPos ? 'text-emerald-400' : 'text-rose-400'} font-bold font-mono transition-colors duration-300`;
+              }
+              if (pnlEl) {
+                pnlEl.innerText = `${sign}₹${pnl.toFixed(2)}`;
+              }
+              if (pnlPctEl) {
+                pnlPctEl.innerText = `(${sign}${pnlPct.toFixed(2)}%)`;
+              }
+              if (rEl && pos.current_r !== undefined) {
+                const rVal = Number(pos.current_r || 0);
+                rEl.className = `p-3.5 font-bold ${rVal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+                rEl.innerText = `${rVal >= 0 ? '+' : ''}${rVal.toFixed(2)} R`;
+              }
+              if (timeEl && pos.updated_at) {
+                const tStr = String(pos.updated_at).slice(11, 19);
+                timeEl.innerText = `LTP @ ${tStr || 'Live'} IST`;
+              }
+              if (dayChgEl && pos.day_change_pct !== null && pos.day_change_pct !== undefined) {
+                const dc = Number(pos.day_change_pct);
+                const dcSign = dc >= 0 ? '+' : '';
+                const dcArr = dc >= 0 ? '▲' : '▼';
+                const dcCls = dc >= 0 ? 'text-emerald-400 bg-emerald-950/70 border-emerald-500/30' : 'text-rose-400 bg-rose-950/70 border-rose-500/30';
+                dayChgEl.className = `text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dcCls}`;
+                dayChgEl.innerText = `${dcArr} ${dcSign}${dc.toFixed(2)}%`;
+              }
+            });
+          }
+        }
+
+        // 4. Real-time Near-ATM Option Strike Updates directly from Kotak Neo Ticks
+        if (data.options_ticks && typeof data.options_ticks === 'object') {
+          Object.entries(data.options_ticks).forEach(([key, opt]) => {
+            const strike = opt.strike;
+            const type = (opt.type || '').toLowerCase(); // 'ce' or 'pe'
+            if (!strike || !type) return;
+
+            const ltpEl = document.getElementById(`opt-${type}-ltp-${strike}`);
+            if (ltpEl && opt.ltp) {
               const oldLtp = parseFloat(ltpEl.getAttribute('data-prev-ltp') || '0');
-              const newLtp = Number(pos.ltp);
-              ltpEl.innerText = `LTP: ₹${newLtp.toFixed(2)}`;
+              const newLtp = Number(opt.ltp);
+              const pchg = opt.change_pct !== undefined ? opt.change_pct : 0;
+              const sign = pchg >= 0 ? '+' : '';
+              const pchgCls = pchg >= 0 ? 'text-emerald-400' : 'text-rose-400';
+              ltpEl.innerHTML = `₹${newLtp.toFixed(2)} <span id="opt-${type}-pchg-${strike}" class="text-[10px] ${pchgCls}">(${sign}${Number(pchg).toFixed(0)}%)</span>`;
               ltpEl.setAttribute('data-prev-ltp', newLtp);
 
-              if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.001) {
-                const flashCls = newLtp >= oldLtp ? 'text-emerald-400' : 'text-rose-400';
-                ltpEl.classList.add(flashCls);
-                setTimeout(() => ltpEl.classList.remove(flashCls), 1000);
+              if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.05) {
+                const flashCls = newLtp >= oldLtp ? 'bg-emerald-500/30 text-emerald-300' : 'bg-rose-500/30 text-rose-300';
+                ltpEl.classList.add(flashCls, 'rounded', 'px-1');
+                setTimeout(() => ltpEl.classList.remove(flashCls, 'rounded', 'px-1'), 800);
               }
             }
 
-            if (valEl && pos.position_value) {
-              valEl.innerText = `₹${Math.round(pos.position_value).toLocaleString('en-IN')}`;
+            const oiEl = document.getElementById(`opt-${type}-oi-${strike}`);
+            if (oiEl && opt.oi) {
+              oiEl.innerText = Number(opt.oi).toLocaleString('en-IN');
             }
 
-            const pnl = pos.unrealized_pnl || 0;
-            const pnlPct = pos.pnl_pct || 0;
-            const isPos = pnl >= 0;
-            const sign = isPos ? '+' : '';
-
-            if (pnlCell) {
-              pnlCell.className = `p-3.5 ${isPos ? 'text-emerald-400' : 'text-rose-400'} font-bold font-mono`;
-            }
-            if (pnlEl) {
-              pnlEl.innerText = `${sign}₹${pnl.toFixed(2)}`;
-            }
-            if (pnlPctEl) {
-              pnlPctEl.innerText = `(${sign}${pnlPct.toFixed(2)}%)`;
-            }
-            if (rEl && pos.current_r !== undefined) {
-              const rVal = Number(pos.current_r || 0);
-              rEl.className = `p-3.5 font-bold ${rVal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
-              rEl.innerText = `${rVal >= 0 ? '+' : ''}${rVal.toFixed(2)} R`;
-            }
-            if (timeEl && pos.updated_at) {
-              const tStr = String(pos.updated_at).slice(11, 19);
-              timeEl.innerText = `LTP @ ${tStr || 'Live'} IST`;
-            }
-            if (dayChgEl && pos.day_change_pct !== null && pos.day_change_pct !== undefined) {
-              const dc = Number(pos.day_change_pct);
-              const dcSign = dc >= 0 ? '+' : '';
-              const dcArr = dc >= 0 ? '▲' : '▼';
-              const dcCls = dc >= 0 ? 'text-emerald-400 bg-emerald-950/70 border-emerald-500/30' : 'text-rose-400 bg-rose-950/70 border-rose-500/30';
-              dayChgEl.className = `text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dcCls}`;
-              dayChgEl.innerText = `${dcArr} ${dcSign}${dc.toFixed(2)}%`;
+            const volEl = document.getElementById(`opt-${type}-vol-${strike}`);
+            if (volEl && opt.volume) {
+              volEl.innerText = Number(opt.volume).toLocaleString('en-IN');
             }
           });
         }
 
-        // 4. Live Option Chain dynamic refresh when user is on Options Desk
+        // 5. Live Option Chain dynamic refresh when user is on Options Desk
         if (typeof currentModule !== 'undefined' && currentModule === 'module-options') {
           window._optChainPollCounter = (window._optChainPollCounter || 0) + 1;
-          if (window._optChainPollCounter % 4 === 0) {
-            loadOptionsChainDesk(false);
+          if (window._optChainPollCounter % 2 === 0) {
+            loadOptionsChainDesk(true);
           }
         }
 

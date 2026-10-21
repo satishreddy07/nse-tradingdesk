@@ -85,6 +85,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Startup Telegram restore notice: {e}")
     start_scheduler()
+
+    # Auto-login Kotak Neo on boot from saved credentials
+    try:
+        import threading
+        from engines.kotak_neo_engine import kotak_neo_engine
+        from execution.state_engine import state_engine
+        from core import config
+        saved = state_engine.get_kv("KOTAK_NEO_CREDENTIALS") or {}
+        if (saved.get("consumer_key") or config.KOTAK_NEO_CONSUMER_KEY) and (saved.get("ucc") or config.KOTAK_NEO_UCC) and (saved.get("totp_secret") or config.KOTAK_NEO_TOTP_SECRET):
+            logger.info("🔐 Auto-authenticating Kotak Neo session on boot from saved credentials...")
+            threading.Thread(target=kotak_neo_engine.login, name="KotakNeoBootLogin", daemon=True).start()
+    except Exception as ke:
+        logger.warning(f"Startup Kotak Neo auto-login notice: {ke}")
+
     yield
     logger.info("Shutting down Quant Trading Desk services...")
     shutdown_scheduler()
@@ -2773,6 +2787,9 @@ def get_continuous_live_stream_endpoint():
     # 3. Options Desk: Portfolio Valuation
     opt_portfolio = nifty_analytics_engine.get_options_portfolio()
 
+    # 4. Near-ATM Option Ticks for Real-Time Strike Streaming
+    opt_ticks = kotak_neo_engine.get_near_atm_option_ticks(spot_price=nifty_spot, strike_range=12)
+
     return {
         "status": "SUCCESS",
         "source": "KOTAK_NEO_STREAM",
@@ -2794,5 +2811,6 @@ def get_continuous_live_stream_endpoint():
             "active_strategies_count": len(opt_portfolio.get("active_strategies", [])),
             "total_unrealized_pnl": opt_portfolio.get("summary", {}).get("total_unrealized_pnl", 0.0),
             "strategies": opt_portfolio.get("active_strategies", [])
-        }
+        },
+        "options_ticks": opt_ticks
     }

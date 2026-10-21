@@ -633,6 +633,29 @@ class Portfolio3StrategyEngine:
         if not symbols:
             return quotes
 
+        # Kotak Neo Direct Path: Zero Yahoo scraping when Kotak Neo is active
+        try:
+            from engines.kotak_neo_engine import kotak_neo_engine
+            if kotak_neo_engine._is_authenticated:
+                kotak_neo_engine.fetch_rest_quotes(symbols)
+                for sym in symbols:
+                    clean_sym = sym.replace(".NS", "").replace(".BO", "").strip().upper()
+                    tick = kotak_neo_engine.get_live_tick(clean_sym)
+                    if tick and tick.get("ltp"):
+                        quotes[clean_sym] = {
+                            "symbol": clean_sym,
+                            "ltp": float(tick["ltp"]),
+                            "high": float(tick.get("high") or tick["ltp"]),
+                            "low": float(tick.get("low") or tick["ltp"]),
+                            "volume": int(tick.get("volume") or 0),
+                            "change_pct": float(tick.get("change_pct") or 0.0),
+                            "timestamp": tick.get("updated_at")
+                        }
+                if len(quotes) == len(symbols):
+                    return quotes
+        except Exception:
+            pass
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         }

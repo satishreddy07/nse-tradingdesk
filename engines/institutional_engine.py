@@ -2335,39 +2335,51 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS", symbols: Optio
             "timestamp": format_ist()
         }
 
-    # Auto-subscribe active symbols to Kotak Neo live stream if engine is active
+    # Auto-subscribe active symbols and batch prime via Kotak Neo (zero Yahoo overhead)
     try:
         from engines.kotak_neo_engine import kotak_neo_engine
-        kotak_neo_engine.subscribe_symbols(ordered_syms)
+        if kotak_neo_engine._is_authenticated:
+            kotak_neo_engine.subscribe_symbols(ordered_syms)
+            unprimed = [s for s in ordered_syms if not kotak_neo_engine.get_live_price(s)]
+            if unprimed:
+                kotak_neo_engine.fetch_rest_quotes(unprimed)
     except Exception:
         pass
 
     def _fetch_live_tick(sym: str) -> Tuple[str, Optional[pd.DataFrame], Optional[float], Optional[float]]:
-        # 1. Fast Path: In-Memory Kotak Neo Real-Time WebSocket Tick Cache
+        # 1. Fast Path: In-Memory Kotak Neo Real-Time WebSocket / REST Tick Cache
         try:
             from engines.kotak_neo_engine import kotak_neo_engine
-            kotak_tick = kotak_neo_engine.get_live_tick(sym)
-            if kotak_tick and kotak_tick.get("ltp") and float(kotak_tick["ltp"]) > 0:
-                k_ltp = float(kotak_tick["ltp"])
-                k_high = float(kotak_tick.get("high") or k_ltp)
-                cached_df, _ = state_engine.get_ohlcv_df(sym)
-                if cached_df is not None and not cached_df.empty:
-                    merged = cached_df.copy()
-                    today_d = now_ist().date()
-                    last_dt = pd.to_datetime(merged.index[-1]).date()
-                    if last_dt == today_d:
-                        merged.loc[merged.index[-1], "Close"] = k_ltp
-                        merged.loc[merged.index[-1], "High"] = max(float(merged.loc[merged.index[-1], "High"]), k_high)
-                    else:
-                        new_row = pd.DataFrame([{
-                            "Open": k_ltp,
-                            "High": k_high,
-                            "Low": float(kotak_tick.get("low") or k_ltp),
-                            "Close": k_ltp,
-                            "Volume": int(kotak_tick.get("volume") or 0)
-                        }], index=pd.DatetimeIndex([pd.to_datetime(now_ist())]))
-                        merged = pd.concat([merged, new_row])
-                    return sym, merged, k_ltp, k_high
+            if kotak_neo_engine._is_authenticated:
+                kotak_tick = kotak_neo_engine.get_live_tick(sym)
+                if not kotak_tick or not kotak_tick.get("ltp"):
+                    q = kotak_neo_engine.fetch_rest_quotes([sym])
+                    kotak_tick = kotak_neo_engine.get_live_tick(sym)
+
+                if kotak_tick and kotak_tick.get("ltp") and float(kotak_tick["ltp"]) > 0:
+                    k_ltp = float(kotak_tick["ltp"])
+                    k_high = float(kotak_tick.get("high") or k_ltp)
+                    cached_df, _ = state_engine.get_ohlcv_df(sym)
+                    if cached_df is not None and not cached_df.empty:
+                        merged = cached_df.copy()
+                        today_d = now_ist().date()
+                        last_dt = pd.to_datetime(merged.index[-1]).date()
+                        if last_dt == today_d:
+                            merged.loc[merged.index[-1], "Close"] = k_ltp
+                            merged.loc[merged.index[-1], "High"] = max(float(merged.loc[merged.index[-1], "High"]), k_high)
+                        else:
+                            new_row = pd.DataFrame([{
+                                "Open": float(kotak_tick.get("open") or k_ltp),
+                                "High": k_high,
+                                "Low": float(kotak_tick.get("low") or k_ltp),
+                                "Close": k_ltp,
+                                "Volume": int(kotak_tick.get("volume") or 0)
+                            }], index=pd.DatetimeIndex([pd.to_datetime(now_ist())]))
+                            merged = pd.concat([merged, new_row])
+                        return sym, merged, k_ltp, k_high
+
+                # When Kotak Neo is active, NEVER call Yahoo endpoints during live market hours!
+                return sym, None, None, None
         except Exception:
             pass
 
