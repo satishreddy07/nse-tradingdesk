@@ -11350,7 +11350,6 @@
           streamTextEl.innerText = `MARKET CLOSED: Spot ${formatted}`;
         }
       }
-      }
 
       const canonicalSpot = (lastSpotPrice && lastSpotPrice > 0) ? lastSpotPrice : Number(active.spot_price || data.spot_price || 0);
       const isMarketOpen = Boolean(
