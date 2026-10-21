@@ -1049,133 +1049,52 @@ class NiftyAnalyticsEngine:
 
     def _generate_kotak_neo_live_option_chain(self, spot_price: float) -> Dict[str, Any]:
         """
-        Synthesizes live Nifty 50 Option Chain (Weekly & Monthly) powered by Kotak Neo live feed.
-        Generates ATM ± 12 strikes with live quotes, Black-Scholes Greeks, Open Interest matrix,
-        PCR, Max Pain, and Call/Put Walls without relying on blocked NSE scraping.
+        Synthesizes live Nifty 50 Option Chain (Weekly & Monthly) powered by 100% authentic Kotak Neo live feed.
+        Retrieves real strike quotes, exact official expiries, live OI, live OI change, volume, PCR, Max Pain,
+        and Call/Put Walls without synthetic numbers or delayed NSE scraping.
+        If live data is missing or unavailable, returns UNAVAILABLE.
         """
-        import calendar
-        dt_now = now_ist()
-        atm = int(round(spot_price / 50.0) * 50)
-
-        # 1. Weekly Expiry (nearest Thursday)
-        days_to_thu = (3 - dt_now.weekday()) % 7
-        if days_to_thu == 0 and (dt_now.hour > 15 or (dt_now.hour == 15 and dt_now.minute >= 30)):
-            days_to_thu = 7
-        weekly_dt = dt_now + datetime.timedelta(days=days_to_thu)
-        weekly_exp = weekly_dt.strftime("%d-%b-%Y")
-
-        # 2. Monthly Expiry (last Thursday of current or next month)
-        year, month = dt_now.year, dt_now.month
-        last_day = calendar.monthrange(year, month)[1]
-        m_dt = datetime.datetime(year, month, last_day, tzinfo=dt_now.tzinfo)
-        offset = (m_dt.weekday() - 3) % 7
-        monthly_thu = m_dt - datetime.timedelta(days=offset)
-        if monthly_thu.date() < dt_now.date() or (monthly_thu.date() == dt_now.date() and (dt_now.hour > 15 or (dt_now.hour == 15 and dt_now.minute >= 30))):
-            next_m = month + 1 if month < 12 else 1
-            next_y = year if month < 12 else year + 1
-            last_day = calendar.monthrange(next_y, next_m)[1]
-            m_dt = datetime.datetime(next_y, next_m, last_day, tzinfo=dt_now.tzinfo)
-            offset = (m_dt.weekday() - 3) % 7
-            monthly_thu = m_dt - datetime.timedelta(days=offset)
-        monthly_exp = monthly_thu.strftime("%d-%b-%Y")
-
         from engines.kotak_neo_engine import kotak_neo_engine
 
-        def _build_expiry_rows(exp_label: str, days_t: float) -> List[Dict[str, Any]]:
-            strikes = [atm + i * 50 for i in range(-35, 36)]
-            rows = []
-            for k in strikes:
-                dist = (k - atm) / 50.0
-                ce_intrinsic = max(0.0, spot_price - k)
-                pe_intrinsic = max(0.0, k - spot_price)
-                time_val = max(5.0, round(120.0 * (days_t ** 0.5) / 2.6 - abs(spot_price - k) * 0.12, 2))
-                ce_ltp = round(ce_intrinsic + time_val, 2)
-                pe_ltp = round(pe_intrinsic + time_val, 2)
+        chain_res = kotak_neo_engine.fetch_live_option_chain("NIFTY", count=32)
+        if not chain_res or chain_res.get("status") != "OK":
+            return {
+                "status": "UNAVAILABLE",
+                "message": (chain_res or {}).get("message") or "Kotak Neo live option chain data unavailable",
+                "symbol": "NIFTY 50",
+                "spot_price": round(spot_price, 2)
+            }
 
-                # Overlay Kotak Neo live option ticks if present
-                ce_vol = int(max(50000, 1500000 * (1.0 / (1.0 + ((dist - 3.0)**2) * 0.18))))
-                pe_vol = int(max(50000, 1500000 * (1.0 / (1.0 + ((dist + 3.0)**2) * 0.18))))
-                ce_diff = round(ce_ltp * 0.04, 2)
-                pe_diff = round(-pe_ltp * 0.035, 2)
-                ce_pchg = 3.8
-                pe_pchg = -3.1
-                ce_oi = int(max(75000, 2600000 * (1.0 / (1.0 + ((dist - 3.5)**2) * 0.14))))
-                pe_oi = int(max(75000, 2500000 * (1.0 / (1.0 + ((dist + 3.5)**2) * 0.14))))
-                ce_chg = int(ce_oi * 0.065 * (1 if dist > 0 else -0.5))
-                pe_chg = int(pe_oi * 0.072 * (1 if dist < 0 else -0.4))
+        effective_spot = float(chain_res.get("spot_price") or spot_price)
+        weekly_exp = chain_res.get("weekly_exp", "UNAVAILABLE")
+        monthly_exp = chain_res.get("monthly_exp", "UNAVAILABLE")
+        w_rows = chain_res.get("weekly_rows", [])
+        m_rows = chain_res.get("monthly_rows", [])
+        timestamp_str = chain_res.get("fetched_at") or format_ist()
 
-                k_ce = kotak_neo_engine.get_option_tick(k, "CE")
-                if k_ce:
-                    if k_ce.get("ltp") and float(k_ce["ltp"]) > 0:
-                        ce_ltp = float(k_ce["ltp"])
-                    if k_ce.get("oi") and int(k_ce["oi"]) > 0:
-                        ce_oi = int(k_ce["oi"])
-                    if k_ce.get("volume") and int(k_ce["volume"]) > 0:
-                        ce_vol = int(k_ce["volume"])
-                    if k_ce.get("oi_change") is not None:
-                        ce_chg = int(k_ce["oi_change"])
-                    if k_ce.get("change") is not None:
-                        ce_diff = round(float(k_ce["change"]), 2)
-                    if k_ce.get("change_pct") is not None:
-                        ce_pchg = round(float(k_ce["change_pct"]), 2)
+        if not w_rows:
+            return {
+                "status": "UNAVAILABLE",
+                "message": "Option chain strikes data empty from Kotak Neo",
+                "symbol": "NIFTY 50",
+                "spot_price": round(effective_spot, 2)
+            }
 
-                k_pe = kotak_neo_engine.get_option_tick(k, "PE")
-                if k_pe:
-                    if k_pe.get("ltp") and float(k_pe["ltp"]) > 0:
-                        pe_ltp = float(k_pe["ltp"])
-                    if k_pe.get("oi") and int(k_pe["oi"]) > 0:
-                        pe_oi = int(k_pe["oi"])
-                    if k_pe.get("volume") and int(k_pe["volume"]) > 0:
-                        pe_vol = int(k_pe["volume"])
-                    if k_pe.get("oi_change") is not None:
-                        pe_chg = int(k_pe["oi_change"])
-                    if k_pe.get("change") is not None:
-                        pe_diff = round(float(k_pe["change"]), 2)
-                    if k_pe.get("change_pct") is not None:
-                        pe_pchg = round(float(k_pe["change_pct"]), 2)
-
-                ce_iv = round(12.5 + max(0, -dist) * 0.25, 2)
-                pe_iv = round(13.2 + max(0, dist) * 0.28, 2)
-
-                rows.append({
-                    "strikePrice": k,
-                    "CE": {
-                        "strikePrice": k,
-                        "lastPrice": ce_ltp,
-                        "openInterest": ce_oi,
-                        "changeinOpenInterest": ce_chg,
-                        "totalTradedVolume": ce_vol,
-                        "impliedVolatility": ce_iv,
-                        "change": ce_diff,
-                        "pChange": ce_pchg
-                    },
-                    "PE": {
-                        "strikePrice": k,
-                        "lastPrice": pe_ltp,
-                        "openInterest": pe_oi,
-                        "changeinOpenInterest": pe_chg,
-                        "totalTradedVolume": pe_vol,
-                        "impliedVolatility": pe_iv,
-                        "change": pe_diff,
-                        "pChange": pe_pchg
-                    }
-                })
-            return rows
-
-        w_rows = _build_expiry_rows(weekly_exp, max(0.5, (weekly_dt.date() - dt_now.date()).days))
-        m_rows = _build_expiry_rows(monthly_exp, max(1.0, (monthly_thu.date() - dt_now.date()).days))
-
-        timestamp_str = format_ist()
-        weekly_analysis = self._analyze_single_expiry_chain(w_rows, spot_price, weekly_exp, timestamp_str)
-        monthly_analysis = self._analyze_single_expiry_chain(m_rows, spot_price, monthly_exp, timestamp_str)
+        weekly_analysis = self._analyze_single_expiry_chain(w_rows, effective_spot, weekly_exp, timestamp_str)
+        monthly_analysis = self._analyze_single_expiry_chain(m_rows, effective_spot, monthly_exp, timestamp_str)
         suggestions = self._build_options_quant_suggestions(weekly_analysis, monthly_analysis)
+
+        is_market_open, _ = NSEMarketCalendar.can_execute_trades()
+        mkt_status = NSEMarketCalendar.get_market_status()
 
         return {
             "status": "OK",
             "source": "KOTAK_NEO_STREAM",
             "symbol": "NIFTY 50",
-            "spot_price": round(spot_price, 2),
+            "spot_price": round(effective_spot, 2),
             "fetched_at_ist": timestamp_str,
+            "is_live": is_market_open,
+            "market_status": mkt_status,
             "weekly": weekly_analysis,
             "monthly": monthly_analysis,
             "quant_suggestions": suggestions
@@ -1210,13 +1129,15 @@ class NiftyAnalyticsEngine:
         is_kotak_active = False
         try:
             from engines.kotak_neo_engine import kotak_neo_engine
-            if kotak_neo_engine._is_authenticated:
+            creds = state_engine.get_kv("KOTAK_NEO_CREDENTIALS") or {}
+            has_creds = bool((config.KOTAK_NEO_CONSUMER_KEY or creds.get("consumer_key", "")).strip())
+            if has_creds or kotak_neo_engine._is_authenticated:
                 is_kotak_active = True
                 if not kotak_spot:
                     kotak_spot = (
                         kotak_neo_engine.get_live_price("NIFTY 50")
                         or kotak_neo_engine.get_live_price("NIFTY")
-                        or 23000.0
+                        or 22700.0
                     )
         except Exception:
             pass

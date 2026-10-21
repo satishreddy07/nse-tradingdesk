@@ -11292,7 +11292,33 @@
     }
 
     function renderOptionsChainUI(data) {
-      if (!data || data.status !== 'OK') return;
+      if (!data || data.status !== 'OK') {
+        const streamTextEl = document.getElementById('opt-stream-text');
+        const streamPillEl = document.getElementById('opt-stream-pill');
+        const streamDotEl = document.getElementById('opt-stream-dot');
+        if (streamTextEl) streamTextEl.innerText = (data && data.message) ? `⚠️ UNAVAILABLE: ${data.message}` : '⚠️ LIVE OPTION CHAIN UNAVAILABLE';
+        if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/40 max-w-full overflow-hidden shrink-0";
+        if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-amber-400 shrink-0";
+
+        if (document.getElementById('opt-kpi-spot')) document.getElementById('opt-kpi-spot').innerText = '--';
+        if (document.getElementById('opt-kpi-atm')) document.getElementById('opt-kpi-atm').innerText = 'ATM Strike: UNAVAILABLE';
+        if (document.getElementById('opt-kpi-overall-pcr')) document.getElementById('opt-kpi-overall-pcr').innerText = '--';
+        if (document.getElementById('opt-kpi-vol-pcr')) document.getElementById('opt-kpi-vol-pcr').innerText = 'Vol PCR: --';
+        if (document.getElementById('opt-kpi-nearatm-pcr')) document.getElementById('opt-kpi-nearatm-pcr').innerText = '--';
+        if (document.getElementById('opt-kpi-exactatm-pcr')) document.getElementById('opt-kpi-exactatm-pcr').innerText = 'Exact ATM (±1): --';
+        if (document.getElementById('opt-kpi-chgoi-pcr')) document.getElementById('opt-kpi-chgoi-pcr').innerText = '--';
+        if (document.getElementById('opt-kpi-maxpain')) document.getElementById('opt-kpi-maxpain').innerText = 'UNAVAILABLE';
+        if (document.getElementById('opt-kpi-callwall')) document.getElementById('opt-kpi-callwall').innerText = '--';
+        if (document.getElementById('opt-kpi-putwall')) document.getElementById('opt-kpi-putwall').innerText = '--';
+        if (document.getElementById('opt-kpi-straddle')) document.getElementById('opt-kpi-straddle').innerText = '--';
+        if (document.getElementById('opt-kpi-skew')) document.getElementById('opt-kpi-skew').innerText = '--';
+
+        const tbody = document.getElementById('opt-chain-tbody');
+        if (tbody) {
+          tbody.innerHTML = `<tr><td colspan="15" class="py-12 text-center text-amber-400 font-mono text-sm">⚠️ Live Option Chain Unavailable — ${data?.message || 'Kotak Neo stream offline or off-market'}</td></tr>`;
+        }
+        return;
+      }
 
       const optTbodyEl = document.getElementById('opt-chain-tbody');
       const optContainerEl = optTbodyEl ? (optTbodyEl.closest('.overflow-x-auto') || optTbodyEl.parentElement) : null;
@@ -11304,7 +11330,6 @@
 
       if (document.getElementById('opt-lbl-weekly-exp')) document.getElementById('opt-lbl-weekly-exp').innerText = w.expiry || '--';
       if (document.getElementById('opt-lbl-monthly-exp')) document.getElementById('opt-lbl-monthly-exp').innerText = m.expiry || '--';
-      if (document.getElementById('opt-nse-timestamp')) {
       if (document.getElementById('opt-nse-timestamp')) {
         document.getElementById('opt-nse-timestamp').innerText = `⚡ Kotak Neo Option Stream: ${data.fetched_at_ist || data.nse_timestamp || '--'}`;
       }

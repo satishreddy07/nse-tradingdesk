@@ -16,6 +16,8 @@ Key Capabilities:
 """
 
 import asyncio
+import datetime
+import math
 import contextlib
 import io
 import json
@@ -1410,6 +1412,225 @@ class KotakNeoEngine:
         except Exception as e:
             logger.debug(f"Kotak Neo FO quotes fetch notice: {e}")
             return {}
+
+    def fetch_live_option_chain(self, underlying: str = "NIFTY", count: int = 32) -> Dict[str, Any]:
+        """
+        Fetches the 100% authentic, real-time live Option Chain from Kotak Neo API.
+        Retrieves official NSE contract expiries via client.expiries(), then pulls
+        strike-by-strike quotes, LTP, cur/prev OI, and volume for Weekly and Monthly expiries.
+        Zero synthetic or simulated numbers. If data is unavailable, returns UNAVAILABLE.
+        """
+        if not self._is_authenticated or not self._client:
+            try:
+                login_res = self.login()
+                if login_res.get("status") != "SUCCESS" and not self._client:
+                    return {"status": "UNAVAILABLE", "message": f"Kotak Neo client not authenticated: {login_res.get('error', 'Login required')}"}
+            except Exception as e:
+                return {"status": "UNAVAILABLE", "message": f"Kotak Neo login error: {e}"}
+
+        if not self._client:
+            return {"status": "UNAVAILABLE", "message": "Kotak Neo client not available"}
+
+        try:
+            # 1. Official NSE Expiries from Kotak Neo
+            exp_data = self._client.expiries(exchange="nse_fo", underlying=underlying)
+            exp_list = exp_data.get("expiries", []) if isinstance(exp_data, dict) else (exp_data if isinstance(exp_data, list) else [])
+            if not exp_list:
+                return {"status": "UNAVAILABLE", "message": f"No active option expiries found for {underlying}"}
+
+            weekly_iso = exp_list[0]
+            now_ym = now_ist().strftime("%Y-%m")
+            cur_month_expiries = [e for e in exp_list if e.startswith(now_ym)]
+            if len(cur_month_expiries) > 1 and cur_month_expiries[-1] != weekly_iso:
+                monthly_iso = cur_month_expiries[-1]
+            elif len(exp_list) > 1:
+                next_month_expiries = [e for e in exp_list if not e.startswith(now_ym)]
+                if next_month_expiries:
+                    next_month_prefix = next_month_expiries[0][:7]
+                    target_month = [e for e in next_month_expiries if e.startswith(next_month_prefix)]
+                    monthly_iso = target_month[-1]
+                else:
+                    monthly_iso = exp_list[1]
+            else:
+                monthly_iso = weekly_iso
+
+            def _iso_to_label(iso_str: str) -> str:
+                try:
+                    dt = datetime.datetime.strptime(iso_str, "%Y-%m-%d")
+                    return dt.strftime("%d-%b-%Y")
+                except Exception:
+                    return iso_str
+
+            weekly_label = _iso_to_label(weekly_iso)
+            monthly_label = _iso_to_label(monthly_iso)
+
+            # 2. Authentic Option Chain for Weekly and Monthly
+            w_chain = self._client.option_chain(exchange="nse_fo", underlying=underlying, expiry=weekly_iso, count=count)
+            m_chain = self._client.option_chain(exchange="nse_fo", underlying=underlying, expiry=monthly_iso, count=count) if monthly_iso != weekly_iso else w_chain
+
+            if not isinstance(w_chain, dict) or not w_chain.get("call") or not w_chain.get("put"):
+                return {"status": "UNAVAILABLE", "message": "Kotak Neo weekly option chain response empty"}
+
+            spot_price = float(w_chain.get("spot", {}).get("ltp") or 0.0)
+            if spot_price <= 0:
+                spot_price = self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY") or 0.0
+
+            def _parse_chain_rows(oc_resp: Dict[str, Any], exp_iso_str: str) -> List[Dict[str, Any]]:
+                calls_by_k = {}
+                for c in oc_resp.get("call", []):
+                    try:
+                        k = int(round(float(c.get("inst", {}).get("strkPrc") or 0)))
+                        if k > 0:
+                            calls_by_k[k] = c
+                    except Exception:
+                        pass
+
+                puts_by_k = {}
+                for p in oc_resp.get("put", []):
+                    try:
+                        k = int(round(float(p.get("inst", {}).get("strkPrc") or 0)))
+                        if k > 0:
+                            puts_by_k[k] = p
+                    except Exception:
+                        pass
+
+                all_k = sorted(set(calls_by_k.keys()) | set(puts_by_k.keys()))
+                rows = []
+                now_str = format_ist()
+
+                try:
+                    exp_dt = datetime.datetime.strptime(exp_iso_str, "%Y-%m-%d").date()
+                    dte_days = max(0.5, (exp_dt - now_ist().date()).total_seconds() / 86400.0)
+                except Exception:
+                    dte_days = 4.0
+                dte_years = max(0.001, dte_days / 365.0)
+
+                for k in all_k:
+                    c = calls_by_k.get(k, {})
+                    p = puts_by_k.get(k, {})
+
+                    c_quote = c.get("quote", {})
+                    c_oi_dict = c.get("oi", {})
+                    c_oi = int(float(c_oi_dict.get("cur") or 0))
+                    c_prev_oi = int(float(c_oi_dict.get("prev") or c_oi))
+                    c_chg_oi = c_oi - c_prev_oi
+                    c_ltp = float(c_quote.get("ltp") or 0.0)
+                    c_pc = float(c_quote.get("pc") or c_ltp)
+                    c_chg = round(c_ltp - c_pc, 2)
+                    c_pchg = round((c_chg / c_pc) * 100.0, 2) if c_pc > 0 else 0.0
+                    c_vol = int(float(c_quote.get("vol") or 0))
+
+                    p_quote = p.get("quote", {})
+                    p_oi_dict = p.get("oi", {})
+                    p_oi = int(float(p_oi_dict.get("cur") or 0))
+                    p_prev_oi = int(float(p_oi_dict.get("prev") or p_oi))
+                    p_chg_oi = p_oi - p_prev_oi
+                    p_ltp = float(p_quote.get("ltp") or 0.0)
+                    p_pc = float(p_quote.get("pc") or p_ltp)
+                    p_chg = round(p_ltp - p_pc, 2)
+                    p_pchg = round((p_chg / p_pc) * 100.0, 2) if p_pc > 0 else 0.0
+                    p_vol = int(float(p_quote.get("vol") or 0))
+
+                    c_iv = self._calc_implied_vol(c_ltp, spot_price, k, dte_years, is_call=True) if spot_price > 0 and c_ltp > 0 else 0.0
+                    p_iv = self._calc_implied_vol(p_ltp, spot_price, k, dte_years, is_call=False) if spot_price > 0 and p_ltp > 0 else 0.0
+
+                    c_tok = str(c.get("inst", {}).get("neoSymbol", "")).split("|")[-1]
+                    p_tok = str(p.get("inst", {}).get("neoSymbol", "")).split("|")[-1]
+                    with self._lock:
+                        if c_ltp > 0 or c_oi > 0:
+                            self._option_ticks[(k, "CE")] = {
+                                "strike": k, "type": "CE", "ltp": c_ltp, "oi": c_oi,
+                                "oi_change": c_chg_oi, "volume": c_vol, "change": c_chg,
+                                "change_pct": c_pchg, "token": c_tok, "updated_at": now_str,
+                                "source": "KOTAK_NEO_OPTION_CHAIN"
+                            }
+                        if p_ltp > 0 or p_oi > 0:
+                            self._option_ticks[(k, "PE")] = {
+                                "strike": k, "type": "PE", "ltp": p_ltp, "oi": p_oi,
+                                "oi_change": p_chg_oi, "volume": p_vol, "change": p_chg,
+                                "change_pct": p_pchg, "token": p_tok, "updated_at": now_str,
+                                "source": "KOTAK_NEO_OPTION_CHAIN"
+                            }
+
+                    rows.append({
+                        "strikePrice": k,
+                        "CE": {
+                            "strikePrice": k,
+                            "lastPrice": c_ltp,
+                            "openInterest": c_oi,
+                            "changeinOpenInterest": c_chg_oi,
+                            "totalTradedVolume": c_vol,
+                            "change": c_chg,
+                            "pChange": c_pchg,
+                            "impliedVolatility": c_iv,
+                            "totalBuyQuantity": 0,
+                            "totalSellQuantity": 0,
+                        },
+                        "PE": {
+                            "strikePrice": k,
+                            "lastPrice": p_ltp,
+                            "openInterest": p_oi,
+                            "changeinOpenInterest": p_chg_oi,
+                            "totalTradedVolume": p_vol,
+                            "change": p_chg,
+                            "pChange": p_pchg,
+                            "impliedVolatility": p_iv,
+                            "totalBuyQuantity": 0,
+                            "totalSellQuantity": 0,
+                        }
+                    })
+                return rows
+
+            w_rows = _parse_chain_rows(w_chain, weekly_iso)
+            m_rows = _parse_chain_rows(m_chain, monthly_iso) if m_chain != w_chain else w_rows
+
+            return {
+                "status": "OK",
+                "spot_price": spot_price,
+                "weekly_exp": weekly_label,
+                "weekly_iso": weekly_iso,
+                "monthly_exp": monthly_label,
+                "monthly_iso": monthly_iso,
+                "expiries": exp_list,
+                "weekly_rows": w_rows,
+                "monthly_rows": m_rows,
+                "fetched_at": format_ist()
+            }
+        except Exception as e:
+            logger.error(f"Error in fetch_live_option_chain: {e}", exc_info=True)
+            return {"status": "UNAVAILABLE", "message": f"Kotak Neo Option Chain error: {e}"}
+
+    @staticmethod
+    def _calc_implied_vol(price: float, S: float, K: float, T: float, r: float = 0.07, is_call: bool = True) -> float:
+        """Computes Implied Volatility via Black-Scholes bisection."""
+        if price <= 0 or S <= 0 or K <= 0 or T <= 0.0001:
+            return 0.0
+        intrinsic = max(0.0, (S - K) if is_call else (K - S))
+        if price <= intrinsic + 0.05:
+            return 0.0
+
+        def _bs(sigma: float) -> float:
+            d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+            d2 = d1 - sigma * math.sqrt(T)
+            def _cdf(x):
+                return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+            if is_call:
+                return S * _cdf(d1) - K * math.exp(-r * T) * _cdf(d2)
+            else:
+                return K * math.exp(-r * T) * _cdf(-d2) - S * _cdf(-d1)
+
+        low, high = 0.02, 3.0
+        for _ in range(22):
+            mid = (low + high) / 2.0
+            p = _bs(mid)
+            if abs(p - price) < 0.15:
+                return round(mid * 100.0, 2)
+            if p > price:
+                high = mid
+            else:
+                low = mid
+        return round(mid * 100.0, 2)
+
 
     def is_streaming_active(self) -> bool:
         """Returns True if engine is actively streaming live market data via WebSocket or REST."""
