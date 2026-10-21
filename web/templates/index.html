@@ -9312,7 +9312,7 @@
 
     let lastSpotPrice = null;
 
-    function updateOptionsDeskStreamIndicator(spotPrice, isLive, source) {
+    function updateOptionsDeskStreamIndicator(spotPrice, isLive, source, tickCount) {
       const streamTextEl = document.getElementById('opt-stream-text');
       const streamPillEl = document.getElementById('opt-stream-pill');
       const streamDotEl = document.getElementById('opt-stream-dot');
@@ -9323,12 +9323,14 @@
       
       const isMarketOpen = (isLive !== undefined && isLive !== null) 
         ? Boolean(isLive) 
-        : (typeof window.isServerMarketOpen === 'boolean' ? window.isServerMarketOpen : true);
+        : (typeof window.isServerMarketOpen === 'boolean' ? window.isServerMarketOpen : false);
+
+      const ticksLabel = tickCount ? ` (${tickCount} ticks)` : '';
 
       if (isMarketOpen) {
         if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 max-w-full overflow-hidden shrink-0";
         if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0";
-        streamTextEl.innerText = `⚡ KOTAK NEO LIVE STREAM: Spot ${formatted}`;
+        streamTextEl.innerText = `⚡ KOTAK NEO LIVE STREAM: Spot ${formatted}${ticksLabel}`;
       } else {
         if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 max-w-full overflow-hidden shrink-0";
         if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-slate-400 shrink-0";
@@ -12269,30 +12271,11 @@
       if (document.getElementById('opt-nse-timestamp')) {
         document.getElementById('opt-nse-timestamp').innerText = `⚡ Kotak Neo Option Stream: ${data.fetched_at_ist || data.nse_timestamp || '--'}`;
       }
-      if (document.getElementById('opt-stream-text') && data.spot_price) {
-        const streamTextEl = document.getElementById('opt-stream-text');
-        const streamPillEl = document.getElementById('opt-stream-pill');
-        const streamDotEl = document.getElementById('opt-stream-dot');
-        const formatted = `₹${Number(data.spot_price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        const isMarketOpen = Boolean(data.is_live || (data.market_status && data.market_status.is_open) || data.source === 'KOTAK_NEO_STREAM');
-        const isKotak = data.source === 'KOTAK_NEO_STREAM';
-        if (isMarketOpen) {
-          if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 max-w-full overflow-hidden shrink-0";
-          if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0";
-          streamTextEl.innerText = isKotak ? `⚡ KOTAK NEO LIVE STREAM: Spot ${formatted}` : `⚡ NSE DIRECT (PAPER): Spot ${formatted}`;
-        } else {
-          if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 max-w-full overflow-hidden shrink-0";
-          if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-slate-400 shrink-0";
-          streamTextEl.innerText = `MARKET CLOSED: Spot ${formatted}`;
-        }
-      }
 
       const canonicalSpot = (lastSpotPrice && lastSpotPrice > 0) ? lastSpotPrice : Number(active.spot_price || data.spot_price || 0);
-      const isMarketOpen = Boolean(
-        data.is_live || 
-        (data.market_status && data.market_status.is_open) || 
-        (typeof window.isServerMarketOpen === 'boolean' ? window.isServerMarketOpen : true)
-      );
+      const isMarketOpen = (data.is_live !== undefined) 
+        ? Boolean(data.is_live) 
+        : (typeof window.isServerMarketOpen === 'boolean' ? window.isServerMarketOpen : false);
       updateOptionsDeskStreamIndicator(canonicalSpot, isMarketOpen, data.source);
 
       const pcr = active.pcr || {};
@@ -23733,6 +23716,9 @@
         
         // 1. Update live spot and Options Desk Live Stream Badge
         try {
+          if (typeof data.is_market_open === 'boolean') {
+            window.isServerMarketOpen = data.is_market_open;
+          }
           if (data.intraday && data.intraday.nifty_spot > 0) {
             const spot = Number(data.intraday.nifty_spot);
             const formatted = '₹' + spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -23741,18 +23727,7 @@
             const intraBadge = document.getElementById('intraday-spot-badge');
             if (intraBadge) intraBadge.innerText = `NIFTY: ${formatted}`;
 
-            const streamTextEl = document.getElementById('opt-stream-text');
-            const streamPillEl = document.getElementById('opt-stream-pill');
-            const streamDotEl = document.getElementById('opt-stream-dot');
-            if (streamTextEl) {
-              streamTextEl.innerText = `⚡ KOTAK NEO LIVE STREAM: Spot ${formatted} (${tickCount} ticks)`;
-            }
-            if (streamPillEl) {
-              streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 max-w-full overflow-hidden shrink-0";
-            }
-            if (streamDotEl) {
-              streamDotEl.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0";
-            }
+            updateOptionsDeskStreamIndicator(spot, data.is_market_open, 'KOTAK_NEO_STREAM', tickCount);
           }
         } catch (e) { console.debug("Kotak spot update notice:", e); }
 
