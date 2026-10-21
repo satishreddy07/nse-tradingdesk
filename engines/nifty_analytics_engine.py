@@ -878,7 +878,7 @@ class NiftyAnalyticsEngine:
             gex_regime = "NEUTRAL_GAMMA_TRANSITION"
 
         # 8. Display Table (±12 strikes around ATM)
-        display_strikes = strikes_data[max(0, atm_idx - 32): min(len(strikes_data), atm_idx + 33)]
+        display_strikes = strikes_data[max(0, atm_idx - 12): min(len(strikes_data), atm_idx + 13)]
 
         # 9. Sentiment Verdict & Institutional Summary
         if near_atm_pcr >= 1.25 and chg_oi_pcr >= 1.20:
@@ -4754,7 +4754,19 @@ class NiftyAnalyticsEngine:
             return {"status": "ERROR", "message": "EOD candle fetch failed"}
 
         last_row = n50_df.iloc[-1]
-        eod_close = float(last_row.get("close", 0.0))
+        eod_close = float(last_row.get("Close") if "Close" in last_row else (last_row.get("close") or 0.0))
+        if eod_close <= 0:
+            cached_n50, _ = state_engine.get_ohlcv_df("^NSEI")
+            if cached_n50 is not None and not cached_n50.empty:
+                c_row = cached_n50.iloc[-1]
+                eod_close = float(c_row.get("Close") if "Close" in c_row else (c_row.get("close") or 0.0))
+        if eod_close <= 0:
+            live_spot = self.get_live_nifty_spot()
+            if live_spot and float(live_spot.get("price") or 0) > 0:
+                eod_close = float(live_spot["price"])
+        if eod_close <= 0:
+            logger.warning("Could not determine valid Nifty EOD close price (>0). Evaluation skipped.")
+            return {"status": "ERROR", "message": "Invalid EOD close price <= 0"}
 
         pre_spot = float(locked_pred.get("premarket_spot_price") or locked_pred.get("spot_price") or eod_close)
         actual_change_pts = round(eod_close - pre_spot, 2)
@@ -4897,7 +4909,7 @@ class NiftyAnalyticsEngine:
         brent_closes = _get_aligned_series("BZ=F")
 
         # Initial base weights
-        base_w = {"technical": 0.25, "breadth": 0.20, "sectoral": 0.20, "global": 0.15, "macro": 0.12, "news_deriv": 0.08}
+        base_w = {"technical": 0.22, "breadth": 0.18, "sectoral": 0.18, "global": 0.14, "macro": 0.10, "news_deriv": 0.08, "institutional": 0.10}
         w_t1 = dict(base_w)
         w_t5 = dict(base_w)
         eta = 0.045  # Online learning rate
@@ -5109,8 +5121,9 @@ class NiftyAnalyticsEngine:
                         # Online Multiplicative Weight Update for T+1
                         sign_market = 1.0 if ret_pct_1 > 0 else (-1.0 if ret_pct_1 < 0 else 0.0)
                         for k, p_val in pillar_snap.items():
-                            p_sign = 1.0 if p_val > 0 else (-1.0 if p_val < 0 else 0.0)
-                            w_t1[k] = w_t1[k] * math.exp(eta * p_sign * sign_market)
+                            if k in w_t1:
+                                p_sign = 1.0 if p_val > 0 else (-1.0 if p_val < 0 else 0.0)
+                                w_t1[k] = w_t1[k] * math.exp(eta * p_sign * sign_market)
                         # Normalize weights
                         tot_w1 = sum(w_t1.values())
                         w_t1 = {k: round(v / max(1e-5, tot_w1), 3) for k, v in w_t1.items()}
@@ -5164,8 +5177,9 @@ class NiftyAnalyticsEngine:
 
                         sign_market_5 = 1.0 if ret_pct_5 > 0 else -1.0
                         for k, p_val in pillar_snap.items():
-                            p_sign = 1.0 if p_val > 0 else -1.0
-                            w_t5[k] = w_t5[k] * math.exp(eta * 0.75 * p_sign * sign_market_5)
+                            if k in w_t5:
+                                p_sign = 1.0 if p_val > 0 else -1.0
+                                w_t5[k] = w_t5[k] * math.exp(eta * 0.75 * p_sign * sign_market_5)
                         tot_w5 = sum(w_t5.values())
                         w_t5 = {k: round(v / max(1e-5, tot_w5), 3) for k, v in w_t5.items()}
 
@@ -7289,7 +7303,7 @@ class NiftyAnalyticsEngine:
         except Exception:
             pass
 
-        # If Kotak Neo is authenticated, STRICTLY BLOCK Yahoo and NSE scraping!
+        # If Kotak Neo is authenticated or enabled, STRICTLY BLOCK Yahoo and NSE scraping!
         if is_kotak_authenticated:
             with self._lock:
                 if self._live_spot_cache:
@@ -7338,6 +7352,8 @@ class NiftyAnalyticsEngine:
                     "age_seconds": 1.0,
                     "latency_ms": 1.0
                 }
+            # Pure Kotak Neo stream policy: Never fallback to delayed scrapers!
+            return None
 
         # 2. Fast Yahoo Finance chart quote (^NSEI) [OFFLINE FALLBACK ONLY]
         try:

@@ -63,6 +63,9 @@ from execution.state_engine import state_engine
 
 logger = logging.getLogger("KotakNeoEngine")
 
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_NIFTY_TOKENS_FILE = os.path.join(_BASE_DIR, "data", "nifty_oct_tokens.json")
+
 # Pre-seeded common NSE symbols to Kotak Neo tokens (ensures immediate availability)
 SEED_SYMBOL_TO_TOKEN: Dict[str, str] = {
     "NIFTY 50": "Nifty 50",
@@ -186,7 +189,7 @@ class KotakNeoEngine:
     # --------------------------------------------------------------------------
     def _load_cached_option_tokens(self):
         """Loads pre-mapped Nifty option contracts into memory for real-time FO streaming."""
-        tokens_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "nifty_oct_tokens.json")
+        tokens_file = DEFAULT_NIFTY_TOKENS_FILE
         if os.path.exists(tokens_file):
             try:
                 with open(tokens_file, "r") as f:
@@ -1465,8 +1468,17 @@ class KotakNeoEngine:
             monthly_label = _iso_to_label(monthly_iso)
 
             # 2. Authentic Option Chain for Weekly and Monthly
-            w_chain = self._client.option_chain(exchange="nse_fo", underlying=underlying, expiry=weekly_iso, count=count)
-            m_chain = self._client.option_chain(exchange="nse_fo", underlying=underlying, expiry=monthly_iso, count=count) if monthly_iso != weekly_iso else w_chain
+            try:
+                w_chain = self._client.option_chain(exchange="nse_fo", underlying=underlying, expiry=weekly_iso, count=count)
+            except Exception as w_err:
+                logger.warning(f"Kotak weekly option chain request notice: {w_err}")
+                w_chain = None
+
+            try:
+                m_chain = self._client.option_chain(exchange="nse_fo", underlying=underlying, expiry=monthly_iso, count=count) if (monthly_iso != weekly_iso and w_chain is not None) else w_chain
+            except Exception as m_err:
+                logger.warning(f"Kotak monthly option chain request notice: {m_err}")
+                m_chain = w_chain
 
             if not isinstance(w_chain, dict) or not w_chain.get("call") or not w_chain.get("put"):
                 return {"status": "UNAVAILABLE", "message": "Kotak Neo weekly option chain response empty"}
@@ -1851,13 +1863,17 @@ class KotakNeoEngine:
                     dt_now = now_ist()
                     is_market_day = NSEMarketCalendar.is_trading_day(dt_now.date())
                     mins = dt_now.hour * 60 + dt_now.minute
-                    # Active trading window: 09:00 to 15:40 IST
-                    in_market_hours = is_market_day and (540 <= mins <= 940)
+                    # Active equity trading window: 09:00 to 15:40 IST
+                    in_equity_hours = is_market_day and (540 <= mins <= 940)
+
+                    # MCX Commodity trading window: 09:00 to 23:30 IST Mon-Fri
+                    from engines.commodities_engine import commodities_engine
+                    is_mcx_active, _ = commodities_engine.is_mcx_open()
 
                     # When WS is offline, poll REST continuously
-                    # When WS is online and healthy, poll less frequently (every 10s) as backup
+                    # When WS is online and healthy, poll less frequently as backup
                     ws_healthy = self._is_connected
-                    if not ws_healthy or in_market_hours:
+                    if not ws_healthy or in_equity_hours:
                         syms = self._gather_active_market_symbols()
                         if syms:
                             self.fetch_rest_quotes(syms)
@@ -1866,10 +1882,24 @@ class KotakNeoEngine:
                             self.fetch_option_quotes(near_atm_only=True)
                         except Exception:
                             pass
+
+                    # Continuously stream active MCX commodities during MCX hours
+                    if is_mcx_active:
+                        try:
+                            commodities_engine.fetch_live_quotes(force_refresh=True)
+                        except Exception:
+                            pass
+
+                    # Adaptive sleep: 2.5s during market hours, 10s during off-hours standby
+                    if in_equity_hours or is_mcx_active:
+                        time.sleep(2.5)
+                    else:
+                        time.sleep(10.0)
+                else:
+                    time.sleep(5.0)
             except Exception as e:
                 logger.debug(f"Kotak Neo REST stream loop notice: {e}")
-
-            time.sleep(2.5)
+                time.sleep(3.0)
 
     # --------------------------------------------------------------------------
     # TEST & BENCHMARK INJECTION

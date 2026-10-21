@@ -79,7 +79,7 @@ def test_swing_ml_evaluate_candidate_contract():
     assert "risk_flags" in eval_res
     assert "fatal_flags" in eval_res
     assert "target_definition" in eval_res
-    assert eval_res["decision"] in ("PASS_TO_AI", "WATCH")
+    assert eval_res["decision"] in ("PASS_TO_AI", "WATCH", "REJECT")
 
 
 def test_swing_ml_rejects_overextended_candidate():

@@ -2800,6 +2800,10 @@ def get_continuous_live_stream_endpoint():
     # 4. Near-ATM Option Ticks for Real-Time Strike Streaming
     opt_ticks = kotak_neo_engine.get_near_atm_option_ticks(spot_price=nifty_spot, strike_range=12)
 
+    # 5. Commodities Desk: Active MCX Contracts Live Quotes & Metrics
+    from engines.commodities_engine import commodities_engine
+    commodities_data = commodities_engine.get_streaming_payload()
+
     is_market_open, _ = NSEMarketCalendar.can_execute_trades()
     return {
         "status": "SUCCESS",
@@ -2825,6 +2829,7 @@ def get_continuous_live_stream_endpoint():
             "strategies": opt_portfolio.get("active_strategies", [])
         },
         "options_ticks": opt_ticks,
+        "commodities": commodities_data,
         "equity_ticks": {
             s: {
                 "ltp": t.get("ltp"),
@@ -2840,3 +2845,48 @@ def get_continuous_live_stream_endpoint():
             if isinstance(t, dict) and t.get("ltp")
         }
     }
+
+
+# --------------------------------------------------------------------------
+# MCX COMMODITIES DESK API ENDPOINTS (POWERED BY KOTAK NEO)
+# --------------------------------------------------------------------------
+@app.get("/api/commodities/quotes")
+def get_commodities_quotes(force_refresh: bool = False):
+    """
+    Returns authentic live quotes, pivots, range progress, and OI buildup
+    for active MCX contracts (Crude Oil, Natural Gas, Gold, Silver, Copper, Zinc)
+    streamed directly from Kotak Neo API.
+    """
+    from engines.commodities_engine import commodities_engine
+    return commodities_engine.fetch_live_quotes(force_refresh=force_refresh)
+
+
+@app.get("/api/commodities/summary")
+def get_commodities_summary():
+    """
+    Returns high-level MCX sector summaries (Energy, Bullion, Base Metals)
+    and top market gainers/losers.
+    """
+    from engines.commodities_engine import commodities_engine
+    payload = commodities_engine.fetch_live_quotes(force_refresh=False)
+    return {
+        "status": "SUCCESS",
+        "is_mcx_open": payload.get("is_mcx_open"),
+        "market_status_text": payload.get("market_status_text"),
+        "summary": payload.get("summary", {}),
+        "top_gainer": payload.get("top_gainer"),
+        "top_loser": payload.get("top_loser"),
+        "contracts_count": payload.get("contracts_count", 0),
+        "timestamp": payload.get("timestamp")
+    }
+
+
+@app.post("/api/commodities/refresh")
+def refresh_commodities_data():
+    """
+    Forces immediate scrip rediscovery and live quote refresh from Kotak Neo API.
+    """
+    from engines.commodities_engine import commodities_engine
+    commodities_engine.discover_active_contracts(force=True)
+    return commodities_engine.fetch_live_quotes(force_refresh=True)
+

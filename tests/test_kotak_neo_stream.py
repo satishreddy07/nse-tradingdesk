@@ -358,12 +358,12 @@ def test_kotak_neo_option_chain_generation():
 
         # Verify ATM strike is valid
         assert chain["weekly"]["atm_strike"] > 0
-    assert chain["weekly"]["pcr"]["overall_oi_pcr"] > 0
-    assert chain["weekly"]["walls_and_pain"]["max_pain"] > 0
-    assert chain["weekly"]["walls_and_pain"]["call_wall_1"] >= chain["weekly"]["atm_strike"]
-    assert chain["weekly"]["walls_and_pain"]["put_wall_1"] <= chain["weekly"]["atm_strike"]
-    assert len(chain["weekly"]["strikes"]) > 0
-    assert len(chain["quant_suggestions"]) > 0
+        assert chain["weekly"]["pcr"]["overall_oi_pcr"] > 0
+        assert chain["weekly"]["walls_and_pain"]["max_pain"] > 0
+        assert chain["weekly"]["walls_and_pain"]["call_wall_1"] >= chain["weekly"]["atm_strike"]
+        assert chain["weekly"]["walls_and_pain"]["put_wall_1"] <= chain["weekly"]["atm_strike"]
+        assert len(chain["weekly"]["strikes"]) > 0
+        assert len(chain["quant_suggestions"]) > 0
 
 
 def test_sfeed_scrip_and_index_message_decoding():
