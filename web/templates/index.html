@@ -7472,7 +7472,10 @@
             <div>
               <div class="flex items-center gap-2">
                 <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">MCX REAL-TIME OPTION CHAIN</span>
-                <span class="text-xs font-mono text-cyan-400">⚡ Kotak Neo Native API (`mcx_fo`)</span>
+                <span id="comm-stream-pill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>⚡ KOTAK NEO LIVE STREAM</span>
+                </span>
               </div>
               <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Multi Commodity Options Chain & Deep Strike Analytics</h3>
               <p class="text-xs text-slate-400">Real-time Call/Put Open Interest, Greeks (Delta, Theta, Gamma, Vega), Max Pain, Call/Put Walls, and ATM Straddle implied range.</p>
@@ -7512,7 +7515,11 @@
                 </select>
               </div>
 
-              <button onclick="loadCommodityOptionChain(true)" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs flex items-center gap-1.5 border border-slate-700 transition">
+              <button onclick="openCommodityDepthModal(window.selectedCommodityUnderlying || 'CRUDEOIL')" class="px-3 py-1.5 rounded-xl bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer" title="5-Level Market Depth & Pivots">
+                <i data-lucide="bar-chart-2" class="w-3.5 h-3.5"></i>
+                <span>Market Depth</span>
+              </button>
+              <button onclick="loadCommodityOptionChain(true)" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs flex items-center gap-1.5 border border-slate-700 transition cursor-pointer">
                 <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
                 <span>Refresh</span>
               </button>
@@ -9238,17 +9245,10 @@
         }
       }, 4000);
 
-      // Continuous Kotak Neo Stream Poller: 2s during any active market (NSE or MCX), 30s when all markets are closed
+      // Continuous Kotak Neo Stream Poller: 2s active stream for live updates across Equities, Options, and Commodities
       pollContinuousKotakStream();
       setInterval(() => {
         if (!document.hidden) {
-          const isEquityMarketOpen = (typeof window.isServerMarketOpen === 'boolean' ? window.isServerMarketOpen : false);
-          const isMcxMarketOpen = (typeof window.isMcxMarketOpen === 'boolean' ? window.isMcxMarketOpen : false);
-          const isAnyMarketActive = isEquityMarketOpen || isMcxMarketOpen;
-          if (!isAnyMarketActive) {
-            window._offMarketTick = (window._offMarketTick || 0) + 1;
-            if (window._offMarketTick % 15 !== 0) return; // Only poll every 30s when both NSE and MCX are closed
-          }
           pollContinuousKotakStream();
         }
       }, 2000);
@@ -23944,7 +23944,7 @@
           if (typeof currentModule !== 'undefined' && currentModule === 'module-options') {
             window._optChainPollCounter = (window._optChainPollCounter || 0) + 1;
             if (window._optChainPollCounter % 2 === 0) {
-              loadOptionsChainDesk(true, false);
+              loadOptionsChainDesk(false, false);
             }
           }
         } catch (e) {}
@@ -24741,6 +24741,8 @@
       }
     }
 
+    window.activeCommodityDepthTimer = null;
+
     function openCommodityDepthModal(baseSym) {
       window.activeCommodityDepthSymbol = baseSym;
       const modal = document.getElementById('comm-depth-modal');
@@ -24753,23 +24755,45 @@
         renderCommodityDepthModalContent(window.commoditiesData.quotes[baseSym]);
       }
 
-      // Fast fetch freshest depth immediately from dedicated endpoint
-      fetch(`/api/commodities/depth?symbol=${encodeURIComponent(baseSym)}`)
-        .then(r => r.json())
-        .then(data => {
-          if (data && data.status === 'SUCCESS' && data.quote) {
-            if (window.commoditiesData && window.commoditiesData.quotes) {
-              window.commoditiesData.quotes[baseSym] = data.quote;
+      const pollDepth = () => {
+        const curSym = window.activeCommodityDepthSymbol || baseSym;
+        fetch(`/api/commodities/depth?symbol=${encodeURIComponent(curSym)}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.status === 'SUCCESS' && data.quote) {
+              if (window.commoditiesData && window.commoditiesData.quotes) {
+                window.commoditiesData.quotes[curSym] = data.quote;
+              }
+              if (window.activeCommodityDepthSymbol === curSym) {
+                renderCommodityDepthModalContent(data.quote);
+              }
             }
-            if (window.activeCommodityDepthSymbol === baseSym) {
-              renderCommodityDepthModalContent(data.quote);
-            }
-          }
-        })
-        .catch(e => console.debug("Fast depth fetch notice:", e));
+          })
+          .catch(e => console.debug("Fast depth fetch notice:", e));
+      };
+
+      pollDepth();
+
+      if (window.activeCommodityDepthTimer) {
+        clearInterval(window.activeCommodityDepthTimer);
+      }
+      window.activeCommodityDepthTimer = setInterval(() => {
+        if (modal && modal.style.display !== 'none' && !modal.classList.contains('hidden')) {
+          pollDepth();
+        } else {
+          clearInterval(window.activeCommodityDepthTimer);
+          window.activeCommodityDepthTimer = null;
+        }
+      }, 1500);
+
+      if (window.lucide) lucide.createIcons();
     }
 
     function closeCommodityDepthModal() {
+      if (window.activeCommodityDepthTimer) {
+        clearInterval(window.activeCommodityDepthTimer);
+        window.activeCommodityDepthTimer = null;
+      }
       window.activeCommodityDepthSymbol = null;
       const modal = document.getElementById('comm-depth-modal');
       if (modal) {
@@ -24961,11 +24985,12 @@
             <td class="py-2 px-2 text-right ${ceItmBg} text-purple-300">${(ce.impliedVolatility || 0).toFixed(1)}%</td>
             <td class="py-2 px-2 text-right ${ceItmBg} text-slate-400">${(ce.delta || 0).toFixed(2)}</td>
             <td class="py-2 px-2 text-right ${ceItmBg} font-bold text-emerald-300">
-              ₹${Number(ce.lastPrice || 0).toFixed(2)}
+              <span id="comm-ce-ltp-${k}" class="transition-colors" data-prev-ltp="${ce.lastPrice || 0}">₹${Number(ce.lastPrice || 0).toFixed(2)}</span>
               <span class="block text-[9px] ${ceChgCls}">${ce.change >= 0 ? '+' : ''}${ce.change}</span>
             </td>
             <td class="py-2 px-2 text-center ${ceItmBg}">
-              <div class="inline-flex gap-1">
+              <div class="inline-flex gap-1 items-center">
+                <button onclick="openCommodityDepthModal(window.selectedCommodityUnderlying || 'CRUDEOIL')" class="px-1.5 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 border border-blue-500/30 text-[10px] font-bold transition active:scale-95 cursor-pointer" title="Level-2 5-Depth">📊</button>
                 <button onclick="addCommodityLegFromChain(${k}, 'CE', 'BUY', ${ce.lastPrice || 0}, ${ce.impliedVolatility || 25})" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold transition active:scale-95 cursor-pointer" title="Buy Call">+B</button>
                 <button onclick="addCommodityLegFromChain(${k}, 'CE', 'SELL', ${ce.lastPrice || 0}, ${ce.impliedVolatility || 25})" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/40 text-[10px] font-bold transition active:scale-95 cursor-pointer" title="Sell Call">+S</button>
               </div>
@@ -24979,13 +25004,14 @@
 
             <!-- PUTS SIDE -->
             <td class="py-2 px-2 text-center ${peItmBg}">
-              <div class="inline-flex gap-1">
+              <div class="inline-flex gap-1 items-center">
                 <button onclick="addCommodityLegFromChain(${k}, 'PE', 'BUY', ${pe.lastPrice || 0}, ${pe.impliedVolatility || 25})" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold transition active:scale-95 cursor-pointer" title="Buy Put">+B</button>
                 <button onclick="addCommodityLegFromChain(${k}, 'PE', 'SELL', ${pe.lastPrice || 0}, ${pe.impliedVolatility || 25})" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/40 text-[10px] font-bold transition active:scale-95 cursor-pointer" title="Sell Put">+S</button>
+                <button onclick="openCommodityDepthModal(window.selectedCommodityUnderlying || 'CRUDEOIL')" class="px-1.5 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 border border-blue-500/30 text-[10px] font-bold transition active:scale-95 cursor-pointer" title="Level-2 5-Depth">📊</button>
               </div>
             </td>
             <td class="py-2 px-2 text-left ${peItmBg} font-bold text-rose-300">
-              ₹${Number(pe.lastPrice || 0).toFixed(2)}
+              <span id="comm-pe-ltp-${k}" class="transition-colors" data-prev-ltp="${pe.lastPrice || 0}">₹${Number(pe.lastPrice || 0).toFixed(2)}</span>
               <span class="block text-[9px] ${peChgCls}">${pe.change >= 0 ? '+' : ''}${pe.change}</span>
             </td>
             <td class="py-2 px-2 text-left ${peItmBg} text-slate-400">${(pe.delta || 0).toFixed(2)}</td>
