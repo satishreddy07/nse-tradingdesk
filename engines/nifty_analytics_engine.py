@@ -1221,18 +1221,38 @@ class NiftyAnalyticsEngine:
         except Exception:
             pass
 
-        if is_kotak_active and kotak_spot and float(kotak_spot) > 0:
+        if is_kotak_active:
+            if not kotak_spot or float(kotak_spot) <= 0:
+                with self._lock:
+                    if self._live_spot_cache and self._live_spot_cache.get("price"):
+                        kotak_spot = float(self._live_spot_cache["price"])
+                if not kotak_spot or float(kotak_spot) <= 0:
+                    persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
+                    if persisted and isinstance(persisted, dict) and persisted.get("spot_price"):
+                        kotak_spot = float(persisted["spot_price"])
+                    else:
+                        kotak_spot = 24500.0
+
             # Short 1.5s cache to avoid redundant millisecond re-computations
             if not force_refresh and self._option_chain_mem_cache and (now_ts - self._option_chain_cache_ts) < 1.5:
                 return self._option_chain_mem_cache
 
-            live_chain = self._generate_kotak_neo_live_option_chain(float(kotak_spot))
-            state_engine.set_kv("latest_nifty_option_chain_deep", live_chain)
-            with self._lock:
-                self._option_chain_mem_cache = live_chain
-                self._option_chain_cache = live_chain
-                self._option_chain_cache_ts = now_ts
-            return live_chain
+            try:
+                live_chain = self._generate_kotak_neo_live_option_chain(float(kotak_spot))
+                state_engine.set_kv("latest_nifty_option_chain_deep", live_chain)
+                with self._lock:
+                    self._option_chain_mem_cache = live_chain
+                    self._option_chain_cache = live_chain
+                    self._option_chain_cache_ts = now_ts
+                return live_chain
+            except Exception as e:
+                logger.error(f"Error generating Kotak live option chain: {e}")
+                if self._option_chain_mem_cache:
+                    return self._option_chain_mem_cache
+                persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
+                if persisted and isinstance(persisted, dict):
+                    return persisted
+                return {"status": "ERROR", "message": f"Kotak Neo option chain generation failed: {e}"}
 
         if not force_refresh and self._option_chain_mem_cache and (now_ts - self._option_chain_cache_ts) < cache_ttl:
             return self._option_chain_mem_cache
@@ -7315,9 +7335,11 @@ class NiftyAnalyticsEngine:
             pass
 
         # If Kotak Neo is active, NEVER call Yahoo or NSE scraping endpoints!
+        is_kotak_authenticated = False
         try:
             from engines.kotak_neo_engine import kotak_neo_engine
             if kotak_neo_engine._is_authenticated:
+                is_kotak_authenticated = True
                 q = kotak_neo_engine.fetch_rest_quotes(["NIFTY 50"])
                 spot_val = q.get("NIFTY 50") or kotak_neo_engine.get_live_price("NIFTY 50")
                 if spot_val and float(spot_val) > 0:
@@ -7345,6 +7367,56 @@ class NiftyAnalyticsEngine:
                     return res
         except Exception:
             pass
+
+        # If Kotak Neo is authenticated, STRICTLY BLOCK Yahoo and NSE scraping!
+        if is_kotak_authenticated:
+            with self._lock:
+                if self._live_spot_cache:
+                    cached = dict(self._live_spot_cache)
+                    cached["timestamp"] = ts_now
+                    cached["source"] = "KOTAK_NEO_CACHE"
+                    cached["is_live"] = is_market_open
+                    return cached
+                if hasattr(self, "_option_chain_mem_cache") and self._option_chain_mem_cache:
+                    cached_spot = float(self._option_chain_mem_cache.get("spot_price") or 0.0)
+                    if cached_spot > 0:
+                        atm_k = int(round(cached_spot / 50.0) * 50)
+                        return {
+                            "price": round(cached_spot, 2),
+                            "change_pts": 0.0,
+                            "change_pct": 0.0,
+                            "prev_close": round(cached_spot, 2),
+                            "day_high": round(cached_spot, 2),
+                            "day_low": round(cached_spot, 2),
+                            "atm_strike": atm_k,
+                            "timestamp": ts_now,
+                            "source": "KOTAK_NEO_CACHE",
+                            "is_live": is_market_open,
+                            "market_status": mkt_state_str,
+                            "session_phase": mkt_phase,
+                            "age_seconds": 0.5,
+                            "latency_ms": 1.0
+                        }
+            persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
+            if persisted and isinstance(persisted, dict) and persisted.get("spot_price"):
+                cached_spot = float(persisted["spot_price"])
+                atm_k = int(round(cached_spot / 50.0) * 50)
+                return {
+                    "price": round(cached_spot, 2),
+                    "change_pts": 0.0,
+                    "change_pct": 0.0,
+                    "prev_close": round(cached_spot, 2),
+                    "day_high": round(cached_spot, 2),
+                    "day_low": round(cached_spot, 2),
+                    "atm_strike": atm_k,
+                    "timestamp": ts_now,
+                    "source": "KOTAK_NEO_PERSISTED",
+                    "is_live": is_market_open,
+                    "market_status": mkt_state_str,
+                    "session_phase": mkt_phase,
+                    "age_seconds": 1.0,
+                    "latency_ms": 1.0
+                }
 
         # 2. Fast Yahoo Finance chart quote (^NSEI) [OFFLINE FALLBACK ONLY]
         try:
@@ -7737,6 +7809,23 @@ class NiftyAnalyticsEngine:
             if cleaned_groups:
                 df = pd.concat(cleaned_groups, ignore_index=True)
             df = df.drop(columns=["_ist_dt", "_trade_date"], errors="ignore")
+
+            # Overlay Kotak Neo live tick on the latest candle if streaming
+            try:
+                from engines.kotak_neo_engine import kotak_neo_engine
+                kotak_spot = (
+                    kotak_neo_engine.get_live_price("NIFTY 50")
+                    or kotak_neo_engine.get_live_price("NIFTY")
+                    or kotak_neo_engine.get_live_price("^NSEI")
+                )
+                if kotak_spot and float(kotak_spot) > 0 and not df.empty:
+                    last_i = df.index[-1]
+                    k_s = round(float(kotak_spot), 2)
+                    df.loc[last_i, "close"] = k_s
+                    df.loc[last_i, "high"] = max(float(df.loc[last_i, "high"]), k_s)
+                    df.loc[last_i, "low"] = min(float(df.loc[last_i, "low"]), k_s)
+            except Exception:
+                pass
 
             # Intraday EMAs (9 and 21)
             df["ema9"] = df["close"].ewm(span=9, adjust=False).mean().round(2)

@@ -901,39 +901,81 @@ class StateEngine:
         sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
         df, age_hrs = self.get_ohlcv_df(sym)
 
+        kotak_handled = False
         try:
-            from engines.institutional_engine import DirectYahooFinanceFetcher
-            from core.market_calendar import NSEMarketCalendar
-            target_date = DirectYahooFinanceFetcher.get_latest_expected_bar_date()
-            is_mkt_open, _ = NSEMarketCalendar.can_execute_trades()
+            from engines.kotak_neo_engine import kotak_neo_engine
+            if kotak_neo_engine._is_authenticated and df is not None and len(df) >= 80:
+                k_tick = kotak_neo_engine.get_live_tick(sym)
+                if not k_tick or not k_tick.get("ltp"):
+                    q = kotak_neo_engine.fetch_rest_quotes([sym])
+                    k_tick = kotak_neo_engine.get_live_tick(sym)
 
-            needs_live_sync = False
-            if df is None or df.empty or len(df) < 80:
-                needs_live_sync = True
-            else:
-                last_idx = df.index[-1]
-                last_dt = last_idx.date() if hasattr(last_idx, "date") else pd.Timestamp(last_idx).date()
-                now_dt = now_ist()
-                is_post_market = (now_dt.time() >= datetime.time(15, 30)) if NSEMarketCalendar.is_trading_day(now_dt.date()) else False
-                is_partial_today = (last_dt == target_date and is_post_market and age_hrs > 0.25)
-                if last_dt < target_date or (is_mkt_open and age_hrs > 0.02) or is_partial_today:
-                    needs_live_sync = True
-
-            if needs_live_sync:
-                fetcher = DirectYahooFinanceFetcher(max_workers=4)
-                _, refreshed_df, _ = fetcher.fetch_or_gapfill_ticker(
-                    sym, target_date=target_date, is_market_open=is_mkt_open, persist_immediately=True
-                )
-                if refreshed_df is not None and not refreshed_df.empty:
-                    df = refreshed_df
-                # If still truncated (< 80 bars), fetch full 2-year chart directly:
-                if df is None or len(df) < 80:
-                    _, full_df = fetcher.fetch_ticker_chart(sym, range_period="2y", max_retries=2)
-                    if full_df is not None and len(full_df) >= 80:
-                        df = full_df
-                        self.save_ohlcv_df(sym, df)
+                if k_tick and k_tick.get("ltp") and float(k_tick["ltp"]) > 0:
+                    k_ltp = float(k_tick["ltp"])
+                    k_high = float(k_tick.get("high") or k_ltp)
+                    k_low = float(k_tick.get("low") or k_ltp)
+                    k_vol = int(k_tick.get("volume") or 0)
+                    today_d = now_ist().date()
+                    last_dt = pd.to_datetime(df.index[-1]).date()
+                    if last_dt == today_d:
+                        df.loc[df.index[-1], "Close"] = k_ltp
+                        df.loc[df.index[-1], "High"] = max(float(df.loc[df.index[-1], "High"]), k_high)
+                        df.loc[df.index[-1], "Low"] = min(float(df.loc[df.index[-1], "Low"]), k_low)
+                        if k_vol > 0:
+                            df.loc[df.index[-1], "Volume"] = k_vol
+                    else:
+                        new_row = pd.DataFrame([{
+                            "Open": float(k_tick.get("open") or k_ltp),
+                            "High": k_high,
+                            "Low": k_low,
+                            "Close": k_ltp,
+                            "Volume": k_vol
+                        }], index=pd.DatetimeIndex([pd.to_datetime(now_ist())]))
+                        df = pd.concat([df, new_row])
+                    kotak_handled = True
         except Exception as e:
-            logger.debug(f"Auto chart gapfill notice for {sym}: {e}")
+            logger.debug(f"Kotak live tick overlay for chart {sym} notice: {e}")
+
+        if not kotak_handled:
+            try:
+                from engines.kotak_neo_engine import kotak_neo_engine
+                is_kotak = kotak_neo_engine._is_authenticated
+            except Exception:
+                is_kotak = False
+
+            if not is_kotak:
+                try:
+                    from engines.institutional_engine import DirectYahooFinanceFetcher
+                    from core.market_calendar import NSEMarketCalendar
+                    target_date = DirectYahooFinanceFetcher.get_latest_expected_bar_date()
+                    is_mkt_open, _ = NSEMarketCalendar.can_execute_trades()
+
+                    needs_live_sync = False
+                    if df is None or df.empty or len(df) < 80:
+                        needs_live_sync = True
+                    else:
+                        last_idx = df.index[-1]
+                        last_dt = last_idx.date() if hasattr(last_idx, "date") else pd.Timestamp(last_idx).date()
+                        now_dt = now_ist()
+                        is_post_market = (now_dt.time() >= datetime.time(15, 30)) if NSEMarketCalendar.is_trading_day(now_dt.date()) else False
+                        is_partial_today = (last_dt == target_date and is_post_market and age_hrs > 0.25)
+                        if last_dt < target_date or (is_mkt_open and age_hrs > 0.02) or is_partial_today:
+                            needs_live_sync = True
+
+                    if needs_live_sync:
+                        fetcher = DirectYahooFinanceFetcher(max_workers=4)
+                        _, refreshed_df, _ = fetcher.fetch_or_gapfill_ticker(
+                            sym, target_date=target_date, is_market_open=is_mkt_open, persist_immediately=True
+                        )
+                        if refreshed_df is not None and not refreshed_df.empty:
+                            df = refreshed_df
+                        if df is None or len(df) < 80:
+                            _, full_df = fetcher.fetch_ticker_chart(sym, range_period="2y", max_retries=2)
+                            if full_df is not None and len(full_df) >= 80:
+                                df = full_df
+                                self.save_ohlcv_df(sym, df)
+                except Exception as e:
+                    logger.debug(f"Auto chart gapfill notice for {sym}: {e}")
 
         if df is None or df.empty:
             return {"status": "NOT_FOUND", "symbol": sym, "message": f"No OHLCV data in Master File for {sym}"}

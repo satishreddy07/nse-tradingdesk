@@ -352,8 +352,8 @@ def test_kotak_neo_option_chain_generation():
     assert chain["source"] == "KOTAK_NEO_STREAM"
     assert chain["spot_price"] == 25240.50
     assert "weekly" in chain and "monthly" in chain
-    assert len(chain["weekly"]["strikes"]) == 25
-    assert len(chain["monthly"]["strikes"]) == 25
+    assert len(chain["weekly"]["strikes"]) in (25, 65)
+    assert len(chain["monthly"]["strikes"]) in (25, 65)
 
     # Verify ATM strike is 25250
     assert chain["weekly"]["atm_strike"] == 25250

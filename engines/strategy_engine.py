@@ -651,8 +651,7 @@ class Portfolio3StrategyEngine:
                             "change_pct": float(tick.get("change_pct") or 0.0),
                             "timestamp": tick.get("updated_at")
                         }
-                if len(quotes) == len(symbols):
-                    return quotes
+                return quotes
         except Exception:
             pass
 

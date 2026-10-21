@@ -2336,9 +2336,11 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS", symbols: Optio
         }
 
     # Auto-subscribe active symbols and batch prime via Kotak Neo (zero Yahoo overhead)
+    kotak_is_active = False
     try:
         from engines.kotak_neo_engine import kotak_neo_engine
         if kotak_neo_engine._is_authenticated:
+            kotak_is_active = True
             kotak_neo_engine.subscribe_symbols(ordered_syms)
             unprimed = [s for s in ordered_syms if not kotak_neo_engine.get_live_price(s)]
             if unprimed:
@@ -2348,13 +2350,14 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS", symbols: Optio
 
     def _fetch_live_tick(sym: str) -> Tuple[str, Optional[pd.DataFrame], Optional[float], Optional[float]]:
         # 1. Fast Path: In-Memory Kotak Neo Real-Time WebSocket / REST Tick Cache
-        try:
-            from engines.kotak_neo_engine import kotak_neo_engine
-            if kotak_neo_engine._is_authenticated:
+        if kotak_is_active:
+            try:
+                from engines.kotak_neo_engine import kotak_neo_engine
                 kotak_tick = kotak_neo_engine.get_live_tick(sym)
                 if not kotak_tick or not kotak_tick.get("ltp"):
-                    q = kotak_neo_engine.fetch_rest_quotes([sym])
-                    kotak_tick = kotak_neo_engine.get_live_tick(sym)
+                    lp = kotak_neo_engine.get_live_price(sym)
+                    if lp and lp > 0:
+                        kotak_tick = {"ltp": lp, "high": lp, "low": lp, "volume": 0}
 
                 if kotak_tick and kotak_tick.get("ltp") and float(kotak_tick["ltp"]) > 0:
                     k_ltp = float(kotak_tick["ltp"])
@@ -2367,6 +2370,8 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS", symbols: Optio
                         if last_dt == today_d:
                             merged.loc[merged.index[-1], "Close"] = k_ltp
                             merged.loc[merged.index[-1], "High"] = max(float(merged.loc[merged.index[-1], "High"]), k_high)
+                            if kotak_tick.get("low"):
+                                merged.loc[merged.index[-1], "Low"] = min(float(merged.loc[merged.index[-1], "Low"]), float(kotak_tick["low"]))
                         else:
                             new_row = pd.DataFrame([{
                                 "Open": float(kotak_tick.get("open") or k_ltp),
@@ -2377,11 +2382,15 @@ def refresh_live_market_prices(scope: str = "ACTIVE_AND_SIGNALS", symbols: Optio
                             }], index=pd.DatetimeIndex([pd.to_datetime(now_ist())]))
                             merged = pd.concat([merged, new_row])
                         return sym, merged, k_ltp, k_high
-
-                # When Kotak Neo is active, NEVER call Yahoo endpoints during live market hours!
-                return sym, None, None, None
-        except Exception:
-            pass
+                    else:
+                        dummy_df = pd.DataFrame([{
+                            "Open": k_ltp, "High": k_high, "Low": k_ltp, "Close": k_ltp, "Volume": 0
+                        }], index=pd.DatetimeIndex([pd.to_datetime(now_ist())]))
+                        return sym, dummy_df, k_ltp, k_high
+            except Exception as e:
+                logger.debug(f"Kotak tick merge error for {sym}: {e}")
+            # Strictly return None - NEVER call Yahoo Finance during market hours when Kotak is active
+            return sym, None, None, None
 
         try:
             cached_df, _ = state_engine.get_ohlcv_df(sym)

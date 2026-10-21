@@ -1198,7 +1198,21 @@ class KotakNeoEngine:
             if sym and not sym.startswith("^"):
                 symbols.add(sym)
 
-        # 3. Market Benchmarks
+        # 3. Portfolio 3 Pre-Breakout Coils Watchlist Candidates
+        try:
+            with state_engine._get_connection() as conn:
+                p3_rows = conn.execute("""
+                    SELECT DISTINCT symbol FROM p3_prebreakout_watchlist
+                    WHERE scan_date >= date('now', '-7 days')
+                """).fetchall()
+                for r in p3_rows:
+                    sym = (r[0] or "").strip().upper()
+                    if sym and not sym.startswith("^"):
+                        symbols.add(sym)
+        except Exception:
+            pass
+
+        # 4. Market Benchmarks
         symbols.add("NIFTY 50")
         symbols.add("NIFTY BANK")
 
@@ -1402,10 +1416,12 @@ class KotakNeoEngine:
         with self._lock:
             if not self._is_authenticated:
                 return False
+            if self._stop_stream.is_set() and self._stop_rest_stream.is_set():
+                return False
             if self._is_connected:
                 return True
             # Active if REST streamer is running and has primed cache or ticks
-            return self._ticks_received_count > 0 or bool(self._live_ticks)
+            return not self._stop_rest_stream.is_set() and (self._ticks_received_count > 0 or bool(self._live_ticks))
 
     # --------------------------------------------------------------------------
     # REST QUOTES (DIRECT FROM KOTAK NEO, NO YAHOO/NSE)
