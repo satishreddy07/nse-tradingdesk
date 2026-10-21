@@ -8826,6 +8826,7 @@
     let niftyIntradayCache = null;
     let niftyPredictionsCache = null;
     let niftyOptionsChainCache = null;
+    window.niftyOptionsChainCache = null;
     let selectedOptionsExpiryType = 'weekly'; // 'weekly' or 'monthly'
 
     async function ensureMasterDataThenRenderModules() {
@@ -11172,6 +11173,7 @@
         if (!res.ok) return;
         const data = await res.json();
         niftyOptionsChainCache = data;
+        window.niftyOptionsChainCache = data;
         renderOptionsChainUI(data);
         if (typeof renderBuilderCompactChain === 'function') {
           renderBuilderCompactChain();
@@ -11217,13 +11219,28 @@
       }
 
       const expLbl = document.getElementById('builder-compact-chain-exp-lbl');
-      if (expLbl && niftyOptionsChainCache) {
-        const active = selectedOptionsExpiryType === 'monthly' ? (niftyOptionsChainCache?.monthly || {}) : (niftyOptionsChainCache?.weekly || {});
+      const cache = window.niftyOptionsChainCache || niftyOptionsChainCache;
+      if (expLbl && cache) {
+        const active = selectedOptionsExpiryType === 'monthly' ? (cache?.monthly || {}) : (cache?.weekly || {});
         expLbl.innerText = `${selectedOptionsExpiryType.toUpperCase()} (${active.expiry || '--'})`;
       }
 
-      if (niftyOptionsChainCache) {
-        renderOptionsChainUI(niftyOptionsChainCache);
+      // Reprice all active strategy legs to the newly selected expiry (Weekly vs Monthly)
+      if (typeof strategyLegs !== 'undefined' && strategyLegs && strategyLegs.length > 0) {
+        strategyLegs.forEach(leg => {
+          const pricing = getOptionLegPricing(leg.strike, leg.type, selectedOptionsExpiryType);
+          if (pricing && pricing.price > 0) {
+            leg.price = pricing.price;
+            leg.iv = pricing.iv;
+          }
+        });
+        renderStrategyLegs();
+        recalculateStrategyMetrics();
+        drawPayoffGraph();
+      }
+
+      if (cache) {
+        renderOptionsChainUI(cache);
       }
       if (typeof renderBuilderCompactChain === 'function') {
         renderBuilderCompactChain();
@@ -11532,6 +11549,158 @@
       return (1.0 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * x * x);
     }
 
+    // Precise DTE calculation from expiry string (e.g. "27-Oct-2026") to 15:30 IST without hardcoding
+    function getExactDte(expiryStr) {
+      if (!expiryStr || typeof expiryStr !== 'string') return null;
+      const parts = expiryStr.trim().split('-');
+      if (parts.length === 3) {
+        const months = {
+          'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5,
+          'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11
+        };
+        const day = parseInt(parts[0], 10);
+        const mStr = parts[1].toUpperCase();
+        const year = parseInt(parts[2], 10);
+        const month = months[mStr] !== undefined ? months[mStr] : -1;
+        if (!isNaN(day) && month !== -1 && !isNaN(year)) {
+          // 15:30 IST is 10:00 UTC
+          const expDate = new Date(Date.UTC(year, month, day, 10, 0, 0));
+          const now = new Date();
+          const diffMs = expDate.getTime() - now.getTime();
+          const dte = diffMs / (1000 * 60 * 60 * 24);
+          return Math.max(0.01, dte);
+        }
+      }
+      return null;
+    }
+
+    // Dynamic ATM Implied Volatility extracted directly from live option chain
+    function getAtmIv(chain) {
+      if (!chain) return null;
+      if (chain.atm_iv && Number(chain.atm_iv) > 0) return Number(chain.atm_iv);
+      const atm = Number(chain.atm_strike || 0);
+      const strikes = chain.all_strikes || chain.strikes || [];
+      if (atm > 0 && strikes.length > 0) {
+        const row = strikes.find(s => Number(s.strike) === atm);
+        if (row) {
+          const civ = Number(row.ce_iv || 0);
+          const piv = Number(row.pe_iv || 0);
+          if (civ > 0 && piv > 0) return (civ + piv) / 2.0;
+          if (civ > 0) return civ;
+          if (piv > 0) return piv;
+        }
+        const near = strikes.filter(s => Math.abs(Number(s.strike) - atm) <= 150);
+        const validIvs = near.flatMap(s => [Number(s.ce_iv || 0), Number(s.pe_iv || 0)]).filter(v => v > 0);
+        if (validIvs.length > 0) return validIvs.reduce((a, b) => a + b, 0) / validIvs.length;
+      }
+      return null;
+    }
+
+    // Dynamic option leg pricing with live option chain lookup and analytical Black-Scholes fallback
+    function getOptionLegPricing(strike, type, expiryType = null) {
+      const numStrike = Number(strike);
+      const cache = window.niftyOptionsChainCache || (typeof niftyOptionsChainCache !== 'undefined' ? niftyOptionsChainCache : null);
+      const activeExp = expiryType || builderCompactChainMode || selectedOptionsExpiryType || 'weekly';
+      const isMonthly = (activeExp === 'monthly');
+      const chain = isMonthly ? (cache?.monthly || {}) : (cache?.weekly || {});
+      const strikes = chain.all_strikes || chain.strikes || [];
+      const spot = Number(chain.spot_price || cache?.spot_price || (typeof optionsPortfolioCache !== 'undefined' ? optionsPortfolioCache?.spot_price : 0) || 0);
+      const dte = getExactDte(chain.expiry) || (isMonthly ? 25 : 4);
+      const atmIv = getAtmIv(chain) || 14.0;
+
+      const found = strikes.find(s => Number(s.strike) === numStrike);
+      if (found) {
+        const ltp = type === 'CE' ? Number(found.ce_ltp || 0) : Number(found.pe_ltp || 0);
+        const iv = type === 'CE' ? Number(found.ce_iv || 0) : Number(found.pe_iv || 0);
+        if (ltp > 0) {
+          return { price: ltp, iv: iv > 0 ? iv : atmIv, source: 'chain' };
+        }
+      }
+
+      // If strike not in chain list or ltp is 0, price dynamically via analytical Black-Scholes
+      if (spot > 0) {
+        const bs = calculateBsOption(spot, numStrike, dte, atmIv, type);
+        return { price: Math.max(0.05, Math.round(bs.price * 10) / 10), iv: atmIv, source: 'black-scholes' };
+      }
+      return { price: 50.0, iv: atmIv, source: 'fallback' };
+    }
+
+    // Precise DTE calculation from expiry string (e.g. "27-Oct-2026") to 15:30 IST without hardcoding
+    function getExactDte(expiryStr) {
+      if (!expiryStr || typeof expiryStr !== 'string') return null;
+      const parts = expiryStr.trim().split('-');
+      if (parts.length === 3) {
+        const months = {
+          'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5,
+          'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11
+        };
+        const day = parseInt(parts[0], 10);
+        const mStr = parts[1].toUpperCase();
+        const year = parseInt(parts[2], 10);
+        const month = months[mStr] !== undefined ? months[mStr] : -1;
+        if (!isNaN(day) && month !== -1 && !isNaN(year)) {
+          // 15:30 IST is 10:00 UTC
+          const expDate = new Date(Date.UTC(year, month, day, 10, 0, 0));
+          const now = new Date();
+          const diffMs = expDate.getTime() - now.getTime();
+          const dte = diffMs / (1000 * 60 * 60 * 24);
+          return Math.max(0.01, dte);
+        }
+      }
+      return null;
+    }
+
+    // Dynamic ATM Implied Volatility extracted directly from live option chain
+    function getAtmIv(chain) {
+      if (!chain) return null;
+      if (chain.atm_iv && Number(chain.atm_iv) > 0) return Number(chain.atm_iv);
+      const atm = Number(chain.atm_strike || 0);
+      const strikes = chain.all_strikes || chain.strikes || [];
+      if (atm > 0 && strikes.length > 0) {
+        const row = strikes.find(s => Number(s.strike) === atm);
+        if (row) {
+          const civ = Number(row.ce_iv || 0);
+          const piv = Number(row.pe_iv || 0);
+          if (civ > 0 && piv > 0) return (civ + piv) / 2.0;
+          if (civ > 0) return civ;
+          if (piv > 0) return piv;
+        }
+        const near = strikes.filter(s => Math.abs(Number(s.strike) - atm) <= 150);
+        const validIvs = near.flatMap(s => [Number(s.ce_iv || 0), Number(s.pe_iv || 0)]).filter(v => v > 0);
+        if (validIvs.length > 0) return validIvs.reduce((a, b) => a + b, 0) / validIvs.length;
+      }
+      return null;
+    }
+
+    // Dynamic option leg pricing with live option chain lookup and analytical Black-Scholes fallback
+    function getOptionLegPricing(strike, type, expiryType = null) {
+      const numStrike = Number(strike);
+      const cache = window.niftyOptionsChainCache || (typeof niftyOptionsChainCache !== 'undefined' ? niftyOptionsChainCache : null);
+      const activeExp = expiryType || builderCompactChainMode || selectedOptionsExpiryType || 'weekly';
+      const isMonthly = (activeExp === 'monthly');
+      const chain = isMonthly ? (cache?.monthly || {}) : (cache?.weekly || {});
+      const strikes = chain.all_strikes || chain.strikes || [];
+      const spot = Number(chain.spot_price || cache?.spot_price || (typeof optionsPortfolioCache !== 'undefined' ? optionsPortfolioCache?.spot_price : 0) || 0);
+      const dte = getExactDte(chain.expiry) || (isMonthly ? 25 : 4);
+      const atmIv = getAtmIv(chain) || 14.0;
+
+      const found = strikes.find(s => Number(s.strike) === numStrike);
+      if (found) {
+        const ltp = type === 'CE' ? Number(found.ce_ltp || 0) : Number(found.pe_ltp || 0);
+        const iv = type === 'CE' ? Number(found.ce_iv || 0) : Number(found.pe_iv || 0);
+        if (ltp > 0) {
+          return { price: ltp, iv: iv > 0 ? iv : atmIv, source: 'chain' };
+        }
+      }
+
+      // If strike not in chain list or ltp is 0, price dynamically via analytical Black-Scholes
+      if (spot > 0) {
+        const bs = calculateBsOption(spot, numStrike, dte, atmIv, type);
+        return { price: Math.max(0.05, Math.round(bs.price * 10) / 10), iv: atmIv, source: 'black-scholes' };
+      }
+      return { price: 50.0, iv: atmIv, source: 'fallback' };
+    }
+
     // Black-Scholes European Option Pricing & Greeks Engine
     function calculateBsOption(spot, strike, dteDays, ivPct, type, r = 0.07) {
       const T = Math.max(0.0001, dteDays / 365.0);
@@ -11574,16 +11743,10 @@
       let realPrice = Number(ltp || 0);
       let realIv = Number(iv || 0);
 
-      if (realPrice <= 0 && window.niftyOptionsChainCache) {
-        const active = (selectedOptionsExpiryType === 'monthly')
-          ? (niftyOptionsChainCache?.monthly || {})
-          : (niftyOptionsChainCache?.weekly || {});
-        const allStrikes = active.all_strikes || active.strikes || [];
-        const stkRow = allStrikes.find(s => Number(s.strike) === numStrike);
-        if (stkRow) {
-          realPrice = type === 'CE' ? Number(stkRow.ce_ltp || 0) : Number(stkRow.pe_ltp || 0);
-          realIv = type === 'CE' ? Number(stkRow.ce_iv || 13.5) : Number(stkRow.pe_iv || 13.5);
-        }
+      if (realPrice <= 0) {
+        const pricing = getOptionLegPricing(numStrike, type, selectedOptionsExpiryType);
+        realPrice = pricing.price;
+        realIv = pricing.iv;
       }
 
       const defaultIv = (realIv > 0) ? realIv : 13.5;
@@ -11648,18 +11811,11 @@
       const newStrike = Math.max(5000, Number(leg.strike) + Number(deltaStrike));
       leg.strike = newStrike;
 
-      // Automatically sync live LTP and IV from option chain cache
-      if (window.niftyOptionsChainCache) {
-        const isMonthly = (builderCompactChainMode === 'monthly' || selectedOptionsExpiryType === 'monthly');
-        const activeChain = isMonthly ? (niftyOptionsChainCache?.monthly || {}) : (niftyOptionsChainCache?.weekly || {});
-        const strikesList = activeChain.all_strikes || activeChain.strikes || [];
-        const found = strikesList.find(s => Number(s.strike) === newStrike);
-        if (found) {
-          const newLtp = leg.type === 'CE' ? Number(found.ce_ltp || 0) : Number(found.pe_ltp || 0);
-          const newIv = leg.type === 'CE' ? Number(found.ce_iv || 13.5) : Number(found.pe_iv || 13.5);
-          if (newLtp > 0) leg.price = newLtp;
-          if (newIv > 0) leg.iv = newIv;
-        }
+      // Automatically sync live LTP and IV from active option chain (Weekly or Monthly) or analytical BS
+      const pricing = getOptionLegPricing(newStrike, leg.type, builderCompactChainMode || selectedOptionsExpiryType);
+      if (pricing && pricing.price > 0) {
+        leg.price = pricing.price;
+        leg.iv = pricing.iv;
       }
 
       renderStrategyLegs();
@@ -11674,13 +11830,30 @@
       const leg = strategyLegs.find(l => l.id === id);
       if (!leg) return;
       if (field === 'action') leg.action = val;
-      if (field === 'type') leg.type = val;
-      if (field === 'strike') leg.strike = Number(val);
+      if (field === 'type') {
+        leg.type = val;
+        const pricing = getOptionLegPricing(leg.strike, leg.type, builderCompactChainMode || selectedOptionsExpiryType);
+        if (pricing && pricing.price > 0) {
+          leg.price = pricing.price;
+          leg.iv = pricing.iv;
+        }
+      }
+      if (field === 'strike') {
+        leg.strike = Number(val);
+        const pricing = getOptionLegPricing(leg.strike, leg.type, builderCompactChainMode || selectedOptionsExpiryType);
+        if (pricing && pricing.price > 0) {
+          leg.price = pricing.price;
+          leg.iv = pricing.iv;
+        }
+      }
       if (field === 'price') leg.price = Math.max(0.05, Number(val));
       if (field === 'qty') leg.qty = Math.max(NIFTY_LOT_SIZE, Math.round(Number(val) / NIFTY_LOT_SIZE) * NIFTY_LOT_SIZE);
       if (field === 'iv') leg.iv = Math.max(1, Number(val));
       recalculateStrategyMetrics();
       drawPayoffGraph();
+      if (typeof renderBuilderCompactChain === 'function') {
+        renderBuilderCompactChain();
+      }
     }
 
     function clearStrategyBuilderLegs() {
@@ -11818,16 +11991,10 @@
       let realPrice = Number(price || 0);
       let realIv = Number(iv || 0);
 
-      if (realPrice <= 0 && window.niftyOptionsChainCache) {
-        const active = (selectedOptionsExpiryType === 'monthly')
-          ? (niftyOptionsChainCache?.monthly || {})
-          : (niftyOptionsChainCache?.weekly || {});
-        const allStrikes = active.all_strikes || active.strikes || [];
-        const stkRow = allStrikes.find(s => Number(s.strike) === numStrike);
-        if (stkRow) {
-          realPrice = type === 'CE' ? Number(stkRow.ce_ltp || 0) : Number(stkRow.pe_ltp || 0);
-          realIv = type === 'CE' ? Number(stkRow.ce_iv || 13.5) : Number(stkRow.pe_iv || 13.5);
-        }
+      if (realPrice <= 0) {
+        const pricing = getOptionLegPricing(numStrike, type, builderCompactChainMode);
+        realPrice = pricing.price;
+        realIv = pricing.iv;
       }
 
       const finalPrice = (realPrice > 0) ? realPrice : 0.05;
@@ -12176,11 +12343,13 @@
         }
       }
 
+      const cache = window.niftyOptionsChainCache || niftyOptionsChainCache;
       const active = (selectedOptionsExpiryType === 'monthly')
-        ? (niftyOptionsChainCache?.monthly || {})
-        : (niftyOptionsChainCache?.weekly || {});
-      const spot = active.spot_price || optionsPortfolioCache?.spot_price || niftyOptionsChainCache?.spot_price || 0;
-      const baseDte = Math.max(1, selectedOptionsExpiryType === 'monthly' ? 22 : 5);
+        ? (cache?.monthly || {})
+        : (cache?.weekly || {});
+      const spot = active.spot_price || optionsPortfolioCache?.spot_price || cache?.spot_price || 0;
+      const exactDte = getExactDte(active.expiry);
+      const baseDte = exactDte !== null ? Math.max(0.05, exactDte) : (selectedOptionsExpiryType === 'monthly' ? 25 : 4);
       const targetDte = Math.max(0.01, baseDte - payoffTargetDteOffset);
 
       let spotMin, spotMax;
@@ -12245,13 +12414,14 @@
       document.getElementById('strat-metric-maxprofit').innerText = maxProfitText;
       document.getElementById('strat-metric-maxloss').innerText = maxLossText;
 
-      // Breakevens (Detect genuine zero crossings to prevent dense cyan artifact lines)
+      // Breakevens (Detect genuine zero crossings across spot intervals)
       const bes = [];
       for (let i = 0; i < stepCount; i++) {
         const p1 = expiryPnls[i];
         const p2 = expiryPnls[i + 1];
-        if ((p1 < -5 && p2 > 5) || (p1 > 5 && p2 < -5)) {
-          const fraction = Math.abs(p1) / (Math.abs(p1) + Math.abs(p2) || 1);
+        if ((p1 <= 0 && p2 > 0) || (p1 >= 0 && p2 < 0)) {
+          const denom = Math.abs(p1) + Math.abs(p2);
+          const fraction = denom > 0 ? (Math.abs(p1) / denom) : 0;
           const beSpot = Math.round(spots[i] + fraction * step);
           if (!bes.some(b => Math.abs(b - beSpot) < 35)) {
             bes.push(beSpot);
@@ -12322,27 +12492,53 @@
       document.getElementById('strat-metric-greeks').innerText = `Δ: ${netDelta >= 0 ? '+' : ''}${netDelta.toFixed(2)} | Θ: ${netTheta >= 0 ? '+' : ''}₹${Math.round(netTheta).toLocaleString('en-IN')}/d`;
       document.getElementById('strat-metric-greeks-sub').innerText = `Γ: ${netGamma.toFixed(4)} | V: ${netVega >= 0 ? '+' : ''}₹${Math.round(netVega).toLocaleString('en-IN')}/%`;
 
-      // POP Proxy
-      let pop = 50;
-      if (bes.length === 2) {
-        const b1 = Math.min(...bes);
-        const b2 = Math.max(...bes);
-        const ivProxy = 0.135;
-        const T = targetDte / 365.0;
-        const d1 = (Math.log(b1 / spot)) / (ivProxy * Math.sqrt(T));
-        const d2 = (Math.log(b2 / spot)) / (ivProxy * Math.sqrt(T));
-        const pInRange = Math.abs(normalCdf(d2) - normalCdf(d1)) * 100;
-        const midPnl = expiryPnls[Math.floor(stepCount / 2)];
-        pop = midPnl >= 0 ? Math.min(95, Math.max(5, pInRange)) : Math.min(95, Math.max(5, 100 - pInRange));
-      } else if (bes.length === 1) {
-        const be = bes[0];
-        const isBullish = expiryPnls[stepCount] > 0;
-        const ivProxy = 0.135;
-        const T = targetDte / 365.0;
-        const d = (Math.log(be / spot)) / (ivProxy * Math.sqrt(T));
-        pop = isBullish ? (1.0 - normalCdf(d)) * 100 : normalCdf(d) * 100;
+      // Real Probability of Profit (POP) using analytical lognormal distribution
+      let pop = 50.0;
+      if (maxExp <= 0) {
+        pop = 0.0;
       } else if (minExp >= 0) {
         pop = 99.0;
+      } else {
+        const stratIvPct = (strategyLegs.length > 0 && strategyLegs.some(l => Number(l.iv) > 0))
+          ? (strategyLegs.filter(l => Number(l.iv) > 0).reduce((s, l) => s + Number(l.iv), 0) / strategyLegs.filter(l => Number(l.iv) > 0).length)
+          : (getAtmIv(active) || 14.0);
+        const actualSigma = Math.max(0.01, stratIvPct / 100.0);
+        const T = Math.max(0.0001, targetDte / 365.0);
+        const r = 0.07;
+        const drift = (r - 0.5 * actualSigma * actualSigma) * T;
+        const volSqrtT = actualSigma * Math.sqrt(T);
+
+        const dLog = (sVal) => (Math.log(Math.max(1, sVal) / spot) - drift) / volSqrtT;
+
+        if (bes.length === 2) {
+          const b1 = Math.min(...bes);
+          const b2 = Math.max(...bes);
+          const pInRange = Math.abs(normalCdf(dLog(b2)) - normalCdf(dLog(b1))) * 100;
+          const midSpot = (b1 + b2) / 2;
+          let midPnl = 0;
+          strategyLegs.forEach(leg => {
+            const sign = leg.action === 'BUY' ? 1 : -1;
+            const intrinsic = leg.type === 'CE' ? Math.max(0, midSpot - leg.strike) : Math.max(0, leg.strike - midSpot);
+            midPnl += sign * (intrinsic - leg.price) * leg.qty;
+          });
+          pop = midPnl >= 0 ? pInRange : (100.0 - pInRange);
+        } else if (bes.length === 1) {
+          const be = bes[0];
+          const isBullish = expiryPnls[stepCount] > 0;
+          pop = isBullish ? ((1.0 - normalCdf(dLog(be))) * 100) : (normalCdf(dLog(be)) * 100);
+        } else {
+          let profitableProb = 0;
+          for (let i = 0; i < stepCount; i++) {
+            const avgPnl = (expiryPnls[i] + expiryPnls[i + 1]) / 2;
+            if (avgPnl > 0) {
+              const pLower = normalCdf(dLog(spots[i]));
+              const pUpper = normalCdf(dLog(spots[i + 1]));
+              profitableProb += Math.max(0, pUpper - pLower);
+            }
+          }
+          pop = profitableProb * 100.0;
+        }
+        pop = Math.min(99.0, Math.max(1.0, pop));
       }
       document.getElementById('strat-metric-pop').innerText = `${Math.round(pop)}%`;
 
@@ -12361,38 +12557,33 @@
 
     function calculateSigmaLevels(spot, expiryType = 'WEEKLY', customDte = null, customIv = null) {
       const isMonthly = String(expiryType).toUpperCase() === 'MONTHLY';
+      const cache = window.niftyOptionsChainCache || (typeof niftyOptionsChainCache !== 'undefined' ? niftyOptionsChainCache : null);
+      const chain = isMonthly ? (cache?.monthly || {}) : (cache?.weekly || {});
+
       let dte = customDte;
       if (!dte || dte <= 0) {
-        const chain = isMonthly ? niftyOptionsChainCache?.monthly : niftyOptionsChainCache?.weekly;
-        if (chain && chain.expiry) {
-          try {
-            const parts = chain.expiry.split('-');
-            if (parts.length === 3) {
-              const expDate = new Date(`${parts[1]} ${parts[0]}, ${parts[2]}`);
-              const diff = Math.ceil((expDate - new Date()) / (1000 * 60 * 60 * 24));
-              if (!isNaN(diff) && diff >= 0) dte = Math.max(0.5, diff);
-            }
-          } catch (e) {}
-        }
+        const exact = getExactDte(chain.expiry);
+        if (exact !== null) dte = exact;
       }
       if (!dte || dte <= 0) {
-        dte = isMonthly ? 13 : 3;
+        dte = isMonthly ? 25 : 4;
       }
 
       let iv = customIv;
       if (!iv || iv <= 0) {
-        const chain = isMonthly ? niftyOptionsChainCache?.monthly : niftyOptionsChainCache?.weekly;
-        iv = Number(chain?.atm_iv || chain?.pcr?.iv || 13.0);
+        iv = getAtmIv(chain);
       }
-      if (!iv || iv <= 0) iv = 13.0;
+      if (!iv || iv <= 0) {
+        iv = 14.0;
+      }
 
-      const t = Math.max(0.001, dte / 365.0);
+      const t = Math.max(0.0001, dte / 365.0);
       const oneSigmaVal = spot * (iv / 100.0) * Math.sqrt(t);
       const twoSigmaVal = 2.0 * oneSigmaVal;
 
       return {
         spot: Math.round(spot),
-        dte: Math.round(dte),
+        dte: Number(dte.toFixed(1)),
         iv: Number(iv.toFixed(1)),
         expiryType: isMonthly ? 'MONTHLY' : 'WEEKLY',
         oneSigmaVal: Math.round(oneSigmaVal),
