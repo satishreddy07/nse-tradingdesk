@@ -1303,7 +1303,7 @@ class KotakNeoEngine:
             return {
                 f"{k[0]}_{k[1]}": dict(v)
                 for k, v in self._option_ticks.items()
-                if min_k <= k[0] <= max_k
+                if isinstance(k[0], (int, float)) and min_k <= k[0] <= max_k
             }
 
     def fetch_option_quotes(self, near_atm_only: bool = True) -> Dict[str, Any]:
@@ -1870,10 +1870,8 @@ class KotakNeoEngine:
                     from engines.commodities_engine import commodities_engine
                     is_mcx_active, _ = commodities_engine.is_mcx_open()
 
-                    # When WS is offline, poll REST continuously
-                    # When WS is online and healthy, poll less frequently as backup
-                    ws_healthy = self._is_connected
-                    if not ws_healthy or in_equity_hours:
+                    # When WS is offline, poll REST continuously during active equity hours
+                    if in_equity_hours:
                         syms = self._gather_active_market_symbols()
                         if syms:
                             self.fetch_rest_quotes(syms)

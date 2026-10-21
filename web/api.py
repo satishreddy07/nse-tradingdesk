@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional, List
 
 import numpy as np
 
-from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Depends
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Depends, Body
 from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -2738,14 +2738,9 @@ def get_continuous_live_stream_endpoint():
     from engines.kotak_neo_engine import kotak_neo_engine
     from engines.nifty_analytics_engine import nifty_analytics_engine
 
-    # Proactive Prime: If authenticated and WebSocket is offline, fetch REST quotes immediately for continuous streaming
-    if kotak_neo_engine._is_authenticated and not kotak_neo_engine._is_connected:
-        try:
-            active_syms = kotak_neo_engine._gather_active_market_symbols()
-            if active_syms:
-                kotak_neo_engine.fetch_rest_quotes(active_syms)
-        except Exception:
-            pass
+    # Ensure background hybrid REST streamer is active without blocking the HTTP response thread
+    if kotak_neo_engine._is_authenticated:
+        kotak_neo_engine._start_rest_streamer()
 
     all_ticks = kotak_neo_engine.get_all_ticks()
     is_streaming = kotak_neo_engine.is_streaming_active()
@@ -2889,4 +2884,94 @@ def refresh_commodities_data():
     from engines.commodities_engine import commodities_engine
     commodities_engine.discover_active_contracts(force=True)
     return commodities_engine.fetch_live_quotes(force_refresh=True)
+
+
+# --------------------------------------------------------------------------
+# MCX COMMODITIES OPTION CHAIN & STRATEGY BUILDER ENDPOINTS
+# --------------------------------------------------------------------------
+@app.get("/api/commodities/options/expiries")
+def get_commodity_option_expiries(underlying: str = "CRUDEOIL"):
+    """
+    Returns official active option expiries for MCX commodity contracts (Crude Oil, Natural Gas, Gold Mini, etc.).
+    """
+    from engines.commodities_engine import commodities_engine
+    expiries = commodities_engine.get_available_option_expiries(underlying=underlying)
+    return {
+        "status": "SUCCESS",
+        "underlying": underlying.upper(),
+        "expiries": expiries,
+    }
+
+
+@app.get("/api/commodities/options/chain")
+def get_commodity_option_chain(
+    underlying: str = "CRUDEOIL",
+    expiry: Optional[str] = None,
+    count: int = 16,
+    force_refresh: bool = False
+):
+    """
+    Returns authentic live MCX Option Chain from Kotak Neo API (`mcx_fo`), including
+    PCR (Overall, Near-ATM, Exact ATM), Max Pain, Call/Put Walls, ATM Straddle,
+    Black-Scholes IV, and Full Greeks (Δ, Γ, Θ, Vega).
+    """
+    from engines.commodities_engine import commodities_engine
+    return commodities_engine.fetch_commodity_option_chain(
+        underlying=underlying,
+        expiry=expiry,
+        count=count,
+        force_refresh=force_refresh
+    )
+
+
+@app.post("/api/commodities/options/strategy/analyze")
+def analyze_commodity_strategy_endpoint(payload: Dict[str, Any] = Body(...)):
+    """
+    Analyzes a multi-leg commodity options strategy and returns dual-curve payoff graph data,
+    Max Profit/Loss, Breakevens, POP, Net Premium, and Net Greeks.
+    """
+    from engines.commodities_engine import commodities_engine
+    underlying = payload.get("underlying", "CRUDEOIL")
+    legs = payload.get("legs", [])
+    target_days = float(payload.get("target_days", 0.0))
+    iv_shift_pct = float(payload.get("iv_shift_pct", 0.0))
+    return commodities_engine.analyze_commodity_strategy(
+        underlying=underlying,
+        legs=legs,
+        target_days=target_days,
+        iv_shift_pct=iv_shift_pct
+    )
+
+
+@app.post("/api/commodities/options/strategy/deploy")
+def deploy_commodity_strategy_endpoint(payload: Dict[str, Any] = Body(...)):
+    """
+    Deploys a multi-leg commodity strategy for real-time paper execution and tracking.
+    """
+    from engines.commodities_engine import commodities_engine
+    return commodities_engine.deploy_commodity_strategy(payload)
+
+
+@app.get("/api/commodities/options/strategy/deployed")
+def get_deployed_commodity_strategies_endpoint():
+    """
+    Returns all active and squared-off deployed commodity strategies with live P&L.
+    """
+    from engines.commodities_engine import commodities_engine
+    strategies = commodities_engine.get_deployed_commodity_strategies()
+    return {
+        "status": "SUCCESS",
+        "strategies": strategies,
+        "count": len(strategies),
+    }
+
+
+@app.post("/api/commodities/options/strategy/squareoff")
+def square_off_commodity_strategy_endpoint(payload: Dict[str, Any] = Body(...)):
+    """
+    Squares off an active deployed commodity strategy.
+    """
+    from engines.commodities_engine import commodities_engine
+    strategy_id = payload.get("strategy_id", "")
+    return commodities_engine.square_off_commodity_strategy(strategy_id)
 

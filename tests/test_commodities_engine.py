@@ -112,15 +112,16 @@ def test_commodities_summary_api_endpoint(client):
 
 def test_continuous_stream_includes_commodities(client):
     """Tests GET /api/stream/continuous includes commodities stream payload."""
-    res = client.get("/api/stream/continuous")
-    assert res.status_code == 200
-    data = res.json()
-    assert data.get("status") == "SUCCESS"
-    assert "commodities" in data
-    comm_data = data["commodities"]
-    assert "quotes" in comm_data
-    assert "is_mcx_open" in comm_data
-    assert "summary" in comm_data
+    with patch("engines.nifty_analytics_engine.nifty_analytics_engine.get_options_portfolio", return_value={"strategies": []}):
+        res = client.get("/api/stream/continuous")
+        assert res.status_code == 200
+        data = res.json()
+        assert data.get("status") == "SUCCESS"
+        assert "commodities" in data
+        comm_data = data["commodities"]
+        assert "quotes" in comm_data
+        assert "is_mcx_open" in comm_data
+        assert "summary" in comm_data
 
 
 def test_commodities_refresh_endpoint(client):
@@ -130,3 +131,108 @@ def test_commodities_refresh_endpoint(client):
     data = res.json()
     assert data.get("status") == "SUCCESS"
     assert "quotes" in data
+
+
+def test_commodity_options_expiries_discovery(client):
+    """Tests official MCX option expiry discovery for Crude Oil and Natural Gas."""
+    res = client.get("/api/commodities/options/expiries?underlying=CRUDEOIL")
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("status") == "SUCCESS"
+    assert data.get("underlying") == "CRUDEOIL"
+    assert "expiries" in data
+    expiries = data.get("expiries", [])
+    assert len(expiries) >= 1
+    assert "iso" in expiries[0]
+    assert "label" in expiries[0]
+
+
+def test_commodity_option_chain_endpoint(client):
+    """Tests live MCX option chain endpoint, strikes structure, PCR, and Greeks."""
+    res = client.get("/api/commodities/options/chain?underlying=CRUDEOIL")
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("status") == "SUCCESS"
+    assert data.get("underlying") == "CRUDEOIL"
+    assert "spot_price" in data
+    assert "atm_strike" in data
+    assert "pcr" in data
+    assert "strikes" in data
+    assert len(data["strikes"]) >= 5
+
+    # Validate row strike structure with CE and PE
+    row = data["strikes"][0]
+    assert "strikePrice" in row
+    assert "CE" in row
+    assert "PE" in row
+    assert "lastPrice" in row["CE"]
+    assert "lastPrice" in row["PE"]
+    assert "impliedVolatility" in row["CE"]
+    assert "delta" in row["CE"]
+
+
+def test_commodity_options_strategy_analyzer_endpoint(client):
+    """Tests multi-leg strategy analysis and payoff curve generation."""
+    payload = {
+        "underlying": "CRUDEOIL",
+        "legs": [
+            {"strike": 5800, "type": "CE", "action": "BUY", "price": 150.0, "qty": 100, "iv": 28.0},
+            {"strike": 6000, "type": "CE", "action": "SELL", "price": 80.0, "qty": 100, "iv": 27.0}
+        ],
+        "target_days": 0.0,
+        "iv_shift_pct": 0.0
+    }
+    res = client.post("/api/commodities/options/strategy/analyze", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("status") == "SUCCESS"
+    assert data.get("underlying") == "CRUDEOIL"
+    assert data.get("net_premium") == -7000.0  # Debit of ₹7,000
+    assert "max_profit" in data
+    assert "max_loss" in data
+    assert "payoff_curve" in data
+    curve = data["payoff_curve"]
+    assert "spots" in curve
+    assert "expiry_pnls" in curve
+    assert "target_pnls" in curve
+    assert len(curve["spots"]) > 50
+
+
+def test_commodity_strategy_deployment_lifecycle(client):
+    """Tests deploying a strategy, retrieving deployed strategies, and squaring off."""
+    deploy_payload = {
+        "underlying": "CRUDEOIL",
+        "strategy_name": "Crude Bull Call Test",
+        "legs": [
+            {"strike": 5800, "type": "CE", "action": "BUY", "price": 150.0, "qty": 100},
+            {"strike": 6000, "type": "CE", "action": "SELL", "price": 80.0, "qty": 100}
+        ],
+        "net_premium": -7000.0,
+        "max_profit": "₹13,000.00",
+        "max_loss": "₹7,000.00",
+        "breakevens": [5870.0]
+    }
+    # 1. Deploy
+    res = client.post("/api/commodities/options/strategy/deploy", json=deploy_payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("status") == "SUCCESS"
+    strat = data.get("strategy", {})
+    strat_id = strat.get("strategy_id")
+    assert strat_id is not None
+    assert strat.get("status") == "ACTIVE"
+
+    # 2. Get deployed
+    res_list = client.get("/api/commodities/options/strategy/deployed")
+    assert res_list.status_code == 200
+    deployed_data = res_list.json()
+    assert deployed_data.get("status") == "SUCCESS"
+    found = [s for s in deployed_data.get("strategies", []) if s.get("strategy_id") == strat_id]
+    assert len(found) == 1
+
+    # 3. Square off
+    res_sq = client.post("/api/commodities/options/strategy/squareoff", json={"strategy_id": strat_id})
+    assert res_sq.status_code == 200
+    sq_data = res_sq.json()
+    assert sq_data.get("status") == "SUCCESS"
+    assert sq_data.get("strategy", {}).get("status") == "CLOSED"
