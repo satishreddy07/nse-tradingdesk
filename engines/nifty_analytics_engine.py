@@ -4796,7 +4796,7 @@ class NiftyAnalyticsEngine:
         brent_closes = _get_aligned_series("BZ=F")
 
         # Initial base weights
-        base_w = {"technical": 0.25, "breadth": 0.20, "sectoral": 0.20, "global": 0.15, "macro": 0.12, "news_deriv": 0.08}
+        base_w = {"technical": 0.22, "breadth": 0.18, "sectoral": 0.18, "global": 0.14, "macro": 0.10, "news_deriv": 0.08, "institutional": 0.10}
         w_t1 = dict(base_w)
         w_t5 = dict(base_w)
         eta = 0.045  # Online learning rate
@@ -5008,8 +5008,9 @@ class NiftyAnalyticsEngine:
                         # Online Multiplicative Weight Update for T+1
                         sign_market = 1.0 if ret_pct_1 > 0 else (-1.0 if ret_pct_1 < 0 else 0.0)
                         for k, p_val in pillar_snap.items():
-                            p_sign = 1.0 if p_val > 0 else (-1.0 if p_val < 0 else 0.0)
-                            w_t1[k] = w_t1[k] * math.exp(eta * p_sign * sign_market)
+                            if k in w_t1:
+                                p_sign = 1.0 if p_val > 0 else (-1.0 if p_val < 0 else 0.0)
+                                w_t1[k] = w_t1[k] * math.exp(eta * p_sign * sign_market)
                         # Normalize weights
                         tot_w1 = sum(w_t1.values())
                         w_t1 = {k: round(v / max(1e-5, tot_w1), 3) for k, v in w_t1.items()}
@@ -5063,8 +5064,9 @@ class NiftyAnalyticsEngine:
 
                         sign_market_5 = 1.0 if ret_pct_5 > 0 else -1.0
                         for k, p_val in pillar_snap.items():
-                            p_sign = 1.0 if p_val > 0 else -1.0
-                            w_t5[k] = w_t5[k] * math.exp(eta * 0.75 * p_sign * sign_market_5)
+                            if k in w_t5:
+                                p_sign = 1.0 if p_val > 0 else -1.0
+                                w_t5[k] = w_t5[k] * math.exp(eta * 0.75 * p_sign * sign_market_5)
                         tot_w5 = sum(w_t5.values())
                         w_t5 = {k: round(v / max(1e-5, tot_w5), 3) for k, v in w_t5.items()}
 
