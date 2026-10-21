@@ -371,6 +371,10 @@ def get_portfolio_positions(portfolio_type: str):
         p["stop_distance_pct"] = round(((cp - sl) / cp) * 100.0, 2)
         r_unit = max(0.01, ep - float(p.get("original_stop_loss") or sl))
         p["current_r"] = round((cp - ep) / r_unit, 2)
+        p["shares"] = qty
+        p["total_quantity"] = qty
+        p["current_stop"] = sl
+        p["initial_sl"] = sl
 
     return positions
 

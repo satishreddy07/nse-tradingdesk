@@ -17229,14 +17229,20 @@
         const dayChgSign = dayChg >= 0 ? '+' : '';
         const dayChgArrow = dayChg >= 0 ? '▲' : '▼';
 
+        const qty = p.quantity !== undefined ? p.quantity : (p.qty !== undefined ? p.qty : (p.shares || p.total_quantity || p.original_quantity || 0));
+        const currentStop = p.stop_loss || p.current_stop || p.initial_sl || p.original_stop_loss || 0;
+        const totalVal = qty * (p.entry_price || 0);
+
         const leg1Hit = leg.leg1_status === 'CLOSED';
-        const leg1Target = leg.leg1_target_price ? `₹${parseFloat(leg.leg1_target_price).toFixed(2)}` : (p.t1_price ? `₹${parseFloat(p.t1_price).toFixed(2)}` : '--');
+        const leg1TargetVal = leg.leg1_target_price || p.target || p.t1 || p.t1_price;
+        const leg1Target = leg1TargetVal ? `₹${parseFloat(leg1TargetVal).toFixed(2)}` : '--';
         const leg1Badge = leg1Hit ?
           `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">🎯 TARGET HIT (+2.0R)</span>` :
           `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">PENDING (+2.0R @ ${leg1Target})</span>`;
 
-        const leg2Sl = leg.leg2_sl ? `₹${parseFloat(leg.leg2_sl).toFixed(2)}` : (p.current_stop ? `₹${parseFloat(p.current_stop).toFixed(2)}` : '--');
-        const isBe = leg1Hit || (p.current_stop && p.current_stop >= p.entry_price);
+        const leg2SlVal = leg.leg2_current_sl || leg.leg2_sl || leg.leg2_trailing_ema10 || currentStop;
+        const leg2Sl = leg2SlVal ? `₹${parseFloat(leg2SlVal).toFixed(2)}` : '--';
+        const isBe = leg1Hit || (currentStop && currentStop >= p.entry_price);
         const leg2Badge = leg.leg2_status === 'CLOSED' ?
           `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-700 text-slate-300">CLOSED</span>` :
           (isBe ?
@@ -17257,10 +17263,10 @@
               </div>
             </td>
             <td class="p-3.5 font-mono text-slate-300">
-              <div>${p.shares || p.total_quantity || 0} shs</div>
-              <div class="text-[10px] text-slate-400">₹${((p.shares || p.total_quantity || 0) * (p.entry_price || 0)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+              <div>${qty} shs</div>
+              <div class="text-[10px] text-slate-400">₹${totalVal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
             </td>
-            <td class="p-3.5 font-mono text-rose-400 font-semibold">₹${parseFloat(p.current_stop || p.initial_sl || 0).toFixed(2)}</td>
+            <td class="p-3.5 font-mono text-rose-400 font-semibold">₹${parseFloat(currentStop).toFixed(2)}</td>
             <td class="p-3.5">${leg1Badge}</td>
             <td class="p-3.5">${leg2Badge}</td>
             <td class="p-3.5">
