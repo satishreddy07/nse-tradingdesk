@@ -5204,16 +5204,42 @@ class NiftyAnalyticsEngine:
         with state_engine._lock:
             with state_engine._get_connection() as conn:
                 existing = conn.execute(
-                    "SELECT t1_verdict, t5_verdict, composite_score FROM nifty_predictions_log WHERE prediction_date = ?",
+                    "SELECT t1_verdict, t5_verdict, composite_score, actual_t1_close FROM nifty_predictions_log WHERE prediction_date = ?",
                     (pred_date,)
                 ).fetchone()
 
                 if existing and existing[0]:
-                    logger.info(
-                        f"🔒 [AUDIT INTEGRITY] Prediction for {pred_date} already exists in nifty_predictions_log "
-                        f"(T+1: {existing[0]} | T+5: {existing[1]}). Overwrite strictly prohibited."
-                    )
-                    return
+                    # If market is alive (09:00 - 15:30 IST) or session already completed/graded, freeze record permanently
+                    if is_market_alive or existing[3] is not None:
+                        logger.info(
+                            f"🔒 [AUDIT INTEGRITY] Prediction for {pred_date} already exists in nifty_predictions_log "
+                            f"(T+1: {existing[0]} | T+5: {existing[1]}). Overwrite strictly prohibited."
+                        )
+                        return
+                    else:
+                        # Pre-market calibration window (before 09:00 AM IST): update pending unclosed record to keep top desk & ledger in 100% sync
+                        conn.execute("""
+                        UPDATE nifty_predictions_log
+                        SET timestamp_ist = ?, spot_at_prediction = ?, composite_score = ?,
+                            t1_verdict = ?, t1_prob_up = ?, t1_prob_flat = ?, t1_prob_down = ?,
+                            t1_expected_close = ?, t1_low_1s = ?, t1_high_1s = ?,
+                            t5_verdict = ?, t5_prob_up = ?, t5_prob_flat = ?, t5_prob_down = ?,
+                            t5_expected_close = ?, t5_low_1s = ?, t5_high_1s = ?,
+                            pillar_snapshots_json = ?, target_date = ?, data_date = ?
+                        WHERE prediction_date = ? AND actual_t1_close IS NULL
+                        """, (
+                            ts_ist, spot, composite_score,
+                            t1_verdict, t1_probs["up"], t1_probs["flat"], t1_probs["down"],
+                            t1_expected_close, t1_low_1s, t1_high_1s,
+                            t5_verdict, t5_probs["up"], t5_probs["flat"], t5_probs["down"],
+                            t5_expected_close, t5_low_1s, t5_high_1s,
+                            json.dumps(pillar_snapshots or {}),
+                            t_date, d_date,
+                            pred_date
+                        ))
+                        conn.commit()
+                        logger.info(f"🔄 [PRE-MARKET SYNC] Updated pending prediction in nifty_predictions_log for {pred_date} (T+1: {t1_verdict}, Score: {composite_score}).")
+                        return
 
                 conn.execute("""
                 INSERT INTO nifty_predictions_log (
