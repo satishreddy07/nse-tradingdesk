@@ -1309,14 +1309,24 @@ class KotakNeoEngine:
         if not tokens_to_fetch:
             return {}
 
-        try:
-            res = self._client.quotes(instrument_tokens=tokens_to_fetch, quote_type="all")
-            items = []
-            if isinstance(res, list): items = res
-            elif isinstance(res, dict) and "data" in res and isinstance(res["data"], list): items = res["data"]
-            elif isinstance(res, dict) and "data" in res and isinstance(res["data"], dict): items = [res["data"]]
-            elif isinstance(res, dict) and any(k in res for k in ("ltp", "last_traded_price", "close")): items = [res]
+        items = []
+        chunk_size = 40
+        for i in range(0, len(tokens_to_fetch), chunk_size):
+            chunk = tokens_to_fetch[i : i + chunk_size]
+            try:
+                res = self._client.quotes(instrument_tokens=chunk, quote_type="all")
+                if isinstance(res, list):
+                    items.extend(res)
+                elif isinstance(res, dict) and "data" in res and isinstance(res["data"], list):
+                    items.extend(res["data"])
+                elif isinstance(res, dict) and "data" in res and isinstance(res["data"], dict):
+                    items.append(res["data"])
+                elif isinstance(res, dict) and any(k in res for k in ("ltp", "last_traded_price", "close")):
+                    items.append(res)
+            except Exception as e:
+                logger.debug(f"[Kotak Neo] Quotes chunk error: {e}")
 
+        try:
             now_str = format_ist()
             updated_count = 0
             for item in items:

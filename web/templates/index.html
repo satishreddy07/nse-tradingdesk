@@ -5152,7 +5152,7 @@
                 Monthly (<span id="opt-lbl-monthly-exp">--</span>)
               </button>
             </div>
-            <button onclick="loadOptionsChainDesk(true)" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+            <button onclick="loadOptionsChainDesk(true, true)" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5 shrink-0"></i>
               <span>Refresh Live Chain</span>
             </button>
@@ -11220,7 +11220,7 @@
       if (window.lucide) lucide.createIcons();
     }
 
-    async function loadOptionsChainDesk(forceRefresh = false) {
+    async function loadOptionsChainDesk(forceRefresh = false, showUserToast = false) {
       if (niftyOptionsChainCache && !forceRefresh) {
         renderOptionsChainUI(niftyOptionsChainCache);
         if (typeof renderBuilderCompactChain === 'function') {
@@ -11237,7 +11237,7 @@
           renderBuilderCompactChain();
         }
         await loadOptionsPortfolioDesk();
-        if (forceRefresh) {
+        if (showUserToast) {
           showToast(`🎯 Live NSE Nifty 50 Option Chain Refreshed (Weekly ${data.weekly?.expiry || ''} & Monthly ${data.monthly?.expiry || ''})!`, 'success');
         }
       } catch (e) {
@@ -17437,56 +17437,7 @@
         const riskPerShare = (triggerHigh - initialSl).toFixed(2);
         const riskPct = triggerHigh > 0 ? ((triggerHigh - initialSl) / triggerHigh * 100).toFixed(2) : '0.00';
 
-        // Live LTP & Spread
-        const ltpVal = parseFloat(w.current_price || w.ltp || w.t_minus_1_close || 0.0);
-        const distPct = triggerHigh > 0 ? ((ltpVal - triggerHigh) / triggerHigh * 100) : 0.0;
-        const isTriggerHit = (ltpVal >= triggerHigh) && (triggerHigh > 0);
-        const distSign = distPct >= 0 ? '+' : '';
-        const distBadgeClass = isTriggerHit 
-          ? 'text-emerald-400 bg-emerald-950/80 border-emerald-500/40 font-bold' 
-          : 'text-slate-400 bg-slate-900/80 border-slate-800';
-
-        // Status Badge with Detailed Reason for Invalidated setups
-        let statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">WATCHING</span>`;
-        const ema20Val = parseFloat(w.ema20 || 0.0);
-        const baseLowVal = parseFloat(w.base_low || w.t_minus_1_low || 0.0);
-
-        if (w.status === 'TRIGGERED' || isTriggerHit) {
-          statusBadge = `
-            <div class="space-y-0.5">
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1 w-max">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                TRIGGER HIT
-              </span>
-              <span class="text-[9px] font-mono text-emerald-400/80 block">Breakout Confirmed</span>
-            </div>
-          `;
-        } else if (w.status === 'INVALIDATED') {
-          let invalText = 'Breached 20 EMA';
-          if (ema20Val > 0 && ltpVal < ema20Val) {
-            invalText = `Below 20 EMA (₹${ltpVal.toFixed(1)} < ₹${ema20Val.toFixed(1)})`;
-          } else if (baseLowVal > 0 && ltpVal < baseLowVal) {
-            invalText = `Broke Base Low (₹${ltpVal.toFixed(1)} < ₹${baseLowVal.toFixed(1)})`;
-          }
-          statusBadge = `
-            <div class="space-y-0.5">
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold flex items-center gap-1 w-max">
-                🚫 INVALIDATED
-              </span>
-              <span class="text-[9px] font-mono text-rose-400 font-semibold block">${invalText}</span>
-            </div>
-          `;
-        } else if (w.status === 'EXPIRED') {
-          statusBadge = `
-            <div class="space-y-0.5">
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700">⌛ EXPIRED</span>
-              <span class="text-[9px] font-mono text-slate-500 block">2 Days Without Breakout</span>
-            </div>
-          `;
-        }
-
         const ltp = parseFloat(w.ltp || w.current_price || w.t_minus_1_close || 0.0);
-        const triggerHigh = parseFloat(w.trigger_high || w.t_minus_1_high || 0.0);
         const isTriggerCrossed = triggerHigh > 0 && ltp >= triggerHigh;
         const distPct = parseFloat(w.distance_to_trigger_pct !== undefined ? w.distance_to_trigger_pct : ((ltp - triggerHigh) / triggerHigh * 100));
         const distSign = distPct > 0 ? '+' : '';
@@ -22871,11 +22822,11 @@
           });
         }
 
-        // 5. Live Option Chain dynamic refresh when user is on Options Desk
+        // 5. Live Option Chain analytics background refresh (every 30s)
         if (typeof currentModule !== 'undefined' && currentModule === 'module-options') {
           window._optChainPollCounter = (window._optChainPollCounter || 0) + 1;
-          if (window._optChainPollCounter % 2 === 0) {
-            loadOptionsChainDesk(true);
+          if (window._optChainPollCounter % 10 === 0) {
+            loadOptionsChainDesk(false, false);
           }
         }
 
