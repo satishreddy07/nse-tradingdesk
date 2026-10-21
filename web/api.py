@@ -395,6 +395,10 @@ def get_portfolio_positions(portfolio_type: str):
                 p["day_change_pct"] = tick["change_pct"]
             if tick.get("updated_at"):
                 p["price_updated_at"] = tick["updated_at"]
+        p["shares"] = qty
+        p["total_quantity"] = qty
+        p["current_stop"] = sl
+        p["initial_sl"] = sl
 
     return positions
 
@@ -417,9 +421,9 @@ def get_portfolio_signals(portfolio_type: str):
 # PORTFOLIO 3: PRE-BREAKOUT COILS & SPLIT EXIT ROUTES
 # --------------------------------------------------------------------------
 @app.get("/api/portfolio/PORTFOLIO_3/watchlist")
-def get_portfolio3_watchlist():
+def get_portfolio3_watchlist(include_all: bool = False):
     """Returns active pre-breakout coil watchlist candidates for Portfolio 3."""
-    return portfolio3_strategy_engine.get_active_watchlist()
+    return portfolio3_strategy_engine.get_active_watchlist(include_all=include_all)
 
 
 @app.get("/api/portfolio/PORTFOLIO_3/legs")

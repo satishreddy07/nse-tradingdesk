@@ -128,9 +128,18 @@ class DailyBackupManager:
                     if creds.get("enabled"):
                         cloud_res = telegram_vault.backup_master_file_to_cloud(
                             custom_note=f"{custom_note} ({format_ist(ts_now)})",
-                            send_notification=False
+                            send_notification=True
                         )
                         cloud_status = cloud_res.get("status", "COMPLETED")
+                        tg_msg = (
+                            f"📦 <b>Market-On-Close Daily Database Backup Complete</b>\n"
+                            f"• <b>File:</b> <code>{dest_filename}</code> ({backup_size_mb} MB)\n"
+                            f"• <b>PRAGMA Integrity:</b> <code>{integrity_result}</code>\n"
+                            f"• <b>Cloud Vault Sync:</b> <code>{cloud_status}</code>\n"
+                            f"• <b>Time:</b> <code>{format_ist(ts_now)}</code>\n\n"
+                            f"<i>All swing trades, P3 position legs, and master data successfully backed up to Telegram.</i>"
+                        )
+                        telegram_vault.send_message(tg_msg, parse_mode="HTML")
                 except Exception as e_cloud:
                     logger.warning(f"Cloud vault sync during daily backup encountered warning: {e_cloud}")
                     cloud_status = f"WARNING: {str(e_cloud)}"

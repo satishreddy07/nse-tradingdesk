@@ -1244,11 +1244,20 @@ class NiftyAnalyticsEngine:
 
                         if weekly_analysis.get("status") == "OK":
                             suggestions = self._build_options_quant_suggestions(weekly_analysis, monthly_analysis)
+                            is_market_open, _ = NSEMarketCalendar.can_execute_trades()
+                            mkt_status = NSEMarketCalendar.get_market_status()
+                            mkt_phase = mkt_status.get("session_phase", "REGULAR_HOURS" if is_market_open else "CLOSED")
+                            mkt_state_str = "OPEN" if is_market_open else "CLOSED"
+
+                            live_spot_data = self.get_live_nifty_spot()
+                            live_spot_val = float(live_spot_data.get("price") or 0.0) if live_spot_data else 0.0
+                            canonical_spot = live_spot_val if live_spot_val > 0 else spot
+
                             payload = {
                                 "status": "OK",
                                 "source": "NSE_LIVE_OPTION_CHAIN_V3",
                                 "symbol": "NIFTY 50",
-                                "spot_price": round(spot, 2),
+                                "spot_price": round(canonical_spot, 2),
                                 "nse_timestamp": nse_ts,
                                 "fetched_at_ist": format_ist(),
                                 "available_expiries": expiry_dates[:8],
@@ -1256,6 +1265,13 @@ class NiftyAnalyticsEngine:
                                 "weekly": weekly_analysis,
                                 "monthly": monthly_analysis,
                                 "quant_suggestions": suggestions,
+                                "is_live": is_market_open,
+                                "market_status": {
+                                    "is_open": is_market_open,
+                                    "status": mkt_state_str,
+                                    "session_phase": mkt_phase
+                                },
+                                "session_phase": mkt_phase,
                             }
                             with self._lock:
                                 self._option_chain_mem_cache = payload
@@ -1283,6 +1299,14 @@ class NiftyAnalyticsEngine:
         persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
         if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
             persisted["source"] = "MASTER_DB_PERSISTED_NSE_CHAIN"
+            is_market_open, _ = NSEMarketCalendar.can_execute_trades()
+            mkt_status = NSEMarketCalendar.get_market_status()
+            persisted["is_live"] = is_market_open
+            persisted["market_status"] = {
+                "is_open": is_market_open,
+                "status": "OPEN" if is_market_open else "CLOSED",
+                "session_phase": mkt_status.get("session_phase", "CLOSED")
+            }
             return persisted
 
         return {

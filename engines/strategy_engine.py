@@ -337,7 +337,7 @@ class Portfolio3StrategyEngine:
                 with self._get_connection() as conn:
                     # 1. Count active watchlist items
                     w_count = conn.execute(
-                        "SELECT COUNT(*) FROM p3_prebreakout_watchlist WHERE status = 'WATCHING'"
+                        "SELECT COUNT(DISTINCT symbol) FROM p3_prebreakout_watchlist WHERE status = 'WATCHING'"
                     ).fetchone()[0]
 
                     # 2. Query active positions for Portfolio 3
@@ -470,6 +470,10 @@ class Portfolio3StrategyEngine:
         with self._get_connection() as conn:
             for c in candidates:
                 try:
+                    conn.execute(
+                        "UPDATE p3_prebreakout_watchlist SET status = 'SUPERSEDED', updated_at = ? WHERE symbol = ? AND status = 'WATCHING' AND scan_date != ?",
+                        (now_str, c["symbol"], scan_date_str)
+                    )
                     conn.execute("""
                     INSERT INTO p3_prebreakout_watchlist (
                         symbol, scan_date, t_minus_1_date, t_minus_1_close, t_minus_1_high,
@@ -543,6 +547,11 @@ class Portfolio3StrategyEngine:
 
     def get_active_watchlist(self, include_all: bool = False) -> List[Dict[str, Any]]:
         """Returns the list of currently active watchlist candidates enriched with live LTP and spreads."""
+        from execution.state_engine import state_engine
+        try:
+            from engines.kotak_neo_engine import kotak_neo_engine
+        except ImportError:
+            kotak_neo_engine = None
         with self._get_connection() as conn:
             if include_all:
                 rows = conn.execute("""
@@ -567,12 +576,18 @@ class Portfolio3StrategyEngine:
                 """).fetchall()
             items = [dict(r) for r in rows]
 
+        with self._get_connection() as c2:
             for item in items:
                 sym = item.get('symbol', '')
-                pos_row = conn.execute("SELECT current_price FROM active_positions WHERE symbol = ?", (sym,)).fetchone()
-                sig_row = conn.execute("SELECT close, intraday_pct FROM latest_signals WHERE symbol = ?", (sym,)).fetchone()
-                ltp = (pos_row[0] if pos_row and pos_row[0] else None) or (sig_row[0] if sig_row and sig_row[0] else None) or item.get('t_minus_1_close')
-                day_chg = sig_row[1] if sig_row and sig_row[1] is not None else 0.0
+                k_ltp = kotak_neo_engine.get_live_price(sym) if kotak_neo_engine else None
+                pos_row = c2.execute("SELECT current_price FROM active_positions WHERE symbol = ?", (sym,)).fetchone()
+                sig_row = c2.execute("SELECT close, intraday_pct FROM latest_signals WHERE symbol = ?", (sym,)).fetchone()
+                ltp = k_ltp or (pos_row[0] if pos_row and pos_row[0] else None) or (sig_row[0] if sig_row and sig_row[0] else None) or item.get('t_minus_1_close')
+                t1_close = float(item.get('t_minus_1_close') or 0.0)
+                if ltp and t1_close > 0:
+                    day_chg = round((float(ltp) - t1_close) / t1_close * 100, 2)
+                else:
+                    day_chg = sig_row[1] if sig_row and sig_row[1] is not None else 0.0
                 item['current_price'] = ltp
                 item['ltp'] = ltp
                 item['day_change_pct'] = day_chg
@@ -714,7 +729,8 @@ class Portfolio3StrategyEngine:
         trigger_level = round(trigger_high * 1.001, 2)
         price_crossed = (ltp >= trigger_level) or (day_high >= trigger_level) or (ltp > trigger_high)
         pacing = calculate_volume_pacing(live_vol, avg_vol_20, now_dt)
-        volume_confirmed = (pacing >= self.volume_pacing_threshold)
+        # Auto breakout confirmation: pacing meets threshold OR price clearly crosses trigger with >=1.2x pacing
+        volume_confirmed = (pacing >= self.volume_pacing_threshold) or (price_crossed and pacing >= 1.2)
 
         should_enter = price_crossed and volume_confirmed
 

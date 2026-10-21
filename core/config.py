@@ -55,7 +55,7 @@ P3_RISK_PER_TRADE = float(os.environ.get("P3_RISK_PER_TRADE", 0.010)) # 1.0% fix
 P3_MAX_SLOTS = int(os.environ.get("P3_MAX_SLOTS", 10))               # 10 maximum concurrent slots
 P3_ALLOCATION_CAP_PCT = float(os.environ.get("P3_ALLOCATION_CAP_PCT", 0.20)) # 20% max allocation per stock
 P3_TARGET_R = float(os.environ.get("P3_TARGET_R", 2.0))              # +2.0R first half profit target
-P3_VOLUME_PACING_THRESHOLD = float(os.environ.get("P3_VOLUME_PACING_THRESHOLD", 3.12)) # 3.12x volume pacing confirmation
+P3_VOLUME_PACING_THRESHOLD = float(os.environ.get("P3_VOLUME_PACING_THRESHOLD", 1.5)) # 3.12x volume pacing confirmation
 
 # Risk Controls & Capital Allocation Gates (F-38)
 MAX_POSITION_CAP_PCT = float(os.environ.get("MAX_POSITION_CAP_PCT", 0.20)) # 20% max capital per position

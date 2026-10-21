@@ -100,6 +100,9 @@ def test_backup_api_endpoints(temp_db_and_backup_dir, monkeypatch):
     mgr = DailyBackupManager(backup_dir=backup_dir, retention_days=14)
     from core import backup_manager
     monkeypatch.setattr(backup_manager, "daily_backup_manager", mgr)
+    from core.telegram_vault import telegram_vault
+    monkeypatch.setattr(telegram_vault, "backup_master_file_to_cloud", lambda *a, **kw: {"status": "SUCCESS"})
+    monkeypatch.setattr(telegram_vault, "send_message", lambda *a, **kw: None)
 
     from core.telegram_vault import telegram_vault
     monkeypatch.setattr(telegram_vault, "backup_master_file_to_cloud", lambda *a, **kw: {"status": "SUCCESS"})
@@ -137,6 +140,16 @@ def test_ui_templates_optimizations():
     assert 'id="mobile-nav-drawer"' in html
     assert 'z-[100]' in html
     assert 'translate3d(100%, 0, 0)' in html
+
+    # 4. Portfolio 3 Watchlist filter counts & LTP column
+    assert 'id="btn-p3-filter-active"' in html
+    assert 'id="btn-p3-filter-all"' in html
+    assert 'id="p3-filter-active-count"' in html
+    assert 'id="p3-filter-all-count"' in html
+    assert 'Live LTP & Spread' in html
+    assert '🚫 INVALIDATED' in html
+    assert 'Below 20 EMA' in html
+    assert '⚡ Auto Execute' in html
 
 
 def test_groq_llama_model_registration():
