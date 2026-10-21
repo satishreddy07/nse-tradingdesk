@@ -414,6 +414,128 @@ class CommoditiesEngine:
                     return True
         return False
 
+    def _extract_depth_payload(self, message: Any, prev_depth: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Extracts and normalizes 5-level market depth (bids and asks) from Kotak Neo WebSocket tick or REST response.
+        Handles both Pydantic SFeedScrip/DepthLevel models and legacy dict structures.
+        Preserves existing depth when tick is price-only.
+        """
+        raw_buy = getattr(message, "buy", None)
+        raw_sell = getattr(message, "sell", None)
+        raw_tbq = getattr(message, "total_buy_quantity", None)
+        raw_tsq = getattr(message, "total_sell_quantity", None)
+
+        if isinstance(message, dict):
+            if raw_buy is None:
+                raw_buy = message.get("buy") or message.get("bids")
+            if raw_sell is None:
+                raw_sell = message.get("sell") or message.get("asks")
+            if raw_tbq is None:
+                raw_tbq = message.get("total_buy_quantity") or message.get("total_buy")
+            if raw_tsq is None:
+                raw_tsq = message.get("total_sell_quantity") or message.get("total_sell")
+
+            nested_depth = message.get("depth")
+            if isinstance(nested_depth, dict):
+                if raw_buy is None:
+                    raw_buy = nested_depth.get("buy") or nested_depth.get("bids")
+                if raw_sell is None:
+                    raw_sell = nested_depth.get("sell") or nested_depth.get("asks")
+                if raw_tbq is None:
+                    raw_tbq = nested_depth.get("total_buy") or nested_depth.get("total_buy_quantity")
+                if raw_tsq is None:
+                    raw_tsq = nested_depth.get("total_sell") or nested_depth.get("total_sell_quantity")
+
+        prev_bids = (prev_depth or {}).get("bids", []) if prev_depth else []
+        prev_asks = (prev_depth or {}).get("asks", []) if prev_depth else []
+        prev_tbq = (prev_depth or {}).get("total_buy", 0) if prev_depth else 0
+        prev_tsq = (prev_depth or {}).get("total_sell", 0) if prev_depth else 0
+
+        def _clean_entry(item: Any) -> Optional[Dict[str, Any]]:
+            if not item:
+                return None
+            if hasattr(item, "price"):
+                p = getattr(item, "price", 0)
+                q = getattr(item, "quantity", 0)
+                o = getattr(item, "orders", 0)
+            elif isinstance(item, dict):
+                p = item.get("price") or item.get("p") or 0
+                q = item.get("quantity") or item.get("q") or 0
+                o = item.get("orders") or item.get("o") or 0
+            else:
+                return None
+
+            try:
+                p_flt = float(p)
+            except Exception:
+                p_flt = 0.0
+            try:
+                q_int = int(float(q))
+            except Exception:
+                q_int = 0
+            try:
+                o_int = int(float(o))
+            except Exception:
+                o_int = 0
+
+            if p_flt <= 0 and q_int <= 0:
+                return None
+
+            return {
+                "price": f"{p_flt:,.2f}" if p_flt > 0 else "-",
+                "quantity": f"{q_int:,}" if q_int > 0 else "-",
+                "orders": str(o_int) if o_int > 0 else "-",
+                "price_raw": round(p_flt, 2),
+                "quantity_raw": q_int,
+                "orders_raw": o_int,
+            }
+
+        parsed_bids = []
+        if raw_buy and isinstance(raw_buy, (list, tuple)):
+            for b in raw_buy[:5]:
+                lvl = _clean_entry(b)
+                if lvl:
+                    parsed_bids.append(lvl)
+
+        parsed_asks = []
+        if raw_sell and isinstance(raw_sell, (list, tuple)):
+            for a in raw_sell[:5]:
+                lvl = _clean_entry(a)
+                if lvl:
+                    parsed_asks.append(lvl)
+
+        final_bids = parsed_bids if parsed_bids else prev_bids
+        final_asks = parsed_asks if parsed_asks else prev_asks
+
+        total_buy = 0
+        if raw_tbq is not None:
+            try:
+                total_buy = int(float(raw_tbq))
+            except Exception:
+                total_buy = 0
+        if total_buy <= 0 and prev_tbq > 0:
+            total_buy = prev_tbq
+        if total_buy <= 0 and final_bids:
+            total_buy = sum(b.get("quantity_raw", 0) for b in final_bids if isinstance(b, dict))
+
+        total_sell = 0
+        if raw_tsq is not None:
+            try:
+                total_sell = int(float(raw_tsq))
+            except Exception:
+                total_sell = 0
+        if total_sell <= 0 and prev_tsq > 0:
+            total_sell = prev_tsq
+        if total_sell <= 0 and final_asks:
+            total_sell = sum(a.get("quantity_raw", 0) for a in final_asks if isinstance(a, dict))
+
+        return {
+            "bids": final_bids,
+            "asks": final_asks,
+            "total_buy": total_buy,
+            "total_sell": total_sell,
+        }
+
     def process_ws_tick(self, token: str, trading_symbol: str, message: Any) -> Optional[Dict[str, Any]]:
         """
         Processes an authentic real-time WebSocket tick from Kotak Neo for an MCX commodity.
@@ -542,7 +664,7 @@ class CommoditiesEngine:
                 "oi_interpretation": oi_interpretation,
                 "oi_sentiment": oi_sentiment,
                 "updated_at": ts_now_ist,
-                "depth": prev_quote.get("depth", {"bids": [], "asks": [], "total_buy": 0, "total_sell": 0}),
+                "depth": self._extract_depth_payload(message, prev_quote.get("depth")),
                 "source": "KOTAK_NEO_MCX_LIVE_WS",
             }
 
@@ -678,9 +800,7 @@ class CommoditiesEngine:
                         oi_sentiment = "NEUTRAL"
 
                     # Market Depth (Top 5 bid / ask)
-                    depth_data = q.get("depth", {}) or {}
-                    bids = depth_data.get("buy", [])[:5] if isinstance(depth_data, dict) else []
-                    asks = depth_data.get("sell", [])[:5] if isinstance(depth_data, dict) else []
+                    depth_payload = self._extract_depth_payload(q, prev_quote.get("depth"))
 
                     new_quotes[base_sym] = {
                         "base_symbol": base_sym,
@@ -710,12 +830,7 @@ class CommoditiesEngine:
                         "oi_interpretation": oi_interpretation,
                         "oi_sentiment": oi_sentiment,
                         "updated_at": ts_now_ist,
-                        "depth": {
-                            "bids": bids,
-                            "asks": asks,
-                            "total_buy": int(float(q.get("total_buy") or 0)),
-                            "total_sell": int(float(q.get("total_sell") or 0)),
-                        },
+                        "depth": depth_payload,
                         "source": "KOTAK_NEO_MCX_LIVE",
                     }
                 except Exception as parse_err:
@@ -821,6 +936,57 @@ class CommoditiesEngine:
                 ).start()
 
         return self._build_response_payload()
+
+    def get_symbol_depth(self, symbol: str) -> Dict[str, Any]:
+        """
+        Fetches or returns authentic 5-level market depth for a specific MCX commodity symbol.
+        If depth in cache is empty, triggers immediate Kotak Neo REST depth fetch.
+        """
+        sym = (symbol or "CRUDEOIL").strip().upper()
+        base_sym = None
+        with self._lock:
+            for b, c in self._active_contracts.items():
+                if b == sym or str(c.get("trading_symbol", "")).strip().upper() == sym:
+                    base_sym = b
+                    break
+            if not base_sym and sym in self._active_contracts:
+                base_sym = sym
+            if not base_sym:
+                base_sym = "CRUDEOIL"
+
+            quote = self._quotes_cache.get(base_sym)
+            contract = dict(self._active_contracts.get(base_sym, {}))
+
+        depth = (quote or {}).get("depth", {})
+        bids = depth.get("bids", [])
+        asks = depth.get("asks", [])
+
+        if not quote or not bids or not asks:
+            try:
+                from engines.kotak_neo_engine import kotak_neo_engine
+                tok = str(contract.get("token", "")).strip()
+                if tok and kotak_neo_engine._is_authenticated and kotak_neo_engine._client:
+                    quotes_res = kotak_neo_engine._client.quotes([tok], quote_type="all")
+                    if isinstance(quotes_res, list) and quotes_res:
+                        q_data = quotes_res[0]
+                        depth_pl = self._extract_depth_payload(q_data, depth)
+                        with self._lock:
+                            if base_sym in self._quotes_cache:
+                                self._quotes_cache[base_sym]["depth"] = depth_pl
+                                self._quotes_cache[base_sym]["updated_at"] = format_ist()
+            except Exception as e:
+                logger.debug(f"Direct depth query notice for {base_sym}: {e}")
+
+        with self._lock:
+            final_quote = dict(self._quotes_cache.get(base_sym, quote or {}))
+
+        return {
+            "status": "SUCCESS",
+            "symbol": base_sym,
+            "quote": final_quote,
+            "depth": final_quote.get("depth", {"bids": [], "asks": [], "total_buy": 0, "total_sell": 0}),
+            "timestamp": format_ist(),
+        }
 
     def _run_bg_quotes_fetch(self):
         try:

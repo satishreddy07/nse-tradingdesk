@@ -415,7 +415,10 @@ def test_c03_nse_quote_freshness_without_provider_time():
     fake_sess = MagicMock()
     fake_sess.get.return_value = fake_resp
     with patch("urllib.request.urlopen", side_effect=Exception("Offline")):
-        with patch("engines.kotak_neo_engine.kotak_neo_engine.get_live_price", return_value=None):
+        from engines.kotak_neo_engine import kotak_neo_engine
+        with patch.object(kotak_neo_engine, "_is_authenticated", False), \
+             patch("engines.kotak_neo_engine.kotak_neo_engine.get_live_price", return_value=None), \
+             patch("engines.kotak_neo_engine.kotak_neo_engine.get_live_tick", return_value=None):
             with patch.object(eng, "_get_nse_session", return_value=fake_sess):
                 res = eng.get_live_nifty_spot(force_refresh=True)
                 assert res["source"] == "NSE_ALL_INDICES_STREAM"

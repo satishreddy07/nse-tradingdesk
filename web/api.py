@@ -2867,6 +2867,16 @@ def get_commodities_quotes(force_refresh: bool = False):
     return commodities_engine.fetch_live_quotes(force_refresh=force_refresh)
 
 
+@app.get("/api/commodities/depth")
+def get_commodity_depth(symbol: str = "CRUDEOIL"):
+    """
+    Returns authentic live 5-level market depth (bids & asks) and pivot metrics
+    for a specific MCX commodity contract directly from Kotak Neo.
+    """
+    from engines.commodities_engine import commodities_engine
+    return commodities_engine.get_symbol_depth(symbol)
+
+
 @app.get("/api/commodities/summary")
 def get_commodities_summary():
     """

@@ -165,6 +165,7 @@ class KotakNeoEngine:
         # Subscribed Items Tracker
         self._subscribed_symbols: Set[str] = set()
         self._subscribed_tokens: Set[str] = set()
+        self._subscribed_depth_tokens: Set[str] = set()
 
         # SFeed WebSocket Background Worker State (Official SDK kotakneoapi)
         self._stop_stream = threading.Event()
@@ -689,15 +690,23 @@ class KotakNeoEngine:
                     except Exception as foe:
                         logger.warning(f"Error subscribing FO scrips: {foe}")
 
-                # Subscribe MCX Commodity scrips to WebSocket SFeed
+                # Subscribe MCX Commodity scrips to WebSocket SFeed (Level 1 Scrips + Level 8 Market Depth)
                 try:
                     from engines.commodities_engine import commodities_engine
                     mcx_contracts = commodities_engine.get_active_contracts()
                     mcx_tokens = [str(c.get("token")) for c in mcx_contracts.values() if c.get("token")]
-                    if mcx_tokens and hasattr(ws, "subscribe_scrips") and WsToken:
+                    if mcx_tokens and WsToken:
                         mcx_subs = [WsToken("mcx_fo", str(t)) for t in mcx_tokens]
-                        await ws.subscribe_scrips(mcx_subs)
-                        logger.info(f"📡 [Kotak Neo SFeed] Subscribed {len(mcx_subs)} MCX Commodity scrips to WebSocket: {mcx_tokens}")
+                        if hasattr(ws, "subscribe_scrips"):
+                            await ws.subscribe_scrips(mcx_subs)
+                            logger.info(f"📡 [Kotak Neo SFeed] Subscribed {len(mcx_subs)} MCX Commodity scrips to WebSocket: {mcx_tokens}")
+                        if hasattr(ws, "subscribe_depth"):
+                            await ws.subscribe_depth(mcx_subs)
+                            logger.info(f"📡 [Kotak Neo SFeed] Subscribed {len(mcx_subs)} MCX Commodity scrips to Level 8 Market Depth: {mcx_tokens}")
+                        with self._lock:
+                            for t in mcx_tokens:
+                                self._subscribed_tokens.add(t)
+                                self._subscribed_depth_tokens.add(t)
                 except Exception as me:
                     logger.warning(f"Error subscribing MCX scrips: {me}")
 
@@ -711,7 +720,7 @@ class KotakNeoEngine:
                         self._process_sfeed_message(message)
                 finally:
                     sub_task.cancel()
-                    with contextlib.suppress(Exception):
+                    with contextlib.suppress(Exception, asyncio.CancelledError):
                         await sub_task
 
             except Exception as e:
@@ -746,9 +755,17 @@ class KotakNeoEngine:
                     await ws.subscribe_scrips([WsToken("nse_cm", t) for t in eq_tokens])
                 if idx_tokens and hasattr(ws, "subscribe_index") and WsToken:
                     await ws.subscribe_index([WsToken("nse_cm", t) for t in idx_tokens])
-                if mcx_tokens and hasattr(ws, "subscribe_scrips") and WsToken:
-                    await ws.subscribe_scrips([WsToken("mcx_fo", t) for t in mcx_tokens])
-                    logger.info(f"📡 [Kotak Neo SFeed] Dynamically subscribed {len(mcx_tokens)} MCX scrips: {mcx_tokens}")
+                if mcx_tokens and WsToken:
+                    tokens = [WsToken("mcx_fo", t) for t in mcx_tokens]
+                    if hasattr(ws, "subscribe_scrips"):
+                        await ws.subscribe_scrips(tokens)
+                    if hasattr(ws, "subscribe_depth"):
+                        await ws.subscribe_depth(tokens)
+                    logger.info(f"📡 [Kotak Neo SFeed] Dynamically subscribed {len(mcx_tokens)} MCX scrips to scrips & depth: {mcx_tokens}")
+                    with self._lock:
+                        for t in mcx_tokens:
+                            self._subscribed_tokens.add(t)
+                            self._subscribed_depth_tokens.add(t)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -1236,8 +1253,9 @@ class KotakNeoEngine:
         new_tokens = []
         with self._lock:
             for t in clean_tokens:
-                if t not in self._subscribed_tokens:
+                if t not in self._subscribed_tokens or t not in self._subscribed_depth_tokens:
                     self._subscribed_tokens.add(t)
+                    self._subscribed_depth_tokens.add(t)
                     new_tokens.append(t)
 
         if not new_tokens:

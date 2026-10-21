@@ -236,3 +236,46 @@ def test_commodity_strategy_deployment_lifecycle(client):
     sq_data = res_sq.json()
     assert sq_data.get("status") == "SUCCESS"
     assert sq_data.get("strategy", {}).get("status") == "CLOSED"
+
+
+def test_commodity_depth_extraction_and_api(client):
+    """Tests 5-level market depth extraction from ticks and GET /api/commodities/depth."""
+    from neo_api_client.websocket.feed.models import DepthLevel
+
+    mock_tick = MagicMock()
+    mock_tick.last_traded_price = 6125.0
+    mock_tick.buy = [
+        DepthLevel(price=6120.0, quantity=100, orders=2),
+        DepthLevel(price=6119.0, quantity=250, orders=5),
+    ]
+    mock_tick.sell = [
+        DepthLevel(price=6126.0, quantity=150, orders=3),
+        DepthLevel(price=6127.0, quantity=300, orders=6),
+    ]
+    mock_tick.total_buy_quantity = 350
+    mock_tick.total_sell_quantity = 450
+
+    depth = commodities_engine._extract_depth_payload(mock_tick)
+    assert len(depth["bids"]) == 2
+    assert len(depth["asks"]) == 2
+    assert depth["bids"][0]["price"] == "6,120.00"
+    assert depth["bids"][0]["quantity"] == "100"
+    assert depth["bids"][0]["orders"] == "2"
+    assert depth["total_buy"] == 350
+    assert depth["total_sell"] == 450
+
+    # 2. Test process_ws_tick preserves and updates depth
+    token = list(commodities_engine._active_contracts.values())[0]["token"]
+    res_tick = commodities_engine.process_ws_tick(token=token, trading_symbol="CRUDEOIL", message=mock_tick)
+    assert res_tick is not None
+    assert "depth" in res_tick
+    assert len(res_tick["depth"]["bids"]) == 2
+
+    # 3. Test API endpoint GET /api/commodities/depth
+    res = client.get("/api/commodities/depth?symbol=CRUDEOIL")
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("status") == "SUCCESS"
+    assert "depth" in data
+    assert "quote" in data
+
