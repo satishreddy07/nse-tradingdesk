@@ -984,6 +984,113 @@ def get_nifty_intraday_order_flow(force_refresh: bool = False):
         return {"status": "ERROR", "message": str(e)}
 
 
+@app.get("/api/nifty/order-flow/analytics")
+def get_nifty_order_flow_analytics(force_refresh: bool = False):
+    """
+    Returns full institutional Order Flow analytics including:
+    - Level-2 5-depth Near-ATM Order Book Imbalance (OBI)
+    - 1m & 3m OBI Velocity (dOBI/dt) and OBI Acceleration
+    - Iceberg / Passive Absorption order detection across near-ATM strikes
+    - Real-time Depth-Confirmed Gamma Squeeze alerts
+    """
+    from engines.intraday_analytics_engine import intraday_analytics_engine
+    try:
+        data = intraday_analytics_engine.compute_order_flow_market_depth(force_refresh=force_refresh)
+        return _sanitize_for_json(data)
+    except Exception as e:
+        logger.error(f"Error computing order flow analytics: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
+@app.post("/api/nifty/options/smart-execution")
+async def calculate_smart_execution_router(request: Request):
+    """
+    Micro-Price Smart Execution Router:
+    Calculates Level-2 volume-weighted Micro-Prices for multi-leg strategies.
+    Determines optimal limit order ladder inside the spread and returns exact ₹ slippage savings.
+    """
+    from engines.intraday_analytics_engine import intraday_analytics_engine
+    try:
+        body = await request.json()
+        legs = body.get("legs", [])
+        spot = body.get("spot_price")
+        data = intraday_analytics_engine.calculate_smart_micro_price_execution(legs=legs, spot_price=spot)
+        return _sanitize_for_json(data)
+    except Exception as e:
+        logger.error(f"Error in smart execution router: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
+@app.get("/api/nifty/options/theta-decay-curve")
+def get_nifty_theta_decay_curve():
+    """
+    Returns real-time intraday Theta Decay acceleration curve (dTheta/dt)
+    for Weekly Nifty 50 options across the trading session (09:15 - 15:30 IST).
+    Highlights the peak non-linear collapse window (12:45 - 14:30 IST).
+    """
+    from engines.intraday_analytics_engine import intraday_analytics_engine
+    try:
+        data = intraday_analytics_engine.compute_weekly_theta_decay_curve()
+        return _sanitize_for_json(data)
+    except Exception as e:
+        logger.error(f"Error in theta decay curve: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
+@app.get("/api/nifty/options/max-pain-migration")
+def get_nifty_max_pain_migration():
+    """
+    Returns real-time Dynamic Max Pain strike and tracks dynamic intraday migration trajectory.
+    Detects whether writers are defending original strikes (Gravity Pin) or rolling up/down.
+    """
+    from engines.intraday_analytics_engine import intraday_analytics_engine
+    try:
+        data = intraday_analytics_engine.compute_dynamic_max_pain_migration()
+        return _sanitize_for_json(data)
+    except Exception as e:
+        logger.error(f"Error in max pain migration: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
+@app.get("/api/nifty/options/term-structure")
+def get_nifty_term_structure(force_refresh: bool = False):
+    """
+    Returns Term Structure Volatility Skew (Weekly ATM IV vs Monthly ATM IV)
+    and Monthly Roll-Over Flow Radar.
+    Detects Calendar Spread Arbitrage opportunities when Weekly IV spikes abnormally.
+    """
+    from engines.intraday_analytics_engine import intraday_analytics_engine
+    try:
+        skew_data = intraday_analytics_engine.compute_term_structure_and_calendar_skew(force_refresh=force_refresh)
+        rollover_data = intraday_analytics_engine.compute_monthly_rollover_radar(force_refresh=force_refresh)
+        res = {
+            "status": "OK",
+            "term_structure_skew": skew_data,
+            "monthly_rollover_radar": rollover_data,
+            "timestamp_ist": format_ist()
+        }
+        return _sanitize_for_json(res)
+    except Exception as e:
+        logger.error(f"Error in term structure: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
+@app.get("/api/nifty/options/delta-hedging-band")
+def get_nifty_delta_hedging_band(net_delta: float = 0.0):
+    """
+    Returns Delta-Neutral Dynamic Hedging Bands:
+    Calculates 1-sigma and 2-sigma boundaries and determines whether adjustments
+    are required to maintain delta neutrality.
+    """
+    from engines.intraday_analytics_engine import intraday_analytics_engine
+    try:
+        data = intraday_analytics_engine.compute_delta_neutral_hedging_band(net_delta=net_delta)
+        return _sanitize_for_json(data)
+    except Exception as e:
+        logger.error(f"Error in delta hedging band: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
 @app.get("/api/nifty/minute-chart")
 def get_nifty_minute_chart(interval: str = "1m"):
     """

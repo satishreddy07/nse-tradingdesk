@@ -4345,6 +4345,35 @@
               </div>
             </div>
 
+            <!-- OBI Velocity & Iceberg Absorption Gauges -->
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
+                <span class="text-[10px] text-slate-400 block uppercase">1m OBI Velocity</span>
+                <span id="intra-depth-obi-velocity" class="text-base font-bold text-white block mt-0.5">0.00/min</span>
+                <span id="intra-depth-vel-regime" class="text-[9px] text-slate-400 truncate block">STEADY FLOW</span>
+              </div>
+              <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
+                <span class="text-[10px] text-slate-400 block uppercase">Iceberg Absorption</span>
+                <span id="intra-depth-iceberg-status" class="text-xs font-bold text-cyan-300 block mt-1 truncate">NONE DETECTED</span>
+                <span id="intra-depth-accel" class="text-[9px] text-slate-400 truncate block">Accel: 0.00</span>
+              </div>
+            </div>
+
+            <!-- Intraday Theta Decay Acceleration Meter -->
+            <div class="bg-slate-950/70 border border-purple-500/30 rounded-xl p-2.5 text-xs font-mono">
+              <div class="flex items-center justify-between">
+                <span class="text-purple-400 text-[10px] uppercase font-bold flex items-center gap-1">
+                  <i data-lucide="hourglass" class="w-3 h-3"></i>
+                  <span>Intraday Theta Collapse Window</span>
+                </span>
+                <span id="intra-theta-phase-badge" class="px-2 py-0.5 rounded text-[9px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">STANDBY</span>
+              </div>
+              <div class="flex items-center justify-between mt-1.5 text-[11px]">
+                <span class="text-slate-400">Decay Pacing:</span>
+                <span id="intra-theta-rate-inr" class="text-white font-bold">₹0 / lot-hr</span>
+              </div>
+            </div>
+
             <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 text-xs font-mono">
               <div class="flex items-center justify-between">
                 <span class="text-slate-400 text-[10px] uppercase">Liquidity Vacuum Status</span>
@@ -5349,6 +5378,99 @@
         </div>
       </div>
 
+      <!-- Quant Edge Analytics: Term Structure Volatility Skew, Max Pain Migration & Roll-Over Radar -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Card 1: Term Structure Volatility Skew & Calendar Arbitrage -->
+        <div class="bg-slate-900/80 border border-cyan-500/30 rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
+          <div>
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-white flex items-center gap-1.5 font-mono">
+                <i data-lucide="activity" class="w-4 h-4 text-cyan-400"></i>
+                <span>TERM STRUCTURE SKEW</span>
+              </span>
+              <span id="opt-iv-skew-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">CALCULATING...</span>
+            </div>
+            <div class="mt-3 space-y-2 text-xs font-mono">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Weekly ATM IV:</span>
+                <span id="opt-skew-weekly-iv" class="text-white font-bold">--%</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Monthly ATM IV:</span>
+                <span id="opt-skew-monthly-iv" class="text-white font-bold">--%</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">IV Differential (ΔIV):</span>
+                <span id="opt-skew-diff" class="text-cyan-300 font-bold">-- pts</span>
+              </div>
+              <div id="opt-skew-action-note" class="p-2 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-300 leading-relaxed font-sans">
+                Analyzing term structure curve...
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: Dynamic Max Pain Migration Tracker -->
+        <div class="bg-slate-900/80 border border-purple-500/30 rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
+          <div>
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-white flex items-center gap-1.5 font-mono">
+                <i data-lucide="target" class="w-4 h-4 text-purple-400"></i>
+                <span>DYNAMIC MAX PAIN MIGRATION</span>
+              </span>
+              <span id="opt-pain-drift-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">--</span>
+            </div>
+            <div class="mt-3 space-y-2 text-xs font-mono">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Current Max Pain:</span>
+                <span id="opt-pain-cur-strike" class="text-purple-300 font-bold text-sm">--</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Opening Max Pain:</span>
+                <span id="opt-pain-open-strike" class="text-white font-bold">--</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Strike Drift (ΔK):</span>
+                <span id="opt-pain-drift-pts" class="text-white font-bold">0 pts</span>
+              </div>
+              <div id="opt-pain-pin-desc" class="p-2 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-300 leading-relaxed font-sans">
+                Tracking writer defense levels...
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 3: Monthly Roll-Over Flow Radar -->
+        <div class="bg-slate-900/80 border border-emerald-500/30 rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
+          <div>
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-white flex items-center gap-1.5 font-mono">
+                <i data-lucide="refresh-cw" class="w-4 h-4 text-emerald-400"></i>
+                <span>MONTHLY ROLL-OVER RADAR</span>
+              </span>
+              <span id="opt-rollover-bias-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">--</span>
+            </div>
+            <div class="mt-3 space-y-2 text-xs font-mono">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Days to Monthly Expiry:</span>
+                <span id="opt-rollover-dte" class="text-white font-bold">-- days</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Estimated Rollover:</span>
+                <span id="opt-rollover-pct" class="text-emerald-400 font-bold">--%</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Roll Stage:</span>
+                <span id="opt-rollover-stage" class="text-slate-200 font-bold">--</span>
+              </div>
+              <div id="opt-rollover-note" class="p-2 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-300 leading-relaxed font-sans">
+                Scanning near-month to far-month liquidity roll...
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Strike-by-Strike Deep Option Chain Table (±12 Strikes Around ATM) -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
         <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -5598,6 +5720,25 @@
                 <div class="text-slate-500 py-8 text-center font-sans">
                   No legs added yet. Click <b>Auto-Pick</b> above or click <b>+B / +S</b> on any strike in the Option Chain table below.
                 </div>
+              </div>
+
+              <!-- Smart Micro-Price Execution Router Card -->
+              <div id="builder-smart-exec-card" class="mt-2.5 mb-1 p-2.5 rounded-xl bg-slate-900/90 border border-emerald-500/30 text-xs font-mono space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span class="text-[10px] font-bold text-emerald-400 uppercase">⚡ Smart Micro-Price Execution</span>
+                  </div>
+                  <span id="builder-slippage-savings-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">Saves: ₹0.00</span>
+                </div>
+                <div class="flex items-center justify-between text-[11px] text-slate-300">
+                  <span>Market Order Est: <b id="builder-market-cost" class="text-rose-400">₹0.00</b></span>
+                  <span>Smart Limit Est: <b id="builder-smart-cost" class="text-emerald-400">₹0.00</b></span>
+                </div>
+                <button onclick="applySmartMicroPriceLimits()" id="btn-apply-smart-limits" class="w-full py-1.5 px-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer">
+                  <i data-lucide="zap" class="w-3 h-3"></i>
+                  <span>Snap Legs to Inside-Spread Micro-Prices (Eliminate Slippage)</span>
+                </button>
               </div>
             </div>
 
@@ -10081,8 +10222,56 @@
         if (dPutObi) dPutObi.innerText = `OBI: ${(Number(depthData.aggregate_put_obi || 0) >= 0 ? '+' : '')}${Number(depthData.aggregate_put_obi || 0).toFixed(2)}`;
         if (dLiqStat) dLiqStat.innerText = depthData.liquidity_status || 'DEEP LIQUIDITY';
         if (dAvgSpr) dAvgSpr.innerText = `${Number(depthData.avg_spread_pts || 0).toFixed(2)} pts`;
+
+        const dVel1m = document.getElementById('intra-depth-obi-velocity');
+        const dVelReg = document.getElementById('intra-depth-vel-regime');
+        const dIceberg = document.getElementById('intra-depth-iceberg-status');
+        const dAccel = document.getElementById('intra-depth-accel');
+        if (dVel1m) {
+          const v1 = Number(depthData.velocity_1m || 0.0);
+          dVel1m.innerText = `${v1 >= 0 ? '+' : ''}${v1.toFixed(2)}/min`;
+          dVel1m.className = `text-base font-bold block mt-0.5 ${v1 >= 0.15 ? 'text-emerald-400' : (v1 <= -0.15 ? 'text-rose-400' : 'text-white')}`;
+        }
+        if (dVelReg) dVelReg.innerText = depthData.velocity_regime || 'STEADY FLOW';
+        if (dAccel) {
+          const a = Number(depthData.acceleration || 0.0);
+          dAccel.innerText = `Accel: ${a >= 0 ? '+' : ''}${a.toFixed(2)}`;
+        }
+        if (dIceberg) {
+          const icebergs = depthData.iceberg_alerts || [];
+          if (icebergs.length > 0) {
+            dIceberg.innerText = `🚨 ${icebergs[0].action} @ ${icebergs[0].strike}`;
+            dIceberg.className = "text-xs font-bold text-amber-300 block mt-1 truncate animate-pulse";
+          } else {
+            dIceberg.innerText = depthData.absorption_regime || 'NONE DETECTED';
+            dIceberg.className = "text-xs font-bold text-slate-400 block mt-1 truncate";
+          }
+        }
+
+        // Intraday Theta Decay Gauge
+        const thetaData = adv.theta_decay_curve || {};
+        const thBadge = document.getElementById('intra-theta-phase-badge');
+        const thRate = document.getElementById('intra-theta-rate-inr');
+        if (thBadge && thetaData.theta_phase) {
+          thBadge.innerText = thetaData.theta_phase.replace(/_/g, ' ');
+          if (thetaData.is_prime_harvest_window) {
+            thBadge.className = "px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse";
+          } else {
+            thBadge.className = "px-2 py-0.5 rounded text-[9px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40";
+          }
+        }
+        if (thRate && thetaData.decay_rate_inr_per_lot_hour !== undefined) {
+          thRate.innerText = `₹${Number(thetaData.decay_rate_inr_per_lot_hour).toFixed(0)} / lot-hr (×${Number(thetaData.decay_acceleration_factor || 1).toFixed(1)})`;
+        }
+
         if (dAlertBox) {
-          dAlertBox.innerText = depthData.order_flow_alert || 'Order flow depth balanced across near-ATM strikes.';
+          if (depthData.gamma_squeeze_alert) {
+            dAlertBox.innerHTML = `⚠️ <b class="text-rose-300">GAMMA SQUEEZE ALERT:</b> ${depthData.gamma_squeeze_alert}`;
+            dAlertBox.className = "bg-rose-500/20 border-2 border-rose-500 rounded-xl p-2.5 text-xs text-rose-200 leading-relaxed font-sans shadow-lg animate-pulse";
+          } else {
+            dAlertBox.innerText = depthData.order_flow_alert || 'Order flow depth balanced across near-ATM strikes.';
+            dAlertBox.className = "bg-blue-500/10 border border-blue-500/30 rounded-xl p-2.5 text-xs text-blue-200 leading-relaxed font-sans";
+          }
         }
 
         if (dLadderTbody && Array.isArray(depthData.near_atm_strikes) && depthData.near_atm_strikes.length > 0) {
@@ -12130,6 +12319,9 @@
           if (typeof renderBuilderCompactChain === 'function') {
             renderBuilderCompactChain();
           }
+          if (typeof updateSmartExecutionEvaluation === 'function') {
+            updateSmartExecutionEvaluation();
+          }
         }, 60);
       } else if (tab === 'portfolio') {
         setTimeout(() => {
@@ -12351,6 +12543,11 @@
             <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">${s.detail || ''}</p>
           </div>
         `).join('');
+      }
+
+      // Quant Edge Hub Rendering (Term Structure Skew, Max Pain Migration & Roll-Over Radar)
+      if (typeof renderQuantEdgeHub === 'function') {
+        renderQuantEdgeHub(data);
       }
 
       // Strike-by-Strike Deep Option Chain Table
@@ -13489,6 +13686,10 @@
         spotMin: spotMin,
         spotMax: spotMax
       };
+
+      if (typeof updateSmartExecutionEvaluation === 'function') {
+        updateSmartExecutionEvaluation();
+      }
     }
 
     function calculateSigmaLevels(spot, expiryType = 'WEEKLY', customDte = null, customIv = null) {
@@ -20234,6 +20435,172 @@
     });
 
     // Auto-display install button on supported touch mobile devices if not already running standalone
+    
+    // =========================================================================
+    // QUANT EDGE EXTENSIONS: SMART EXECUTION & TERM STRUCTURE RADAR
+    // =========================================================================
+    async function updateSmartExecutionEvaluation() {
+      if (!strategyLegs || strategyLegs.length === 0) {
+        const badge = document.getElementById('builder-slippage-savings-badge');
+        const mCost = document.getElementById('builder-market-cost');
+        const sCost = document.getElementById('builder-smart-cost');
+        if (badge) {
+          badge.innerText = 'Saves: ₹0.00';
+          badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700";
+        }
+        if (mCost) mCost.innerText = '₹0.00';
+        if (sCost) sCost.innerText = '₹0.00';
+        window.latestSmartExecutionData = null;
+        return;
+      }
+
+      try {
+        const cache = window.niftyOptionsChainCache || (typeof niftyOptionsChainCache !== 'undefined' ? niftyOptionsChainCache : null);
+        const spot = cache?.weekly?.spot_price || cache?.spot_price || 0;
+        const active = (selectedOptionsExpiryType === 'monthly')
+          ? (cache?.monthly || {})
+          : (cache?.weekly || {});
+
+        const legsPayload = strategyLegs.map(l => ({
+          strike: l.strike,
+          opt_type: l.type,
+          action: l.action,
+          lots: l.lots || 1,
+          lot_size: 65,
+          price: l.price,
+          expiry: active.expiry
+        }));
+
+        const res = await fetch('/api/nifty/options/smart-execution', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ legs: legsPayload, spot_price: spot })
+        });
+        const data = await res.json();
+        if (data && data.status === 'OK') {
+          window.latestSmartExecutionData = data;
+          const badge = document.getElementById('builder-slippage-savings-badge');
+          const mCost = document.getElementById('builder-market-cost');
+          const sCost = document.getElementById('builder-smart-cost');
+          const sav = Number(data.total_slippage_savings_inr || 0);
+          if (badge) {
+            badge.innerText = `Saves: +₹${sav.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            badge.className = `px-2 py-0.5 rounded text-[10px] font-bold ${sav > 0 ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 animate-pulse' : 'bg-slate-800 text-slate-300 border border-slate-700'}`;
+          }
+          if (mCost) mCost.innerText = `₹${Number(data.market_net_premium || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          if (sCost) sCost.innerText = `₹${Number(data.smart_net_premium || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+      } catch (err) {
+        console.debug('updateSmartExecutionEvaluation notice:', err);
+      }
+    }
+
+    function applySmartMicroPriceLimits() {
+      const data = window.latestSmartExecutionData;
+      if (!data || !data.legs || data.legs.length === 0) {
+        alert('Please add legs to the strategy builder first.');
+        return;
+      }
+
+      let updatedCount = 0;
+      data.legs.forEach((sLeg, idx) => {
+        if (strategyLegs[idx] && sLeg.smart_limit_price > 0) {
+          strategyLegs[idx].price = sLeg.smart_limit_price;
+          updatedCount++;
+        }
+      });
+
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+      const sav = Number(data.total_slippage_savings_inr || 0);
+      alert(`⚡ Snapped ${updatedCount} leg(s) to inside-spread Micro-Prices!\nEstimated ₹${sav.toFixed(2)} saved in execution slippage.`);
+    }
+
+    async function renderQuantEdgeHub(chainData) {
+      try {
+        const res = await fetch('/api/nifty/options/term-structure');
+        const termData = await res.json();
+
+        // 1. Term Structure Skew
+        const skew = termData?.term_structure_skew || {};
+        const skewBadge = document.getElementById('opt-iv-skew-badge');
+        const skewW = document.getElementById('opt-skew-weekly-iv');
+        const skewM = document.getElementById('opt-skew-monthly-iv');
+        const skewDiff = document.getElementById('opt-skew-diff');
+        const skewNote = document.getElementById('opt-skew-action-note');
+
+        if (skew && skew.status === 'OK') {
+          if (skewW) skewW.innerText = `${Number(skew.weekly_atm_iv || 0).toFixed(2)}%`;
+          if (skewM) skewM.innerText = `${Number(skew.monthly_atm_iv || 0).toFixed(2)}%`;
+          const diff = Number(skew.iv_skew_pts || 0);
+          if (skewDiff) {
+            skewDiff.innerText = `${diff >= 0 ? '+' : ''}${diff.toFixed(2)} pts`;
+            skewDiff.className = `font-bold ${diff >= 2.0 ? 'text-rose-400' : (diff <= -2.0 ? 'text-amber-400' : 'text-cyan-300')}`;
+          }
+          if (skewBadge) {
+            const opp = skew.arbitrage_opportunity || 'BALANCED';
+            skewBadge.innerText = opp.replace(/_/g, ' ');
+            skewBadge.className = `px-2 py-0.5 rounded text-[10px] font-mono font-bold ${opp.includes('ARBITRAGE') ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 animate-pulse' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'}`;
+          }
+          if (skewNote) {
+            skewNote.innerText = skew.actionable_insight || 'Term structure is balanced.';
+          }
+        }
+
+        // 2. Monthly Roll-Over Radar
+        const roll = termData?.monthly_rollover_radar || {};
+        const rBadge = document.getElementById('opt-rollover-bias-badge');
+        const rDte = document.getElementById('opt-rollover-dte');
+        const rPct = document.getElementById('opt-rollover-pct');
+        const rStage = document.getElementById('opt-rollover-stage');
+        const rNote = document.getElementById('opt-rollover-note');
+
+        if (roll && roll.status === 'OK') {
+          if (rDte) rDte.innerText = `${roll.days_to_monthly_expiry ?? '--'} days`;
+          if (rPct) rPct.innerText = `${Number(roll.estimated_rollover_pct || 0).toFixed(1)}%`;
+          if (rStage) rStage.innerText = (roll.roll_stage || '--').replace(/_/g, ' ');
+          if (rBadge) {
+            const bias = roll.rollover_directional_bias || 'BALANCED';
+            rBadge.innerText = bias.split('(')[0].trim().replace(/_/g, ' ');
+            rBadge.className = `px-2 py-0.5 rounded text-[10px] font-mono font-bold ${bias.includes('BULLISH') ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : (bias.includes('BEARISH') ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-slate-800 text-slate-300 border border-slate-700')}`;
+          }
+          if (rNote) {
+            rNote.innerText = roll.rollover_directional_bias || 'Tracking monthly liquidity roll.';
+          }
+        }
+
+        // 3. Dynamic Max Pain Migration Tracker
+        const pRes = await fetch('/api/nifty/options/max-pain-migration');
+        const painData = await pRes.json();
+        const pBadge = document.getElementById('opt-pain-drift-badge');
+        const pCur = document.getElementById('opt-pain-cur-strike');
+        const pOpen = document.getElementById('opt-pain-open-strike');
+        const pDrift = document.getElementById('opt-pain-drift-pts');
+        const pDesc = document.getElementById('opt-pain-pin-desc');
+
+        if (painData && painData.status === 'OK') {
+          if (pCur) pCur.innerText = painData.current_max_pain || '--';
+          if (pOpen) pOpen.innerText = painData.opening_max_pain || '--';
+          const drift = Number(painData.drift_points || 0);
+          if (pDrift) {
+            pDrift.innerText = `${drift >= 0 ? '+' : ''}${drift} pts`;
+            pDrift.className = `font-bold ${drift > 0 ? 'text-emerald-400' : (drift < 0 ? 'text-rose-400' : 'text-slate-300')}`;
+          }
+          if (pBadge) {
+            pBadge.innerText = painData.pin_strength ? painData.pin_strength.split('(')[0].trim() : 'LOCKED';
+            pBadge.className = `px-2 py-0.5 rounded text-[10px] font-mono font-bold ${drift === 0 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'}`;
+          }
+          if (pDesc) {
+            pDesc.innerText = painData.migration_status || 'Tracking Max Pain pinning gravity.';
+          }
+        }
+      } catch (err) {
+        console.debug('renderQuantEdgeHub notice:', err);
+      }
+    }
+
+
     window.addEventListener('DOMContentLoaded', () => {
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
       const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);

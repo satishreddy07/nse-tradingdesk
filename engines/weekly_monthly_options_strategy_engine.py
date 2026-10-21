@@ -484,6 +484,39 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 conn.commit()
 
     # =========================================================================
+    # ADVANCED QUANT DEPTH & STRATEGY EXTENSIONS
+    # =========================================================================
+    def calculate_smart_micro_price_execution(self, legs: List[Dict[str, Any]], spot_price: Optional[float] = None) -> Dict[str, Any]:
+        """Micro-Price Smart Execution Router: eliminates spread slippage on multi-leg strategies."""
+        from engines.intraday_analytics_engine import intraday_analytics_engine
+        return intraday_analytics_engine.calculate_smart_micro_price_execution(legs, spot_price)
+
+    def compute_term_structure_and_calendar_skew(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """Term Structure Volatility Skew & Calendar Spread Arbitrage."""
+        from engines.intraday_analytics_engine import intraday_analytics_engine
+        return intraday_analytics_engine.compute_term_structure_and_calendar_skew(force_refresh)
+
+    def compute_monthly_rollover_radar(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """Monthly Roll-Over Flow Radar."""
+        from engines.intraday_analytics_engine import intraday_analytics_engine
+        return intraday_analytics_engine.compute_monthly_rollover_radar(force_refresh)
+
+    def compute_delta_neutral_hedging_band(self, spot_price: Optional[float] = None, iv: Optional[float] = None, dte_days: Optional[float] = None, net_delta: float = 0.0) -> Dict[str, Any]:
+        """Delta-Neutral Dynamic Hedging Band."""
+        from engines.intraday_analytics_engine import intraday_analytics_engine
+        return intraday_analytics_engine.compute_delta_neutral_hedging_band(spot_price, iv, dte_days, net_delta)
+
+    def compute_weekly_theta_decay_curve(self, spot_price: Optional[float] = None, weekly_chain: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Intraday Theta Decay Acceleration Curve."""
+        from engines.intraday_analytics_engine import intraday_analytics_engine
+        return intraday_analytics_engine.compute_weekly_theta_decay_curve(spot_price, weekly_chain)
+
+    def compute_dynamic_max_pain_migration(self, weekly_chain: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Dynamic Max Pain Migration Tracking."""
+        from engines.intraday_analytics_engine import intraday_analytics_engine
+        return intraday_analytics_engine.compute_dynamic_max_pain_migration(weekly_chain)
+
+    # =========================================================================
     # 1. DYNAMIC SIGMA STRIKE SELECTION
     # =========================================================================
     @classmethod

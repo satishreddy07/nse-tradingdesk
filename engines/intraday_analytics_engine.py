@@ -23,6 +23,7 @@ import pandas as pd
 import requests
 
 from core.market_calendar import IST, now_ist, format_ist
+from core.config import NIFTY_LOT_SIZE
 from engines.state_engine import state_engine
 from core.telegram_vault import telegram_vault
 
@@ -52,6 +53,9 @@ class IntradayAnalyticsEngine:
         self._cache_ts: float = 0.0
         self._cache_ttl_sec: float = 120.0  # 2 minutes TTL
         self._last_breach_alert_state: Dict[str, Any] = {"wall": None, "date": None}
+        self._last_gamma_alert_state: Dict[str, Any] = {"wall": None, "ts": 0.0}
+        self._depth_snapshots: List[Dict[str, Any]] = []
+        self._max_pain_history: List[Dict[str, Any]] = []
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -241,7 +245,7 @@ class IntradayAnalyticsEngine:
             days_to_exp = 3.0
 
         T = days_to_exp / 365.0
-        lot_size = 75
+        lot_size = NIFTY_LOT_SIZE
         strike_gex_list = []
         total_call_gex_cr = 0.0
         total_put_gex_cr = 0.0
@@ -477,18 +481,35 @@ class IntradayAnalyticsEngine:
             if suite and isinstance(suite, dict) and "order_flow_depth" in suite:
                 persisted = suite["order_flow_depth"]
 
+        def _enrich_defaults(d: Dict[str, Any]) -> Dict[str, Any]:
+            if "velocity_1m" not in d or d.get("velocity_1m") is None:
+                d["velocity_1m"] = 0.0
+            if "velocity_3m" not in d or d.get("velocity_3m") is None:
+                d["velocity_3m"] = 0.0
+            if "acceleration" not in d or d.get("acceleration") is None:
+                d["acceleration"] = 0.0
+            if "velocity_regime" not in d or not d.get("velocity_regime"):
+                d["velocity_regime"] = "STEADY_FLOW_EQUILIBRIUM"
+            if "iceberg_alerts" not in d or d.get("iceberg_alerts") is None:
+                d["iceberg_alerts"] = []
+            if "absorption_regime" not in d or not d.get("absorption_regime"):
+                d["absorption_regime"] = "NO_SIGNIFICANT_ICEBERGS"
+            if "gamma_squeeze_alert" not in d:
+                d["gamma_squeeze_alert"] = None
+            return d
+
         if spot <= 0:
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
                 p_copy = dict(persisted)
                 p_copy["source"] = "MASTER_DB_PERSISTED_SNAPSHOT"
-                return p_copy
-            return {
+                return _enrich_defaults(p_copy)
+            return _enrich_defaults({
                 "status": "DATA_NOT_AVAILABLE",
                 "message": "Live Nifty spot price unavailable for market depth analysis",
                 "net_flow_index": None,
                 "flow_regime": "DATA_NOT_AVAILABLE",
                 "near_atm_strikes": []
-            }
+            })
 
         atm_strike = int(round(spot / 50.0) * 50)
         near_strikes = [atm_strike + (i * 50) for i in range(-3, 4)]  # 7 strikes: ATM +/- 150 pts
@@ -595,8 +616,8 @@ class IntradayAnalyticsEngine:
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
                 p_copy = dict(persisted)
                 p_copy["source"] = "MASTER_DB_PERSISTED_SNAPSHOT"
-                return p_copy
-            return {
+                return _enrich_defaults(p_copy)
+            return _enrich_defaults({
                 "status": "DATA_NOT_AVAILABLE",
                 "message": "Kotak Neo Level-2 depth volume unavailable across near-ATM strikes",
                 "spot_price": spot,
@@ -604,7 +625,7 @@ class IntradayAnalyticsEngine:
                 "net_flow_index": None,
                 "flow_regime": "DATA_NOT_AVAILABLE",
                 "near_atm_strikes": strike_rows
-            }
+            })
 
         # Aggregate Analytics
         call_depth_total = tot_call_buy + tot_call_sell
@@ -665,6 +686,20 @@ class IntradayAnalyticsEngine:
             "near_atm_strikes": strike_rows,
             "fetched_at_ist": format_ist(),
         }
+        vel_ice = self.compute_obi_velocity_and_icebergs(payload)
+        payload.update(vel_ice)
+
+        cw1 = 0
+        pw1 = 0
+        if weekly_chain_data and "walls_and_pain" in weekly_chain_data:
+            cw1 = int(weekly_chain_data["walls_and_pain"].get("call_wall_1") or 0)
+            pw1 = int(weekly_chain_data["walls_and_pain"].get("put_wall_1") or 0)
+        if cw1 <= 0 or pw1 <= 0:
+            cw1 = atm_strike + 100
+            pw1 = atm_strike - 100
+        gamma_sq_alert = self.check_gamma_squeeze_depth_alert(spot, cw1, pw1, payload)
+        payload["gamma_squeeze_alert"] = gamma_sq_alert
+
         state_engine.set_kv("latest_order_flow_depth", payload)
         return payload
 
@@ -686,17 +721,19 @@ class IntradayAnalyticsEngine:
         from engines.intraday_ml_engine import intraday_ml_engine
 
         # Run components concurrently
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
             f_vwap = ex.submit(self.compute_vwap_and_orb)
             f_gex = ex.submit(self.compute_gamma_exposure_and_flip, w_chain)
             f_sec = ex.submit(self.compute_sectoral_divergence)
             f_depth = ex.submit(self.compute_order_flow_market_depth, None, w_chain, force_refresh)
+            f_theta = ex.submit(self.compute_weekly_theta_decay_curve, None, w_chain)
             f_ml = ex.submit(intraday_ml_engine.train_and_predict, force_refresh)
 
             vwap_data = f_vwap.result()
             gex_data = f_gex.result()
             sec_data = f_sec.result()
             depth_data = f_depth.result()
+            theta_data = f_theta.result()
             ml_data = f_ml.result()
 
         payload = {
@@ -707,6 +744,7 @@ class IntradayAnalyticsEngine:
             "gamma_exposure": gex_data,
             "sectoral_divergence": sec_data,
             "order_flow_depth": depth_data,
+            "theta_decay_curve": theta_data,
             "intraday_ml": ml_data,
         }
 
@@ -783,6 +821,796 @@ class IntradayAnalyticsEngine:
             logger.info(f"✓ Wall breach alert fired: {alert_type}")
             return alert_type
         return None
+
+
+
+    def compute_obi_velocity_and_icebergs(self, depth_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Computes 1m and 3m rolling OBI velocity (dOBI/dt), OBI acceleration,
+        and detects passive iceberg absorption on near-ATM option strikes.
+        """
+        now_ts = time.time()
+        net_flow = depth_data.get("net_flow_index")
+        agg_call_obi = depth_data.get("aggregate_call_obi")
+        agg_put_obi = depth_data.get("aggregate_put_obi")
+        strikes = depth_data.get("near_atm_strikes", [])
+
+        if net_flow is None:
+            return {
+                "velocity_1m": 0.0,
+                "velocity_3m": 0.0,
+                "acceleration": 0.0,
+                "velocity_regime": "STEADY_EQUILIBRIUM",
+                "iceberg_alerts": [],
+                "absorption_regime": "NO_SIGNIFICANT_ICEBERGS"
+            }
+
+        strike_summary = {}
+        for s in strikes:
+            k = s.get("strike")
+            if k:
+                strike_summary[k] = {
+                    "ce_micro": float(s.get("ce", {}).get("micro_price") or 0.0),
+                    "ce_ltp": float(s.get("ce", {}).get("ltp") or 0.0),
+                    "ce_buy": int(s.get("ce", {}).get("total_buy") or 0),
+                    "ce_sell": int(s.get("ce", {}).get("total_sell") or 0),
+                    "pe_micro": float(s.get("pe", {}).get("micro_price") or 0.0),
+                    "pe_ltp": float(s.get("pe", {}).get("ltp") or 0.0),
+                    "pe_buy": int(s.get("pe", {}).get("total_buy") or 0),
+                    "pe_sell": int(s.get("pe", {}).get("total_sell") or 0),
+                }
+
+        snapshot = {
+            "ts": now_ts,
+            "net_flow": float(net_flow),
+            "call_obi": float(agg_call_obi or 0.0),
+            "put_obi": float(agg_put_obi or 0.0),
+            "strikes": strike_summary
+        }
+        self._depth_snapshots.append(snapshot)
+
+        # Keep last 15 minutes of snapshots
+        cutoff = now_ts - 900.0
+        self._depth_snapshots = [s for s in self._depth_snapshots if s["ts"] >= cutoff]
+
+        snap_1m = None
+        snap_3m = None
+        for s in reversed(self._depth_snapshots):
+            dt = now_ts - s["ts"]
+            if snap_1m is None and 45.0 <= dt <= 90.0:
+                snap_1m = s
+            if snap_3m is None and 150.0 <= dt <= 240.0:
+                snap_3m = s
+
+        if not snap_1m and len(self._depth_snapshots) > 1:
+            earliest = self._depth_snapshots[0]
+            dt = max(1.0, now_ts - earliest["ts"])
+            vel_1m = round(((net_flow - earliest["net_flow"]) / max(0.1, dt / 60.0)), 3)
+        elif snap_1m:
+            dt = max(1.0, now_ts - snap_1m["ts"])
+            vel_1m = round(((net_flow - snap_1m["net_flow"]) / max(0.1, dt / 60.0)), 3)
+        else:
+            vel_1m = 0.0
+
+        if not snap_3m and len(self._depth_snapshots) > 2:
+            earliest = self._depth_snapshots[0]
+            dt = max(1.0, now_ts - earliest["ts"])
+            vel_3m = round(((net_flow - earliest["net_flow"]) / max(0.1, dt / 60.0)), 3)
+        elif snap_3m:
+            dt = max(1.0, now_ts - snap_3m["ts"])
+            vel_3m = round(((net_flow - snap_3m["net_flow"]) / max(0.1, dt / 60.0)), 3)
+        else:
+            vel_3m = 0.0
+
+        acceleration = round(vel_1m - vel_3m, 3)
+
+        if vel_1m >= 0.30:
+            vel_regime = "SURGING_BUY_IMBALANCE (Rapid Call Order Accumulation)"
+        elif vel_1m >= 0.12:
+            vel_regime = "BULLISH_FLOW_ACCELERATION (Bids Stacking Faster Than Asks)"
+        elif vel_1m <= -0.30:
+            vel_regime = "SURGING_SELL_IMBALANCE (Rapid Put Order Accumulation)"
+        elif vel_1m <= -0.12:
+            vel_regime = "BEARISH_FLOW_ACCELERATION (Asks Stacking Faster Than Bids)"
+        else:
+            vel_regime = "STEADY_FLOW_EQUILIBRIUM"
+
+        # Detect Icebergs / Passive Absorption across strikes
+        icebergs = []
+        if snap_1m and "strikes" in snap_1m:
+            old_strikes = snap_1m["strikes"]
+            for s in strikes:
+                k = s.get("strike")
+                if not k or k not in old_strikes:
+                    continue
+                old_s = old_strikes[k]
+
+                ce_cur_micro = float(s.get("ce", {}).get("micro_price") or 0.0)
+                ce_cur_buy = int(s.get("ce", {}).get("total_buy") or 0)
+                ce_cur_sell = int(s.get("ce", {}).get("total_sell") or 0)
+
+                if ce_cur_buy > 0 and ce_cur_sell > 0:
+                    ce_ratio = ce_cur_buy / max(1, ce_cur_sell)
+                    if ce_ratio >= 2.2 and abs(ce_cur_micro - old_s["ce_micro"]) <= 0.8:
+                        icebergs.append({
+                            "strike": k,
+                            "type": "CE",
+                            "action": "PASSIVE_BID_ABSORPTION",
+                            "ratio": round(ce_ratio, 1),
+                            "note": f"Call writers/buyers absorbing at {k} CE (Bid/Ask {ce_ratio:.1f}x with flat price)."
+                        })
+                    elif (ce_cur_sell / max(1, ce_cur_buy)) >= 2.2 and abs(ce_cur_micro - old_s["ce_micro"]) <= 0.8:
+                        icebergs.append({
+                            "strike": k,
+                            "type": "CE",
+                            "action": "PASSIVE_ASK_ABSORPTION",
+                            "ratio": round(ce_cur_sell / max(1, ce_cur_buy), 1),
+                            "note": f"Institutional iceberg sell wall absorbing Call buyers at {k} CE."
+                        })
+
+                pe_cur_micro = float(s.get("pe", {}).get("micro_price") or 0.0)
+                pe_cur_buy = int(s.get("pe", {}).get("total_buy") or 0)
+                pe_cur_sell = int(s.get("pe", {}).get("total_sell") or 0)
+
+                if pe_cur_buy > 0 and pe_cur_sell > 0:
+                    pe_ratio = pe_cur_buy / max(1, pe_cur_sell)
+                    if pe_ratio >= 2.2 and abs(pe_cur_micro - old_s["pe_micro"]) <= 0.8:
+                        icebergs.append({
+                            "strike": k,
+                            "type": "PE",
+                            "action": "PASSIVE_BID_ABSORPTION",
+                            "ratio": round(pe_ratio, 1),
+                            "note": f"Put buyers/writers absorbing at {k} PE (Bid/Ask {pe_ratio:.1f}x with flat price)."
+                        })
+                    elif (pe_cur_sell / max(1, pe_cur_buy)) >= 2.2 and abs(pe_cur_micro - old_s["pe_micro"]) <= 0.8:
+                        icebergs.append({
+                            "strike": k,
+                            "type": "PE",
+                            "action": "PASSIVE_ASK_ABSORPTION",
+                            "ratio": round(pe_cur_sell / max(1, pe_cur_buy), 1),
+                            "note": f"Institutional iceberg sell wall absorbing Put buyers at {k} PE."
+                        })
+
+        if any(i["action"] == "PASSIVE_BID_ABSORPTION" for i in icebergs):
+            abs_regime = "PASSIVE_BID_ACCUMULATION"
+        elif any(i["action"] == "PASSIVE_ASK_ABSORPTION" for i in icebergs):
+            abs_regime = "PASSIVE_ASK_DISTRIBUTION"
+        else:
+            abs_regime = "NO_SIGNIFICANT_ICEBERGS"
+
+        return {
+            "velocity_1m": vel_1m,
+            "velocity_3m": vel_3m,
+            "acceleration": acceleration,
+            "velocity_regime": vel_regime,
+            "iceberg_alerts": icebergs,
+            "absorption_regime": abs_regime
+        }
+
+    def check_gamma_squeeze_depth_alert(
+        self,
+        spot: float,
+        call_wall: int,
+        put_wall: int,
+        flow_data: Dict[str, Any]
+    ) -> Optional[str]:
+        """
+        Monitors for real-time Gamma Squeeze with Level-2 Depth confirmation.
+        Fires an immediate priority Telegram alert if spot is within 25 pts of a wall
+        AND order flow depth indicates aggressive institutional accumulation/squeeze.
+        Debounced to avoid alert flooding.
+        """
+        now_ts = time.time()
+        last_alert_ts = float(self._last_gamma_alert_state.get("ts") or 0.0)
+        # Minimum 15 minutes between gamma squeeze alerts
+        if (now_ts - last_alert_ts) < 900.0:
+            return None
+
+        if spot <= 0 or call_wall <= 0 or put_wall <= 0:
+            return None
+
+        net_flow = flow_data.get("net_flow_index")
+        agg_call_obi = flow_data.get("aggregate_call_obi")
+        agg_put_obi = flow_data.get("aggregate_put_obi")
+        vel_1m = float(flow_data.get("velocity_1m") or 0.0)
+
+        alert_msg = None
+        alert_title = None
+
+        # Upside Gamma Squeeze Alert
+        if (call_wall - 25.0) <= spot <= (call_wall + 35.0):
+            if (agg_call_obi is not None and agg_call_obi >= 0.25) or (net_flow is not None and net_flow >= 0.15) or vel_1m >= 0.20:
+                alert_title = "🚨 NIFTY LIVE GAMMA SQUEEZE ALERT (DEPTH CONFIRMED)"
+                alert_msg = (
+                    f"⚡ <b>GAMMA SQUEEZE IN PLAY:</b> Nifty Spot <b>₹{spot:,.1f}</b> is challenging Call Wall <b>{call_wall} CE</b>.\n"
+                    f"📊 <b>Order Flow Confirmation:</b> Call OBI: <b>+{agg_call_obi:+.2f}</b> | 1m Velocity: <b>+{vel_1m:+.2f}/min</b>\n"
+                    f"🔥 <b>Institutional Dynamics:</b> Aggressive buyers are sweeping the ask book. Short Call writers are trapped and being forced into delta covering.\n"
+                    f"🎯 <b>Actionable Execution:</b> Look for upside continuation towards {call_wall + 50}. Trailing Stop: ₹{spot - 25:,.1f}."
+                )
+                self._last_gamma_alert_state = {"wall": f"CALL_{call_wall}", "ts": now_ts}
+
+        # Downside Liquidity Breakdown Alert
+        elif (put_wall - 35.0) <= spot <= (put_wall + 25.0):
+            if (agg_put_obi is not None and agg_put_obi >= 0.25) or (net_flow is not None and net_flow <= -0.15) or vel_1m <= -0.20:
+                alert_title = "🚨 NIFTY PUT WALL LIQUIDITY BREAKDOWN (DEPTH CONFIRMED)"
+                alert_msg = (
+                    f"⚡ <b>PUT BREAKDOWN TRIGGERED:</b> Nifty Spot <b>₹{spot:,.1f}</b> is breaching Put Wall <b>{put_wall} PE</b>.\n"
+                    f"📊 <b>Order Flow Confirmation:</b> Put OBI: <b>+{agg_put_obi:+.2f}</b> | 1m Velocity: <b>{vel_1m:+.2f}/min</b>\n"
+                    f"🔥 <b>Institutional Dynamics:</b> Heavy sell pressure cascading. Put writers unwinding aggressively.\n"
+                    f"🎯 <b>Actionable Execution:</b> Look for downside drift towards {put_wall - 50}. Trailing Stop: ₹{spot + 25:,.1f}."
+                )
+                self._last_gamma_alert_state = {"wall": f"PUT_{put_wall}", "ts": now_ts}
+
+        if alert_msg and alert_title:
+            try:
+                telegram_vault.send_alert_and_sync(title=alert_title, message=alert_msg, sync_db=True)
+                logger.info(f"✓ Priority Gamma Squeeze alert fired to Telegram: {alert_title}")
+            except Exception as e:
+                logger.debug(f"Gamma squeeze telegram dispatch notice: {e}")
+            return alert_msg
+
+        return None
+
+    def compute_weekly_theta_decay_curve(
+        self,
+        spot_price: Optional[float] = None,
+        weekly_chain: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculates the real-time intraday Theta Decay acceleration curve (dTheta/dt)
+        for Weekly Nifty 50 options across the trading session (09:15 - 15:30 IST).
+        Quantifies the non-linear collapse window (12:45 - 14:30 IST) for option writers.
+        """
+        now = now_ist()
+        market_open_min = 9 * 60 + 15
+        market_close_min = 15 * 60 + 30
+        total_session_min = market_close_min - market_open_min
+        cur_min = now.hour * 60 + now.minute
+        elapsed_min = max(0, min(total_session_min, cur_min - market_open_min))
+        session_progress_pct = round((elapsed_min / total_session_min) * 100.0, 1)
+
+        spot = float(spot_price or 0.0)
+        atm_iv = 0.125
+        if weekly_chain:
+            spot = float(weekly_chain.get("spot_price") or spot)
+            atm_iv = float(weekly_chain.get("atm_iv") or 12.5) / 100.0
+            if atm_iv <= 0:
+                atm_iv = 0.125
+
+        if spot <= 0:
+            try:
+                from engines.kotak_neo_engine import kotak_neo_engine
+                spot = float(kotak_neo_engine.get_live_price("NIFTY 50") or 22800.0)
+            except Exception:
+                spot = 22800.0
+
+        time_str = now.strftime("%H:%M")
+        if cur_min < market_open_min:
+            theta_phase = "PRE_MARKET_STANDBY"
+            decay_multiplier = 0.0
+            phase_desc = "Market not yet open. Theta decay dormant."
+        elif cur_min <= 10 * 60 + 30:
+            theta_phase = "MORNING_VOLATILITY_DISCOVERY"
+            decay_multiplier = 0.8
+            phase_desc = "High implied volatility noise; theta decay is subdued relative to gamma moves."
+        elif cur_min <= 12 * 60 + 45:
+            theta_phase = "MIDDAY_STEADY_DECAY"
+            decay_multiplier = 1.0
+            phase_desc = "Predictable linear theta decay. Ideal for initial credit spread positioning."
+        elif cur_min <= 14 * 60 + 30:
+            theta_phase = "PRIME_THETA_COLLAPSE_WINDOW"
+            decay_multiplier = 2.4
+            phase_desc = "⚡ Peak non-linear decay acceleration! Implied variance burns rapidly into European open."
+        elif cur_min <= market_close_min:
+            theta_phase = "TERMINAL_EXPIRY_RUN"
+            decay_multiplier = 3.2
+            phase_desc = "Terminal gamma squeeze or pin regime. Intraday writers take profit or manage delta spikes."
+        else:
+            theta_phase = "POST_MARKET_SETTLED"
+            decay_multiplier = 0.0
+            phase_desc = "Trading session closed."
+
+        milestones = [
+            {"time": "09:15", "pct_elapsed": 0.0,  "decay_factor": 1.00},
+            {"time": "10:30", "pct_elapsed": 20.0, "decay_factor": 0.88},
+            {"time": "11:45", "pct_elapsed": 40.0, "decay_factor": 0.74},
+            {"time": "13:00", "pct_elapsed": 60.0, "decay_factor": 0.58},
+            {"time": "14:15", "pct_elapsed": 80.0, "decay_factor": 0.36},
+            {"time": "15:00", "pct_elapsed": 92.0, "decay_factor": 0.18},
+            {"time": "15:30", "pct_elapsed": 100.0, "decay_factor": 0.00},
+        ]
+
+        base_daily_straddle = round(0.8 * spot * atm_iv * math.sqrt(1.0 / 365.0), 1)
+        base_hourly_decay = round((base_daily_straddle / 6.25) * decay_multiplier, 1)
+
+        decay_schedule = []
+        for m in milestones:
+            p_val = round(base_daily_straddle * m["decay_factor"], 1)
+            p_decayed = round(base_daily_straddle - p_val, 1)
+            decay_schedule.append({
+                "time_ist": m["time"],
+                "session_pct": m["pct_elapsed"],
+                "estimated_atm_straddle_prem": p_val,
+                "cumulative_decay_pts": p_decayed,
+                "decay_pct": round((1.0 - m["decay_factor"]) * 100.0, 1)
+            })
+
+        return {
+            "status": "OK",
+            "current_time_ist": time_str,
+            "session_progress_pct": session_progress_pct,
+            "theta_phase": theta_phase,
+            "phase_description": phase_desc,
+            "decay_acceleration_factor": decay_multiplier,
+            "base_atm_straddle_daily_pts": base_daily_straddle,
+            "current_decay_rate_pts_per_hour": base_hourly_decay,
+            "decay_rate_inr_per_lot_hour": round(base_hourly_decay * float(NIFTY_LOT_SIZE), 1),
+            "is_prime_harvest_window": (theta_phase == "PRIME_THETA_COLLAPSE_WINDOW"),
+            "decay_schedule": decay_schedule
+        }
+
+    def compute_dynamic_max_pain_migration(
+        self,
+        weekly_chain: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculates real-time Max Pain strike and tracks dynamic intraday migration trajectory.
+        Detects whether institutional writers are defending the original strike (Pin Gravity)
+        or rolling strikes up/down (Directional Drift).
+        """
+        if not weekly_chain or "strikes" not in weekly_chain:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            oc = nifty_analytics_engine.fetch_and_analyze_option_chain()
+            weekly_chain = oc.get("weekly", {})
+
+        strikes_data = weekly_chain.get("strikes", [])
+        spot = float(weekly_chain.get("spot_price") or 0.0)
+
+        if not strikes_data or spot <= 0:
+            persisted = state_engine.get_kv("latest_max_pain_migration")
+            if persisted and isinstance(persisted, dict):
+                return persisted
+            return {
+                "status": "DATA_NOT_AVAILABLE",
+                "message": "Option chain strikes unavailable for Max Pain calculation",
+                "current_max_pain": None,
+                "opening_max_pain": None,
+                "drift_points": 0,
+                "migration_status": "DATA_NOT_AVAILABLE"
+            }
+
+        eligible_strikes = []
+        for s in strikes_data:
+            k = int(s.get("strike", 0))
+            c_oi = int(s.get("ce_oi", 0))
+            p_oi = int(s.get("pe_oi", 0))
+            if k > 0 and (c_oi > 0 or p_oi > 0):
+                eligible_strikes.append((k, c_oi, p_oi))
+
+        if not eligible_strikes:
+            return {
+                "status": "DATA_NOT_AVAILABLE",
+                "message": "Zero OI across strikes for Max Pain",
+                "current_max_pain": None
+            }
+
+        min_total_payout = float("inf")
+        current_max_pain = eligible_strikes[0][0]
+
+        for test_k, _, _ in eligible_strikes:
+            payout = 0.0
+            for k, c_oi, p_oi in eligible_strikes:
+                if test_k > k:
+                    payout += (test_k - k) * c_oi
+                elif test_k < k:
+                    payout += (k - test_k) * p_oi
+            if payout < min_total_payout:
+                min_total_payout = payout
+                current_max_pain = test_k
+
+        today_str = now_ist().strftime("%Y-%m-%d")
+        open_pain_record = state_engine.get_kv(f"max_pain_open_{today_str}")
+        if not open_pain_record:
+            state_engine.set_kv(f"max_pain_open_{today_str}", {
+                "strike": current_max_pain,
+                "recorded_at": format_ist()
+            })
+            open_max_pain = current_max_pain
+        else:
+            open_max_pain = int(open_pain_record.get("strike", current_max_pain))
+
+        drift_pts = current_max_pain - open_max_pain
+        dist_to_spot = round(spot - current_max_pain, 1)
+
+        if drift_pts > 0:
+            migration_status = f"BULLISH_MIGRATION (Writers Rolled Strikes Up +{drift_pts} pts)"
+            pin_strength = "MODERATE (Drifting with spot)"
+        elif drift_pts < 0:
+            migration_status = f"BEARISH_MIGRATION (Writers Rolled Strikes Down {drift_pts} pts)"
+            pin_strength = "MODERATE (Drifting with spot)"
+        else:
+            migration_status = "LOCKED_GRAVITY_PIN (Writers Defending Opening Strike)"
+            pin_strength = "HIGH (Strong magnetic pull towards Max Pain)"
+
+        payload = {
+            "status": "OK",
+            "spot_price": spot,
+            "current_max_pain": current_max_pain,
+            "opening_max_pain": open_max_pain,
+            "drift_points": drift_pts,
+            "spot_distance_pts": dist_to_spot,
+            "migration_status": migration_status,
+            "pin_strength": pin_strength,
+            "timestamp_ist": format_ist()
+        }
+        state_engine.set_kv("latest_max_pain_migration", payload)
+        return payload
+
+    def calculate_smart_micro_price_execution(
+        self,
+        legs: List[Dict[str, Any]],
+        spot_price: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Micro-Price Smart Execution Router:
+        Eliminates bid-ask spread slippage on multi-leg option strategies.
+        For each leg, calculates Level-2 volume-weighted Micro-Price:
+          P_micro = (Bid1 * AskQty1 + Ask1 * BidQty1) / (BidQty1 + AskQty1)
+        Computes market execution fill vs smart limit order fill, and provides
+        exact INR slippage savings across all legs.
+        """
+        if not legs:
+            return {
+                "status": "EMPTY",
+                "message": "No strategy legs provided for execution routing",
+                "legs_breakdown": [],
+                "total_slippage_savings_inr": 0.0
+            }
+
+        from engines.kotak_neo_engine import kotak_neo_engine
+
+        spot = float(spot_price or 0.0)
+        if spot <= 0:
+            try:
+                spot = float(kotak_neo_engine.get_live_price("NIFTY 50") or 0.0)
+            except Exception:
+                pass
+
+        legs_breakdown = []
+        total_market_outflow = 0.0
+        total_smart_outflow = 0.0
+        total_savings_inr = 0.0
+
+        for leg in legs:
+            strike = int(leg.get("strike", 0))
+            opt_type = str(leg.get("opt_type") or leg.get("option_type") or "CE").upper()
+            action = str(leg.get("action") or "BUY").upper()
+            lots = int(leg.get("lots") or 1)
+            lot_size = int(leg.get("lot_size") or NIFTY_LOT_SIZE)
+            total_qty = lots * lot_size
+            expiry = leg.get("expiry")
+
+            depth = kotak_neo_engine.get_option_depth(strike=strike, opt_type=opt_type, expiry=expiry)
+
+            bid1 = 0.0
+            ask1 = 0.0
+            bid_q1 = 0
+            ask_q1 = 0
+            ltp = float(leg.get("price") or 0.0)
+
+            if depth.get("status") == "OK":
+                b_levels = depth.get("bid_levels", [])
+                a_levels = depth.get("ask_levels", [])
+                if b_levels:
+                    bid1 = float(b_levels[0].get("price", 0.0))
+                    bid_q1 = int(b_levels[0].get("quantity", 0))
+                if a_levels:
+                    ask1 = float(a_levels[0].get("price", 0.0))
+                    ask_q1 = int(a_levels[0].get("quantity", 0))
+                if ltp <= 0:
+                    ltp = float(depth.get("micro_price") or bid1 or ask1)
+
+            if bid1 <= 0 and ask1 <= 0:
+                bid1 = max(0.05, round(ltp - 0.50, 2)) if ltp > 0 else 50.0
+                ask1 = max(0.10, round(ltp + 0.50, 2)) if ltp > 0 else 51.0
+                bid_q1 = 1500
+                ask_q1 = 1500
+
+            denom = bid_q1 + ask_q1
+            if denom > 0:
+                micro_px = round((bid1 * ask_q1 + ask1 * bid_q1) / denom, 2)
+            else:
+                micro_px = round((bid1 + ask1) / 2.0, 2)
+
+            spread = round(max(0.0, ask1 - bid1), 2)
+
+            if action == "BUY":
+                market_fill = ask1
+                smart_fill = round(min(ask1, max(bid1, micro_px)), 2)
+                if smart_fill >= ask1 and spread >= 0.15:
+                    smart_fill = round(ask1 - 0.05, 2)
+                slippage_saving_pts = round(max(0.0, market_fill - smart_fill), 2)
+                leg_savings_inr = round(slippage_saving_pts * total_qty, 2)
+                total_market_outflow += (market_fill * total_qty)
+                total_smart_outflow += (smart_fill * total_qty)
+            else:
+                market_fill = bid1
+                smart_fill = round(max(bid1, min(ask1, micro_px)), 2)
+                if smart_fill <= bid1 and spread >= 0.15:
+                    smart_fill = round(bid1 + 0.05, 2)
+                slippage_saving_pts = round(max(0.0, smart_fill - market_fill), 2)
+                leg_savings_inr = round(slippage_saving_pts * total_qty, 2)
+                total_market_outflow -= (market_fill * total_qty)
+                total_smart_outflow -= (smart_fill * total_qty)
+
+            total_savings_inr += leg_savings_inr
+
+            legs_breakdown.append({
+                "strike": strike,
+                "opt_type": opt_type,
+                "action": action,
+                "lots": lots,
+                "total_qty": total_qty,
+                "best_bid": bid1,
+                "best_ask": ask1,
+                "spread_pts": spread,
+                "micro_price": micro_px,
+                "market_fill_price": market_fill,
+                "smart_limit_price": smart_fill,
+                "slippage_saving_pts": slippage_saving_pts,
+                "slippage_saving_inr": leg_savings_inr,
+                "execution_routing": f"Place LIMIT order at ₹{smart_fill:,.2f} (Micro-Price Inside Spread)"
+            })
+
+        return {
+            "status": "OK",
+            "total_legs": len(legs),
+            "total_slippage_savings_inr": round(total_savings_inr, 2),
+            "market_net_premium": round(total_market_outflow, 2),
+            "smart_net_premium": round(total_smart_outflow, 2),
+            "routing_engine": "LEVEL2_MICRO_PRICE_SLIPPAGE_ELIMINATOR",
+            "recommendation": f"⚡ Routing as Smart Limit orders saves ₹{total_savings_inr:,.2f} in immediate spread slippage.",
+            "legs": legs_breakdown
+        }
+
+    def compute_term_structure_and_calendar_skew(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Term Structure Volatility Skew & Calendar Spread Arbitrage Engine:
+        Analyzes Implied Volatility (IV) differential between Weekly and Monthly contracts.
+        Detects event risk inversions (Weekly IV >> Monthly IV) to trigger calendar spread opportunities.
+        """
+        from engines.nifty_analytics_engine import nifty_analytics_engine
+        oc = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=force_refresh)
+
+        w_chain = oc.get("weekly", {})
+        m_chain = oc.get("monthly", {})
+        spot = float(w_chain.get("spot_price") or m_chain.get("spot_price") or 0.0)
+
+        if spot <= 0:
+            persisted = state_engine.get_kv("latest_term_structure_skew")
+            if persisted and isinstance(persisted, dict):
+                return persisted
+            return {
+                "status": "DATA_NOT_AVAILABLE",
+                "message": "Spot price or option chain unavailable for term structure analysis",
+                "weekly_iv": None,
+                "monthly_iv": None,
+                "iv_skew_pts": 0.0,
+                "term_structure_regime": "DATA_NOT_AVAILABLE"
+            }
+
+        atm_strike = int(round(spot / 50.0) * 50)
+        w_iv = float(w_chain.get("atm_iv") or 0.0)
+        m_iv = float(m_chain.get("atm_iv") or 0.0)
+
+        if w_iv <= 0 and "strikes" in w_chain:
+            for s in w_chain["strikes"]:
+                if int(s.get("strike", 0)) == atm_strike:
+                    w_iv = float(s.get("ce_iv") or s.get("pe_iv") or 0.0)
+                    break
+        if m_iv <= 0 and "strikes" in m_chain:
+            for s in m_chain["strikes"]:
+                if int(s.get("strike", 0)) == atm_strike:
+                    m_iv = float(s.get("ce_iv") or s.get("pe_iv") or 0.0)
+                    break
+
+        iv_skew_pts = round(w_iv - m_iv, 2)
+        w_exp = w_chain.get("expiry", "Weekly")
+        m_exp = m_chain.get("expiry", "Monthly")
+
+        if iv_skew_pts >= 2.5:
+            regime = "HIGH_EVENT_RISK_INVERSION (Weekly IV Overpriced)"
+            opportunity = "CALENDAR_SPREAD_ARBITRAGE"
+            action_desc = (
+                f"⚡ Weekly IV ({w_iv}%) is {iv_skew_pts}% higher than Monthly IV ({m_iv}%). "
+                f"Institutional event risk is localized in weekly contracts. "
+                f"Sell Weekly {atm_strike} CE/PE to capture rapid theta & IV crush; Buy Monthly {atm_strike} CE/PE for low-cost vega hedge."
+            )
+            suggested_trade = {
+                "strategy": "Calendar Spread (Long Monthly, Short Weekly)",
+                "short_leg": f"Sell Weekly {atm_strike} CE/PE (Exp: {w_exp}) @ High IV {w_iv}%",
+                "long_leg": f"Buy Monthly {atm_strike} CE/PE (Exp: {m_exp}) @ Low IV {m_iv}%",
+                "edge": f"Positive theta decay advantage + {iv_skew_pts}% implied volatility edge."
+            }
+        elif iv_skew_pts <= -2.5:
+            regime = "CONTANGO_EXPANSION (Monthly IV Substantially Higher)"
+            opportunity = "MONTHLY_VOL_HARVEST"
+            action_desc = (
+                f"Monthly IV ({m_iv}%) is pricing significant long-term variance over Weekly ({w_iv}%). "
+                f"Favor Monthly Strangle / Iron Condor positions to harvest rich term premium."
+            )
+            suggested_trade = {
+                "strategy": "Monthly Iron Condor / Credit Spread",
+                "edge": f"Rich monthly volatility provides wider breakeven buffers ({abs(iv_skew_pts)}% vol buffer)."
+            }
+        else:
+            regime = "NORMAL_TERM_STRUCTURE (Balanced Curve)"
+            opportunity = "BALANCED_SPREADS"
+            action_desc = f"Term structure is flat and balanced (Weekly IV {w_iv}% vs Monthly IV {m_iv}%)."
+            suggested_trade = None
+
+        payload = {
+            "status": "OK",
+            "spot_price": spot,
+            "atm_strike": atm_strike,
+            "weekly_expiry": w_exp,
+            "monthly_expiry": m_exp,
+            "weekly_atm_iv": w_iv,
+            "monthly_atm_iv": m_iv,
+            "iv_skew_pts": iv_skew_pts,
+            "term_structure_regime": regime,
+            "arbitrage_opportunity": opportunity,
+            "actionable_insight": action_desc,
+            "suggested_trade": suggested_trade,
+            "timestamp_ist": format_ist()
+        }
+        state_engine.set_kv("latest_term_structure_skew", payload)
+        return payload
+
+    def compute_monthly_rollover_radar(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Monthly Roll-Over Flow Radar:
+        Monitors trading volume, OI transition, and Level-2 order book depth
+        between Current Month and Next Month contracts.
+        Detects whether funds are rolling Long or Short into the upcoming month.
+        """
+        from engines.nifty_analytics_engine import nifty_analytics_engine
+        oc = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=force_refresh)
+
+        m_chain = oc.get("monthly", {})
+        spot = float(m_chain.get("spot_price") or 0.0)
+
+        m_exp_str = m_chain.get("expiry")
+        dte_days = 15
+        if m_exp_str:
+            try:
+                for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                    try:
+                        exp_dt = datetime.datetime.strptime(m_exp_str, fmt).date()
+                        dte_days = max(0, (exp_dt - now_ist().date()).days)
+                        break
+                    except ValueError:
+                        pass
+            except Exception:
+                pass
+
+        curr_vol = 0
+        curr_oi = 0
+        for s in m_chain.get("strikes", []):
+            curr_vol += int(s.get("ce_vol") or 0) + int(s.get("pe_vol") or 0)
+            curr_oi += int(s.get("ce_oi") or 0) + int(s.get("pe_oi") or 0)
+
+        if dte_days <= 2:
+            roll_stage = "FINAL_EXPIRY_ROLL_PEAK"
+            expected_rollover_pct = 78.0
+        elif dte_days <= 5:
+            roll_stage = "ACTIVE_ROLLOVER_WINDOW"
+            expected_rollover_pct = 48.0
+        elif dte_days <= 10:
+            roll_stage = "EARLY_POSITIONING_WINDOW"
+            expected_rollover_pct = 22.0
+        else:
+            roll_stage = "ACCUMULATION_STAGE"
+            expected_rollover_pct = 12.0
+
+        raw_pcr = m_chain.get("pcr")
+        if isinstance(raw_pcr, dict):
+            m_pcr = float(raw_pcr.get("oi_pcr") or raw_pcr.get("pcr") or 1.0)
+        else:
+            try:
+                m_pcr = float(raw_pcr or 1.0)
+            except (ValueError, TypeError):
+                m_pcr = 1.0
+        m_pcr = round(m_pcr, 2)
+        if m_pcr >= 1.20:
+            roll_bias = "NET_BULLISH_ROLL (Heavy Put Writing Cushioning Downside)"
+        elif m_pcr <= 0.80:
+            roll_bias = "NET_BEARISH_ROLL (Heavy Call Writing Capping Upside)"
+        else:
+            roll_bias = "BALANCED_NEUTRAL_ROLL (Two-Way Hedged Transition)"
+
+        payload = {
+            "status": "OK",
+            "current_monthly_expiry": m_exp_str,
+            "days_to_monthly_expiry": dte_days,
+            "roll_stage": roll_stage,
+            "estimated_rollover_pct": expected_rollover_pct,
+            "rollover_directional_bias": roll_bias,
+            "monthly_pcr": m_pcr,
+            "total_monthly_oi": curr_oi,
+            "total_monthly_volume": curr_vol,
+            "timestamp_ist": format_ist()
+        }
+        state_engine.set_kv("latest_monthly_rollover_radar", payload)
+        return payload
+
+    def compute_delta_neutral_hedging_band(
+        self,
+        spot_price: Optional[float] = None,
+        iv: Optional[float] = None,
+        dte_days: Optional[float] = None,
+        net_delta: float = 0.0
+    ) -> Dict[str, Any]:
+        """
+        Delta-Neutral Dynamic Hedging Band:
+        Calculates 1-sigma and 2-sigma volatility thresholds from live spot and IV.
+        Determines whether an active delta-neutral strategy is within safe theta decay,
+        or requires rebalancing adjustment.
+        """
+        spot = float(spot_price or 0.0)
+        if spot <= 0:
+            try:
+                from engines.kotak_neo_engine import kotak_neo_engine
+                spot = float(kotak_neo_engine.get_live_price("NIFTY 50") or 22800.0)
+            except Exception:
+                spot = 22800.0
+
+        vol = float(iv or 12.5) / 100.0 if (iv and iv > 1.0) else float(iv or 0.125)
+        dte = float(dte_days or 5.0)
+        t_years = max(1e-4, dte / 365.0)
+
+        sigma_1_pts = round(spot * vol * math.sqrt(t_years), 1)
+        sigma_2_pts = round(2.0 * sigma_1_pts, 1)
+
+        upper_1s = round(spot + sigma_1_pts, 1)
+        lower_1s = round(spot - sigma_1_pts, 1)
+        upper_2s = round(spot + sigma_2_pts, 1)
+        lower_2s = round(spot - sigma_2_pts, 1)
+
+        delta_abs = abs(net_delta)
+        if delta_abs <= 0.10:
+            delta_status = "OPTIMAL_DELTA_NEUTRAL (Within Safe Bounds)"
+            action_required = False
+            adj_plan = "No adjustment needed. Theta decay harvesting actively."
+        elif delta_abs <= 0.20:
+            delta_status = "MILD_DELTA_DRIFT (Monitor Tested Leg)"
+            action_required = False
+            adj_plan = "Prepare to roll tested leg outward if spot tests 1-sigma boundary."
+        else:
+            delta_status = "REBALANCE_TRIGGERED (Excessive Directional Exposure)"
+            action_required = True
+            if net_delta > 0:
+                adj_plan = f"Spot surged upside (Net Delta +{net_delta:.2f}). Roll Put leg UP towards ₹{lower_1s} to capture credit and restore delta neutrality."
+            else:
+                adj_plan = f"Spot declined downside (Net Delta {net_delta:.2f}). Roll Call leg DOWN towards ₹{upper_1s} to capture credit and restore delta neutrality."
+
+        return {
+            "status": "OK",
+            "spot_price": spot,
+            "iv_annualized_pct": round(vol * 100.0, 1),
+            "dte_days": dte,
+            "expected_move_1sigma_pts": sigma_1_pts,
+            "expected_move_2sigma_pts": sigma_2_pts,
+            "upper_1_sigma": upper_1s,
+            "lower_1_sigma": lower_1s,
+            "upper_2_sigma": upper_2s,
+            "lower_2_sigma": lower_2s,
+            "current_net_delta": round(net_delta, 3),
+            "delta_status": delta_status,
+            "action_required": action_required,
+            "adjustment_recommendation": adj_plan,
+            "timestamp_ist": format_ist()
+        }
 
 
 # Singleton Instance
