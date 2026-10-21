@@ -337,7 +337,7 @@ class Portfolio3StrategyEngine:
                 with self._get_connection() as conn:
                     # 1. Count active watchlist items
                     w_count = conn.execute(
-                        "SELECT COUNT(*) FROM p3_prebreakout_watchlist WHERE status = 'WATCHING'"
+                        "SELECT COUNT(DISTINCT symbol) FROM p3_prebreakout_watchlist WHERE status = 'WATCHING'"
                     ).fetchone()[0]
 
                     # 2. Query active positions for Portfolio 3
@@ -470,6 +470,10 @@ class Portfolio3StrategyEngine:
         with self._get_connection() as conn:
             for c in candidates:
                 try:
+                    conn.execute(
+                        "UPDATE p3_prebreakout_watchlist SET status = 'SUPERSEDED', updated_at = ? WHERE symbol = ? AND status = 'WATCHING' AND scan_date != ?",
+                        (now_str, c["symbol"], scan_date_str)
+                    )
                     conn.execute("""
                     INSERT INTO p3_prebreakout_watchlist (
                         symbol, scan_date, t_minus_1_date, t_minus_1_close, t_minus_1_high,
@@ -547,6 +551,11 @@ class Portfolio3StrategyEngine:
             rows = conn.execute("""
             SELECT * FROM p3_prebreakout_watchlist
             WHERE status = 'WATCHING'
+            AND id IN (
+                SELECT MAX(id) FROM p3_prebreakout_watchlist
+                WHERE status = 'WATCHING'
+                GROUP BY symbol
+            )
             ORDER BY id DESC
             """).fetchall()
             return [dict(r) for r in rows]
