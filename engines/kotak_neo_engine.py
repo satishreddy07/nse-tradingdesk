@@ -1005,9 +1005,13 @@ class KotakNeoEngine:
 
         return {
             "bids": final_bids,
+            "bid_levels": final_bids,
             "asks": final_asks,
+            "ask_levels": final_asks,
             "total_buy": total_buy,
+            "total_buy_quantity": total_buy,
             "total_sell": total_sell,
+            "total_sell_quantity": total_sell,
             "obi": obi,
             "obi_pct": round(obi * 100.0, 1),
             "micro_price": micro_price,
@@ -1092,6 +1096,7 @@ class KotakNeoEngine:
                             self._option_ticks[(strike, opt_type)] = {
                                 "strike": strike,
                                 "type": opt_type,
+                "opt_type": opt_type,
                                 "symbol": full_sym,
                                 "token": tok,
                                 "ltp": ltp_val,
@@ -1291,6 +1296,7 @@ class KotakNeoEngine:
                                         self._option_ticks[(k, opt_type)] = {
                                             "strike": k,
                                             "type": opt_type,
+                "opt_type": opt_type,
                                             "symbol": full_sym,
                                             "token": tok,
                                             "ltp": round(ltp_v, 2),
@@ -1738,6 +1744,7 @@ class KotakNeoEngine:
                         tick_dict = {
                             "strike": k,
                             "type": opt_type,
+                "opt_type": opt_type,
                             "symbol": full_sym,
                             "token": tok,
                             "ltp": ltp_val,
@@ -1771,7 +1778,7 @@ class KotakNeoEngine:
             logger.debug(f"Kotak Neo FO quotes fetch notice: {e}")
             return {}
 
-    def get_option_depth(self, strike: int, opt_type: str, expiry: Optional[str] = None) -> Dict[str, Any]:
+    def get_option_depth(self, strike: int, opt_type: str, expiry: Optional[str] = None, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Returns authentic Level-2 5-Level Market Depth, Order Book Imbalance (OBI),
         volume-weighted micro-price, and bid-ask spread for any Nifty option strike
@@ -1798,13 +1805,14 @@ class KotakNeoEngine:
         # Check cache
         with self._lock:
             cached_d = self._option_depth.get((strike, opt_type, target_expiry_iso)) or self._option_depth.get((strike, opt_type, None))
-            if cached_d and (cached_d.get("bids") or cached_d.get("asks")):
+            if not force_refresh and cached_d and (cached_d.get("bids") or cached_d.get("asks")):
                 cached_age = now_ts - float(cached_d.get("_cached_at_ts") or 0.0)
                 if cached_age < 2.0:
                     res = dict(cached_d)
                     res["status"] = "OK"
                     res["strike"] = strike
                     res["type"] = opt_type
+                    res["opt_type"] = opt_type
                     res["expiry"] = target_expiry_iso or expiry or "WEEKLY"
                     return res
 
@@ -1822,6 +1830,7 @@ class KotakNeoEngine:
                     res["status"] = "OK"
                     res["strike"] = strike
                     res["type"] = opt_type
+                    res["opt_type"] = opt_type
                     res["expiry"] = target_expiry_iso or expiry or "WEEKLY"
                     res["source"] = "KOTAK_NEO_DEPTH_CACHE"
                     return res
@@ -1830,6 +1839,7 @@ class KotakNeoEngine:
                 "message": f"Kotak Neo client not authenticated. Market depth unavailable for {strike} {opt_type}.",
                 "strike": strike,
                 "type": opt_type,
+                "opt_type": opt_type,
                 "expiry": expiry
             }
 
@@ -1904,6 +1914,7 @@ class KotakNeoEngine:
                 "message": f"Instrument token could not be resolved for NIFTY {strike} {opt_type} ({target_expiry_iso or expiry}).",
                 "strike": strike,
                 "type": opt_type,
+                "opt_type": opt_type,
                 "expiry": target_expiry_iso or expiry
             }
 
@@ -1930,6 +1941,7 @@ class KotakNeoEngine:
                 d_payload["status"] = "OK"
                 d_payload["strike"] = strike
                 d_payload["type"] = opt_type
+                d_payload["opt_type"] = opt_type
                 d_payload["expiry"] = target_expiry_iso or expiry or "WEEKLY"
                 d_payload["symbol"] = symbol or item.get("display_symbol") or f"NIFTY_{strike}_{opt_type}"
                 d_payload["token"] = str(token)
@@ -1956,6 +1968,7 @@ class KotakNeoEngine:
                 res["status"] = "OK"
                 res["strike"] = strike
                 res["type"] = opt_type
+                res["opt_type"] = opt_type
                 res["expiry"] = target_expiry_iso or expiry or "WEEKLY"
                 res["source"] = "KOTAK_NEO_DEPTH_CACHE"
                 return res
@@ -1965,6 +1978,7 @@ class KotakNeoEngine:
             "message": f"Market depth data unavailable for NIFTY {strike} {opt_type} ({target_expiry_iso or expiry}).",
             "strike": strike,
             "type": opt_type,
+                "opt_type": opt_type,
             "expiry": target_expiry_iso or expiry
         }
 

@@ -4297,6 +4297,93 @@
         </div>
       </div>
 
+      <!-- Card E: Institutional Level-2 Market Depth & Order Book Imbalance Pulse -->
+      <div class="bg-slate-900/80 border border-blue-500/35 rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-3 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse"></span>
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i data-lucide="layers" class="w-4 h-4 text-blue-400"></i>
+              <span>Institutional Level-2 Market Depth & Order Book Imbalance (Kotak Neo Real-Time)</span>
+            </h3>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="intra-depth-regime-badge" class="px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">LOADING DEPTH...</span>
+            <span id="intra-depth-source-badge" class="text-[10px] font-mono text-slate-400">⚡ Kotak SFeed Stream</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <!-- Left Col: Macro Depth Pulse & Imbalance Gauges (4 cols) -->
+          <div class="lg:col-span-4 space-y-3">
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-mono uppercase text-slate-400">Net Order Flow Index</span>
+                <span id="intra-depth-net-flow-idx" class="text-sm font-mono font-bold text-white">0.00</span>
+              </div>
+              <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden mt-1.5 flex">
+                <div id="intra-depth-flow-bar-neg" class="bg-rose-500 h-full transition-all duration-300" style="width: 50%;"></div>
+                <div id="intra-depth-flow-bar-pos" class="bg-emerald-500 h-full transition-all duration-300" style="width: 50%;"></div>
+              </div>
+              <div class="flex justify-between text-[9px] font-mono text-slate-500 mt-1">
+                <span>-1.0 (Put Accumulation)</span>
+                <span>0.0 (Neutral)</span>
+                <span>+1.0 (Call Accumulation)</span>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
+                <span class="text-[10px] text-slate-400 block uppercase">Call Depth Vol</span>
+                <span id="intra-depth-call-vol" class="text-base font-bold text-emerald-400 block mt-0.5">--</span>
+                <span id="intra-depth-call-obi" class="text-[10px] text-slate-400">OBI: --</span>
+              </div>
+              <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
+                <span class="text-[10px] text-slate-400 block uppercase">Put Depth Vol</span>
+                <span id="intra-depth-put-vol" class="text-base font-bold text-rose-400 block mt-0.5">--</span>
+                <span id="intra-depth-put-obi" class="text-[10px] text-slate-400">OBI: --</span>
+              </div>
+            </div>
+
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 text-xs font-mono">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400 text-[10px] uppercase">Liquidity Vacuum Status</span>
+                <span id="intra-depth-liq-status" class="text-cyan-300 font-bold">DEEP LIQUIDITY</span>
+              </div>
+              <div class="flex items-center justify-between mt-1 text-[11px]">
+                <span class="text-slate-500">Avg Near Spread:</span>
+                <span id="intra-depth-avg-spread" class="text-white font-bold">-- pts</span>
+              </div>
+            </div>
+
+            <div id="intra-depth-alert-box" class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-2.5 text-xs text-blue-200 leading-relaxed font-sans">
+              Monitoring real-time Kotak Neo Level-2 option market depth...
+            </div>
+          </div>
+
+          <!-- Right Col: Near-ATM 7-Strike Depth Ladder (8 cols) -->
+          <div class="lg:col-span-8 overflow-x-auto custom-scroll">
+            <table class="w-full text-left text-xs text-slate-300 font-mono">
+              <thead class="bg-slate-950/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2 text-emerald-400">CE Depth (Buy / Sell)</th>
+                  <th class="p-2 text-emerald-400">CE OBI</th>
+                  <th class="p-2 text-emerald-400">CE Micro-Price</th>
+                  <th class="p-2 text-center text-white bg-slate-900 border-x border-slate-800">Strike</th>
+                  <th class="p-2 text-rose-400">PE Micro-Price</th>
+                  <th class="p-2 text-rose-400">PE OBI</th>
+                  <th class="p-2 text-rose-400">PE Depth (Buy / Sell)</th>
+                  <th class="p-2 text-center">5-Depth</th>
+                </tr>
+              </thead>
+              <tbody id="intra-depth-ladder-tbody" class="divide-y divide-slate-800/60">
+                <tr><td colspan="8" class="p-4 text-center text-slate-500">Loading near-ATM order depth ladder...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- 50-Minute Collection Schedule Strip (09:30 to 15:20/15:30 IST) -->
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
@@ -7767,6 +7854,47 @@
     </div>
   </div>
 
+  <!-- ===================================================================== -->
+  <!-- NIFTY 50 OPTION STRIKE 5-LEVEL DEPTH & ORDER FLOW MODAL               -->
+  <!-- ===================================================================== -->
+  <div id="nifty-opt-depth-modal" onclick="if(event.target === this) closeOptionDepthModal()" style="display: none;" class="hidden fixed inset-0 z-[105] bg-black/85 backdrop-blur-md items-center justify-center p-2 sm:p-4">
+    <div class="bg-[#0b0f19] border border-blue-500/40 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
+      <div class="p-4 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+            <i data-lucide="layers" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 id="opt-depth-modal-title" class="text-base font-extrabold text-white">Nifty Strike Market Depth</h3>
+              <span id="opt-depth-flow-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">LEVEL 2</span>
+            </div>
+            <span id="opt-depth-modal-subtitle" class="text-xs font-mono text-slate-400">Kotak Neo Live 5-Depth Ladder • Order Book Imbalance</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <!-- Expiry Toggle inside modal -->
+          <div class="inline-flex rounded-lg bg-slate-950 p-0.5 border border-slate-800 text-xs font-mono">
+            <button id="modal-depth-btn-weekly" onclick="switchModalDepthExpiry('weekly')" class="px-2.5 py-1 rounded text-[11px] font-bold bg-emerald-500 text-black transition">Weekly</button>
+            <button id="modal-depth-btn-monthly" onclick="switchModalDepthExpiry('monthly')" class="px-2.5 py-1 rounded text-[11px] font-bold text-slate-400 hover:text-white transition">Monthly</button>
+          </div>
+          <!-- CE / PE Toggle inside modal -->
+          <div class="inline-flex rounded-lg bg-slate-950 p-0.5 border border-slate-800 text-xs font-mono">
+            <button id="modal-depth-btn-ce" onclick="switchModalDepthOptType('CE')" class="px-2.5 py-1 rounded text-[11px] font-bold bg-blue-500 text-white transition">CE</button>
+            <button id="modal-depth-btn-pe" onclick="switchModalDepthOptType('PE')" class="px-2.5 py-1 rounded text-[11px] font-bold text-slate-400 hover:text-white transition">PE</button>
+          </div>
+          <button onclick="closeOptionDepthModal()" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="p-4 sm:p-6 overflow-y-auto space-y-4" id="opt-depth-modal-content">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
   <div id="strat-detail-modal" onclick="if(event.target === this) closeStrategyDetailModal()" style="display: none;" class="hidden fixed inset-0 z-[100] bg-black/85 backdrop-blur-md items-center justify-center p-2 sm:p-4">
     <div class="bg-[#0b0f19] border border-purple-500/40 rounded-2xl w-full max-w-6xl 2xl:max-w-7xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
       <div class="p-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2">
@@ -9877,6 +10005,105 @@
             <span class="${isG ? 'text-emerald-400' : 'text-rose-400'} font-bold">${isG ? '+' : ''}${Number(s.change_pct).toFixed(2)}%</span>
           </div>`;
         }).join('');
+      }
+
+      // 5. Institutional Level-2 Market Depth & Order Flow Rendering
+      const depthData = adv.order_flow_depth || data.order_flow_depth || {};
+      const dRegBadge = document.getElementById('intra-depth-regime-badge');
+      const dSrcBadge = document.getElementById('intra-depth-source-badge');
+      const dNetIdx = document.getElementById('intra-depth-net-flow-idx');
+      const dBarNeg = document.getElementById('intra-depth-flow-bar-neg');
+      const dBarPos = document.getElementById('intra-depth-flow-bar-pos');
+      const dCallVol = document.getElementById('intra-depth-call-vol');
+      const dCallObi = document.getElementById('intra-depth-call-obi');
+      const dPutVol = document.getElementById('intra-depth-put-vol');
+      const dPutObi = document.getElementById('intra-depth-put-obi');
+      const dLiqStat = document.getElementById('intra-depth-liq-status');
+      const dAvgSpr = document.getElementById('intra-depth-avg-spread');
+      const dAlertBox = document.getElementById('intra-depth-alert-box');
+      const dLadderTbody = document.getElementById('intra-depth-ladder-tbody');
+
+      if (depthData && depthData.status === 'OK') {
+        if (dRegBadge) {
+          const reg = (depthData.flow_regime || 'BALANCED').replace(/_/g, ' ');
+          dRegBadge.innerText = reg;
+          if (reg.includes('BULLISH') || reg.includes('CALL')) {
+            dRegBadge.className = "px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+          } else if (reg.includes('BEARISH') || reg.includes('PUT')) {
+            dRegBadge.className = "px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40";
+          } else {
+            dRegBadge.className = "px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40";
+          }
+        }
+        if (dSrcBadge) {
+          dSrcBadge.innerText = `⚡ ${depthData.source || 'KOTAK_NEO_STREAM'} (${depthData.fetched_at_ist || ''})`;
+        }
+        const netIdx = Number(depthData.net_flow_index || 0.0);
+        if (dNetIdx) {
+          dNetIdx.innerText = `${netIdx >= 0 ? '+' : ''}${netIdx.toFixed(3)}`;
+          dNetIdx.className = `text-sm font-mono font-bold ${netIdx >= 0.1 ? 'text-emerald-400' : (netIdx <= -0.1 ? 'text-rose-400' : 'text-slate-200')}`;
+        }
+        if (dBarNeg && dBarPos) {
+          const clamped = Math.max(-1.0, Math.min(1.0, netIdx));
+          if (clamped >= 0) {
+            dBarNeg.style.width = '50%';
+            dBarPos.style.width = `${50 + (clamped * 50)}%`;
+          } else {
+            dBarPos.style.width = '50%';
+            dBarNeg.style.width = `${50 + (Math.abs(clamped) * 50)}%`;
+          }
+        }
+        if (dCallVol) dCallVol.innerText = Number(depthData.call_depth_total || 0).toLocaleString('en-IN');
+        if (dCallObi) dCallObi.innerText = `OBI: ${(Number(depthData.aggregate_call_obi || 0) >= 0 ? '+' : '')}${Number(depthData.aggregate_call_obi || 0).toFixed(2)}`;
+        if (dPutVol) dPutVol.innerText = Number(depthData.put_depth_total || 0).toLocaleString('en-IN');
+        if (dPutObi) dPutObi.innerText = `OBI: ${(Number(depthData.aggregate_put_obi || 0) >= 0 ? '+' : '')}${Number(depthData.aggregate_put_obi || 0).toFixed(2)}`;
+        if (dLiqStat) dLiqStat.innerText = depthData.liquidity_status || 'DEEP LIQUIDITY';
+        if (dAvgSpr) dAvgSpr.innerText = `${Number(depthData.avg_spread_pts || 0).toFixed(2)} pts`;
+        if (dAlertBox) {
+          dAlertBox.innerText = depthData.order_flow_alert || 'Order flow depth balanced across near-ATM strikes.';
+        }
+
+        if (dLadderTbody && Array.isArray(depthData.near_atm_strikes) && depthData.near_atm_strikes.length > 0) {
+          dLadderTbody.innerHTML = depthData.near_atm_strikes.map(row => {
+            const isAtm = row.is_atm;
+            const ce = row.ce || {};
+            const pe = row.pe || {};
+            const ceObi = Number(ce.obi || 0);
+            const peObi = Number(pe.obi || 0);
+            const rowBg = isAtm ? 'bg-amber-500/10 border-y border-amber-500/40' : 'hover:bg-slate-800/40';
+
+            return `
+              <tr class="${rowBg} transition">
+                <td class="p-2 text-emerald-300">
+                  <span class="font-bold">${(ce.total_buy || 0).toLocaleString('en-IN')}</span> / <span class="text-slate-400">${(ce.total_sell || 0).toLocaleString('en-IN')}</span>
+                </td>
+                <td class="p-2 font-bold ${ceObi >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${ceObi >= 0 ? '+' : ''}${ceObi.toFixed(2)}</td>
+                <td class="p-2 font-bold text-white">₹${Number(ce.micro_price || ce.ltp || 0).toFixed(2)}</td>
+                <td class="p-2 text-center font-extrabold bg-slate-900 border-x border-slate-800 ${isAtm ? 'text-amber-300 text-sm' : 'text-white'}">
+                  ${row.strike} ${isAtm ? '<span class="text-[8px] bg-amber-500 text-black px-1 rounded ml-1 font-bold">ATM</span>' : ''}
+                </td>
+                <td class="p-2 font-bold text-white">₹${Number(pe.micro_price || pe.ltp || 0).toFixed(2)}</td>
+                <td class="p-2 font-bold ${peObi >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${peObi >= 0 ? '+' : ''}${peObi.toFixed(2)}</td>
+                <td class="p-2 text-rose-300">
+                  <span class="font-bold">${(pe.total_buy || 0).toLocaleString('en-IN')}</span> / <span class="text-slate-400">${(pe.total_sell || 0).toLocaleString('en-IN')}</span>
+                </td>
+                <td class="p-2 text-center">
+                  <div class="flex items-center justify-center gap-1">
+                    <button onclick="openOptionDepthModal(${row.strike}, 'CE')" title="5-Depth for ${row.strike} CE" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 border border-blue-500/30 transition">CE</button>
+                    <button onclick="openOptionDepthModal(${row.strike}, 'PE')" title="5-Depth for ${row.strike} PE" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 hover:bg-purple-500/40 text-purple-300 border border-purple-500/30 transition">PE</button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('');
+        }
+      } else {
+        if (dRegBadge) dRegBadge.innerText = 'DATA UNAVAILABLE';
+        if (dSrcBadge) dSrcBadge.innerText = '⚠️ Kotak Stream Offline';
+        if (dAlertBox) dAlertBox.innerText = depthData?.message || 'Kotak Neo Level-2 depth unavailable.';
+        if (dLadderTbody) {
+          dLadderTbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-amber-400 font-mono text-xs">⚠️ Kotak Neo Level-2 Market Depth Stream Unavailable — ${depthData?.message || 'Off-market'}</td></tr>`;
+        }
       }
 
       // 4. Intraday ML Model Rendering (Prior-Slots Trained)
@@ -12204,6 +12431,7 @@
             <td class="p-2 whitespace-nowrap col-ce">
               <div class="flex items-center justify-between gap-1.5">
                 <div class="flex items-center gap-1 shrink-0">
+                  <button onclick="openOptionDepthModal(${s.strike}, 'CE')" title="Level-2 5-Depth & Order Book Imbalance" class="px-1.5 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 text-[10px] font-bold border border-blue-500/30 transition">📊</button>
                   <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'BUY', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Buy ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition">+B</button>
                   <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'SELL', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Sell ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition">+S</button>
                 </div>
@@ -12223,6 +12451,7 @@
                 <div class="flex items-center gap-1 shrink-0">
                   <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'BUY', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Buy ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition">+B</button>
                   <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'SELL', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Sell ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition">+S</button>
+                  <button onclick="openOptionDepthModal(${s.strike}, 'PE')" title="Level-2 5-Depth & Order Book Imbalance" class="px-1.5 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 text-[10px] font-bold border border-blue-500/30 transition">📊</button>
                 </div>
               </div>
             </td>
@@ -25577,5 +25806,275 @@
       </div>
     </div>
   </div>
+<script>
+
+    // =========================================================================
+    // NIFTY OPTION LEVEL-2 5-DEPTH & ORDER FLOW MODAL CONTROLLER
+    // =========================================================================
+    window.activeOptionDepthState = {
+      strike: 22800,
+      optType: 'CE',
+      expiryType: 'weekly',
+      pollTimer: null
+    };
+
+    function openOptionDepthModal(strike, optType, expiryType) {
+      window.activeOptionDepthState.strike = parseInt(strike) || 22800;
+      window.activeOptionDepthState.optType = (optType || 'CE').toUpperCase();
+      if (expiryType) {
+        window.activeOptionDepthState.expiryType = expiryType.toLowerCase();
+      } else if (typeof selectedOptionsExpiryType !== 'undefined') {
+        window.activeOptionDepthState.expiryType = selectedOptionsExpiryType;
+      }
+
+      const modal = document.getElementById('nifty-opt-depth-modal');
+      if (modal) {
+        modal.style.display = 'flex';
+        modal.classList.remove('hidden');
+      }
+
+      updateModalDepthButtons();
+      fetchOptionStrikeDepth(true);
+
+      if (window.activeOptionDepthState.pollTimer) {
+        clearInterval(window.activeOptionDepthState.pollTimer);
+      }
+      window.activeOptionDepthState.pollTimer = setInterval(() => {
+        if (modal && modal.style.display !== 'none' && !modal.classList.contains('hidden')) {
+          fetchOptionStrikeDepth(false);
+        } else {
+          clearInterval(window.activeOptionDepthState.pollTimer);
+        }
+      }, 1500);
+
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function closeOptionDepthModal() {
+      if (window.activeOptionDepthState.pollTimer) {
+        clearInterval(window.activeOptionDepthState.pollTimer);
+        window.activeOptionDepthState.pollTimer = null;
+      }
+      const modal = document.getElementById('nifty-opt-depth-modal');
+      if (modal) {
+        modal.style.display = 'none';
+        modal.classList.add('hidden');
+      }
+    }
+
+    function switchModalDepthExpiry(mode) {
+      window.activeOptionDepthState.expiryType = mode === 'monthly' ? 'monthly' : 'weekly';
+      updateModalDepthButtons();
+      fetchOptionStrikeDepth(true);
+    }
+
+    function switchModalDepthOptType(type) {
+      window.activeOptionDepthState.optType = type === 'PE' ? 'PE' : 'CE';
+      updateModalDepthButtons();
+      fetchOptionStrikeDepth(true);
+    }
+
+    function updateModalDepthButtons() {
+      const exp = window.activeOptionDepthState.expiryType;
+      const opt = window.activeOptionDepthState.optType;
+      const bW = document.getElementById('modal-depth-btn-weekly');
+      const bM = document.getElementById('modal-depth-btn-monthly');
+      const bCe = document.getElementById('modal-depth-btn-ce');
+      const bPe = document.getElementById('modal-depth-btn-pe');
+
+      if (bW && bM) {
+        if (exp === 'weekly') {
+          bW.className = "px-2.5 py-1 rounded text-[11px] font-bold bg-emerald-500 text-black transition";
+          bM.className = "px-2.5 py-1 rounded text-[11px] font-bold text-slate-400 hover:text-white transition";
+        } else {
+          bM.className = "px-2.5 py-1 rounded text-[11px] font-bold bg-emerald-500 text-black transition";
+          bW.className = "px-2.5 py-1 rounded text-[11px] font-bold text-slate-400 hover:text-white transition";
+        }
+      }
+
+      if (bCe && bPe) {
+        if (opt === 'CE') {
+          bCe.className = "px-2.5 py-1 rounded text-[11px] font-bold bg-blue-500 text-white transition";
+          bPe.className = "px-2.5 py-1 rounded text-[11px] font-bold text-slate-400 hover:text-white transition";
+        } else {
+          bPe.className = "px-2.5 py-1 rounded text-[11px] font-bold bg-purple-500 text-white transition";
+          bCe.className = "px-2.5 py-1 rounded text-[11px] font-bold text-slate-400 hover:text-white transition";
+        }
+      }
+    }
+
+    async function fetchOptionStrikeDepth(showLoading = false) {
+      const { strike, optType, expiryType } = window.activeOptionDepthState;
+      const container = document.getElementById('opt-depth-modal-content');
+      if (showLoading && container && !container.innerHTML.trim()) {
+        container.innerHTML = `<div class="p-8 text-center text-slate-400 font-mono text-sm animate-pulse">⚡ Streaming Kotak Neo Level-2 Market Depth for ${strike} ${optType}...</div>`;
+      }
+
+      try {
+        const res = await fetch(`/api/nifty/options/strike-depth?strike=${strike}&option_type=${optType}&expiry_type=${expiryType}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        renderOptionStrikeDepthContent(data);
+      } catch (err) {
+        console.debug("Option depth fetch error:", err);
+      }
+    }
+
+    function renderOptionStrikeDepthContent(data) {
+      const container = document.getElementById('opt-depth-modal-content');
+      if (!container) return;
+
+      if (!data || data.status !== 'OK') {
+        container.innerHTML = `
+          <div class="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6 text-center">
+            <div class="text-amber-400 font-bold text-base font-mono mb-2">⚠️ DATA NOT AVAILABLE</div>
+            <p class="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+              ${data?.message || 'Kotak Neo Level-2 market depth stream unavailable for this contract. The market may be closed or WebSocket feed inactive.'}
+            </p>
+          </div>
+        `;
+        return;
+      }
+
+      const titleEl = document.getElementById('opt-depth-modal-title');
+      const subEl = document.getElementById('opt-depth-modal-subtitle');
+      const flowBadge = document.getElementById('opt-depth-flow-badge');
+
+      if (titleEl) {
+        titleEl.innerText = `Nifty ${data.strike} ${data.opt_type} • ${data.expiry || ''} (${(data.expiry_type || 'weekly').toUpperCase()})`;
+      }
+      if (subEl) {
+        subEl.innerText = `Source: ${data.source || 'KOTAK_NEO_STREAM'} • Token: ${data.token || '--'} • Updated: ${data.timestamp_ist || 'Just now'}`;
+      }
+      if (flowBadge) {
+        const bias = data.flow_bias || 'BALANCED';
+        flowBadge.innerText = bias.replace(/_/g, ' ');
+        if (bias.includes('BUYING')) {
+          flowBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+        } else if (bias.includes('SELLING')) {
+          flowBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40";
+        } else {
+          flowBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40";
+        }
+      }
+
+      const bids = data.bid_levels || [];
+      const asks = data.ask_levels || [];
+      const totBuy = Number(data.total_buy_quantity || 0);
+      const totSell = Number(data.total_sell_quantity || 0);
+      const obi = Number(data.obi || 0.0);
+      const microPrice = Number(data.micro_price || 0.0);
+      const spread = Number(data.spread || 0.0);
+      const spreadPct = Number(data.spread_pct || 0.0);
+
+      const maxBidQty = Math.max(1, ...bids.map(b => Number(b.quantity || 0)));
+      const maxAskQty = Math.max(1, ...asks.map(a => Number(a.quantity || 0)));
+      const maxQty = Math.max(maxBidQty, maxAskQty);
+
+      const totVol = totBuy + totSell;
+      const buyPct = totVol > 0 ? Math.round((totBuy / totVol) * 100) : 50;
+      const sellPct = 100 - buyPct;
+
+      const obiDisplay = (obi >= 0 ? '+' : '') + obi.toFixed(3);
+      const obiColor = obi >= 0.15 ? 'text-emerald-400' : (obi <= -0.15 ? 'text-rose-400' : 'text-slate-300');
+
+      let rowsHtml = '';
+      for (let i = 0; i < 5; i++) {
+        const b = bids[i] || { orders: '-', quantity: 0, price: 0.0 };
+        const a = asks[i] || { orders: '-', quantity: 0, price: 0.0 };
+        const bBarW = Math.min(100, Math.round((Number(b.quantity || 0) / maxQty) * 100));
+        const aBarW = Math.min(100, Math.round((Number(a.quantity || 0) / maxQty) * 100));
+
+        rowsHtml += `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="p-2 text-slate-500">${b.orders || '-'}</td>
+            <td class="p-2 relative">
+              <div class="absolute inset-y-0 right-0 bg-emerald-500/15 pointer-events-none rounded" style="width: ${bBarW}%;"></div>
+              <span class="relative font-bold text-emerald-300">${Number(b.quantity || 0).toLocaleString('en-IN')}</span>
+            </td>
+            <td class="p-2 font-mono font-bold text-white text-right">₹${Number(b.price || 0).toFixed(2)}</td>
+            <td class="p-2 font-mono font-bold text-white text-left pl-4 border-l border-slate-800">₹${Number(a.price || 0).toFixed(2)}</td>
+            <td class="p-2 relative text-right">
+              <div class="absolute inset-y-0 left-0 bg-rose-500/15 pointer-events-none rounded" style="width: ${aBarW}%;"></div>
+              <span class="relative font-bold text-rose-300">${Number(a.quantity || 0).toLocaleString('en-IN')}</span>
+            </td>
+            <td class="p-2 text-slate-500 text-right">${a.orders || '-'}</td>
+          </tr>
+        `;
+      }
+
+      container.innerHTML = `
+        <!-- Metrics Ribbon -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+            <span class="text-[10px] text-slate-400 block uppercase">Order Book Imbalance</span>
+            <span class="text-lg font-bold ${obiColor} block mt-0.5">${obiDisplay}</span>
+            <span class="text-[10px] text-slate-500">${obi >= 0 ? 'Bid Depth Dominant' : 'Ask Depth Dominant'}</span>
+          </div>
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+            <span class="text-[10px] text-slate-400 block uppercase">Micro-Price</span>
+            <span class="text-lg font-bold text-cyan-300 block mt-0.5">₹${microPrice.toFixed(2)}</span>
+            <span class="text-[10px] text-slate-500">Volume-Weighted Mid</span>
+          </div>
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+            <span class="text-[10px] text-slate-400 block uppercase">Bid-Ask Spread</span>
+            <span class="text-lg font-bold text-white block mt-0.5">₹${spread.toFixed(2)}</span>
+            <span class="text-[10px] text-slate-500">${spreadPct.toFixed(2)}% of LTP</span>
+          </div>
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+            <span class="text-[10px] text-slate-400 block uppercase">Quick Builder Leg</span>
+            <div class="flex items-center gap-1.5 mt-1">
+              <button onclick="addStrategyLegQuick(${data.strike}, '${data.opt_type}', 'BUY', ${microPrice || 0}, 14.0); closeOptionDepthModal();" class="flex-1 px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 font-bold border border-emerald-500/30 text-[11px] transition">+BUY</button>
+              <button onclick="addStrategyLegQuick(${data.strike}, '${data.opt_type}', 'SELL', ${microPrice || 0}, 14.0); closeOptionDepthModal();" class="flex-1 px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 font-bold border border-rose-500/30 text-[11px] transition">+SELL</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Total Buy vs Sell Volume Bar -->
+        <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+          <div class="flex items-center justify-between text-xs font-mono mb-1.5">
+            <span class="text-emerald-400 font-bold">Total Buy: ${totBuy.toLocaleString('en-IN')} (${buyPct}%)</span>
+            <span class="text-rose-400 font-bold">Total Sell: ${totSell.toLocaleString('en-IN')} (${sellPct}%)</span>
+          </div>
+          <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden flex">
+            <div class="bg-emerald-500 h-full transition-all duration-300" style="width: ${buyPct}%;"></div>
+            <div class="bg-rose-500 h-full transition-all duration-300" style="width: ${sellPct}%;"></div>
+          </div>
+        </div>
+
+        <!-- 5-Level Bid / Ask Table Ladder -->
+        <div class="bg-slate-950/70 border border-slate-800 rounded-xl overflow-hidden">
+          <table class="w-full text-xs font-mono">
+            <thead class="bg-slate-900/90 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="p-2 text-left text-slate-400">Orders</th>
+                <th class="p-2 text-left text-emerald-400">Buy Qty</th>
+                <th class="p-2 text-right text-emerald-400">Bid Price</th>
+                <th class="p-2 text-left text-rose-400 pl-4 border-l border-slate-800">Ask Price</th>
+                <th class="p-2 text-right text-rose-400">Sell Qty</th>
+                <th class="p-2 text-right text-slate-400">Orders</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60">
+              ${rowsHtml}
+            </tbody>
+            <tfoot class="bg-slate-900/60 font-bold border-t border-slate-800">
+              <tr>
+                <td class="p-2 text-slate-400 text-left">Total</td>
+                <td class="p-2 text-emerald-400 text-left">${totBuy.toLocaleString('en-IN')}</td>
+                <td class="p-2"></td>
+                <td class="p-2 border-l border-slate-800"></td>
+                <td class="p-2 text-rose-400 text-right">${totSell.toLocaleString('en-IN')}</td>
+                <td class="p-2 text-slate-400 text-right">Total</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+
+      if (window.lucide) lucide.createIcons();
+    }
+
+</script>
 </body>
 </html>
