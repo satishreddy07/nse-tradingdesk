@@ -430,6 +430,11 @@ class KotakNeoEngine:
             self._last_auth_error = msg
             return {"status": "MISSING_CREDENTIALS", "missing": missing, "error": msg}
 
+        if len(m_pin) != 6:
+            msg = f"Kotak Neo MPIN must be exactly 6 numeric digits (currently {len(m_pin)} digits). Please enter your 6-digit Kotak Neo trading MPIN."
+            self._last_auth_error = msg
+            return {"status": "INVALID_MPIN", "error": msg}
+
         try:
             logger.info(f"🔐 Authenticating Kotak Neo API v2 for UCC {u_code} (Env: {env})...")
             client = NeoAPI(environment=env, consumer_key=c_key)
@@ -469,6 +474,8 @@ class KotakNeoEngine:
             edit_tok = getattr(client.configuration, "edit_token", None)
             if not edit_tok:
                 err_msg = _extract_err(val_res, "MPIN validation failed: Invalid MPIN.")
+                if "10300" in str(val_res) or "Validation Errors" in str(val_res):
+                    err_msg = "Invalid MPIN: Kotak Neo rejected this MPIN (Code 10300). Please enter your correct 6-digit Kotak Neo trading MPIN."
                 logger.error(f"Kotak Neo MPIN validate failed for UCC {u_code}: {err_msg} | Raw response: {val_res}")
                 self._last_auth_error = err_msg
                 return {"status": "FAILED", "error": self._last_auth_error}
