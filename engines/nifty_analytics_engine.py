@@ -812,7 +812,7 @@ class NiftyAnalyticsEngine:
                 max_pain_strike = test_spot
 
         # 5. Primary & Secondary Call Walls (Resistance) and Put Walls (Support) near Spot (±12 strikes)
-        wall_window = strikes_data[max(0, atm_idx - 12): min(len(strikes_data), atm_idx + 13)]
+        wall_window = strikes_data[max(0, atm_idx - 25): min(len(strikes_data), atm_idx + 26)]
         upside_calls = [s for s in wall_window if s["strike"] >= atm_strike] or wall_window
         downside_puts = [s for s in wall_window if s["strike"] <= atm_strike] or wall_window
 
@@ -878,7 +878,7 @@ class NiftyAnalyticsEngine:
             gex_regime = "NEUTRAL_GAMMA_TRANSITION"
 
         # 8. Display Table (±12 strikes around ATM)
-        display_strikes = strikes_data[max(0, atm_idx - 12): min(len(strikes_data), atm_idx + 13)]
+        display_strikes = strikes_data[max(0, atm_idx - 32): min(len(strikes_data), atm_idx + 33)]
 
         # 9. Sentiment Verdict & Institutional Summary
         if near_atm_pcr >= 1.25 and chg_oi_pcr >= 1.20:

@@ -5223,17 +5223,31 @@
             </h3>
           </div>
           <div class="flex flex-wrap items-center gap-2">
+            <!-- Strike Range Depth Selector (User Configurable Strike Range: ±1200 pts default) -->
+            <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-mono">
+              <span class="text-[10px] text-slate-400 font-bold px-1 flex items-center gap-1">
+                <i data-lucide="sliders" class="w-3 h-3 text-cyan-400"></i>
+                <span>Strikes:</span>
+              </span>
+              <button onclick="setOptionChainStrikeRange(10)" id="btn-opt-range-10" class="opt-range-btn px-2 py-0.5 rounded text-[11px] font-bold text-slate-400 hover:text-white transition cursor-pointer" title="±10 Strikes (±500 pts)">±10</button>
+              <button onclick="setOptionChainStrikeRange(15)" id="btn-opt-range-15" class="opt-range-btn px-2 py-0.5 rounded text-[11px] font-bold text-slate-400 hover:text-white transition cursor-pointer" title="±15 Strikes (±750 pts)">±15</button>
+              <button onclick="setOptionChainStrikeRange(20)" id="btn-opt-range-20" class="opt-range-btn px-2 py-0.5 rounded text-[11px] font-bold text-slate-400 hover:text-white transition cursor-pointer" title="±20 Strikes (±1000 pts)">±20</button>
+              <button onclick="setOptionChainStrikeRange(24)" id="btn-opt-range-24" class="opt-range-btn px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-cyan-500 text-black shadow transition cursor-pointer" title="±24 Strikes (±1200 pts)">±24 (1200 pts)</button>
+              <button onclick="setOptionChainStrikeRange(30)" id="btn-opt-range-30" class="opt-range-btn px-2 py-0.5 rounded text-[11px] font-bold text-slate-400 hover:text-white transition cursor-pointer" title="±30 Strikes (±1500 pts)">±30</button>
+              <button onclick="setOptionChainStrikeRange('all')" id="btn-opt-range-all" class="opt-range-btn px-2 py-0.5 rounded text-[11px] font-bold text-slate-400 hover:text-white transition cursor-pointer" title="All Available Strikes">Full</button>
+            </div>
             <!-- Jump to Strategy Builder Shortcut Button -->
             <button onclick="switchOptionsSubTab('builder')" class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 transition flex items-center gap-1.5 cursor-pointer">
               <i data-lucide="activity" class="w-3.5 h-3.5"></i>
-              <span>Strategy Builder & Payoff (<span id="opt-chain-builder-badge">0</span> legs)</span>
+              <span>Builder (<span id="opt-chain-builder-badge">0</span>)</span>
             </button>
-            <!-- Mobile View Filter Toggle (Fixing Mobile Column Overflow) -->
+            <!-- Mobile View Filter Toggle -->
             <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800 text-xs font-mono">
-              <button onclick="setOptionChainMobileFilter('all')" id="btn-chain-filt-all" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500 text-black transition">Full Chain</button>
-              <button onclick="setOptionChainMobileFilter('ce')" id="btn-chain-filt-ce" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">Calls Only</button>
-              <button onclick="setOptionChainMobileFilter('pe')" id="btn-chain-filt-pe" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">Puts Only</button>
+              <button onclick="setOptionChainMobileFilter('all')" id="btn-chain-filt-all" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500 text-black transition cursor-pointer" title="Show Call and Put Columns Side-by-Side">Both (CE+PE)</button>
+              <button onclick="setOptionChainMobileFilter('ce')" id="btn-chain-filt-ce" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer">Calls Only</button>
+              <button onclick="setOptionChainMobileFilter('pe')" id="btn-chain-filt-pe" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer">Puts Only</button>
             </div>
+            <span id="opt-table-strike-count-badge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/30 text-cyan-300">49 Strikes (±1200 pts)</span>
             <span id="opt-table-verdict-badge" class="text-[11px] font-mono px-2.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
           </div>
         </div>
@@ -5375,13 +5389,21 @@
           <!-- Left: Payoff Graph Canvas with Interactive Controls -->
           <div class="lg:col-span-7 bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col justify-between">
             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center gap-2">
                 <span class="text-xs font-bold text-white flex items-center gap-1.5">
                   <i data-lucide="line-chart" class="w-3.5 h-3.5 text-cyan-400"></i>
                   <span>Payoff Curve</span>
                 </span>
                 <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Solid: Expiry</span>
                 <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">Dashed: T+Now</span>
+                <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[10px] font-mono">
+                  <span class="text-slate-500 px-1 py-0.5">Span:</span>
+                  <button onclick="setPayoffGraphSpan(600)" id="btn-payoff-span-600" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±600 pts from Spot">±600</button>
+                  <button onclick="setPayoffGraphSpan(1000)" id="btn-payoff-span-1000" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±1000 pts from Spot">±1000</button>
+                  <button onclick="setPayoffGraphSpan(1200)" id="btn-payoff-span-1200" class="payoff-span-btn px-1.5 py-0.5 rounded bg-cyan-500 text-black font-bold transition cursor-pointer" title="±1200 pts from Spot">±1200</button>
+                  <button onclick="setPayoffGraphSpan(1600)" id="btn-payoff-span-1600" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±1600 pts from Spot">±1600</button>
+                  <button onclick="setPayoffGraphSpan('auto')" id="btn-payoff-span-auto" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="Auto Scale to Legs">Auto</button>
+                </div>
               </div>
               <!-- Crosshair Live Value -->
               <div id="payoff-crosshair-hud" class="text-[11px] font-mono text-cyan-300">Hover graph to inspect P&L</div>
@@ -5466,12 +5488,22 @@
               <span id="builder-compact-chain-exp-lbl" class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">Weekly Expiry</span>
               <span id="builder-chain-count-lbl" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">-- Strikes</span>
             </div>
-            <div class="flex items-center gap-2">
-              <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
-                <button onclick="switchBuilderCompactChainExpiry('weekly')" id="btn-builder-compact-w" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-cyan-500 text-black transition">Weekly</button>
-                <button onclick="switchBuilderCompactChainExpiry('monthly')" id="btn-builder-compact-m" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold text-slate-400 hover:text-white transition">Monthly</button>
+            <div class="flex flex-wrap items-center gap-2">
+              <!-- Strike Range Selector for Builder Quick Picker -->
+              <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[11px] font-mono">
+                <span class="text-slate-500 px-1.5 py-0.5">Strikes:</span>
+                <button onclick="setBuilderChainStrikeRange(10)" id="btn-bld-range-10" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±10 Strikes (±500 pts)">±10</button>
+                <button onclick="setBuilderChainStrikeRange(15)" id="btn-bld-range-15" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±15 Strikes (±750 pts)">±15</button>
+                <button onclick="setBuilderChainStrikeRange(20)" id="btn-bld-range-20" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±20 Strikes (±1000 pts)">±20</button>
+                <button onclick="setBuilderChainStrikeRange(24)" id="btn-bld-range-24" class="bld-range-btn px-2.5 py-0.5 rounded-md font-bold bg-cyan-500 text-black transition cursor-pointer" title="±24 Strikes (±1200 pts)">±24 (1200 pts)</button>
+                <button onclick="setBuilderChainStrikeRange(30)" id="btn-bld-range-30" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±30 Strikes (±1500 pts)">±30</button>
+                <button onclick="setBuilderChainStrikeRange('all')" id="btn-bld-range-all" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="All Available Strikes">Full</button>
               </div>
-              <button onclick="scrollBuilderChainToAtm()" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition flex items-center gap-1 shadow-sm" title="Center on ATM Strike">🎯 ATM Focus</button>
+              <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
+                <button onclick="switchBuilderCompactChainExpiry('weekly')" id="btn-builder-compact-w" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-cyan-500 text-black transition cursor-pointer">Weekly</button>
+                <button onclick="switchBuilderCompactChainExpiry('monthly')" id="btn-builder-compact-m" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold text-slate-400 hover:text-white transition cursor-pointer">Monthly</button>
+              </div>
+              <button onclick="scrollBuilderChainToAtm()" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition flex items-center gap-1 shadow-sm cursor-pointer" title="Center on ATM Strike">🎯 ATM Focus</button>
               <span id="builder-compact-spot-lbl" class="text-xs font-mono font-bold text-amber-400">Spot: ₹--</span>
             </div>
           </div>
@@ -11285,11 +11317,29 @@
         document.getElementById('opt-table-verdict-badge').innerText = `${active.verdict || '--'} • GEX: ${(vol.gex_regime || '').replace(/_/g, ' ')}`;
       }
 
-      const strikes = active.strikes || [];
+      const rawAllStrikes = (active.all_strikes && active.all_strikes.length > 0)
+        ? active.all_strikes
+        : (active.strikes || []);
+      const allStrikes = [...rawAllStrikes].sort((a, b) => Number(a.strike) - Number(b.strike));
+      const atm = active.atm_strike || 0;
+
+      let strikes = allStrikes;
+      if (optChainStrikeRange !== 'all') {
+        const count = Number(optChainStrikeRange) || 24;
+        const maxPts = count * 50; // e.g. 24 * 50 = 1200 pts
+        strikes = allStrikes.filter(s => Math.abs(s.strike - atm) <= maxPts);
+      }
+
+      const countBadge = document.getElementById('opt-table-strike-count-badge');
+      if (countBadge) {
+        const spanText = optChainStrikeRange === 'all' ? 'Full Chain' : `±${Number(optChainStrikeRange) * 50} pts`;
+        countBadge.innerText = `${strikes.length} Strikes (${spanText})`;
+      }
+
       const tbody = document.getElementById('opt-chain-tbody');
       if (!tbody) return;
       if (strikes.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">No strike rows available.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">No strike rows available in selected range.</td></tr>`;
         return;
       }
 
@@ -11382,6 +11432,56 @@
       if (typeof renderBuilderCompactChain === 'function') {
         renderBuilderCompactChain();
       }
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+    }
+
+    // Strike Range Controls (User Configurable Strike Range: ±1200 pts default)
+    let optChainStrikeRange = 24; // Default ±24 strikes = ±1200 pts
+    function setOptionChainStrikeRange(val) {
+      optChainStrikeRange = val;
+      ['10', '15', '20', '24', '30', 'all'].forEach(k => {
+        const btn = document.getElementById(`btn-opt-range-${k}`);
+        if (!btn) return;
+        if (String(k) === String(val)) {
+          btn.className = "opt-range-btn px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-cyan-500 text-black shadow transition cursor-pointer";
+        } else {
+          btn.className = "opt-range-btn px-2 py-0.5 rounded text-[11px] font-bold text-slate-400 hover:text-white transition cursor-pointer";
+        }
+      });
+      if (niftyOptionsChainCache) {
+        renderOptionsChainUI(niftyOptionsChainCache);
+      }
+    }
+
+    let builderChainStrikeRange = 24; // Default ±24 strikes = ±1200 pts
+    function setBuilderChainStrikeRange(val) {
+      builderChainStrikeRange = val;
+      ['10', '15', '20', '24', '30', 'all'].forEach(k => {
+        const btn = document.getElementById(`btn-bld-range-${k}`);
+        if (!btn) return;
+        if (String(k) === String(val)) {
+          btn.className = "bld-range-btn px-2.5 py-0.5 rounded-md font-bold bg-cyan-500 text-black transition cursor-pointer";
+        } else {
+          btn.className = "bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer";
+        }
+      });
+      renderBuilderCompactChain();
+      setTimeout(scrollBuilderChainToAtm, 50);
+    }
+
+    let payoffGraphSpan = 1200; // Default ±1200 pts around spot
+    function setPayoffGraphSpan(val) {
+      payoffGraphSpan = val;
+      ['600', '1000', '1200', '1600', 'auto'].forEach(k => {
+        const btn = document.getElementById(`btn-payoff-span-${k}`);
+        if (!btn) return;
+        if (String(k) === String(val)) {
+          btn.className = "payoff-span-btn px-1.5 py-0.5 rounded bg-cyan-500 text-black font-bold transition cursor-pointer";
+        } else {
+          btn.className = "payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer";
+        }
+      });
       recalculateStrategyMetrics();
       drawPayoffGraph();
     }
@@ -11625,9 +11725,15 @@
       const rawStrikes = (active.all_strikes && active.all_strikes.length > 0)
         ? active.all_strikes
         : (active.strikes || []);
-      const strikes = [...rawStrikes].sort((a, b) => Number(a.strike) - Number(b.strike));
+      let strikes = [...rawStrikes].sort((a, b) => Number(a.strike) - Number(b.strike));
       const atm = active.atm_strike || 0;
       const spot = active.spot_price || 0;
+
+      if (builderChainStrikeRange !== 'all') {
+        const count = Number(builderChainStrikeRange) || 24;
+        const maxPts = count * 50; // e.g. 24 * 50 = 1200 pts
+        strikes = strikes.filter(s => Math.abs(s.strike - atm) <= maxPts);
+      }
 
       const spotLbl = document.getElementById('builder-compact-spot-lbl');
       if (spotLbl) spotLbl.innerText = `Spot: ₹${Number(spot).toLocaleString('en-IN')}`;
@@ -11636,7 +11742,10 @@
       if (expLbl) expLbl.innerText = `${builderCompactChainMode.toUpperCase()} (${active.expiry || '--'})`;
 
       const countLbl = document.getElementById('builder-chain-count-lbl');
-      if (countLbl) countLbl.innerText = `${strikes.length} Strikes (Full Chain)`;
+      if (countLbl) {
+        const spanText = builderChainStrikeRange === 'all' ? 'Full Chain' : `±${Number(builderChainStrikeRange) * 50} pts`;
+        countLbl.innerText = `${strikes.length} Strikes (${spanText})`;
+      }
 
       if (strikes.length === 0) {
         tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-500">Loading full option chain...</td></tr>`;
@@ -12057,13 +12166,22 @@
       const baseDte = Math.max(1, selectedOptionsExpiryType === 'monthly' ? 22 : 5);
       const targetDte = Math.max(0.01, baseDte - payoffTargetDteOffset);
 
-      const minStrike = Math.min(...strategyLegs.map(l => l.strike));
-      const maxStrike = Math.max(...strategyLegs.map(l => l.strike));
-      const marginBuffer = Math.max(800, (maxStrike - minStrike) * 0.7);
-      const isMonthlyStrat = (builderCompactChainMode === 'monthly' || selectedOptionsExpiryType === 'monthly');
-      const sigs = calculateSigmaLevels(spot, isMonthlyStrat ? 'MONTHLY' : 'WEEKLY');
-      const spotMin = Math.round(Math.min(minStrike - marginBuffer, spot * 0.94, sigs.twoSigmaDown - 150));
-      const spotMax = Math.round(Math.max(maxStrike + marginBuffer, spot * 1.06, sigs.twoSigmaUp + 150));
+      let spotMin, spotMax;
+      if (typeof payoffGraphSpan !== 'undefined' && payoffGraphSpan !== 'auto') {
+        const span = Number(payoffGraphSpan) || 1200;
+        const legMin = strategyLegs.length > 0 ? Math.min(...strategyLegs.map(l => l.strike)) : spot;
+        const legMax = strategyLegs.length > 0 ? Math.max(...strategyLegs.map(l => l.strike)) : spot;
+        spotMin = Math.round(Math.min(legMin - 150, spot - span));
+        spotMax = Math.round(Math.max(legMax + 150, spot + span));
+      } else {
+        const minStrike = strategyLegs.length > 0 ? Math.min(...strategyLegs.map(l => l.strike)) : spot;
+        const maxStrike = strategyLegs.length > 0 ? Math.max(...strategyLegs.map(l => l.strike)) : spot;
+        const marginBuffer = Math.max(1200, (maxStrike - minStrike) * 0.7);
+        const isMonthlyStrat = (builderCompactChainMode === 'monthly' || selectedOptionsExpiryType === 'monthly');
+        const sigs = calculateSigmaLevels(spot, isMonthlyStrat ? 'MONTHLY' : 'WEEKLY');
+        spotMin = Math.round(Math.min(minStrike - marginBuffer, spot * 0.94, sigs.twoSigmaDown - 150));
+        spotMax = Math.round(Math.max(maxStrike + marginBuffer, spot * 1.06, sigs.twoSigmaUp + 150));
+      }
 
       const stepCount = 180;
       const step = (spotMax - spotMin) / stepCount;
