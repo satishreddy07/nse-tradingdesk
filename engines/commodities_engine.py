@@ -35,6 +35,30 @@ logger = logging.getLogger("CommoditiesEngine")
 
 # Pre-seeded active MCX contracts for immediate fallback resolution
 # Format: Base symbol -> Metadata + Verified Kotak Neo Token & Contract Symbol
+API_OPTION_CHAIN_COUNTS: Dict[str, int] = {
+    "CRUDEOIL": 180,
+    "CRUDEOILM": 180,
+    "GOLD": 120,
+    "GOLDM": 120,
+    "SILVER": 120,
+    "SILVERM": 120,
+    "NATURALGAS": 80,
+    "COPPER": 60,
+    "ZINC": 50,
+}
+
+COMMODITY_DEFAULT_SPOTS: Dict[str, float] = {
+    "CRUDEOIL": 9180.0,
+    "CRUDEOILM": 9180.0,
+    "NATURALGAS": 265.0,
+    "GOLD": 145000.0,
+    "GOLDM": 145000.0,
+    "SILVER": 210000.0,
+    "SILVERM": 210000.0,
+    "COPPER": 1390.0,
+    "ZINC": 423.0,
+}
+
 COMMODITY_SPECS: Dict[str, Dict[str, Any]] = {
     "CRUDEOIL": {
         "display_name": "Crude Oil",
@@ -46,6 +70,20 @@ COMMODITY_SPECS: Dict[str, Dict[str, Any]] = {
         "default_symbol": "CRUDEOIL19NOV26FUT",
         "alt_token": "573423",  # Mini
         "alt_symbol": "CRUDEOILM19NOV26FUT",
+        "tick_size": 1.0,
+        "strike_interval": 50.0,
+        "options_available": True,
+    },
+    "CRUDEOILM": {
+        "display_name": "Crude Oil Mini",
+        "sector": "Energy",
+        "unit": "₹ / bbl",
+        "lot_size": 10,
+        "description": "Light Sweet Crude Oil Mini (10 bbl)",
+        "default_token": "573423",
+        "default_symbol": "CRUDEOILM19NOV26FUT",
+        "alt_token": "573422",
+        "alt_symbol": "CRUDEOIL19NOV26FUT",
         "tick_size": 1.0,
         "strike_interval": 50.0,
         "options_available": True,
@@ -65,11 +103,25 @@ COMMODITY_SPECS: Dict[str, Dict[str, Any]] = {
         "options_available": True,
     },
     "GOLD": {
-        "display_name": "Gold Mini",
+        "display_name": "Gold",
         "sector": "Bullion",
         "unit": "₹ / 10g",
         "lot_size": 100,
-        "description": "Gold 995 Purity MCX Benchmark (Mini)",
+        "description": "Gold 995 Purity MCX Benchmark (1 kg)",
+        "default_token": "571445",
+        "default_symbol": "GOLD05DEC26FUT",
+        "alt_token": "571305",
+        "alt_symbol": "GOLDGUINEA30OCT26FUT",
+        "tick_size": 1.0,
+        "strike_interval": 500.0,
+        "options_available": True,
+    },
+    "GOLDM": {
+        "display_name": "Gold Mini",
+        "sector": "Bullion",
+        "unit": "₹ / 10g",
+        "lot_size": 10,
+        "description": "Gold 995 Purity MCX Benchmark (Mini 100g)",
         "default_token": "571445",
         "default_symbol": "GOLDM05NOV26FUT",
         "alt_token": "571305",
@@ -79,11 +131,25 @@ COMMODITY_SPECS: Dict[str, Dict[str, Any]] = {
         "options_available": True,
     },
     "SILVER": {
+        "display_name": "Silver",
+        "sector": "Bullion",
+        "unit": "₹ / kg",
+        "lot_size": 30,
+        "description": "Silver 999 Purity MCX Benchmark (30 kg)",
+        "default_token": "483080",
+        "default_symbol": "SILVER05DEC26FUT",
+        "alt_token": "574825",
+        "alt_symbol": "SILVER10030OCT26FUT",
+        "tick_size": 1.0,
+        "strike_interval": 500.0,
+        "options_available": True,
+    },
+    "SILVERM": {
         "display_name": "Silver Mini",
         "sector": "Bullion",
         "unit": "₹ / kg",
         "lot_size": 5,
-        "description": "Silver 999 Purity MCX Benchmark (Mini)",
+        "description": "Silver 999 Purity MCX Benchmark (Mini 5 kg)",
         "default_token": "483080",
         "default_symbol": "SILVERM30NOV26FUT",
         "alt_token": "574825",
@@ -353,11 +419,18 @@ class CommoditiesEngine:
                         if candidates:
                             # Sort by nearest unexpired date
                             candidates.sort(key=lambda x: x[0])
-                            # If spec specifies Mini preference, filter for Mini if available at nearest expiry
+                            # Discriminate between Mini and Standard contracts
+                            is_mini_target = "MINI" in spec["display_name"].upper() or base_sym.endswith("M")
                             best_item = None
-                            if "MINI" in spec["display_name"].upper():
+                            if is_mini_target:
                                 for c in candidates:
                                     if "M" in c[1] or "MINI" in c[2].get("pDesc", "").upper():
+                                        best_item = c
+                                        break
+                            else:
+                                for c in candidates:
+                                    desc_u = c[2].get("pDesc", "").upper()
+                                    if "MINI" not in desc_u and not c[1].startswith(base_sym + "M"):
                                         best_item = c
                                         break
                             if not best_item:
@@ -1006,6 +1079,17 @@ class CommoditiesEngine:
             q = self._quotes_cache.get(underlying)
             if q and q.get("ltp"):
                 return float(q["ltp"])
+            # Fallback cross-lookup between standard and mini
+            alt_map = {
+                "CRUDEOIL": "CRUDEOILM", "CRUDEOILM": "CRUDEOIL",
+                "GOLD": "GOLDM", "GOLDM": "GOLD",
+                "SILVER": "SILVERM", "SILVERM": "SILVER"
+            }
+            alt = alt_map.get(underlying)
+            if alt:
+                alt_q = self._quotes_cache.get(alt)
+                if alt_q and alt_q.get("ltp"):
+                    return float(alt_q["ltp"])
         return 0.0
 
     # --------------------------------------------------------------------------
@@ -1036,6 +1120,16 @@ class CommoditiesEngine:
                 try:
                     res = client.expiries(exchange="mcx_fo", underlying=underlying)
                     raw_list = res.get("expiries", []) if isinstance(res, dict) else (res if isinstance(res, list) else [])
+                    if not raw_list:
+                        alt_map = {
+                            "CRUDEOILM": "CRUDEOIL", "CRUDEOIL": "CRUDEOILM",
+                            "GOLDM": "GOLD", "GOLD": "GOLDM",
+                            "SILVERM": "SILVER", "SILVER": "SILVERM"
+                        }
+                        alt_sym = alt_map.get(underlying)
+                        if alt_sym:
+                            res_alt = client.expiries(exchange="mcx_fo", underlying=alt_sym)
+                            raw_list = res_alt.get("expiries", []) if isinstance(res_alt, dict) else (res_alt if isinstance(res_alt, list) else [])
                     for e in raw_list:
                         try:
                             if "-" in e:
@@ -1153,7 +1247,7 @@ class CommoditiesEngine:
 
         spot_price = self.get_live_price(underlying)
         if spot_price <= 0:
-            spot_price = 5800.0 if underlying == "CRUDEOIL" else (225.0 if underlying == "NATURALGAS" else 144500.0)
+            spot_price = COMMODITY_DEFAULT_SPOTS.get(underlying, 9180.0)
 
         # DTE Calculation
         try:
@@ -1163,6 +1257,9 @@ class CommoditiesEngine:
             dte_days = 4.0
         dte_years = max(0.001, dte_days / 365.0)
 
+        # Query Kotak Neo API with sufficient count to capture complete chain including near-the-money
+        api_query_count = API_OPTION_CHAIN_COUNTS.get(underlying, max(120, count))
+
         chain_res = None
         try:
             from engines.kotak_neo_engine import kotak_neo_engine
@@ -1171,8 +1268,23 @@ class CommoditiesEngine:
                     exchange="mcx_fo",
                     underlying=underlying,
                     expiry=expiry_iso,
-                    count=count
+                    count=api_query_count
                 )
+                if not (isinstance(chain_res, dict) and (chain_res.get("call") or chain_res.get("put"))):
+                    alt_map = {
+                        "CRUDEOILM": "CRUDEOIL", "CRUDEOIL": "CRUDEOILM",
+                        "GOLDM": "GOLD", "GOLD": "GOLDM",
+                        "SILVERM": "SILVER", "SILVER": "SILVERM"
+                    }
+                    alt_sym = alt_map.get(underlying)
+                    if alt_sym:
+                        alt_count = API_OPTION_CHAIN_COUNTS.get(alt_sym, api_query_count)
+                        chain_res = kotak_neo_engine._client.option_chain(
+                            exchange="mcx_fo",
+                            underlying=alt_sym,
+                            expiry=expiry_iso,
+                            count=alt_count
+                        )
         except Exception as api_err:
             logger.warning(f"Kotak Neo MCX option chain API error for {underlying}: {api_err}")
 
@@ -1183,6 +1295,8 @@ class CommoditiesEngine:
             live_spot = float(chain_res.get("spot", {}).get("ltp") or 0.0)
             if live_spot > 0:
                 spot_price = live_spot
+            elif spot_price <= 0:
+                spot_price = self.get_live_price(underlying)
 
             calls_by_k = {}
             for c in chain_res.get("call", []):
@@ -1404,6 +1518,23 @@ class CommoditiesEngine:
         # ATM Straddle
         atm_row = next((r for r in rows if r["strike"] == atm_strike), rows[0] if rows else None)
         atm_straddle_prem = round((atm_row["CE"]["lastPrice"] + atm_row["PE"]["lastPrice"]), 2) if atm_row else 0.0
+        if atm_straddle_prem <= 0 and dte_years > 0 and spot_price > 0:
+            c_theo = _black_scholes_price(spot_price, atm_strike, dte_years, 0.065, 0.28, "CE")
+            p_theo = _black_scholes_price(spot_price, atm_strike, dte_years, 0.065, 0.28, "PE")
+            atm_straddle_prem = round(c_theo + p_theo, 2)
+
+        # Center a window of strikes around atm_strike for display
+        display_count = max(8, count) if count else 16
+        if len(rows) > display_count:
+            atm_pos = all_k.index(atm_strike) if atm_strike in all_k else len(rows) // 2
+            half_win = display_count // 2
+            win_start = max(0, atm_pos - half_win)
+            win_end = min(len(rows), win_start + display_count)
+            if (win_end - win_start) < display_count and win_start > 0:
+                win_start = max(0, win_end - display_count)
+            display_rows = rows[win_start:win_end]
+        else:
+            display_rows = rows
 
         payload = {
             "status": "SUCCESS",
@@ -1436,8 +1567,9 @@ class CommoditiesEngine:
             "total_put_oi": total_put_oi,
             "total_call_vol": total_call_vol,
             "total_put_vol": total_put_vol,
-            "strikes": rows,
+            "strikes": display_rows,
             "all_strikes": rows,
+            "total_strikes_count": len(rows),
             "timestamp": format_ist(),
             "source": "KOTAK_NEO_MCX_LIVE" if has_valid_data else "KOTAK_NEO_FALLBACK",
         }
@@ -1473,7 +1605,7 @@ class CommoditiesEngine:
         lot_size = int(spec.get("lot_size", 100))
         spot_price = self.get_live_price(underlying)
         if spot_price <= 0:
-            spot_price = 5800.0 if underlying == "CRUDEOIL" else (225.0 if underlying == "NATURALGAS" else 144500.0)
+            spot_price = COMMODITY_DEFAULT_SPOTS.get(underlying, 9180.0)
 
         if not legs:
             return {

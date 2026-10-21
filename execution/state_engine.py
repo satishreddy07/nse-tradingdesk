@@ -1516,10 +1516,24 @@ class StateEngine:
                 result = []
                 for r in rows:
                     item = dict(r)
+                    sym = item.get("symbol", "")
+                    clean_sym = sym.replace(".NS", "").replace(".BO", "").strip()
+                    live_p = None
+                    try:
+                        from engines.kotak_neo_engine import kotak_neo_engine
+                        live_p = kotak_neo_engine.get_live_price(clean_sym) or kotak_neo_engine.get_live_price(sym)
+                    except Exception:
+                        pass
+
                     master_lc = float(item.get("master_last_close") or 0.0)
                     master_upd = item.get("master_updated_at") or ""
                     pos_upd = item.get("updated_at") or ""
-                    if master_lc > 0 and (master_upd >= pos_upd or float(item.get("current_price") or 0) == float(item.get("entry_price") or 0)):
+                    if live_p and float(live_p) > 0:
+                        lp = float(live_p)
+                        item["current_price"] = round(lp, 2)
+                        item["highest_price"] = round(max(float(item.get("highest_price") or 0.0), lp), 2)
+                        item["price_updated_at"] = "LIVE_KOTAK_STREAM"
+                    elif master_lc > 0 and (master_upd >= pos_upd or float(item.get("current_price") or 0) == float(item.get("entry_price") or 0)):
                         item["current_price"] = round(master_lc, 2)
                         item["highest_price"] = round(max(float(item.get("highest_price") or 0.0), master_lc), 2)
                         if master_upd:
@@ -1531,7 +1545,7 @@ class StateEngine:
                     cp = float(item.get("current_price") or ep)
                     day_chg = round(float(item.get("day_change_pct") or 0.0), 2)
                     master_prev = float(item.get("master_prev_close") or 0.0)
-                    if day_chg == 0.0 and master_prev > 0 and cp > 0:
+                    if (day_chg == 0.0 or live_p) and master_prev > 0 and cp > 0:
                         day_chg = round(((cp - master_prev) / master_prev) * 100.0, 2)
                     item["day_change_pct"] = day_chg
                     sl = float(item.get("stop_loss") or ep * 0.95)

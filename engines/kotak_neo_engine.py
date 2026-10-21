@@ -157,9 +157,13 @@ class KotakNeoEngine:
 
         # Option Ticks Cache: { (strike, opt_type): { strike, type, symbol, token, ltp, high, low, volume, oi, ... } }
         self._option_ticks: Dict[Tuple[int, str], Dict[str, Any]] = {}
+        self._option_depth: Dict[Tuple[int, str, Optional[str]], Dict[str, Any]] = {}  # (strike, opt_type, expiry) -> Level-2 Depth
         self._option_token_to_contract: Dict[str, Tuple[int, str, str]] = {}  # token -> (strike, opt_type, trading_symbol)
-        self._contract_to_option_token: Dict[Tuple[int, str], str] = {}       # (strike, opt_type) -> token
+        self._option_token_to_expiry_contract: Dict[str, Tuple[int, str, Optional[str]]] = {}  # token -> (strike, opt_type, expiry)
+        self._contract_to_option_token: Dict[Any, str] = {}                   # (strike, opt_type) / (strike, opt_type, expiry) -> token
         self._symbol_to_option_contract: Dict[str, Tuple[int, str, str]] = {} # symbol -> (strike, opt_type, token)
+        self._cached_weekly_iso: Optional[str] = None
+        self._cached_monthly_iso: Optional[str] = None
         self._load_cached_option_tokens()
 
         # Subscribed Items Tracker
@@ -206,6 +210,8 @@ class KotakNeoEngine:
                             if tok:
                                 self._option_token_to_contract[tok] = (strike, opt_type, sym)
                                 self._contract_to_option_token[(strike, opt_type)] = tok
+                                self._contract_to_option_token[(strike, opt_type, None)] = tok
+                                self._option_token_to_expiry_contract[tok] = (strike, opt_type, None)
                                 if sym:
                                     self._symbol_to_option_contract[sym] = (strike, opt_type, tok)
                 logger.info(f"Loaded {len(self._option_token_to_contract)} Nifty option contracts for streaming.")
@@ -680,13 +686,20 @@ class KotakNeoEngine:
                 if initial_syms:
                     await self._async_subscribe_symbols(ws, initial_syms)
 
-                # Subscribe all mapped Nifty Option FO scrips to WebSocket SFeed
+                # Subscribe all mapped Nifty Option FO scrips to WebSocket SFeed (Level 1 Scrips + Level-2 Market Depth)
                 fo_tokens = list(self._option_token_to_contract.keys())
                 if fo_tokens and hasattr(ws, "subscribe_scrips") and WsToken:
                     try:
                         fo_subs = [WsToken("nse_fo", str(t)) for t in fo_tokens]
                         await ws.subscribe_scrips(fo_subs)
                         logger.info(f"📡 [Kotak Neo SFeed] Subscribed {len(fo_subs)} Nifty Option FO scrips to WebSocket.")
+                        if hasattr(ws, "subscribe_depth"):
+                            await ws.subscribe_depth(fo_subs)
+                            logger.info(f"📡 [Kotak Neo SFeed] Subscribed {len(fo_subs)} Nifty Option FO scrips to Level-2 Market Depth.")
+                        with self._lock:
+                            for t in fo_tokens:
+                                self._subscribed_tokens.add(str(t))
+                                self._subscribed_depth_tokens.add(str(t))
                     except Exception as foe:
                         logger.warning(f"Error subscribing FO scrips: {foe}")
 
@@ -751,6 +764,7 @@ class KotakNeoEngine:
                 eq_tokens = item.get("equities", [])
                 idx_tokens = item.get("indices", [])
                 mcx_tokens = item.get("mcx", [])
+                fo_tokens = item.get("fo", [])
                 if eq_tokens and hasattr(ws, "subscribe_scrips") and WsToken:
                     await ws.subscribe_scrips([WsToken("nse_cm", t) for t in eq_tokens])
                 if idx_tokens and hasattr(ws, "subscribe_index") and WsToken:
@@ -766,6 +780,17 @@ class KotakNeoEngine:
                         for t in mcx_tokens:
                             self._subscribed_tokens.add(t)
                             self._subscribed_depth_tokens.add(t)
+                if fo_tokens and WsToken:
+                    tokens = [WsToken("nse_fo", str(t)) for t in fo_tokens]
+                    if hasattr(ws, "subscribe_scrips"):
+                        await ws.subscribe_scrips(tokens)
+                    if hasattr(ws, "subscribe_depth"):
+                        await ws.subscribe_depth(tokens)
+                    logger.info(f"📡 [Kotak Neo SFeed] Dynamically subscribed {len(fo_tokens)} FO scrips to scrips & depth: {fo_tokens}")
+                    with self._lock:
+                        for t in fo_tokens:
+                            self._subscribed_tokens.add(str(t))
+                            self._subscribed_depth_tokens.add(str(t))
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -822,6 +847,175 @@ class KotakNeoEngine:
     def _on_ws_message(self, message):
         """Processes incoming ticks from legacy callbacks or mock injections."""
         self._process_sfeed_message(message)
+
+    @staticmethod
+    def _extract_market_depth_payload(message: Any, prev_depth: Optional[Dict[str, Any]] = None, ltp: float = 0.0) -> Dict[str, Any]:
+        """
+        Extracts, normalizes, and quant-analyzes authentic 5-level market depth (bids and asks)
+        from Kotak Neo WebSocket tick (SFeedScrip / DepthLevel) or REST quote dictionary.
+        Returns:
+          bids: list of up to 5 dicts {price, quantity, orders, price_raw, quantity_raw, orders_raw}
+          asks: list of up to 5 dicts {price, quantity, orders, price_raw, quantity_raw, orders_raw}
+          total_buy: int
+          total_sell: int
+          obi: float [-1.0, 1.0]
+          micro_price: float
+          spread: float
+          spread_pct: float
+          flow_bias: str
+        """
+        raw_buy = getattr(message, "buy", None)
+        raw_sell = getattr(message, "sell", None)
+        raw_tbq = getattr(message, "total_buy_quantity", None)
+        raw_tsq = getattr(message, "total_sell_quantity", None)
+
+        if isinstance(message, dict):
+            if raw_buy is None:
+                raw_buy = message.get("buy") or message.get("bids")
+            if raw_sell is None:
+                raw_sell = message.get("sell") or message.get("asks")
+            if raw_tbq is None:
+                raw_tbq = message.get("total_buy_quantity") or message.get("total_buy")
+            if raw_tsq is None:
+                raw_tsq = message.get("total_sell_quantity") or message.get("total_sell")
+
+            nested_depth = message.get("depth")
+            if isinstance(nested_depth, dict):
+                if raw_buy is None:
+                    raw_buy = nested_depth.get("buy") or nested_depth.get("bids")
+                if raw_sell is None:
+                    raw_sell = nested_depth.get("sell") or nested_depth.get("asks")
+                if raw_tbq is None:
+                    raw_tbq = nested_depth.get("total_buy") or nested_depth.get("total_buy_quantity")
+                if raw_tsq is None:
+                    raw_tsq = nested_depth.get("total_sell") or nested_depth.get("total_sell_quantity")
+
+        prev_bids = (prev_depth or {}).get("bids", []) if prev_depth else []
+        prev_asks = (prev_depth or {}).get("asks", []) if prev_depth else []
+        prev_tbq = (prev_depth or {}).get("total_buy", 0) if prev_depth else 0
+        prev_tsq = (prev_depth or {}).get("total_sell", 0) if prev_depth else 0
+
+        def _clean_entry(item: Any) -> Optional[Dict[str, Any]]:
+            if not item:
+                return None
+            if hasattr(item, "price"):
+                p = getattr(item, "price", 0)
+                q = getattr(item, "quantity", 0)
+                o = getattr(item, "orders", 0)
+            elif isinstance(item, dict):
+                p = item.get("price") or item.get("p") or 0
+                q = item.get("quantity") or item.get("q") or 0
+                o = item.get("orders") or item.get("o") or 0
+            else:
+                return None
+
+            try:
+                p_flt = float(p)
+            except Exception:
+                p_flt = 0.0
+            try:
+                q_int = int(float(q))
+            except Exception:
+                q_int = 0
+            try:
+                o_int = int(float(o))
+            except Exception:
+                o_int = 0
+
+            if p_flt <= 0 and q_int <= 0:
+                return None
+
+            return {
+                "price": f"{p_flt:,.2f}" if p_flt > 0 else "-",
+                "quantity": f"{q_int:,}" if q_int > 0 else "-",
+                "orders": str(o_int) if o_int > 0 else "-",
+                "price_raw": round(p_flt, 2),
+                "quantity_raw": q_int,
+                "orders_raw": o_int,
+            }
+
+        parsed_bids = []
+        if raw_buy and isinstance(raw_buy, (list, tuple)):
+            for b in raw_buy[:5]:
+                lvl = _clean_entry(b)
+                if lvl:
+                    parsed_bids.append(lvl)
+
+        parsed_asks = []
+        if raw_sell and isinstance(raw_sell, (list, tuple)):
+            for a in raw_sell[:5]:
+                lvl = _clean_entry(a)
+                if lvl:
+                    parsed_asks.append(lvl)
+
+        final_bids = parsed_bids if parsed_bids else prev_bids
+        final_asks = parsed_asks if parsed_asks else prev_asks
+
+        total_buy = 0
+        if raw_tbq is not None:
+            try:
+                total_buy = int(float(raw_tbq))
+            except Exception:
+                total_buy = 0
+        if total_buy <= 0 and prev_tbq > 0:
+            total_buy = prev_tbq
+        if total_buy <= 0 and final_bids:
+            total_buy = sum(b.get("quantity_raw", 0) for b in final_bids if isinstance(b, dict))
+
+        total_sell = 0
+        if raw_tsq is not None:
+            try:
+                total_sell = int(float(raw_tsq))
+            except Exception:
+                total_sell = 0
+        if total_sell <= 0 and prev_tsq > 0:
+            total_sell = prev_tsq
+        if total_sell <= 0 and final_asks:
+            total_sell = sum(a.get("quantity_raw", 0) for a in final_asks if isinstance(a, dict))
+
+        # Order Book Imbalance (OBI)
+        tot_depth = total_buy + total_sell
+        obi = round((total_buy - total_sell) / max(1, tot_depth), 4) if tot_depth > 0 else 0.0
+
+        # Top of Book spread & micro-price
+        bid1 = final_bids[0]["price_raw"] if final_bids else 0.0
+        bid_q1 = final_bids[0]["quantity_raw"] if final_bids else 0
+        ask1 = final_asks[0]["price_raw"] if final_asks else 0.0
+        ask_q1 = final_asks[0]["quantity_raw"] if final_asks else 0
+
+        spread = round(max(0.0, ask1 - bid1), 2) if (ask1 > 0 and bid1 > 0) else 0.0
+        effective_ltp = ltp if ltp > 0 else (bid1 or ask1 or 0.0)
+        spread_pct = round((spread / effective_ltp) * 100.0, 2) if effective_ltp > 0 else 0.0
+
+        if bid1 > 0 and ask1 > 0 and (bid_q1 + ask_q1) > 0:
+            micro_price = round((bid1 * ask_q1 + ask1 * bid_q1) / (bid_q1 + ask_q1), 2)
+        else:
+            micro_price = effective_ltp
+
+        if obi >= 0.35:
+            flow_bias = "HEAVY_BUYING"
+        elif obi >= 0.12:
+            flow_bias = "MODERATE_BUYING"
+        elif obi <= -0.35:
+            flow_bias = "HEAVY_SELLING"
+        elif obi <= -0.12:
+            flow_bias = "MODERATE_SELLING"
+        else:
+            flow_bias = "BALANCED"
+
+        return {
+            "bids": final_bids,
+            "asks": final_asks,
+            "total_buy": total_buy,
+            "total_sell": total_sell,
+            "obi": obi,
+            "obi_pct": round(obi * 100.0, 1),
+            "micro_price": micro_price,
+            "spread": spread,
+            "spread_pct": spread_pct,
+            "flow_bias": flow_bias,
+            "updated_at": format_ist()
+        }
 
     def _process_sfeed_message(self, message: Any):
         """
@@ -884,7 +1078,17 @@ class KotakNeoEngine:
                         oic_val = int(raw_oic) if raw_oic is not None else None
                         chg_pct = round(float(raw_chg), 2) if raw_chg is not None else None
 
+                        # Extract Level-2 5-level Market Depth for this Option contract
+                        prev_d = self._option_depth.get((strike, opt_type, None))
+                        d_payload = self._extract_market_depth_payload(message, prev_d, ltp=ltp_val)
+
                         with self._lock:
+                            if d_payload.get("bids") or d_payload.get("asks") or d_payload.get("total_buy", 0) > 0:
+                                self._option_depth[(strike, opt_type, None)] = d_payload
+                                exp_info = self._option_token_to_expiry_contract.get(tok)
+                                if exp_info and exp_info[2]:
+                                    self._option_depth[(strike, opt_type, exp_info[2])] = d_payload
+
                             self._option_ticks[(strike, opt_type)] = {
                                 "strike": strike,
                                 "type": opt_type,
@@ -901,6 +1105,12 @@ class KotakNeoEngine:
                                 "change_pct": chg_pct,
                                 "last_traded_time": str(raw_time or ""),
                                 "updated_at": now_str,
+                                "total_buy": d_payload.get("total_buy", 0),
+                                "total_sell": d_payload.get("total_sell", 0),
+                                "depth_obi": d_payload.get("obi", 0.0),
+                                "spread": d_payload.get("spread", 0.0),
+                                "micro_price": d_payload.get("micro_price", ltp_val),
+                                "flow_bias": d_payload.get("flow_bias", "BALANCED"),
                                 "source": "KOTAK_NEO_WS_FO"
                             }
                             self._live_ticks[full_sym] = self._option_ticks[(strike, opt_type)]
@@ -1070,7 +1280,14 @@ class KotakNeoEngine:
                                     oi_v = int(item.get("oi") or item.get("openInterest") or 0)
                                     oic_v = int(item.get("oic") or item.get("changeinOpenInterest") or 0)
                                     nc_v = float(item.get("nc") or item.get("net_change_percentage") or 0.0)
+                                    d_payload = self._extract_market_depth_payload(item, self._option_depth.get((k, opt_type, None)), ltp=ltp_v)
                                     with self._lock:
+                                        if d_payload.get("bids") or d_payload.get("asks") or d_payload.get("total_buy", 0) > 0:
+                                            self._option_depth[(k, opt_type, None)] = d_payload
+                                            exp_info = self._option_token_to_expiry_contract.get(tok)
+                                            if exp_info and exp_info[2]:
+                                                self._option_depth[(k, opt_type, exp_info[2])] = d_payload
+
                                         self._option_ticks[(k, opt_type)] = {
                                             "strike": k,
                                             "type": opt_type,
@@ -1084,6 +1301,12 @@ class KotakNeoEngine:
                                             "oi_change": oic_v,
                                             "change_pct": round(nc_v, 2),
                                             "updated_at": now_str,
+                                            "total_buy": d_payload.get("total_buy", 0),
+                                            "total_sell": d_payload.get("total_sell", 0),
+                                            "depth_obi": d_payload.get("obi", 0.0),
+                                            "spread": d_payload.get("spread", 0.0),
+                                            "micro_price": d_payload.get("micro_price", round(ltp_v, 2)),
+                                            "flow_bias": d_payload.get("flow_bias", "BALANCED"),
                                             "source": "KOTAK_NEO_REST_FO"
                                         }
                                         self._live_ticks[full_sym] = self._option_ticks[(k, opt_type)]
@@ -1271,6 +1494,32 @@ class KotakNeoEngine:
             except Exception as e:
                 logger.warning(f"Error dispatching MCX tokens to WS queue: {e}")
 
+    def subscribe_fo_tokens(self, tokens: List[str]):
+        """Dispatches new Nifty Option FO tokens to active SFeed WebSocket stream for scrip quotes and 5-level market depth."""
+        if not tokens:
+            return
+        clean_tokens = [str(t).strip() for t in tokens if str(t).strip()]
+        new_tokens = []
+        with self._lock:
+            for t in clean_tokens:
+                if t not in self._subscribed_tokens or t not in self._subscribed_depth_tokens:
+                    self._subscribed_tokens.add(t)
+                    self._subscribed_depth_tokens.add(t)
+                    new_tokens.append(t)
+
+        if not new_tokens:
+            return
+
+        if self._loop and self._loop.is_running() and self._sub_queue:
+            try:
+                self._loop.call_soon_threadsafe(
+                    self._sub_queue.put_nowait,
+                    {"fo": new_tokens}
+                )
+                logger.info(f"📡 [Kotak Neo SFeed] Dispatched {len(new_tokens)} new FO option tokens to WebSocket: {new_tokens}")
+            except Exception as e:
+                logger.warning(f"Error dispatching FO tokens to WS queue: {e}")
+
     def _gather_active_market_symbols(self) -> List[str]:
         """Gathers all symbols currently relevant for active streaming."""
         symbols: Set[str] = set()
@@ -1386,9 +1635,11 @@ class KotakNeoEngine:
             return {f"{k[0]}_{k[1]}": dict(v) for k, v in self._option_ticks.items()}
 
     def get_near_atm_option_ticks(self, spot_price: Optional[float] = None, strike_range: int = 12) -> Dict[str, Dict[str, Any]]:
-        """Returns near-ATM option ticks for continuous UI streaming."""
-        spot = spot_price or self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY") or 23000.0
-        atm = int(round(spot / 50.0) * 50)
+        """Returns near-ATM option ticks for continuous UI streaming. Zero hardcoded fallbacks."""
+        spot = spot_price or self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY") or self.get_live_price("^NSEI")
+        if not spot or float(spot) <= 0:
+            return {}
+        atm = int(round(float(spot) / 50.0) * 50)
         min_k = atm - strike_range * 50
         max_k = atm + strike_range * 50
         with self._lock:
@@ -1401,13 +1652,16 @@ class KotakNeoEngine:
     def fetch_option_quotes(self, near_atm_only: bool = True) -> Dict[str, Any]:
         """
         Fetches live Kotak Neo REST quotes for near-ATM Nifty options contracts.
-        Updates self._option_ticks and self._live_ticks.
+        Updates self._option_ticks, self._option_depth, and self._live_ticks.
+        Zero hardcoded fallbacks.
         """
         if not self._client or not self._is_authenticated:
             return {}
 
-        spot = self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY") or 23000.0
-        atm = int(round(spot / 50.0) * 50)
+        spot = self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY") or self.get_live_price("^NSEI")
+        if not spot or float(spot) <= 0:
+            return {}
+        atm = int(round(float(spot) / 50.0) * 50)
         
         tokens_to_fetch = []
         token_to_contract = {}
@@ -1476,7 +1730,10 @@ class KotakNeoEngine:
                     chg_pct = float(item.get("nc") or item.get("net_change_percentage") or 0.0)
                     chg_val = float(item.get("change") or item.get("net_change") or 0.0)
 
+                    d_payload = self._extract_market_depth_payload(item, self._option_depth.get((k, opt_type, None)), ltp=ltp_val)
                     with self._lock:
+                        if d_payload.get("bids") or d_payload.get("asks") or d_payload.get("total_buy", 0) > 0:
+                            self._option_depth[(k, opt_type, None)] = d_payload
                         full_sym = raw_sym or f"NIFTY_{k}_{opt_type}"
                         tick_dict = {
                             "strike": k,
@@ -1493,6 +1750,12 @@ class KotakNeoEngine:
                             "change": round(chg_val, 2),
                             "change_pct": round(chg_pct, 2),
                             "updated_at": now_str,
+                            "total_buy": d_payload.get("total_buy", 0),
+                            "total_sell": d_payload.get("total_sell", 0),
+                            "depth_obi": d_payload.get("obi", 0.0),
+                            "spread": d_payload.get("spread", 0.0),
+                            "micro_price": d_payload.get("micro_price", ltp_val),
+                            "flow_bias": d_payload.get("flow_bias", "BALANCED"),
                             "source": "KOTAK_NEO_REST_FO"
                         }
                         self._option_ticks[(k, opt_type)] = tick_dict
@@ -1507,6 +1770,203 @@ class KotakNeoEngine:
         except Exception as e:
             logger.debug(f"Kotak Neo FO quotes fetch notice: {e}")
             return {}
+
+    def get_option_depth(self, strike: int, opt_type: str, expiry: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Returns authentic Level-2 5-Level Market Depth, Order Book Imbalance (OBI),
+        volume-weighted micro-price, and bid-ask spread for any Nifty option strike
+        across Weekly and Monthly expiries using 100% Kotak Neo API.
+        Zero fake or hardcoded numbers. If unavailable, returns DATA_NOT_AVAILABLE.
+        """
+        strike = int(strike)
+        opt_type = opt_type.upper().strip()
+        now_ts = time.time()
+        now_str = format_ist()
+
+        # Check in-memory depth cache first (< 2.0s freshness)
+        target_expiry_iso = None
+        exp_lower = str(expiry or "weekly").lower().strip()
+
+        # Resolve expiry ISO if 'weekly' or 'monthly'
+        if exp_lower in ("weekly", "w", "current"):
+            target_expiry_iso = getattr(self, "_cached_weekly_iso", None)
+        elif exp_lower in ("monthly", "m"):
+            target_expiry_iso = getattr(self, "_cached_monthly_iso", None)
+        elif expiry and len(str(expiry)) == 10 and "-" in str(expiry):
+            target_expiry_iso = str(expiry).strip()
+
+        # Check cache
+        with self._lock:
+            cached_d = self._option_depth.get((strike, opt_type, target_expiry_iso)) or self._option_depth.get((strike, opt_type, None))
+            if cached_d and (cached_d.get("bids") or cached_d.get("asks")):
+                cached_age = now_ts - float(cached_d.get("_cached_at_ts") or 0.0)
+                if cached_age < 2.0:
+                    res = dict(cached_d)
+                    res["status"] = "OK"
+                    res["strike"] = strike
+                    res["type"] = opt_type
+                    res["expiry"] = target_expiry_iso or expiry or "WEEKLY"
+                    return res
+
+        if not self._is_authenticated or not self._client:
+            try:
+                self.login()
+            except Exception:
+                pass
+
+        if not self._client or not self._is_authenticated:
+            with self._lock:
+                cached_d = self._option_depth.get((strike, opt_type, target_expiry_iso)) or self._option_depth.get((strike, opt_type, None))
+                if cached_d and (cached_d.get("bids") or cached_d.get("asks")):
+                    res = dict(cached_d)
+                    res["status"] = "OK"
+                    res["strike"] = strike
+                    res["type"] = opt_type
+                    res["expiry"] = target_expiry_iso or expiry or "WEEKLY"
+                    res["source"] = "KOTAK_NEO_DEPTH_CACHE"
+                    return res
+            return {
+                "status": "DATA_NOT_AVAILABLE",
+                "message": f"Kotak Neo client not authenticated. Market depth unavailable for {strike} {opt_type}.",
+                "strike": strike,
+                "type": opt_type,
+                "expiry": expiry
+            }
+
+        # Resolve official expiries from Kotak Neo if not cached
+        if not target_expiry_iso or not getattr(self, "_cached_weekly_iso", None):
+            try:
+                exps = self._client.expiries(exchange="nse_fo", underlying="NIFTY")
+                exp_list = exps.get("expiries", []) if isinstance(exps, dict) else (exps if isinstance(exps, list) else [])
+                if exp_list:
+                    weekly_iso = exp_list[0]
+                    now_ym = now_ist().strftime("%Y-%m")
+                    cur_month_expiries = [e for e in exp_list if e.startswith(now_ym)]
+                    if len(cur_month_expiries) > 1 and cur_month_expiries[-1] != weekly_iso:
+                        monthly_iso = cur_month_expiries[-1]
+                    elif len(exp_list) > 1:
+                        next_month = [e for e in exp_list if not e.startswith(now_ym)]
+                        if next_month:
+                            pfx = next_month[0][:7]
+                            t_m = [e for e in next_month if e.startswith(pfx)]
+                            monthly_iso = t_m[-1]
+                        else:
+                            monthly_iso = exp_list[1]
+                    else:
+                        monthly_iso = weekly_iso
+
+                    self._cached_weekly_iso = weekly_iso
+                    self._cached_monthly_iso = monthly_iso
+
+                    if not target_expiry_iso:
+                        target_expiry_iso = monthly_iso if exp_lower in ("monthly", "m") else weekly_iso
+            except Exception as exp_err:
+                logger.debug(f"Expiry resolution error in get_option_depth: {exp_err}")
+
+        # Resolve Token
+        token = None
+        symbol = None
+        with self._lock:
+            token = self._contract_to_option_token.get((strike, opt_type, target_expiry_iso))
+            if not token and (target_expiry_iso == getattr(self, "_cached_weekly_iso", None) or not target_expiry_iso):
+                token = self._contract_to_option_token.get((strike, opt_type))
+
+        # Dynamic search_scrip if token is not yet mapped
+        if not token and target_expiry_iso:
+            try:
+                dt = datetime.datetime.strptime(target_expiry_iso, "%Y-%m-%d")
+                exp_ddmmmyyyy = dt.strftime("%d%b%Y").upper()
+                scrip_res = self._client.search_scrip(
+                    exchange_segment="nse_fo",
+                    symbol="NIFTY",
+                    expiry=exp_ddmmmyyyy,
+                    strike_price=str(strike),
+                    option_type=opt_type
+                )
+                items = [x for x in scrip_res if x.get("pSymbolName") == "NIFTY"] if isinstance(scrip_res, list) else []
+                if items:
+                    token = str(items[0].get("pSymbol", "")).strip()
+                    symbol = str(items[0].get("pTrdSymbol", "")).strip()
+                    if token:
+                        with self._lock:
+                            self._option_token_to_contract[token] = (strike, opt_type, symbol)
+                            self._contract_to_option_token[(strike, opt_type, target_expiry_iso)] = token
+                            self._option_token_to_expiry_contract[token] = (strike, opt_type, target_expiry_iso)
+                            if symbol:
+                                self._symbol_to_option_contract[symbol] = (strike, opt_type, token)
+                        self.subscribe_fo_tokens([token])
+            except Exception as search_err:
+                logger.debug(f"search_scrip error for {strike} {opt_type} ({target_expiry_iso}): {search_err}")
+
+        if not token:
+            return {
+                "status": "DATA_NOT_AVAILABLE",
+                "message": f"Instrument token could not be resolved for NIFTY {strike} {opt_type} ({target_expiry_iso or expiry}).",
+                "strike": strike,
+                "type": opt_type,
+                "expiry": target_expiry_iso or expiry
+            }
+
+        # Query quote with quote_type="all" to get full 5-level depth
+        try:
+            q_res = self._client.quotes(
+                instrument_tokens=[{"exchange_segment": "nse_fo", "instrument_token": str(token)}],
+                quote_type="all"
+            )
+            item = None
+            if isinstance(q_res, list) and q_res:
+                item = q_res[0]
+            elif isinstance(q_res, dict) and "data" in q_res and isinstance(q_res["data"], list) and q_res["data"]:
+                item = q_res["data"][0]
+            elif isinstance(q_res, dict) and "depth" in q_res:
+                item = q_res
+
+            if item and isinstance(item, dict):
+                raw_ltp = item.get("ltp") or item.get("last_traded_price") or 0.0
+                ltp_val = round(float(raw_ltp), 2)
+                prev_d = self._option_depth.get((strike, opt_type, target_expiry_iso))
+                d_payload = self._extract_market_depth_payload(item, prev_d, ltp=ltp_val)
+                d_payload["_cached_at_ts"] = now_ts
+                d_payload["status"] = "OK"
+                d_payload["strike"] = strike
+                d_payload["type"] = opt_type
+                d_payload["expiry"] = target_expiry_iso or expiry or "WEEKLY"
+                d_payload["symbol"] = symbol or item.get("display_symbol") or f"NIFTY_{strike}_{opt_type}"
+                d_payload["token"] = str(token)
+                d_payload["ltp"] = ltp_val
+                d_payload["change"] = round(float(item.get("change") or 0.0), 2)
+                d_payload["change_pct"] = round(float(item.get("per_change") or 0.0), 2)
+                d_payload["volume"] = int(float(item.get("last_volume") or 0))
+                d_payload["open_interest"] = int(float(item.get("open_int") or 0))
+                d_payload["source"] = "KOTAK_NEO_DEPTH_REST"
+
+                with self._lock:
+                    self._option_depth[(strike, opt_type, target_expiry_iso)] = d_payload
+                    self._option_depth[(strike, opt_type, None)] = d_payload
+
+                return d_payload
+        except Exception as q_err:
+            logger.warning(f"Kotak Neo quotes fetch error for token {token}: {q_err}")
+
+        # Check existing depth cache if quotes call failed
+        with self._lock:
+            cached_d = self._option_depth.get((strike, opt_type, target_expiry_iso)) or self._option_depth.get((strike, opt_type, None))
+            if cached_d and (cached_d.get("bids") or cached_d.get("asks")):
+                res = dict(cached_d)
+                res["status"] = "OK"
+                res["strike"] = strike
+                res["type"] = opt_type
+                res["expiry"] = target_expiry_iso or expiry or "WEEKLY"
+                res["source"] = "KOTAK_NEO_DEPTH_CACHE"
+                return res
+
+        return {
+            "status": "DATA_NOT_AVAILABLE",
+            "message": f"Market depth data unavailable for NIFTY {strike} {opt_type} ({target_expiry_iso or expiry}).",
+            "strike": strike,
+            "type": opt_type,
+            "expiry": target_expiry_iso or expiry
+        }
 
     def fetch_live_option_chain(self, underlying: str = "NIFTY", count: int = 32) -> Dict[str, Any]:
         """
@@ -1656,6 +2116,9 @@ class KotakNeoEngine:
                                 "source": "KOTAK_NEO_OPTION_CHAIN"
                             }
 
+                    c_d = self._option_depth.get((k, "CE", exp_iso_str)) or self._option_depth.get((k, "CE", None)) or {}
+                    p_d = self._option_depth.get((k, "PE", exp_iso_str)) or self._option_depth.get((k, "PE", None)) or {}
+
                     rows.append({
                         "strikePrice": k,
                         "CE": {
@@ -1667,8 +2130,13 @@ class KotakNeoEngine:
                             "change": c_chg,
                             "pChange": c_pchg,
                             "impliedVolatility": c_iv,
-                            "totalBuyQuantity": 0,
-                            "totalSellQuantity": 0,
+                            "totalBuyQuantity": c_d.get("total_buy", 0),
+                            "totalSellQuantity": c_d.get("total_sell", 0),
+                            "depth_obi": c_d.get("obi", 0.0),
+                            "spread": c_d.get("spread", 0.0),
+                            "micro_price": c_d.get("micro_price", c_ltp),
+                            "flow_bias": c_d.get("flow_bias", "BALANCED"),
+                            "has_depth": bool(c_d.get("bids") or c_d.get("asks")),
                         },
                         "PE": {
                             "strikePrice": k,
@@ -1679,8 +2147,13 @@ class KotakNeoEngine:
                             "change": p_chg,
                             "pChange": p_pchg,
                             "impliedVolatility": p_iv,
-                            "totalBuyQuantity": 0,
-                            "totalSellQuantity": 0,
+                            "totalBuyQuantity": p_d.get("total_buy", 0),
+                            "totalSellQuantity": p_d.get("total_sell", 0),
+                            "depth_obi": p_d.get("obi", 0.0),
+                            "spread": p_d.get("spread", 0.0),
+                            "micro_price": p_d.get("micro_price", p_ltp),
+                            "flow_bias": p_d.get("flow_bias", "BALANCED"),
+                            "has_depth": bool(p_d.get("bids") or p_d.get("asks")),
                         }
                     })
                 return rows

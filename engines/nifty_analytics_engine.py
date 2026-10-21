@@ -707,6 +707,9 @@ class NiftyAnalyticsEngine:
             ce_pchg = float(ce.get("pChange") or 0.0)
             ce_buy_q = int(ce.get("totalBuyQuantity") or 0)
             ce_sell_q = int(ce.get("totalSellQuantity") or 0)
+            ce_obi = float(ce.get("depth_obi") or 0.0)
+            ce_spread = float(ce.get("spread") or 0.0)
+            ce_micro_px = float(ce.get("micro_price") or ce_ltp)
 
             pe_oi = int(pe.get("openInterest") or 0)
             pe_chg_oi = int(pe.get("changeinOpenInterest") or 0)
@@ -717,6 +720,9 @@ class NiftyAnalyticsEngine:
             pe_pchg = float(pe.get("pChange") or 0.0)
             pe_buy_q = int(pe.get("totalBuyQuantity") or 0)
             pe_sell_q = int(pe.get("totalSellQuantity") or 0)
+            pe_obi = float(pe.get("depth_obi") or 0.0)
+            pe_spread = float(pe.get("spread") or 0.0)
+            pe_micro_px = float(pe.get("micro_price") or pe_ltp)
 
             if ce_oi == 0 and pe_oi == 0 and ce_vol == 0 and pe_vol == 0:
                 continue
@@ -733,6 +739,11 @@ class NiftyAnalyticsEngine:
                 "ce_pchg": round(ce_pchg, 1),
                 "ce_buildup": cls._classify_oi_buildup(ce_chg, ce_chg_oi),
                 "ce_ob_ratio": round(ce_buy_q / max(1, ce_sell_q), 2) if ce_sell_q > 0 else 1.0,
+                "ce_total_buy": ce_buy_q,
+                "ce_total_sell": ce_sell_q,
+                "ce_depth_obi": ce_obi,
+                "ce_spread": ce_spread,
+                "ce_micro_price": ce_micro_px,
                 "pe_oi": pe_oi,
                 "pe_chg_oi": pe_chg_oi,
                 "pe_vol": pe_vol,
@@ -742,6 +753,12 @@ class NiftyAnalyticsEngine:
                 "pe_pchg": round(pe_pchg, 1),
                 "pe_buildup": cls._classify_oi_buildup(pe_chg, pe_chg_oi),
                 "pe_ob_ratio": round(pe_buy_q / max(1, pe_sell_q), 2) if pe_sell_q > 0 else 1.0,
+                "pe_total_buy": pe_buy_q,
+                "pe_total_sell": pe_sell_q,
+                "pe_depth_obi": pe_obi,
+                "pe_spread": pe_spread,
+                "pe_micro_price": pe_micro_px,
+                "has_depth": bool(ce.get("has_depth") or pe.get("has_depth") or ce_buy_q > 0 or pe_buy_q > 0),
                 "strike_pcr": strike_pcr,
                 "net_oi_diff": pe_oi - ce_oi,
                 "net_chg_oi_diff": pe_chg_oi - ce_chg_oi,
@@ -1125,167 +1142,39 @@ class NiftyAnalyticsEngine:
         except Exception:
             pass
 
-        # Kotak Neo Stream Active Check: ZERO SCRAPING
-        is_kotak_active = False
-        try:
-            from engines.kotak_neo_engine import kotak_neo_engine
-            creds = state_engine.get_kv("KOTAK_NEO_CREDENTIALS") or {}
-            has_creds = bool((config.KOTAK_NEO_CONSUMER_KEY or creds.get("consumer_key", "")).strip())
-            if has_creds or kotak_neo_engine._is_authenticated:
-                is_kotak_active = True
-                if not kotak_spot:
-                    kotak_spot = (
-                        kotak_neo_engine.get_live_price("NIFTY 50")
-                        or kotak_neo_engine.get_live_price("NIFTY")
-                        or 22700.0
-                    )
-        except Exception:
-            pass
-
-        if is_kotak_active:
+        if not kotak_spot or float(kotak_spot) <= 0:
+            with self._lock:
+                if self._live_spot_cache and self._live_spot_cache.get("price"):
+                    kotak_spot = float(self._live_spot_cache["price"])
             if not kotak_spot or float(kotak_spot) <= 0:
-                with self._lock:
-                    if self._live_spot_cache and self._live_spot_cache.get("price"):
-                        kotak_spot = float(self._live_spot_cache["price"])
-                if not kotak_spot or float(kotak_spot) <= 0:
-                    persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
-                    if persisted and isinstance(persisted, dict) and persisted.get("spot_price"):
-                        kotak_spot = float(persisted["spot_price"])
-                    else:
-                        kotak_spot = 24500.0
+                persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
+                if persisted and isinstance(persisted, dict) and persisted.get("spot_price"):
+                    kotak_spot = float(persisted["spot_price"])
 
+        # Kotak Neo Stream: ZERO DELAYED SCRAPING (NSE / Yahoo)
+        if kotak_spot and float(kotak_spot) > 0:
             # Short 1.5s cache to avoid redundant millisecond re-computations
             if not force_refresh and self._option_chain_mem_cache and (now_ts - self._option_chain_cache_ts) < 1.5:
                 return self._option_chain_mem_cache
 
             try:
                 live_chain = self._generate_kotak_neo_live_option_chain(float(kotak_spot))
-                state_engine.set_kv("latest_nifty_option_chain_deep", live_chain)
-                with self._lock:
-                    self._option_chain_mem_cache = live_chain
-                    self._option_chain_cache = live_chain
-                    self._option_chain_cache_ts = now_ts
-                return live_chain
+                if live_chain and live_chain.get("status") == "OK":
+                    state_engine.set_kv("latest_nifty_option_chain_deep", live_chain)
+                    with self._lock:
+                        self._option_chain_mem_cache = live_chain
+                        self._option_chain_cache = live_chain
+                        self._option_chain_cache_ts = now_ts
+                    return live_chain
             except Exception as e:
                 logger.error(f"Error generating Kotak live option chain: {e}")
                 if self._option_chain_mem_cache:
                     return self._option_chain_mem_cache
-                persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
-                if persisted and isinstance(persisted, dict):
-                    return persisted
-                return {"status": "ERROR", "message": f"Kotak Neo option chain generation failed: {e}"}
 
-        if not force_refresh and self._option_chain_mem_cache and (now_ts - self._option_chain_cache_ts) < cache_ttl:
-            return self._option_chain_mem_cache
-
-        # If market is closed and we don't have fresh in-memory data, fall back to master DB persisted snapshot first
-        if not force_refresh and not market_open:
-            persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
-            if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
-                persisted["source"] = "MASTER_DB_PERSISTED_NSE_CHAIN"
-                persisted["is_persisted_snapshot"] = True
-                orig_ts = persisted.get("fetched_at_epoch")
-                with self._lock:
-                    self._option_chain_mem_cache = persisted
-                    self._option_chain_cache = persisted
-                    self._option_chain_cache_ts = orig_ts if orig_ts else (now_ts - 3600.0)
-                return persisted
-
-        session = self._get_nse_session(force_refresh=force_refresh)
-        try:
-            rc = session.get("https://www.nseindia.com/api/option-chain-contract-info?symbol=NIFTY", timeout=10)
-            if rc.status_code != 200:
-                session = self._get_nse_session(force_refresh=True)
-                rc = session.get("https://www.nseindia.com/api/option-chain-contract-info?symbol=NIFTY", timeout=10)
-
-            if rc.status_code == 200:
-                c_json = rc.json()
-                expiry_dates = c_json.get("expiryDates") or []
-                if expiry_dates:
-                    sel = self._select_weekly_and_monthly_expiries(expiry_dates)
-                    weekly_exp = sel["current_weekly"]
-                    monthly_exp = sel["current_monthly"]
-
-                    rw = session.get(
-                        f"https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=NIFTY&expiry={weekly_exp}",
-                        timeout=10
-                    )
-                    rm = session.get(
-                        f"https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=NIFTY&expiry={monthly_exp}",
-                        timeout=10
-                    ) if monthly_exp != weekly_exp else rw
-
-                    if rw.status_code == 200:
-                        w_json = rw.json().get("records", {})
-                        m_json = rm.json().get("records", {}) if rm.status_code == 200 else w_json
-
-                        spot = float(w_json.get("underlyingValue") or m_json.get("underlyingValue") or 0.0)
-                        nse_ts = w_json.get("timestamp") or format_ist()
-
-                        weekly_analysis = self._analyze_single_expiry_chain(
-                            w_json.get("data") or [], spot, weekly_exp, nse_ts
-                        )
-                        monthly_analysis = self._analyze_single_expiry_chain(
-                            m_json.get("data") or [], spot, monthly_exp, m_json.get("timestamp") or nse_ts
-                        )
-
-                        if weekly_analysis.get("status") == "OK":
-                            suggestions = self._build_options_quant_suggestions(weekly_analysis, monthly_analysis)
-                            is_market_open, _ = NSEMarketCalendar.can_execute_trades()
-                            mkt_status = NSEMarketCalendar.get_market_status()
-                            mkt_phase = mkt_status.get("session_phase", "REGULAR_HOURS" if is_market_open else "CLOSED")
-                            mkt_state_str = "OPEN" if is_market_open else "CLOSED"
-
-                            live_spot_data = self.get_live_nifty_spot()
-                            live_spot_val = float(live_spot_data.get("price") or 0.0) if live_spot_data else 0.0
-                            canonical_spot = live_spot_val if live_spot_val > 0 else spot
-
-                            payload = {
-                                "status": "OK",
-                                "source": "NSE_LIVE_OPTION_CHAIN_V3",
-                                "symbol": "NIFTY 50",
-                                "spot_price": round(canonical_spot, 2),
-                                "nse_timestamp": nse_ts,
-                                "fetched_at_ist": format_ist(),
-                                "available_expiries": expiry_dates[:8],
-                                "selected_expiries": sel,
-                                "weekly": weekly_analysis,
-                                "monthly": monthly_analysis,
-                                "quant_suggestions": suggestions,
-                                "is_live": is_market_open,
-                                "market_status": {
-                                    "is_open": is_market_open,
-                                    "status": mkt_state_str,
-                                    "session_phase": mkt_phase
-                                },
-                                "session_phase": mkt_phase,
-                            }
-                            with self._lock:
-                                self._option_chain_mem_cache = payload
-                                self._option_chain_cache = payload
-                                self._option_chain_cache_ts = now_ts
-                            state_engine.set_kv("latest_nifty_option_chain_deep", payload)
-                            try:
-                                from core.data_watchdog import data_watchdog
-                                fetch_lat = round((time.time() - now_ts) * 1000.0, 1)
-                                data_watchdog.record_packet("options_desk", latency_ms=fetch_lat, details={
-                                    "weekly_expiry": weekly_analysis.get("expiry"),
-                                    "spot_price": round(spot, 2),
-                                    "strikes_count": len(weekly_analysis.get("strikes", [])),
-                                    "near_atm_pcr": weekly_analysis.get("pcr", {}).get("near_atm_pcr"),
-                                    "call_wall": weekly_analysis.get("walls_and_pain", {}).get("call_wall_1"),
-                                    "put_wall": weekly_analysis.get("walls_and_pain", {}).get("put_wall_1")
-                                })
-                            except Exception:
-                                pass
-                            return payload
-        except Exception as e:
-            logger.warning(f"Live NSE Option Chain fetch warning: {e}")
-
-        # Fallback to latest real persisted NSE Option Chain in Single Master File (`data/swing_trades.db`)
+        # Fallback to latest real persisted snapshot in Master DB
         persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
         if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
-            persisted["source"] = "MASTER_DB_PERSISTED_NSE_CHAIN"
+            persisted["source"] = "MASTER_DB_PERSISTED_SNAPSHOT"
             is_market_open, _ = NSEMarketCalendar.can_execute_trades()
             mkt_status = NSEMarketCalendar.get_market_status()
             persisted["is_live"] = is_market_open
@@ -1294,11 +1183,17 @@ class NiftyAnalyticsEngine:
                 "status": "OPEN" if is_market_open else "CLOSED",
                 "session_phase": mkt_status.get("session_phase", "CLOSED")
             }
+            with self._lock:
+                self._option_chain_mem_cache = persisted
+                self._option_chain_cache = persisted
+                self._option_chain_cache_ts = now_ts
             return persisted
 
         return {
-            "status": "UNAVAILABLE",
-            "message": "NSE Option Chain endpoint temporarily unreachable and no cached chain in Master DB yet."
+            "status": "DATA_NOT_AVAILABLE",
+            "message": "Kotak Neo live option chain stream unavailable and no cached chain in Master DB.",
+            "symbol": "NIFTY 50",
+            "spot_price": None
         }
 
     def get_deep_option_chain(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -7303,207 +7198,57 @@ class NiftyAnalyticsEngine:
         except Exception:
             pass
 
-        # If Kotak Neo is authenticated or enabled, STRICTLY BLOCK Yahoo and NSE scraping!
-        if is_kotak_authenticated:
-            with self._lock:
-                if self._live_spot_cache:
-                    cached = dict(self._live_spot_cache)
-                    cached["timestamp"] = ts_now
-                    cached["source"] = "KOTAK_NEO_CACHE"
-                    cached["is_live"] = is_market_open
-                    return cached
-                if hasattr(self, "_option_chain_mem_cache") and self._option_chain_mem_cache:
-                    cached_spot = float(self._option_chain_mem_cache.get("spot_price") or 0.0)
-                    if cached_spot > 0:
-                        atm_k = int(round(cached_spot / 50.0) * 50)
-                        return {
-                            "price": round(cached_spot, 2),
-                            "change_pts": 0.0,
-                            "change_pct": 0.0,
-                            "prev_close": round(cached_spot, 2),
-                            "day_high": round(cached_spot, 2),
-                            "day_low": round(cached_spot, 2),
-                            "atm_strike": atm_k,
-                            "timestamp": ts_now,
-                            "source": "KOTAK_NEO_CACHE",
-                            "is_live": is_market_open,
-                            "market_status": mkt_state_str,
-                            "session_phase": mkt_phase,
-                            "age_seconds": 0.5,
-                            "latency_ms": 1.0
-                        }
-            persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
-            if persisted and isinstance(persisted, dict) and persisted.get("spot_price"):
-                cached_spot = float(persisted["spot_price"])
-                atm_k = int(round(cached_spot / 50.0) * 50)
-                return {
-                    "price": round(cached_spot, 2),
-                    "change_pts": 0.0,
-                    "change_pct": 0.0,
-                    "prev_close": round(cached_spot, 2),
-                    "day_high": round(cached_spot, 2),
-                    "day_low": round(cached_spot, 2),
-                    "atm_strike": atm_k,
-                    "timestamp": ts_now,
-                    "source": "KOTAK_NEO_PERSISTED",
-                    "is_live": is_market_open,
-                    "market_status": mkt_state_str,
-                    "session_phase": mkt_phase,
-                    "age_seconds": 1.0,
-                    "latency_ms": 1.0
-                }
-            # Pure Kotak Neo stream policy: Never fallback to delayed scrapers!
-            return None
-
-        # 2. Fast Yahoo Finance chart quote (^NSEI) [OFFLINE FALLBACK ONLY]
-        try:
-            import urllib.request
-            url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?range=1d&interval=1m"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-            t0 = time.time()
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            lat_ms = round((time.time() - t0) * 1000.0, 1)
-            meta = data["chart"]["result"][0]["meta"]
-            spot = float(meta.get("regularMarketPrice") or 0.0)
-            prev_close = float(meta.get("chartPreviousClose") or meta.get("previousClose") or spot)
-            day_high = float(meta.get("regularMarketDayHigh") or spot)
-            day_low = float(meta.get("regularMarketDayLow") or spot)
-            diff_pts = round(spot - prev_close, 2)
-            diff_pct = round((diff_pts / prev_close) * 100.0, 2) if prev_close > 0 else 0.0
-
-            market_time = meta.get("regularMarketTime")
-            if market_time and isinstance(market_time, (int, float)) and market_time > 0:
-                prov_dt = datetime.datetime.fromtimestamp(market_time, tz=IST)
-                provider_timestamp = format_ist(prov_dt)
-                diff_sec = now_ts - market_time
-                if diff_sec < -60:
-                    tick_age = None
-                    is_stale = True
-                    warning = "FUTURE_TIMESTAMP_ERROR"
-                else:
-                    tick_age = max(0.0, round(diff_sec, 1))
-                    is_stale = tick_age > 180.0
-                    warning = None
-            else:
-                provider_timestamp = None
-                tick_age = None
-                is_stale = True
-                warning = "MISSING_PROVIDER_TIMESTAMP"
-
-            atm_strike = int(round(spot / 50.0) * 50)
-            res = {
-                "price": round(spot, 2),
-                "change_pts": diff_pts,
-                "change_pct": diff_pct,
-                "prev_close": prev_close,
-                "day_high": day_high,
-                "day_low": day_low,
-                "atm_strike": atm_strike,
-                "provider_timestamp": provider_timestamp,
-                "timestamp": provider_timestamp or ts_now,
-                "received_at": ts_now,
-                "source": "YAHOO_LIVE_FAST_STREAM",
-                "is_live": is_market_open and not is_stale,
-                "is_stale": is_stale,
-                "market_status": mkt_state_str,
-                "session_phase": mkt_phase,
-                "age_seconds": tick_age,
-                "latency_ms": lat_ms,
-                "warning": warning
-            }
-            with self._lock:
-                self._live_spot_cache = res
-                self._live_spot_cache_ts = now_ts
-                # Immediately update spot in option chain in-memory cache
-                if hasattr(self, "_option_chain_mem_cache") and self._option_chain_mem_cache:
-                    self._option_chain_mem_cache["spot_price"] = round(spot, 2)
-                    self._option_chain_mem_cache["live_spot_tick"] = res
-
-            try:
-                from core.data_watchdog import data_watchdog
-                data_watchdog.record_packet("intraday_desk", latency_ms=lat_ms, details={"spot_price": round(spot, 2), "atm_strike": atm_strike})
-            except Exception:
-                pass
-            return res
-        except Exception as e:
-            logger.debug(f"Fast live Nifty spot Yahoo notice: {e}")
-
-        # 3. Fast NSE All Indices quote fallback
-        try:
-            session = self._get_nse_session(force_refresh=False)
-            t0 = time.time()
-            resp = session.get("https://www.nseindia.com/api/allIndices", timeout=3)
-            if resp.status_code == 200:
-                lat_ms = round((time.time() - t0) * 1000.0, 1)
-                indices = resp.json().get("data", [])
-                for idx in indices:
-                    if idx.get("index") == "NIFTY 50":
-                        spot = float(idx.get("last") or 0.0)
-                        diff_pts = float(idx.get("variation") or 0.0)
-                        diff_pct = float(idx.get("percentChange") or 0.0)
-                        atm_strike = int(round(spot / 50.0) * 50)
-                        resp_data = resp.json() if hasattr(resp, "json") else {}
-                        raw_prov_ts = resp_data.get("timestamp") or idx.get("timestamp")
-                        provider_timestamp = None
-                        prov_age_sec = None
-                        if raw_prov_ts:
-                            try:
-                                prov_dt = pd.to_datetime(raw_prov_ts, dayfirst=True)
-                                provider_timestamp = format_ist(prov_dt)
-                                prov_age_sec = max(0.0, (now_ist() - (IST.localize(prov_dt) if hasattr(IST, "localize") else prov_dt.replace(tzinfo=now_ist().tzinfo))).total_seconds())
-                            except Exception:
-                                provider_timestamp = str(raw_prov_ts)
-
-                        is_stale_quote = (prov_age_sec is None or prov_age_sec > 180.0) if is_market_open else False
-                        res = {
-                            "price": round(spot, 2),
-                            "change_pts": diff_pts,
-                            "change_pct": diff_pct,
-                            "prev_close": round(spot - diff_pts, 2),
-                            "day_high": float(idx.get("high") or spot),
-                            "day_low": float(idx.get("low") or spot),
-                            "atm_strike": atm_strike,
-                            "provider_timestamp": provider_timestamp,
-                            "timestamp": provider_timestamp or ts_now,
-                            "received_at": ts_now,
-                            "source": "NSE_ALL_INDICES_STREAM",
-                            "is_live": is_market_open and not is_stale_quote and provider_timestamp is not None,
-                            "is_stale": is_stale_quote or provider_timestamp is None,
-                            "data_quality": "VALID" if (provider_timestamp and not is_stale_quote) else "UNVERIFIED_SOURCE_TIMESTAMP",
-                            "market_status": mkt_state_str,
-                            "session_phase": mkt_phase,
-                            "age_seconds": round(prov_age_sec, 1) if prov_age_sec is not None else None,
-                            "latency_ms": lat_ms
-                        }
-                        with self._lock:
-                            self._live_spot_cache = res
-                            self._live_spot_cache_ts = now_ts
-                        return res
-        except Exception as e:
-            logger.debug(f"Fast live Nifty spot NSE indices notice: {e}")
-
-        # 4. Fallback to Option Chain cache underlyingValue (Preserves original option chain timestamp)
+        # Kotak Neo Stream: ZERO DELAYED SCRAPING (NSE / Yahoo)
         with self._lock:
+            if self._live_spot_cache:
+                cached = dict(self._live_spot_cache)
+                cached["timestamp"] = ts_now
+                cached["source"] = "KOTAK_NEO_CACHE"
+                cached["is_live"] = is_market_open
+                return cached
             if hasattr(self, "_option_chain_mem_cache") and self._option_chain_mem_cache:
-                w = self._option_chain_mem_cache.get("weekly", {})
-                cache_age = time.time() - getattr(self, "_option_chain_cache_ts", 0.0)
-                if w and w.get("spot_price"):
-                    spot = float(w["spot_price"])
-                    opt_ts = w.get("provider_timestamp") or w.get("timestamp")
+                cached_spot = float(self._option_chain_mem_cache.get("spot_price") or 0.0)
+                if cached_spot > 0:
+                    atm_k = int(round(cached_spot / 50.0) * 50)
                     return {
-                        "price": round(spot, 2),
-                        "provider_timestamp": opt_ts,
-                        "timestamp": opt_ts or ts_now,
-                        "received_at": ts_now,
-                        "source": "NSE_OPTION_CHAIN_LIVE",
-                        "is_live": is_market_open and cache_age <= 60.0,
-                        "is_stale": cache_age > 60.0 or not opt_ts,
-                        "data_quality": "VALID" if (cache_age <= 60.0 and opt_ts) else "STALE_CACHE",
+                        "price": round(cached_spot, 2),
+                        "change_pts": 0.0,
+                        "change_pct": 0.0,
+                        "prev_close": round(cached_spot, 2),
+                        "day_high": round(cached_spot, 2),
+                        "day_low": round(cached_spot, 2),
+                        "atm_strike": atm_k,
+                        "timestamp": ts_now,
+                        "source": "KOTAK_NEO_CACHE",
+                        "is_live": is_market_open,
                         "market_status": mkt_state_str,
                         "session_phase": mkt_phase,
-                        "age_seconds": round(cache_age, 1)
+                        "age_seconds": 0.5,
+                        "latency_ms": 1.0
                     }
+        persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
+        if persisted and isinstance(persisted, dict) and persisted.get("spot_price"):
+            cached_spot = float(persisted["spot_price"])
+            atm_k = int(round(cached_spot / 50.0) * 50)
+            return {
+                "price": round(cached_spot, 2),
+                "change_pts": 0.0,
+                "change_pct": 0.0,
+                "prev_close": round(cached_spot, 2),
+                "day_high": round(cached_spot, 2),
+                "day_low": round(cached_spot, 2),
+                "atm_strike": atm_k,
+                "timestamp": ts_now,
+                "source": "KOTAK_NEO_PERSISTED",
+                "is_live": is_market_open,
+                "market_status": mkt_state_str,
+                "session_phase": mkt_phase,
+                "age_seconds": 1.0,
+                "latency_ms": 1.0
+            }
+
+
+
 
         # 5. Fallback to latest snapshot in DB
         with state_engine._lock:
@@ -7571,8 +7316,8 @@ class NiftyAnalyticsEngine:
             pass
         return {
             "price": 0.0,
-            "status": "DATA_UNAVAILABLE",
-            "reason": "Live Yahoo Finance endpoint unreachable and no cached quote found in ohlcv_master_store",
+            "status": "DATA_NOT_AVAILABLE",
+            "reason": "Kotak Neo live stream unavailable and no cached quote found in Master DB",
             "timestamp": ts_now,
             "as_of": ts_now,
             "source": "UNAVAILABLE",

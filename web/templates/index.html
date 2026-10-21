@@ -7398,9 +7398,12 @@
                 <span class="text-[10px] font-mono text-slate-400 uppercase pl-2">Contract:</span>
                 <select id="comm-chain-underlying-select" onchange="onCommodityUnderlyingChanged(this.value)" class="bg-slate-900 text-white font-mono font-bold text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-400 cursor-pointer">
                   <option value="CRUDEOIL" selected>Crude Oil (100 bbl)</option>
+                  <option value="CRUDEOILM">Crude Oil Mini (10 bbl)</option>
                   <option value="NATURALGAS">Natural Gas (1250 mmBtu)</option>
-                  <option value="GOLD">Gold Mini (100g)</option>
-                  <option value="SILVER">Silver Mini (5kg)</option>
+                  <option value="GOLD">Gold (Standard 1kg)</option>
+                  <option value="GOLDM">Gold Mini (100g)</option>
+                  <option value="SILVER">Silver (Standard 30kg)</option>
+                  <option value="SILVERM">Silver Mini (5kg)</option>
                   <option value="COPPER">Copper (2500kg)</option>
                   <option value="ZINC">Zinc (5000kg)</option>
                 </select>
@@ -24303,8 +24306,17 @@
           rowChgEl.innerText = `${sign}${chgPct.toFixed(2)}%`;
         }
 
-        // Update Option Chain Spot if current contract is selected
-        if (baseSym === (window.selectedCommodityUnderlying || 'CRUDEOIL')) {
+        // Update Option Chain Spot if current contract is selected (with standard/mini cross-link)
+        const curSelectedUnd = window.selectedCommodityUnderlying || 'CRUDEOIL';
+        const isMatchingUnd = (baseSym === curSelectedUnd) ||
+          (baseSym === 'CRUDEOIL' && curSelectedUnd === 'CRUDEOILM') ||
+          (baseSym === 'CRUDEOILM' && curSelectedUnd === 'CRUDEOIL') ||
+          (baseSym === 'GOLD' && curSelectedUnd === 'GOLDM') ||
+          (baseSym === 'GOLDM' && curSelectedUnd === 'GOLD') ||
+          (baseSym === 'SILVER' && curSelectedUnd === 'SILVERM') ||
+          (baseSym === 'SILVERM' && curSelectedUnd === 'SILVER');
+
+        if (isMatchingUnd) {
           const kpiSpot = document.getElementById('comm-kpi-spot');
           if (kpiSpot) {
             kpiSpot.innerText = `₹${newLtp.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
@@ -24531,9 +24543,12 @@
 
     const COMMODITY_LOT_SIZES = {
       'CRUDEOIL': 100,
+      'CRUDEOILM': 10,
       'NATURALGAS': 1250,
       'GOLD': 100,
-      'SILVER': 5,
+      'GOLDM': 10,
+      'SILVER': 30,
+      'SILVERM': 5,
       'COPPER': 2500,
       'ZINC': 5000
     };

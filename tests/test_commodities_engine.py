@@ -25,8 +25,8 @@ def client():
 
 
 def test_commodity_specs_and_seeding():
-    """Validates that all 6 core MCX commodities are defined with complete contract specs."""
-    assert len(COMMODITY_SPECS) == 6
+    """Validates that all core MCX commodities are defined with complete contract specs."""
+    assert len(COMMODITY_SPECS) >= 6
     required_keys = ["display_name", "sector", "unit", "lot_size", "default_token", "default_symbol"]
 
     for base_sym, spec in COMMODITY_SPECS.items():
@@ -34,11 +34,14 @@ def test_commodity_specs_and_seeding():
             assert k in spec, f"Spec for {base_sym} missing key {k}"
 
     active = commodities_engine._active_contracts
-    assert len(active) == 6
+    assert len(active) >= 6
     assert "CRUDEOIL" in active
+    assert "CRUDEOILM" in active
     assert "NATURALGAS" in active
     assert "GOLD" in active
+    assert "GOLDM" in active
     assert "SILVER" in active
+    assert "SILVERM" in active
     assert "COPPER" in active
     assert "ZINC" in active
 
@@ -169,6 +172,14 @@ def test_commodity_option_chain_endpoint(client):
     assert "lastPrice" in row["PE"]
     assert "impliedVolatility" in row["CE"]
     assert "delta" in row["CE"]
+
+    # Also validate CRUDEOILM
+    res_m = client.get("/api/commodities/options/chain?underlying=CRUDEOILM")
+    assert res_m.status_code == 200
+    data_m = res_m.json()
+    assert data_m.get("status") == "SUCCESS"
+    assert data_m.get("underlying") == "CRUDEOILM"
+    assert data_m.get("lot_size") == 10
 
 
 def test_commodity_options_strategy_analyzer_endpoint(client):

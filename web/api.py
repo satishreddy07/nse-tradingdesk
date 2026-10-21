@@ -928,6 +928,62 @@ def capture_nifty_intraday_snapshot(slot_override: Optional[str] = None, interva
     return nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override=slot_override, sync_cloud=True, interval_mode=interval_mode)
 
 
+@app.get("/api/nifty/options/strike-depth")
+def get_nifty_option_strike_depth(
+    strike: int,
+    option_type: str = "CE",
+    expiry: Optional[str] = None,
+    expiry_type: str = "weekly",
+    force_refresh: bool = False
+):
+    """
+    Returns real-time 5-level Bid/Ask Market Depth, Order Book Imbalance (OBI),
+    Micro-Price, and institutional flow bias for a specific Nifty option strike.
+    Powered by Kotak Neo SFeed Level-2 depth with REST quotes fallback.
+    Strictly zero fake numbers or hardcoded fallbacks.
+    """
+    from engines.kotak_neo_engine import kotak_neo_engine
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+
+    opt_type_clean = option_type.upper().strip()
+    exp_target = (expiry or "").strip()
+
+    if not exp_target:
+        try:
+            chain = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
+            if expiry_type.lower() == "monthly":
+                exp_target = chain.get("monthly", {}).get("expiry", "")
+            else:
+                exp_target = chain.get("weekly", {}).get("expiry", "")
+        except Exception as e:
+            logger.debug(f"Could not resolve expiry for depth request: {e}")
+
+    depth = kotak_neo_engine.get_option_depth(
+        strike=strike,
+        opt_type=opt_type_clean,
+        expiry=exp_target,
+        force_refresh=force_refresh
+    )
+    depth["expiry_type"] = expiry_type.lower()
+    return _sanitize_for_json(depth)
+
+
+@app.get("/api/nifty/intraday/order-flow")
+def get_nifty_intraday_order_flow(force_refresh: bool = False):
+    """
+    Returns real-time Near-ATM Institutional Order Flow Pulse, Aggregate Order Book Imbalance,
+    Call vs Put Depth Volume Ratio, Spread Liquidity Vacuum Risk, and strike-by-strike depth.
+    Powered exclusively by Kotak Neo API.
+    """
+    from engines.intraday_analytics_engine import intraday_analytics_engine
+    try:
+        data = intraday_analytics_engine.compute_order_flow_market_depth(force_refresh=force_refresh)
+        return _sanitize_for_json(data)
+    except Exception as e:
+        logger.error(f"Error computing order flow market depth: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
 @app.get("/api/nifty/minute-chart")
 def get_nifty_minute_chart(interval: str = "1m"):
     """
