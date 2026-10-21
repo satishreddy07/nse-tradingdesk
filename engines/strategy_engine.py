@@ -752,8 +752,7 @@ class Portfolio3StrategyEngine:
         trigger_level = round(trigger_high * 1.001, 2)
         price_crossed = (ltp >= trigger_level) or (day_high >= trigger_level) or (ltp > trigger_high)
         pacing = calculate_volume_pacing(live_vol, avg_vol_20, now_dt)
-        # Auto breakout confirmation: pacing meets threshold OR price clearly crosses trigger with >=1.2x pacing
-        volume_confirmed = (pacing >= self.volume_pacing_threshold) or (price_crossed and pacing >= 1.2)
+        volume_confirmed = (pacing >= self.volume_pacing_threshold)
 
         should_enter = price_crossed and volume_confirmed
 
