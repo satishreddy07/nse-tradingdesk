@@ -9288,6 +9288,26 @@
           }
         }
       });
+
+      // URL parameter module & depth auto-loader
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const modParam = urlParams.get('module') || (window.location.hash ? window.location.hash.replace('#', '') : null);
+        if (modParam) {
+          const modTarget = modParam.startsWith('module-') ? modParam : ('module-' + modParam);
+          switchModule(modTarget);
+          if (modTarget === 'module-options' && typeof loadOptionsChainDesk === 'function') loadOptionsChainDesk(false);
+          else if (modTarget === 'module-intraday' && typeof loadIntradayExpiryDesk === 'function') loadIntradayExpiryDesk(false);
+        }
+        const depthK = urlParams.get('depth_strike');
+        if (depthK && typeof openOptionDepthModal === 'function') {
+          setTimeout(() => {
+            openOptionDepthModal(parseInt(depthK), urlParams.get('depth_type') || 'CE', urlParams.get('depth_expiry') || 'weekly');
+          }, 350);
+        }
+      } catch (e) {
+        console.debug("URL param route notice:", e);
+      }
     });
 
     let lastSpotPrice = null;
