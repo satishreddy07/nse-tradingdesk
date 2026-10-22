@@ -14785,6 +14785,16 @@
               </tr>
             `;
           }).join('');
+
+          try {
+            const expandTarget = new URLSearchParams(window.location.search).get('expand_closed');
+            if (expandTarget && closedList.length > 0) {
+              const targetId = (expandTarget === '1' || expandTarget === 'first') ? closedList[0].strategy_id : expandTarget;
+              setTimeout(() => {
+                if (window.toggleClosedStrategyDetail) window.toggleClosedStrategyDetail(targetId);
+              }, 120);
+            }
+          } catch (e) {}
         }
       }
     }
