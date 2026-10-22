@@ -1734,7 +1734,7 @@ class NiftyAnalyticsEngine:
 
         now_ts = time.time()
         market_open = NSEMarketCalendar.can_execute_trades()
-        cache_ttl = 30 if market_open else 300
+        cache_ttl = 15 if market_open else 300
         cache_key = f"{session_date}_{interval_mode}"
 
         if not force_refresh and cache_key in self._intraday_expiry_cache and (now_ts - self._intraday_expiry_cache_ts) < cache_ttl:
@@ -1762,9 +1762,6 @@ class NiftyAnalyticsEngine:
                                 session_date = latest_row["session_date"]
                                 snaps = self._get_snapshots_for_date(session_date)
 
-        latest = snaps[-1] if snaps else {}
-        first = snaps[0] if snaps else {}
-
         # Select schedule slot definition according to chosen interval
         if interval_mode == "15m":
             slots_ref = INTRADAY_15M_SLOTS
@@ -1779,19 +1776,26 @@ class NiftyAnalyticsEngine:
                 "TPO brackets (A–M), captures European open (1:00 PM IST) and 3:00 PM settlement, with optimal signal-to-noise ratio."
             )
 
-        snap_by_slot = {s["slot_time"]: s for s in snaps}
+        valid_slot_codes = {s[0] for s in slots_ref}
+        interval_snaps = [s for s in snaps if s.get("slot_time") in valid_slot_codes]
+
+        latest = interval_snaps[-1] if interval_snaps else (snaps[-1] if snaps else {})
+        first = interval_snaps[0] if interval_snaps else (snaps[0] if snaps else {})
+
+        snap_by_slot = {s["slot_time"]: s for s in interval_snaps}
         now_dt = now_ist()
         now_mins = now_dt.hour * 60 + now_dt.minute
 
-        # Fuzzy matching: if exact slot code isn't in DB, check if any snapshot occurred within ±14 minutes
+        # Fuzzy matching: only search within interval_snaps with tight tolerance
         def _find_nearest_snap(target_code: str):
             if target_code in snap_by_slot:
                 return snap_by_slot[target_code]
             t_h, t_m = [int(x) for x in target_code.split(":")]
             target_mins = t_h * 60 + t_m
             best_match = None
-            min_diff = 15  # within 15 mins window
-            for s in snaps:
+            max_tol = 4 if interval_mode == "15m" else (8 if interval_mode == "30m" else 15)
+            min_diff = max_tol + 1
+            for s in interval_snaps:
                 try:
                     s_code = s["slot_time"]
                     sh, sm = [int(x) for x in s_code.split(":")]
@@ -1910,6 +1914,135 @@ class NiftyAnalyticsEngine:
         else:
             dashboard_reason = f"Market is closed. No intraday option snapshots recorded for session date {session_date}."
 
+        # Generate Real-Time Dynamic Analysis from Live Spot & Options Depth
+        first_snap = first if first else None
+        spot_open_ref = float(first_snap.get("spot_price") or spot_p) if first_snap else spot_p
+        spot_from_open = round(spot_p - spot_open_ref, 2)
+        spot_pct_from_open = round(((spot_p - spot_open_ref) / max(1.0, spot_open_ref)) * 100.0, 2) if spot_open_ref > 0 else 0.0
+        strad_decay_pct = (
+            round(((atm_straddle - float(first_snap.get("straddle_premium") or atm_straddle)) / max(1.0, float(first_snap.get("straddle_premium") or 1.0))) * 100.0, 2)
+            if first_snap and float(first_snap.get("straddle_premium") or 0) > 0 else 0.0
+        )
+        oi_diff_lakhs = round((net_pe_oi_chg - net_ce_oi_chg) / 100000.0, 2)
+        is_call_short_covering = (net_ce_oi_chg < -10000)
+        is_put_writing_strong = (net_pe_oi_chg > 20000 and net_pe_oi_chg >= net_ce_oi_chg)
+
+        if spot_from_open >= 35.0 or spot_pct_from_open >= 0.25:
+            if is_call_short_covering and net_pe_oi_chg > 0:
+                live_market_state = "BULLISH_SHORT_COVERING_EXPLOSION"
+            elif chg_oi_pcr >= 1.0 or is_put_writing_strong or oi_diff_lakhs >= 0.2:
+                live_market_state = "BULLISH_PUT_WRITING_DOMINANCE"
+            elif near_atm_pcr >= 1.05:
+                live_market_state = "BULLISH_MOMENTUM_EXPANSION"
+            else:
+                live_market_state = "CALL_WRITERS_SQUEEZE_RISK"
+        elif spot_from_open <= -35.0 or spot_pct_from_open <= -0.25:
+            if net_pe_oi_chg < -10000 and net_ce_oi_chg > 0:
+                live_market_state = "BEARISH_LONG_UNWINDING_BREAKDOWN"
+            elif chg_oi_pcr <= 0.85 or (net_ce_oi_chg > 20000 and net_ce_oi_chg >= net_pe_oi_chg) or oi_diff_lakhs <= -0.2:
+                live_market_state = "BEARISH_CALL_WRITING_PRESSURE"
+            elif near_atm_pcr <= 0.90:
+                live_market_state = "BEARISH_MOMENTUM_BREAKDOWN"
+            else:
+                live_market_state = "PUT_WRITERS_UNDER_THREAT"
+        else:
+            if strad_decay_pct <= -10.0 and abs(spot_from_open) <= atm_straddle * 0.5:
+                live_market_state = "THETA_CRUSH_PINNING_REGIME"
+            elif near_atm_pcr >= 1.20 and chg_oi_pcr >= 1.15:
+                live_market_state = "BULLISH_PUT_WRITING_DOMINANCE"
+            elif near_atm_pcr <= 0.80 and chg_oi_pcr <= 0.85:
+                live_market_state = "BEARISH_CALL_WRITING_PRESSURE"
+            elif near_atm_pcr >= 1.05:
+                live_market_state = "MILD_BULLISH_ACCUMULATION"
+            elif near_atm_pcr <= 0.90:
+                live_market_state = "MILD_BEARISH_SUPPLY"
+            else:
+                live_market_state = "BALANCED_TWO_WAY_STRADDLE"
+
+        exp_name = w_chain.get("expiry") or latest.get("expiry_date") or "--"
+        live_what_is = (
+            f"Nifty Spot is at ₹{spot_p:,.2f} (ATM {cur_atm}) for Weekly Expiry {exp_name}. "
+            f"Near-ATM PCR is {near_atm_pcr:.2f} (Overall PCR {overall_pcr:.2f}, Exact ATM PCR {atm_pcr:.2f}) with Fresh Intraday ΔOI PCR at {chg_oi_pcr:.2f}. "
+            f"Across ±8 active strikes, Put writers added {net_pe_oi_chg:+,d} OI vs Call writers adding {net_ce_oi_chg:+,d} OI "
+            f"(Net Put-Call flow: {oi_diff_lakhs:+.2f}L contracts). "
+            f"ATM {cur_atm} Straddle is trading at ₹{atm_straddle:.2f} ({atm_ce_ltp:.1f} CE + {atm_pe_ltp:.1f} PE)"
+            + (f", changing {strad_decay_pct:+.1f}% (ΔSpot: {spot_from_open:+.1f} pts, {spot_pct_from_open:+.2f}%) since opening slot." if first_snap else ".")
+        )
+
+        lower_be = spot_p - atm_straddle if spot_p > 0 else 0
+        upper_be = spot_p + atm_straddle if spot_p > 0 else 0
+        c_wall_str = str(call_wall or (cur_atm + 100))
+        p_wall_str = str(put_wall or (cur_atm - 100))
+        mp_str = str(max_pain or cur_atm)
+
+        live_what_could = (
+            f"1) Expected Intraday Corridor: ₹{lower_be:,.0f} to ₹{upper_be:,.0f} (±₹{atm_straddle:.1f} straddle range around {cur_atm}). "
+            f"2) Upside Gamma / Short-Covering: Call Wall resistance is anchored at {c_wall_str} CE. "
+            f"A sustain above ₹{(float(call_wall or 0) + 20):,.0f} forces Call writers to cover. "
+            f"3) Downside Unwinding: Put Wall support is anchored at {p_wall_str} PE. "
+            f"A breach below ₹{(float(put_wall or 0) - 20):,.0f} triggers Put unwinding. "
+            f"4) Expiry Pinning Gravity: Max Pain sits at {mp_str}."
+        )
+
+        if live_market_state in ("BULLISH_SHORT_COVERING_EXPLOSION", "BULLISH_PUT_WRITING_DOMINANCE", "BULLISH_MOMENTUM_EXPANSION", "CALL_WRITERS_SQUEEZE_RISK", "MILD_BULLISH_ACCUMULATION"):
+            live_quant_sugg = (
+                f"BULLISH MOMENTUM ({live_market_state.replace('_', ' ')}): Spot up {spot_from_open:+.1f} pts ({spot_pct_from_open:+.2f}%). "
+                f"Favor Buy-on-Dips near ₹{max(float(put_wall or 0), cur_atm - 40):,.0f} or Bull Put Credit Spread ({p_wall_str} PE / {float(put_wall or 0) - 150:.0f} PE). "
+                f"DO NOT SHORT against active Put writing flow ({oi_diff_lakhs:+.2f}L Net PE)."
+            )
+        elif live_market_state in ("BEARISH_LONG_UNWINDING_BREAKDOWN", "BEARISH_CALL_WRITING_PRESSURE", "BEARISH_MOMENTUM_BREAKDOWN", "PUT_WRITERS_UNDER_THREAT", "MILD_BEARISH_SUPPLY"):
+            live_quant_sugg = (
+                f"BEARISH SUPPLY ({live_market_state.replace('_', ' ')}): Spot down {spot_from_open:+.1f} pts ({spot_pct_from_open:+.2f}%). "
+                f"Favor Sell-on-Rallies near ₹{min(float(call_wall or 0), cur_atm + 40):,.0f} or Bear Call Credit Spread ({c_wall_str} CE / {float(call_wall or 0) + 150:.0f} CE). "
+                f"Downside Put Wall support at ₹{p_wall_str}."
+            )
+        else:
+            live_quant_sugg = (
+                f"RANGE / THETA HARVESTING: Spot is balanced between Put Wall {p_wall_str} PE and Call Wall {c_wall_str} CE with Max Pain at {mp_str}. "
+                f"Favor Iron Condor / Short Straddle outside [{p_wall_str} PE – {c_wall_str} CE] to harvest theta decay; switch directional only on a breakout outside [₹{lower_be:,.0f}, ₹{upper_be:,.0f}]."
+            )
+
+        live_analysis = {
+            "market_state": live_market_state,
+            "what_is_happening": live_what_is,
+            "what_could_happen": live_what_could,
+            "quant_suggestion": live_quant_sugg,
+            "spot_price": spot_p,
+            "atm_strike": cur_atm,
+            "straddle_premium": atm_straddle,
+            "atm_ce_ltp": atm_ce_ltp,
+            "atm_pe_ltp": atm_pe_ltp,
+            "near_atm_pcr": near_atm_pcr,
+            "overall_pcr": overall_pcr,
+            "chg_oi_pcr": chg_oi_pcr,
+            "call_wall": call_wall,
+            "put_wall": put_wall,
+            "max_pain": max_pain,
+            "net_pe_oi_chg": net_pe_oi_chg,
+            "net_ce_oi_chg": net_ce_oi_chg,
+            "spot_from_open": spot_from_open,
+            "spot_pct_from_open": spot_pct_from_open,
+            "strad_decay_pct": strad_decay_pct,
+            "updated_at_ist": format_ist()
+        }
+
+        # Overlay live narrative on latest snapshot so UI receives up-to-the-second state
+        if latest:
+            latest = dict(latest)
+            latest["market_state"] = live_market_state
+            latest["what_is_happening"] = live_what_is
+            latest["what_could_happen"] = live_what_could
+            latest["quant_suggestion"] = live_quant_sugg
+            latest["spot_price"] = spot_p
+            latest["atm_strike"] = cur_atm
+            latest["straddle_premium"] = atm_straddle
+            latest["atm_ce_ltp"] = atm_ce_ltp
+            latest["atm_pe_ltp"] = atm_pe_ltp
+            latest["near_atm_pcr"] = near_atm_pcr
+            latest["call_wall"] = call_wall
+            latest["put_wall"] = put_wall
+            latest["max_pain"] = max_pain
+
         res = {
             "status": dashboard_status,
             "reason": dashboard_reason,
@@ -1919,16 +2052,17 @@ class NiftyAnalyticsEngine:
             "interval_mode": interval_mode,
             "interval_rationale": mode_rationale,
             "available_intervals": ["15m", "30m", "50m"],
-            "snapshots_count": len(snaps),
+            "snapshots_count": len(interval_snaps),
             "latest_snapshot": latest,
             "opening_snapshot": first,
+            "live_analysis": live_analysis,
             "live_spot": live_spot,
             "live_synced_metrics": live_synced_metrics,
             "intraday_ml": intraday_ml_res,
             "is_market_open": market_open,
             "scheduled_slots": schedule_slots,
             "scheduled_50m_slots": schedule_slots,
-            "snapshots": snaps,
+            "snapshots": interval_snaps,
             "advanced_intraday": advanced_intra,
         }
         with self._lock:

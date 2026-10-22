@@ -1939,7 +1939,15 @@ class StateEngine:
 
         active_t1_r_list = []
         for p in active:
-            cp = float(p.get("current_price") or p["entry_price"])
+            sym = (p.get("symbol") or "").strip().upper()
+            clean_sym = sym.replace(".NS", "").replace(".BO", "").strip()
+            live_px = None
+            try:
+                from engines.kotak_neo_engine import kotak_neo_engine
+                live_px = kotak_neo_engine.get_live_price(clean_sym) or kotak_neo_engine.get_live_price(sym)
+            except Exception:
+                pass
+            cp = float(live_px or p.get("current_price") or p["entry_price"])
             ep = float(p["entry_price"])
             sl = float(p["stop_loss"])
             orig_sl = float(p.get("original_stop_loss") or sl)
@@ -2009,6 +2017,7 @@ class StateEngine:
                 "t1_realized_pnl": round(active_t1_pnl, 2),
                 "t1_booked_count": t1_booked_count,
                 "unrealized_pnl": round(unrealized, 2),
+                "current_equity": round(base_capital + total_realized_pnl + unrealized, 2),
                 "total_invested": round(total_invested, 2),
                 "available_cash": available_cash,
                 "max_slots": max_slots,

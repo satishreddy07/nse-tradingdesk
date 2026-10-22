@@ -9977,6 +9977,7 @@
       const activeBtn = mode === '15m' ? b15 : (mode === '50m' ? b50 : b30);
       if (activeBtn) activeBtn.className = "px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-amber-500 text-black shadow-md transition";
       updateIntradayIntervalHeaders(currentIntradayInterval);
+      niftyIntradayCache = null;
       loadIntradayExpiryDesk(false);
     }
 
@@ -10122,26 +10123,28 @@
         oiFlowSub.innerText = `PE: ${(peChg / 100000).toFixed(1)}L vs CE: ${(ceChg / 100000).toFixed(1)}L`;
       }
 
+      const liveAn = data.live_analysis || {};
       const regEl = document.getElementById('intra-kpi-regime');
       const ivEl = document.getElementById('intra-kpi-iv');
-      const stateText = (latest.market_state || 'BALANCED').replace(/_/g, ' ');
+      const activeState = liveAn.market_state || latest.market_state || 'BALANCED';
+      const stateText = activeState.replace(/_/g, ' ');
       if (regEl) {
         regEl.innerText = stateText;
-        const isBullish = /BULLISH|SQUEEZE|ACCUMULATION/.test(latest.market_state || '');
-        const isBearish = /BEARISH|SUPPLY|UNWINDING/.test(latest.market_state || '');
+        const isBullish = /BULLISH|SQUEEZE|ACCUMULATION/.test(activeState);
+        const isBearish = /BEARISH|SUPPLY|UNWINDING/.test(activeState);
         regEl.className = `text-base sm:text-lg font-mono font-bold mt-1 truncate ${isBullish ? 'text-emerald-400' : (isBearish ? 'text-rose-400' : 'text-amber-300')}`;
       }
       if (ivEl) ivEl.innerText = `ATM IV: ${(latest.atm_iv || 0).toFixed(2)}% | Skew: ${(latest.iv_skew || 0) >= 0 ? '+' : ''}${(latest.iv_skew || 0).toFixed(2)}%`;
 
-      // Narrative Cards
+      // Narrative Cards (Real-time Live Analysis)
       const slotTag = document.getElementById('intra-latest-slot-tag');
-      if (slotTag) slotTag.innerText = `Slot ${latest.slot_time || '--'} IST`;
+      if (slotTag) slotTag.innerText = latest.slot_time ? `Slot ${latest.slot_time} IST (Live Synced)` : 'Live Analysis';
       const whEl = document.getElementById('intra-what-happening');
-      if (whEl) whEl.innerText = latest.what_is_happening || 'No intraday snapshot recorded yet.';
+      if (whEl) whEl.innerText = liveAn.what_is_happening || latest.what_is_happening || 'No intraday snapshot recorded yet.';
       const wchEl = document.getElementById('intra-what-could-happen');
-      if (wchEl) wchEl.innerText = latest.what_could_happen || 'Click "Capture Slot Now" to analyze live weekly option chain.';
+      if (wchEl) wchEl.innerText = liveAn.what_could_happen || latest.what_could_happen || 'Click "Capture Slot Now" to analyze live weekly option chain.';
       const qsEl = document.getElementById('intra-quant-suggestion');
-      if (qsEl) qsEl.innerText = latest.quant_suggestion || '--';
+      if (qsEl) qsEl.innerText = liveAn.quant_suggestion || latest.quant_suggestion || '--';
 
       // Advanced Intraday Precision Suite Rendering (VWAP, ORB, CHOP, GEX, Sectoral Breadth)
       const adv = data.advanced_intraday || {};
@@ -24146,14 +24149,79 @@
           if (typeof data.is_market_open === 'boolean') {
             window.isServerMarketOpen = data.is_market_open;
           }
-          if (data.intraday && data.intraday.nifty_spot > 0) {
-            const spot = Number(data.intraday.nifty_spot);
-            const formatted = '₹' + spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            updateNiftySpotAtmCard(spot, null, null, null);
-            const intraBadge = document.getElementById('intraday-spot-badge');
-            if (intraBadge) intraBadge.innerText = `NIFTY: ${formatted}`;
+          if (data.intraday) {
+            const intra = data.intraday;
+            if (intra.nifty_spot > 0) {
+              const spot = Number(intra.nifty_spot);
+              const formatted = '₹' + spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              updateNiftySpotAtmCard(spot, null, null, null);
+              const intraBadge = document.getElementById('intraday-spot-badge');
+              if (intraBadge) intraBadge.innerText = `NIFTY: ${formatted}`;
 
-            updateOptionsDeskStreamIndicator(spot, data.is_market_open, 'KOTAK_NEO_STREAM', tickCount);
+              updateOptionsDeskStreamIndicator(spot, data.is_market_open, 'KOTAK_NEO_STREAM', tickCount);
+
+              // Live Intraday Desk Top KPIs & Analysis Synchronization
+              const spotEl = document.getElementById('intra-kpi-spot');
+              if (spotEl) {
+                spotEl.innerHTML = `₹${spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse align-middle">LIVE TICK</span>`;
+              }
+              const curAtm = intra.atm_strike || Math.round(spot / 50) * 50;
+              const spotSub = document.getElementById('intra-kpi-spot-sub');
+              if (spotSub) {
+                spotSub.innerText = `ATM ${curAtm} | Live Kotak Neo Tick Stream`;
+              }
+
+              if (intra.straddle_premium > 0) {
+                const stradEl = document.getElementById('intra-kpi-straddle');
+                if (stradEl) stradEl.innerText = `₹${Number(intra.straddle_premium).toFixed(2)}`;
+                const stradSub = document.getElementById('intra-kpi-straddle-sub');
+                if (stradSub && intra.atm_ce_ltp && intra.atm_pe_ltp) {
+                  stradSub.innerText = `${Number(intra.atm_ce_ltp).toFixed(1)} CE + ${Number(intra.atm_pe_ltp).toFixed(1)} PE (Live)`;
+                }
+              }
+
+              if (intra.near_atm_pcr > 0) {
+                const pcrEl = document.getElementById('intra-kpi-pcr');
+                if (pcrEl) {
+                  const npcr = Number(intra.near_atm_pcr);
+                  const opcr = Number(intra.overall_pcr || npcr);
+                  pcrEl.innerText = `${npcr.toFixed(2)} / ${opcr.toFixed(2)}`;
+                  pcrEl.className = `text-base sm:text-xl font-mono font-bold mt-1 ${npcr >= 1.1 ? 'text-emerald-400' : (npcr <= 0.9 ? 'text-rose-400' : 'text-amber-300')}`;
+                }
+              }
+
+              if (intra.put_wall && intra.call_wall) {
+                const wallsEl = document.getElementById('intra-kpi-walls');
+                if (wallsEl) wallsEl.innerText = `${intra.put_wall} PE / ${intra.call_wall} CE`;
+              }
+              if (intra.max_pain) {
+                const mpEl = document.getElementById('intra-kpi-maxpain');
+                if (mpEl) mpEl.innerText = `Max Pain: ${intra.max_pain} (Live)`;
+              }
+
+              if (intra.market_state) {
+                const regEl = document.getElementById('intra-kpi-regime');
+                if (regEl) {
+                  regEl.innerText = intra.market_state.replace(/_/g, ' ');
+                  const isBullish = /BULLISH|SQUEEZE|ACCUMULATION/.test(intra.market_state);
+                  const isBearish = /BEARISH|SUPPLY|UNWINDING/.test(intra.market_state);
+                  regEl.className = `text-base sm:text-lg font-mono font-bold mt-1 truncate ${isBullish ? 'text-emerald-400' : (isBearish ? 'text-rose-400' : 'text-amber-300')}`;
+                }
+              }
+
+              if (intra.what_is_happening) {
+                const whEl = document.getElementById('intra-what-happening');
+                if (whEl) whEl.innerText = intra.what_is_happening;
+              }
+              if (intra.what_could_happen) {
+                const wchEl = document.getElementById('intra-what-could-happen');
+                if (wchEl) wchEl.innerText = intra.what_could_happen;
+              }
+              if (intra.quant_suggestion) {
+                const qsEl = document.getElementById('intra-quant-suggestion');
+                if (qsEl) qsEl.innerText = intra.quant_suggestion;
+              }
+            }
           }
         } catch (e) { console.debug("Kotak spot update notice:", e); }
 
@@ -24176,14 +24244,47 @@
         // 3. Real-Time Active Holdings Live Cell Updates with Visual Flashes
         try {
           if (data.swing) {
-            if (typeof data.swing.total_unrealized_pnl === 'number') {
-              const unEl = document.getElementById('p1-kpi-unrealized');
-              if (unEl) {
-                const unPnl = data.swing.total_unrealized_pnl;
-                const sign = unPnl >= 0 ? '+' : '';
-                unEl.innerText = `${sign}₹${unPnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                unEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${unPnl > 0 ? 'text-emerald-400' : (unPnl < 0 ? 'text-rose-400' : 'text-slate-200')}`;
-              }
+            const unPnl = Number(data.swing.total_unrealized_pnl || 0);
+            const sign = unPnl >= 0 ? '+' : '';
+            const unText = `${sign}₹${unPnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            const unClass = unPnl > 0 ? 'text-emerald-400 font-bold' : (unPnl < 0 ? 'text-rose-400 font-bold' : 'text-slate-200 font-bold');
+
+            // 1. Update Top Bar Unrealized & Equity Pills
+            const topUnEl = document.getElementById('p1-top-unrealized');
+            if (topUnEl) {
+              topUnEl.innerText = `${sign}₹${Math.round(unPnl).toLocaleString('en-IN')}`;
+              topUnEl.className = unClass;
+            }
+            const topEqEl = document.getElementById('p1-top-equity');
+            if (topEqEl && data.swing.current_equity) {
+              topEqEl.innerText = `₹${Math.round(data.swing.current_equity).toLocaleString('en-IN')}`;
+            }
+            const topCashEl = document.getElementById('p1-top-cash');
+            if (topCashEl && data.swing.available_cash !== undefined) {
+              topCashEl.innerText = `₹${Math.round(data.swing.available_cash).toLocaleString('en-IN')}`;
+            }
+            const topInvEl = document.getElementById('p1-top-invested');
+            if (topInvEl && data.swing.total_invested !== undefined) {
+              topInvEl.innerText = `₹${Math.round(data.swing.total_invested).toLocaleString('en-IN')}`;
+            }
+
+            // 2. Update Portfolio Analytics Tab (tab-analytics) KPI Cards
+            const unEl = document.getElementById('p1-kpi-unrealized');
+            if (unEl) {
+              unEl.innerText = unText;
+              unEl.className = `text-lg sm:text-2xl font-mono font-bold mt-1 ${unPnl > 0 ? 'text-emerald-400' : (unPnl < 0 ? 'text-rose-400' : 'text-slate-200')}`;
+            }
+            const eqEl = document.getElementById('p1-kpi-equity');
+            if (eqEl && data.swing.current_equity) {
+              eqEl.innerText = `₹${Math.round(data.swing.current_equity).toLocaleString('en-IN')}`;
+            }
+            const cashEl = document.getElementById('p1-kpi-cash');
+            if (cashEl && data.swing.available_cash !== undefined) {
+              cashEl.innerText = `₹${Number(data.swing.available_cash).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+            }
+            const invEl = document.getElementById('p1-kpi-invested');
+            if (invEl && data.swing.total_invested !== undefined) {
+              invEl.innerText = `₹${Number(data.swing.total_invested).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
             }
 
             if (Array.isArray(data.swing.positions)) {
@@ -24346,6 +24447,16 @@
             window._optChainPollCounter = (window._optChainPollCounter || 0) + 1;
             if (window._optChainPollCounter % 2 === 0) {
               loadOptionsChainDesk(false, false);
+            }
+          }
+        } catch (e) {}
+
+        // 5b. Live Intraday Option Expiry Desk dynamic refresh when user is on Intraday Desk (every 10s)
+        try {
+          if (typeof currentModule !== 'undefined' && currentModule === 'module-intraday') {
+            window._intraDeskPollCounter = (window._intraDeskPollCounter || 0) + 1;
+            if (window._intraDeskPollCounter % 5 === 0) {
+              loadIntradayExpiryDesk(false);
             }
           }
         } catch (e) {}

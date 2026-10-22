@@ -711,7 +711,9 @@ class IntradayAnalyticsEngine:
           3. Sectoral Breadth & Divergence
         """
         now_ts = time.time()
-        if not force_refresh and self._cache and (now_ts - self._cache_ts) < self._cache_ttl_sec:
+        market_open, _ = NSEMarketCalendar.can_execute_trades()
+        effective_ttl = 15.0 if market_open else self._cache_ttl_sec
+        if not force_refresh and self._cache and (now_ts - self._cache_ts) < effective_ttl:
             return self._cache
 
         from engines.nifty_analytics_engine import nifty_analytics_engine

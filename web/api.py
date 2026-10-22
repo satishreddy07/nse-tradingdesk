@@ -2939,7 +2939,14 @@ def get_continuous_live_stream_endpoint():
             "cloud_sync": p.get("cloud_sync", "SYNCED")
         })
 
-    # 2. Intraday Desk: Real-time Nifty 50 & Bank Nifty Spot
+    # 2. Swing Portfolio Live Net Worth & Capital Allocation Metrics
+    tot_invested = sum(float(p.get("entry_price") or 0.0) * int(p.get("quantity") or 0) for p in active_positions)
+    p1_stats = state_engine.get_portfolio_stats(portfolio_type=P1_TYPE)
+    p1_realized = float(p1_stats.get("total_realized_pnl") or 0.0)
+    p1_equity = round(P1_BASE_CAPITAL + p1_realized + total_unrealized_pnl, 2)
+    p1_cash = round(max(0.0, P1_BASE_CAPITAL + p1_realized - tot_invested), 2)
+
+    # 3. Intraday Desk: Real-time Nifty 50, Bank Nifty & Live Options Analysis
     nifty_spot = float(
         kotak_neo_engine.get_live_price("NIFTY 50")
         or kotak_neo_engine.get_live_price("NIFTY")
@@ -2957,14 +2964,22 @@ def get_continuous_live_stream_endpoint():
         or kotak_neo_engine.get_live_price("BANKNIFTY")
         or 0.0
     )
+    cur_atm = int(round(nifty_spot / 50.0) * 50) if nifty_spot > 0 else 0
 
-    # 3. Options Desk: Portfolio Valuation
+    dash_live = {}
+    try:
+        dash_data = nifty_analytics_engine.get_intraday_expiry_dashboard(interval_mode="15m", force_refresh=False)
+        dash_live = dash_data.get("live_analysis") or dash_data.get("live_synced_metrics") or {}
+    except Exception as e:
+        logger.debug(f"Continuous stream intraday dash notice: {e}")
+
+    # 4. Options Desk: Portfolio Valuation
     opt_portfolio = nifty_analytics_engine.get_options_portfolio()
 
-    # 4. Near-ATM Option Ticks for Real-Time Strike Streaming
+    # 5. Near-ATM Option Ticks for Real-Time Strike Streaming
     opt_ticks = kotak_neo_engine.get_near_atm_option_ticks(spot_price=nifty_spot, strike_range=12)
 
-    # 5. Commodities Desk: Active MCX Contracts Live Quotes & Metrics
+    # 6. Commodities Desk: Active MCX Contracts Live Quotes & Metrics
     from engines.commodities_engine import commodities_engine
     if kotak_neo_engine._is_authenticated:
         try:
@@ -2992,11 +3007,28 @@ def get_continuous_live_stream_endpoint():
         "swing": {
             "positions_count": len(positions_summary),
             "total_unrealized_pnl": round(total_unrealized_pnl, 2),
+            "current_equity": p1_equity,
+            "total_invested": round(tot_invested, 2),
+            "available_cash": p1_cash,
+            "realized_pnl": round(p1_realized, 2),
             "positions": positions_summary
         },
         "intraday": {
             "nifty_spot": nifty_spot,
-            "banknifty_spot": banknifty_spot
+            "banknifty_spot": banknifty_spot,
+            "atm_strike": cur_atm or dash_live.get("atm_strike"),
+            "straddle_premium": float(dash_live.get("straddle_premium") or 0.0),
+            "atm_ce_ltp": float(dash_live.get("atm_ce_ltp") or 0.0),
+            "atm_pe_ltp": float(dash_live.get("atm_pe_ltp") or 0.0),
+            "near_atm_pcr": float(dash_live.get("near_atm_pcr") or 1.0),
+            "overall_pcr": float(dash_live.get("overall_pcr") or 1.0),
+            "call_wall": dash_live.get("call_wall"),
+            "put_wall": dash_live.get("put_wall"),
+            "max_pain": dash_live.get("max_pain"),
+            "market_state": dash_live.get("market_state", "BALANCED_TWO_WAY_STRADDLE"),
+            "what_is_happening": dash_live.get("what_is_happening", ""),
+            "what_could_happen": dash_live.get("what_could_happen", ""),
+            "quant_suggestion": dash_live.get("quant_suggestion", "")
         },
         "options": {
             "active_strategies_count": len(opt_portfolio.get("active_strategies", [])),

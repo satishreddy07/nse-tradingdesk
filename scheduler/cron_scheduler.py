@@ -686,16 +686,18 @@ def _intraday_collector_watchdog():
                 # Active market window: 09:15 to 15:35 IST
                 if 555 <= mins <= 935:
                     from engines.nifty_analytics_engine import nifty_analytics_engine
+                    # Reconcile both 15m fine-grained slots and 30m standard slots
+                    nifty_analytics_engine.auto_gapfill_missed_intraday_slots(interval_mode="15m")
                     nifty_analytics_engine.auto_gapfill_missed_intraday_slots(interval_mode="30m")
-                    active_slot = nifty_analytics_engine._determine_current_slot(dt_now, interval_mode="30m")
+                    active_slot = nifty_analytics_engine._determine_current_slot(dt_now, interval_mode="15m")
                     if active_slot:
                         today_str = dt_now.strftime("%Y-%m-%d")
                         snaps = nifty_analytics_engine._get_snapshots_for_date(today_str)
                         existing_slots = {s["slot_time"] for s in snaps}
                         if active_slot not in existing_slots:
-                            logger.info(f"🛡️ [Watchdog] Capturing active slot {active_slot}...")
+                            logger.info(f"🛡️ [Watchdog] Capturing active slot {active_slot} (15m interval)...")
                             nifty_analytics_engine.capture_intraday_50min_snapshot(
-                                slot_override=active_slot, sync_cloud=True, interval_mode="30m"
+                                slot_override=active_slot, sync_cloud=True, interval_mode="15m"
                             )
 
                     # Monitor Intraday Options Strategy Legs for Stop Loss & Price-Triggered Re-Entry
