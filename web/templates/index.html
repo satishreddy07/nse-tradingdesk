@@ -5916,7 +5916,10 @@
         <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 sm:p-4 overflow-hidden">
           <div class="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
             <h4 class="text-xs font-bold text-slate-300 uppercase font-mono">Closed Strategies History</h4>
-            <span class="text-[10px] font-mono text-slate-400">Realized Performance Ledger</span>
+            <span class="text-[10px] font-mono text-cyan-400 flex items-center gap-1">
+              <span>💡</span>
+              <span>Click any trade row to inspect Strikes, Stoploss & Targets</span>
+            </span>
           </div>
           <div class="overflow-x-auto custom-scroll">
             <table class="w-full text-left text-xs text-slate-300 font-mono">
@@ -14508,17 +14511,276 @@
           closedTbody.innerHTML = closedList.map(st => {
             const isProfit = (st.realized_pnl || 0) >= 0;
             const pnlCls = isProfit ? 'text-emerald-400' : 'text-rose-400';
+
+            // Parse constituent legs
+            let legs = Array.isArray(st.legs) && st.legs.length > 0 ? st.legs : [];
+            if (legs.length === 0 && st.legs_json) {
+              try {
+                legs = typeof st.legs_json === 'string' ? JSON.parse(st.legs_json) : st.legs_json;
+              } catch (e) {
+                legs = [];
+              }
+            }
+
+            // Duration calculation
+            let durationStr = '--';
+            const entryTime = st.entry_time || st.created_at || '';
+            const exitTime = st.exit_time || st.closed_at || '';
+            if (entryTime && exitTime) {
+              try {
+                const sDt = new Date(entryTime.replace(' IST', '').replace('T', ' '));
+                const eDt = new Date(exitTime.replace(' IST', '').replace('T', ' '));
+                const diffMs = eDt - sDt;
+                if (!isNaN(diffMs) && diffMs > 0) {
+                  const totalMins = Math.floor(diffMs / 60000);
+                  const hrs = Math.floor(totalMins / 60);
+                  const mins = totalMins % 60;
+                  durationStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+                }
+              } catch (err) {}
+            }
+
+            // Spot telemetry
+            const entrySpot = Number(st.spot_at_entry || 0);
+            const exitSpot = Number(st.exit_spot || st.spot_at_exit || 0);
+            const spotDiff = (entrySpot > 0 && exitSpot > 0) ? (exitSpot - entrySpot) : null;
+            const spotDiffPct = (spotDiff !== null && entrySpot > 0) ? ((spotDiff / entrySpot) * 100) : null;
+
+            // Targets and Stop Loss
+            const targetPnl = Number(st.target_pnl || 0);
+            const stoplossPnl = Number(st.stoploss_pnl || 0);
+            const trailingStop = st.trailing_stop_pnl != null ? Number(st.trailing_stop_pnl) : null;
+            const highestPnl = st.highest_pnl_reached != null ? Number(st.highest_pnl_reached) : null;
+
+            // Reason badge color
+            const reason = String(st.exit_reason || 'EXIT');
+            let reasonBadgeCls = "bg-slate-800 text-slate-300 border-slate-700";
+            if (reason.includes("TARGET")) reasonBadgeCls = "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
+            else if (reason.includes("STOPLOSS")) reasonBadgeCls = "bg-rose-500/20 text-rose-300 border-rose-500/40";
+            else if (reason.includes("MANUAL")) reasonBadgeCls = "bg-amber-500/20 text-amber-300 border-amber-500/40";
+
             return `
-              <tr class="hover:bg-slate-800/30 transition">
-                <td class="p-2 font-bold text-white">${st.strategy_name} <span class="text-[10px] text-slate-500">(${st.strategy_id})</span></td>
+              <!-- Main Row (Clickable) -->
+              <tr id="closed-strat-row-${st.strategy_id}" onclick="toggleClosedStrategyDetail('${st.strategy_id}')" class="hover:bg-slate-800/40 cursor-pointer transition select-none group border-b border-slate-800/40">
+                <td class="p-2 font-bold text-white">
+                  <div class="flex items-center gap-2">
+                    <span id="closed-strat-chevron-${st.strategy_id}" class="text-slate-500 group-hover:text-cyan-400 transition-transform duration-200 inline-block text-xs">▶</span>
+                    <div>
+                      <div class="group-hover:text-cyan-300 transition">${st.strategy_name}</div>
+                      <div class="text-[9px] text-slate-500 font-normal font-mono">${st.strategy_id}</div>
+                    </div>
+                  </div>
+                </td>
                 <td class="p-2 text-slate-300">${st.expiry_date || '--'}</td>
-                <td class="p-2 text-slate-400">${(st.entry_time || st.created_at || '').slice(0, 16) || '--'}</td>
-                <td class="p-2 text-slate-400">${(st.exit_time || st.closed_at || '').slice(0, 16) || '--'}</td>
-                <td class="p-2 text-amber-300 font-bold">${st.exit_spot || st.spot_at_exit || '--'}</td>
+                <td class="p-2 text-slate-400">${entryTime.slice(0, 16) || '--'}</td>
+                <td class="p-2 text-slate-400">${exitTime.slice(0, 16) || '--'}</td>
+                <td class="p-2 text-amber-300 font-bold">${exitSpot > 0 ? exitSpot.toFixed(2) : '--'}</td>
                 <td class="p-2 font-extrabold ${pnlCls}">${isProfit ? '+' : ''}₹${Number(st.realized_pnl || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                 <td class="p-2 font-bold ${pnlCls}">${(st.roi_pct || 0) >= 0 ? '+' : ''}${Number(st.roi_pct || 0).toFixed(2)}%</td>
                 <td class="p-2 text-right">
-                  <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">${st.exit_reason || 'EXIT'}</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${reasonBadgeCls}">${reason}</span>
+                </td>
+              </tr>
+
+              <!-- Expandable Details Row -->
+              <tr id="closed-strat-detail-${st.strategy_id}" class="hidden bg-slate-950 border-y-2 border-cyan-500/40">
+                <td colspan="8" class="p-3 sm:p-4 space-y-3 font-mono">
+                  
+                  <!-- Top Banner: Meta, Timing & Modal Action -->
+                  <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">${st.symbol || 'NIFTY'}</span>
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">${st.expiry_type || 'WEEKLY'} (${st.expiry_date || '--'})</span>
+                      <span class="text-[11px] text-slate-400">⏱️ Duration: <b class="text-white">${durationStr}</b></span>
+                      <span class="text-[11px] text-slate-400">📅 Entry: <b class="text-slate-300">${entryTime.slice(0, 16)}</b> ➔ Exit: <b class="text-slate-300">${exitTime.slice(0, 16)}</b></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <button onclick="event.stopPropagation(); openStrategyDetailModal('${st.strategy_id}')" class="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[11px] font-bold transition flex items-center gap-1">
+                        <span>📊 Full Payoff Analytics</span>
+                      </button>
+                      <button onclick="event.stopPropagation(); toggleClosedStrategyDetail('${st.strategy_id}')" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-[11px] transition">
+                        ✕ Close
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 4-Block Institutional Metrics Grid: Targets, Stoploss, Spot & Capital -->
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+                    
+                    <!-- Card 1: Targets & Stop Loss -->
+                    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                      <div class="text-[10px] uppercase font-bold text-amber-400 flex items-center justify-between">
+                        <span>🎯 Targets & Stop Loss</span>
+                        <span class="text-[9px] text-slate-500">Execution Plan</span>
+                      </div>
+                      <div class="mt-1.5 space-y-1">
+                        <div class="flex justify-between items-center text-[11px]">
+                          <span class="text-slate-400">Target Profit:</span>
+                          <b class="text-emerald-400">${targetPnl > 0 ? '+₹' + Math.round(targetPnl).toLocaleString('en-IN') : '--'}</b>
+                        </div>
+                        <div class="flex justify-between items-center text-[11px]">
+                          <span class="text-slate-400">Initial Stoploss:</span>
+                          <b class="text-rose-400">${stoplossPnl !== 0 ? '-₹' + Math.abs(Math.round(stoplossPnl)).toLocaleString('en-IN') : '--'}</b>
+                        </div>
+                        <div class="flex justify-between items-center text-[11px]">
+                          <span class="text-slate-400">🛡️ Trailing SL:</span>
+                          <b class="${(trailingStop || 0) >= 0 ? 'text-emerald-400' : 'text-amber-400'}">${trailingStop !== null ? ((trailingStop >= 0 ? '+' : '') + '₹' + Math.round(trailingStop).toLocaleString('en-IN')) : '--'}</b>
+                        </div>
+                        <div class="flex justify-between items-center text-[10px]">
+                          <span class="text-slate-500">Trailing State:</span>
+                          <span class="px-1 py-0.2 rounded text-[9px] font-bold bg-slate-800 text-slate-300 border border-slate-700">${st.trailing_status || 'INACTIVE'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Card 2: Realized Outcome & Return -->
+                    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                      <div class="text-[10px] uppercase font-bold ${pnlCls} flex items-center justify-between">
+                        <span>💰 Realized Outcome</span>
+                        <span class="text-[9px]">${(st.roi_pct || 0) >= 0 ? '+' : ''}${Number(st.roi_pct || 0).toFixed(2)}% ROI</span>
+                      </div>
+                      <div class="mt-1.5 space-y-1">
+                        <div class="flex justify-between items-center text-[11px]">
+                          <span class="text-slate-400">Realized PnL:</span>
+                          <b class="${pnlCls} text-sm font-black">${isProfit ? '+' : ''}₹${Number(st.realized_pnl || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+                        </div>
+                        <div class="flex justify-between items-center text-[11px]">
+                          <span class="text-slate-400">Peak PnL Hit:</span>
+                          <b class="text-emerald-300">${highestPnl !== null ? ((highestPnl >= 0 ? '+' : '') + '₹' + Math.round(highestPnl).toLocaleString('en-IN')) : '--'}</b>
+                        </div>
+                        <div class="flex justify-between items-center text-[11px]">
+                          <span class="text-slate-400">Max Profit / Loss:</span>
+                          <span class="text-slate-300 text-[10px]"><b class="text-emerald-400">₹${Math.round(st.max_profit || 0).toLocaleString('en-IN')}</b> / <b class="text-rose-400">₹${Math.round(st.max_loss || 0).toLocaleString('en-IN')}</b></span>
+                        </div>
+                        <div class="flex justify-between items-center text-[10px]">
+                          <span class="text-slate-500">Risk/Reward:</span>
+                          <span class="text-slate-400">${st.risk_reward || '--'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Card 3: Spot Price Trajectory -->
+                    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                      <div class="text-[10px] uppercase font-bold text-cyan-400 flex items-center justify-between">
+                        <span>📍 Spot Trajectory</span>
+                        <span class="text-[9px] text-slate-500">NIFTY 50</span>
+                      </div>
+                      <div class="mt-1.5 space-y-1">
+                        <div class="flex justify-between items-center text-[11px]">
+                          <span class="text-slate-400">Entry Spot:</span>
+                          <b class="text-white">${entrySpot > 0 ? '₹' + entrySpot.toFixed(2) : '--'}</b>
+                        </div>
+                        <div class="flex justify-between items-center text-[11px]">
+                          <span class="text-slate-400">Exit Spot:</span>
+                          <b class="text-amber-300 font-bold">${exitSpot > 0 ? '₹' + exitSpot.toFixed(2) : '--'}</b>
+                        </div>
+                        <div class="flex justify-between items-center text-[11px]">
+                          <span class="text-slate-400">Spot Shift:</span>
+                          <b class="${spotDiff !== null && spotDiff >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                            ${spotDiff !== null ? `${spotDiff >= 0 ? '+' : ''}${spotDiff.toFixed(1)} pts (${spotDiffPct >= 0 ? '+' : ''}${spotDiffPct.toFixed(2)}%)` : '--'}
+                          </b>
+                        </div>
+                        <div class="flex justify-between items-center text-[10px]">
+                          <span class="text-slate-500">Breakeven(s):</span>
+                          <span class="text-slate-300 text-[10px]">${Array.isArray(st.breakevens_list) && st.breakevens_list.length > 0 ? st.breakevens_list.join(', ') : (st.breakevens || '--')}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Card 4: Capital & Exit Reason -->
+                    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                      <div class="text-[10px] uppercase font-bold text-violet-400 flex items-center justify-between">
+                        <span>💼 Capital & Trigger</span>
+                        <span class="text-[9px] text-slate-500">Audit Trail</span>
+                      </div>
+                      <div class="mt-1.5 space-y-1">
+                        <div class="flex justify-between items-center text-[11px]">
+                          <span class="text-slate-400">Net Premium:</span>
+                          <b class="${(st.net_premium || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">₹${Math.round(st.net_premium || 0).toLocaleString('en-IN')} <span class="text-[9px] font-normal text-slate-500">${(st.net_premium || 0) >= 0 ? 'Credit' : 'Debit'}</span></b>
+                        </div>
+                        <div class="flex justify-between items-center text-[11px]">
+                          <span class="text-slate-400">Margin Used:</span>
+                          <b class="text-slate-300">₹${Math.round(st.est_margin || 0).toLocaleString('en-IN')}</b>
+                        </div>
+                        <div class="pt-1 border-t border-slate-800">
+                          <div class="text-[9px] text-slate-500 uppercase">Exit Reason:</div>
+                          <div class="text-[10px] font-bold text-white leading-tight mt-0.5 break-words">${reason}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  <!-- Strikes & Constituent Strategy Legs Table -->
+                  <div class="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden mt-2">
+                    <div class="px-3 py-1.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between text-[11px]">
+                      <span class="font-bold text-slate-200">Constituent Strategy Legs & Strikes (${legs.length} Leg${legs.length > 1 ? 's' : ''})</span>
+                      <span class="text-[10px] text-slate-400">Entry Premium ➔ Exit Premium • Realized Leg P&L</span>
+                    </div>
+                    <div class="overflow-x-auto custom-scroll">
+                      <table class="w-full text-left text-[11px] font-mono text-slate-300">
+                        <thead class="bg-slate-950 text-[9px] uppercase text-slate-400 border-b border-slate-800/80">
+                          <tr>
+                            <th class="p-2">#</th>
+                            <th class="p-2">Action</th>
+                            <th class="p-2">Strike & Option</th>
+                            <th class="p-2">Qty (Lots)</th>
+                            <th class="p-2">Entry Price</th>
+                            <th class="p-2">Exit Price</th>
+                            <th class="p-2">Premium Diff</th>
+                            <th class="p-2 text-right">Leg Realized PnL</th>
+                            <th class="p-2 text-right">IV & Expiry</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/40">
+                          ${legs.length === 0 ? `<tr><td colspan="9" class="p-3 text-center text-slate-500">No leg breakdown recorded for this trade.</td></tr>` : 
+                            legs.map((lg, idx) => {
+                              const isBuy = lg.action === 'BUY';
+                              const actCls = isBuy ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+                              const enPx = Number(lg.entry_price || lg.price || 0);
+                              const exPx = Number(lg.exit_price !== undefined && lg.exit_price !== null ? lg.exit_price : (lg.current_price || enPx));
+                              const qty = Number(lg.qty || (lg.lots ? lg.lots * NIFTY_LOT_SIZE : NIFTY_LOT_SIZE));
+                              const lots = lg.lots || Math.round(qty / NIFTY_LOT_SIZE);
+
+                              let legPnl = (lg.leg_pnl !== undefined && lg.leg_pnl !== null && lg.leg_pnl !== 0) ? Number(lg.leg_pnl) : null;
+                              if (legPnl === null) {
+                                legPnl = isBuy ? (exPx - enPx) * qty : (enPx - exPx) * qty;
+                              }
+                              const legPnlCls = legPnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
+                              const diffPx = exPx - enPx;
+                              const diffPxPct = enPx > 0 ? ((diffPx / enPx) * 100) : 0;
+
+                              return `
+                                <tr class="hover:bg-slate-800/30">
+                                  <td class="p-2 text-slate-500 font-bold">L${idx + 1}</td>
+                                  <td class="p-2">
+                                    <span class="px-1.5 py-0.5 rounded text-[9px] font-black border ${actCls}">${lg.action}</span>
+                                  </td>
+                                  <td class="p-2 font-bold text-white">
+                                    <span>${lg.strike}</span> 
+                                    <span class="${lg.type === 'CE' ? 'text-cyan-400' : 'text-amber-400'}">${lg.type}</span>
+                                  </td>
+                                  <td class="p-2 text-slate-300">${qty} <span class="text-slate-500">(${lots}L)</span></td>
+                                  <td class="p-2 text-slate-300 font-semibold">₹${enPx.toFixed(2)}</td>
+                                  <td class="p-2 text-amber-300 font-bold">₹${exPx.toFixed(2)}</td>
+                                  <td class="p-2 text-[10px] ${diffPx >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                                    ${diffPx >= 0 ? '+' : ''}₹${diffPx.toFixed(2)} (${diffPxPct >= 0 ? '+' : ''}${diffPxPct.toFixed(1)}%)
+                                  </td>
+                                  <td class="p-2 text-right font-black ${legPnlCls} text-xs">
+                                    ${legPnl >= 0 ? '+' : ''}₹${Number(legPnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                  </td>
+                                  <td class="p-2 text-right text-[10px] text-slate-400">
+                                    ${lg.iv ? Number(lg.iv).toFixed(1) + '%' : '--'} • ${lg.expiry_date || st.expiry_date || '--'}
+                                  </td>
+                                </tr>
+                              `;
+                            }).join('')
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
                 </td>
               </tr>
             `;
@@ -14526,6 +14788,29 @@
         }
       }
     }
+
+    window.toggleClosedStrategyDetail = function(strategyId) {
+      const detailRow = document.getElementById(`closed-strat-detail-${strategyId}`);
+      const chevron = document.getElementById(`closed-strat-chevron-${strategyId}`);
+      const parentRow = document.getElementById(`closed-strat-row-${strategyId}`);
+      if (!detailRow) return;
+      const isHidden = detailRow.classList.contains('hidden');
+      if (isHidden) {
+        detailRow.classList.remove('hidden');
+        if (chevron) {
+          chevron.innerText = '▼';
+          chevron.className = 'text-cyan-400 transition-transform duration-200 inline-block text-xs';
+        }
+        if (parentRow) parentRow.classList.add('bg-slate-800/60');
+      } else {
+        detailRow.classList.add('hidden');
+        if (chevron) {
+          chevron.innerText = '▶';
+          chevron.className = 'text-slate-500 group-hover:text-cyan-400 transition-transform duration-200 inline-block text-xs';
+        }
+        if (parentRow) parentRow.classList.remove('bg-slate-800/60');
+      }
+    };
 
     async function resetOptionsPortfolio() {
       if (!confirm("Are you sure you want to RESET the Options Portfolio?\n\nThis will KEEP all ACTIVE strategies intact, delete all closed strategy history, and reset the equity curve to Base Capital ₹2,00,000 (tracking only future realized PnL).")) {
@@ -14633,42 +14918,85 @@
         g = { delta: netDelta, theta: netTheta, gamma: netGamma, vega: netVega };
       }
 
+      const isClosed = s.status === 'CLOSED';
       if (kpisEl) {
-        kpisEl.innerHTML = `
-          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-            <div class="text-[10px] text-slate-400 uppercase">${s.status === 'ACTIVE' ? 'Unrealized MTM' : 'Realized PnL'}</div>
-            <div class="text-base font-extrabold ${pnlCls}">${isProfit ? '+' : ''}₹${Number(pnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-            <div class="text-[10px] text-slate-400">ROI: <b class="${pnlCls}">${(s.roi_pct || 0) >= 0 ? '+' : ''}${Number(s.roi_pct || 0).toFixed(2)}%</b></div>
-          </div>
-          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-            <div class="text-[10px] text-slate-400 uppercase">Net Premium</div>
-            <div class="text-base font-extrabold text-white">₹${Math.round(s.net_premium || 0).toLocaleString('en-IN')}</div>
-            <div class="text-[10px] text-slate-500">${(s.net_premium || 0) >= 0 ? 'Credit Received' : 'Debit Paid'}</div>
-          </div>
-          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-            <div class="text-[10px] text-purple-400 uppercase">Delta & Theta</div>
-            <div class="text-xs font-bold text-purple-300 mt-1">Δ ${g.delta >= 0 ? '+' : ''}${Number(g.delta || 0).toFixed(2)} | Θ ${g.theta >= 0 ? '+' : ''}₹${Math.round(g.theta || 0)}/d</div>
-            <div class="text-[10px] text-slate-500">Directional & Decay Risk</div>
-          </div>
-          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-            <div class="text-[10px] text-cyan-400 uppercase">Gamma & Vega</div>
-            <div class="text-xs font-bold text-cyan-300 mt-1">Γ ${Number(g.gamma || 0).toFixed(4)} | V ${g.vega >= 0 ? '+' : ''}₹${Math.round(g.vega || 0)}/%</div>
-            <div class="text-[10px] text-slate-500">Curvature & Vol Risk</div>
-          </div>
-        `;
+        const targetPnl = Number(s.target_pnl || 0);
+        const stoplossPnl = Number(s.stoploss_pnl || 0);
+        const enSpot = Number(s.spot_at_entry || 0);
+        const exSpot = Number(s.exit_spot || s.spot_at_exit || 0);
+        const spotShift = (enSpot > 0 && exSpot > 0) ? (exSpot - enSpot) : null;
+
+        if (isClosed) {
+          kpisEl.innerHTML = `
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-slate-400 uppercase font-bold">Realized PnL</div>
+              <div class="text-base font-extrabold ${pnlCls}">${isProfit ? '+' : ''}₹${Number(pnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+              <div class="text-[10px] text-slate-400">ROI: <b class="${pnlCls}">${(s.roi_pct || 0) >= 0 ? '+' : ''}${Number(s.roi_pct || 0).toFixed(2)}%</b></div>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-amber-400 uppercase font-bold">🎯 Target & Stop Loss</div>
+              <div class="text-xs font-bold text-emerald-400 mt-0.5">Target: ${targetPnl > 0 ? '+₹' + Math.round(targetPnl).toLocaleString('en-IN') : '--'}</div>
+              <div class="text-[10px] font-bold text-rose-400">Stop Loss: ${stoplossPnl !== 0 ? '-₹' + Math.abs(Math.round(stoplossPnl)).toLocaleString('en-IN') : '--'}</div>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-cyan-400 uppercase font-bold">📍 Spot Trajectory</div>
+              <div class="text-xs font-bold text-white mt-0.5">${enSpot > 0 ? '₹' + enSpot.toFixed(1) : '--'} ➔ <span class="text-amber-300">${exSpot > 0 ? '₹' + exSpot.toFixed(1) : '--'}</span></div>
+              <div class="text-[10px] ${spotShift !== null && spotShift >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${spotShift !== null ? `${spotShift >= 0 ? '+' : ''}${spotShift.toFixed(1)} pts` : '--'}</div>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-purple-400 uppercase font-bold">Capital & Reason</div>
+              <div class="text-xs font-bold text-white mt-0.5">Margin: ₹${Math.round(s.est_margin || 0).toLocaleString('en-IN')}</div>
+              <div class="text-[10px] text-amber-300 truncate" title="${s.exit_reason || 'EXIT'}">${s.exit_reason || 'EXIT'}</div>
+            </div>
+          `;
+        } else {
+          kpisEl.innerHTML = `
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-slate-400 uppercase">Unrealized MTM</div>
+              <div class="text-base font-extrabold ${pnlCls}">${isProfit ? '+' : ''}₹${Number(pnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+              <div class="text-[10px] text-slate-400">ROI: <b class="${pnlCls}">${(s.roi_pct || 0) >= 0 ? '+' : ''}${Number(s.roi_pct || 0).toFixed(2)}%</b></div>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-slate-400 uppercase">Net Premium</div>
+              <div class="text-base font-extrabold text-white">₹${Math.round(s.net_premium || 0).toLocaleString('en-IN')}</div>
+              <div class="text-[10px] text-slate-500">${(s.net_premium || 0) >= 0 ? 'Credit Received' : 'Debit Paid'}</div>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-purple-400 uppercase">Delta & Theta</div>
+              <div class="text-xs font-bold text-purple-300 mt-1">Δ ${g.delta >= 0 ? '+' : ''}${Number(g.delta || 0).toFixed(2)} | Θ ${g.theta >= 0 ? '+' : ''}₹${Math.round(g.theta || 0)}/d</div>
+              <div class="text-[10px] text-slate-500">Directional & Decay Risk</div>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] text-cyan-400 uppercase">Gamma & Vega</div>
+              <div class="text-xs font-bold text-cyan-300 mt-1">Γ ${Number(g.gamma || 0).toFixed(4)} | V ${g.vega >= 0 ? '+' : ''}₹${Math.round(g.vega || 0)}/%</div>
+              <div class="text-[10px] text-slate-500">Curvature & Vol Risk</div>
+            </div>
+          `;
+        }
       }
 
       if (legsTbody) {
-        legsTbody.innerHTML = (s.legs || []).map(lg => {
+        let legs = Array.isArray(s.legs) && s.legs.length > 0 ? s.legs : [];
+        if (legs.length === 0 && s.legs_json) {
+          try { legs = typeof s.legs_json === 'string' ? JSON.parse(s.legs_json) : s.legs_json; } catch (e) { legs = []; }
+        }
+        legsTbody.innerHTML = legs.map((lg, idx) => {
           const isBuy = lg.action === 'BUY';
-          const lp = lg.unrealized_pnl || 0;
+          const enPx = Number(lg.entry_price || lg.price || 0);
+          const exPx = Number(lg.exit_price !== undefined && lg.exit_price !== null ? lg.exit_price : (lg.current_price || enPx));
+          const qty = Number(lg.qty || (lg.lots ? lg.lots * NIFTY_LOT_SIZE : NIFTY_LOT_SIZE));
+          let lp = isClosed ? Number(lg.leg_pnl || 0) : Number(lg.unrealized_pnl || 0);
+          if (isClosed && lp === 0 && exPx > 0 && enPx > 0) {
+            lp = isBuy ? (exPx - enPx) * qty : (enPx - exPx) * qty;
+          }
           return `
             <tr class="hover:bg-slate-900/60 transition">
+              <td class="p-2 text-slate-500 font-bold">${idx + 1}</td>
               <td class="p-2 font-bold ${isBuy ? 'text-emerald-400' : 'text-rose-400'}">${lg.action}</td>
-              <td class="p-2 font-bold text-white">${lg.strike} ${lg.type}</td>
-              <td class="p-2 text-slate-300">${lg.qty} <span class="text-slate-500">(${Math.round(lg.qty / NIFTY_LOT_SIZE)}L)</span></td>
-              <td class="p-2 text-slate-300">₹${Number(lg.entry_price || 0).toFixed(2)}</td>
-              <td class="p-2 text-white font-bold">₹${Number(lg.current_price || lg.entry_price || 0).toFixed(2)}</td>
+              <td class="p-2 font-bold text-white">${lg.strike} <span class="${lg.type === 'CE' ? 'text-cyan-400' : 'text-amber-400'}">${lg.type}</span></td>
+              <td class="p-2 text-slate-300">${qty} <span class="text-slate-500">(${Math.round(qty / NIFTY_LOT_SIZE)}L)</span></td>
+              <td class="p-2 text-slate-300">₹${enPx.toFixed(2)}</td>
+              <td class="p-2 ${isClosed ? 'text-amber-300' : 'text-white'} font-bold">₹${exPx.toFixed(2)}</td>
               <td class="p-2 text-right font-bold ${lp >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${lp >= 0 ? '+' : ''}₹${Number(lp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
             </tr>
           `;
