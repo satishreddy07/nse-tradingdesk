@@ -7365,7 +7365,11 @@ class NiftyAnalyticsEngine:
     def get_nifty_prev_close(cls) -> float:
         """
         Retrieves the authentic previous trading session close for NIFTY 50 (^NSEI).
-        Cached per calendar date in IST for sub-microsecond speed.
+        Dynamically resolves from:
+        1. Official Master DB OHLCV store (evaluating bar date vs current trading session date).
+        2. Today's locked premarket baseline spot price (08:45 AM IST lock).
+        3. Real-time Yahoo Finance net change baseline (regularMarketPrice - fulldayChange).
+        Cached per calendar date in IST for sub-microsecond retrieval speed.
         """
         now_date_str = now_ist().strftime("%Y-%m-%d")
         cached = getattr(cls, "_cached_nifty_prev_close", None)
@@ -7374,45 +7378,80 @@ class NiftyAnalyticsEngine:
 
         prev_close_val = None
 
-        # 1. Fast Yahoo chart meta (authoritative official NSE previous close)
+        # 1. State Engine Master Store (Authoritative official NSE EOD bar history)
         try:
-            import urllib.request
-            import json
-            req = urllib.request.Request(
-                "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?range=1d&interval=1d",
-                headers={"User-Agent": "Mozilla/5.0"}
-            )
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                data = json.loads(resp.read().decode())
-                meta = data["chart"]["result"][0]["meta"]
-                pc = meta.get("chartPreviousClose") or meta.get("previousClose")
-                if pc and float(pc) > 0:
-                    prev_close_val = round(float(pc), 2)
+            from engines.state_engine import state_engine
+            with state_engine._lock:
+                with state_engine._get_connection() as conn:
+                    # Check premarket spot price locked for today if available
+                    lock_row = conn.execute(
+                        "SELECT value_json FROM system_kv_store WHERE key = ?",
+                        (f"nifty_prediction_{now_date_str}",)
+                    ).fetchone()
+                    if lock_row and lock_row["value_json"]:
+                        import json
+                        pj = json.loads(lock_row["value_json"])
+                        pre_spot = float(pj.get("premarket_spot_price") or 0.0)
+                        if pre_spot > 0:
+                            prev_close_val = round(pre_spot, 2)
+
+                    if not prev_close_val or prev_close_val <= 0:
+                        row = conn.execute(
+                            "SELECT last_close, prev_close, last_bar_date FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY')"
+                        ).fetchone()
+                        if row:
+                            bar_date = str(row["last_bar_date"] or "")
+                            if bar_date < now_date_str and float(row["last_close"] or 0) > 0:
+                                prev_close_val = round(float(row["last_close"]), 2)
+                            elif bar_date == now_date_str and float(row["prev_close"] or 0) > 0:
+                                prev_close_val = round(float(row["prev_close"]), 2)
+                            elif float(row["last_close"] or 0) > 0:
+                                prev_close_val = round(float(row["last_close"]), 2)
         except Exception:
             pass
 
-        # 2. Master DB ohlcv_master_store fallback
+        # 2. Yahoo Finance live baseline (regularMarketPrice - fulldayChange)
+        if not prev_close_val or prev_close_val <= 0:
+            try:
+                import urllib.request
+                import json
+                req = urllib.request.Request(
+                    "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?range=1d&interval=1d",
+                    headers={"User-Agent": "Mozilla/5.0"}
+                )
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    data = json.loads(resp.read().decode())
+                    meta = data["chart"]["result"][0]["meta"]
+                    rmp = meta.get("regularMarketPrice") or meta.get("fulldayPrice")
+                    chg = meta.get("fulldayChange") or meta.get("regularMarketChange")
+                    if rmp and chg is not None and float(rmp) > 0:
+                        derived_pc = round(float(rmp) - float(chg), 2)
+                        if derived_pc > 0:
+                            prev_close_val = derived_pc
+                    if not prev_close_val or prev_close_val <= 0:
+                        pc = meta.get("chartPreviousClose") or meta.get("previousClose")
+                        if pc and float(pc) > 0:
+                            prev_close_val = round(float(pc), 2)
+            except Exception:
+                pass
+
+        # 3. Last-resort fallback from latest available bar in ohlcv_master_store
         if not prev_close_val or prev_close_val <= 0:
             try:
                 from engines.state_engine import state_engine
                 with state_engine._lock:
                     with state_engine._get_connection() as conn:
                         row = conn.execute(
-                            "SELECT last_close, prev_close, last_bar_date FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY')"
+                            "SELECT last_close FROM ohlcv_master_store WHERE symbol IN ('^NSEI', 'NIFTY')"
                         ).fetchone()
-                        if row:
-                            if float(row["prev_close"] or 0) > 0:
-                                prev_close_val = round(float(row["prev_close"]), 2)
-                            elif float(row["last_close"] or 0) > 0:
-                                prev_close_val = round(float(row["last_close"]), 2)
+                        if row and float(row["last_close"] or 0) > 0:
+                            prev_close_val = round(float(row["last_close"]), 2)
             except Exception:
                 pass
 
-        if not prev_close_val or prev_close_val <= 0:
-            prev_close_val = 22888.95
-
-        cls._cached_nifty_prev_close = (now_date_str, prev_close_val)
-        return prev_close_val
+        if prev_close_val and prev_close_val > 0:
+            cls._cached_nifty_prev_close = (now_date_str, prev_close_val)
+        return prev_close_val or 22811.35
 
     def get_live_nifty_spot(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
