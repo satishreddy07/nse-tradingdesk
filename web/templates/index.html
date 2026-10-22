@@ -9516,11 +9516,19 @@
       try {
         const urlParams = new URLSearchParams(window.location.search);
         const modParam = urlParams.get('module') || (window.location.hash ? window.location.hash.replace('#', '') : null);
+        let modTarget = null;
         if (modParam) {
-          const modTarget = modParam.startsWith('module-') ? modParam : ('module-' + modParam);
+          modTarget = modParam.startsWith('module-') ? modParam : ('module-' + modParam);
           switchModule(modTarget);
           if (modTarget === 'module-options' && typeof loadOptionsChainDesk === 'function') loadOptionsChainDesk(false);
           else if (modTarget === 'module-intraday' && typeof loadIntradayExpiryDesk === 'function') loadIntradayExpiryDesk(false);
+          else if (modTarget === 'module-ml-performance' && typeof loadMLPerformanceData === 'function') loadMLPerformanceData(false);
+        }
+        const mltabParam = urlParams.get('mltab') || urlParams.get('ml_tab') || (modTarget === 'module-ml-performance' ? urlParams.get('tab') : null);
+        if (mltabParam && typeof switchMLPerfTab === 'function') {
+          setTimeout(() => {
+            switchMLPerfTab(mltabParam);
+          }, 200);
         }
         const subtabParam = urlParams.get('subtab');
         if (subtabParam && typeof switchOptionsSubTab === 'function') {
@@ -9529,7 +9537,7 @@
           }, 200);
         }
         const tabParam = urlParams.get('tab');
-        if (tabParam && typeof switchTab === 'function') {
+        if (tabParam && modTarget !== 'module-ml-performance' && typeof switchTab === 'function') {
           setTimeout(() => {
             switchTab(tabParam.startsWith('tab-') ? tabParam : ('tab-' + tabParam));
           }, 250);
