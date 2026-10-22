@@ -124,138 +124,153 @@ class AdvancedConfidenceEngine:
             logger.debug(f"Option chain / VIX lookup notice: {e}")
 
         # ---------------------------------------------------------------------
-        # PILLAR 1: MULTI-TIMEFRAME CONFLUENCE (30% Weight)
-        # Assesses whether Macro (T+5), Predictive (T+1), and Intraday agree.
-        # Directional agreement yields high confidence; contradiction penalizes heavily.
+        # PURE INTRADAY ANALYSIS VS POSITIONAL HORIZON SEPARATION
         # ---------------------------------------------------------------------
-        macro_dir = 1.0 if "BULL" in t5_verdict else (-1.0 if "BEAR" in t5_verdict else 0.0)
-        swing_dir = 1.0 if "BULL" in t1_verdict else (-1.0 if "BEAR" in t1_verdict else 0.0)
-        
-        # Intraday flow direction
-        writer_dom = float(ml_m.get("writer_dominance_score") or 0.0)
-        flow_dir = 1.0 if writer_dom > 5.0 else (-1.0 if writer_dom < -5.0 else 0.0)
-
-        # Confluence Score calculation (-100 to +100 directional, normalized to 0-100 magnitude)
+        # INTRADAY MUST BE 100% INDEPENDENT OF EOD PREDICTION MODELS (T+1 / T+5)!
+        # Intraday is governed purely by live session telemetry:
+        # VWAP, 15m/30m ORB, Delta OI flow, GEX Zero-Flip, L2 OBI, and Sector Breadth.
+        # WEEKLY & MONTHLY evaluate structural multi-day macro models (T+5 / T+1).
+        # ---------------------------------------------------------------------
         if horizon == "INTRADAY":
-            # Intraday prioritizes Swing T+1 and Flow, with T+5 as guardrail
-            confluence_dir = (swing_dir * 0.40) + (flow_dir * 0.40) + (macro_dir * 0.20)
-        elif horizon == "WEEKLY":
-            # Weekly prioritizes T+5 Macro and T+1 Swing
-            confluence_dir = (macro_dir * 0.55) + (swing_dir * 0.35) + (flow_dir * 0.10)
-        else: # MONTHLY
-            confluence_dir = (macro_dir * 0.70) + (swing_dir * 0.20) + (flow_dir * 0.10)
+            # 1. Price Action & VWAP (30% Weight)
+            vwap = float(vwap_m.get("vwap") or spot_price)
+            dist_vwap_pts = float(vwap_m.get("vwap_distance_pts") or (spot_price - vwap))
+            orb_status = str(vwap_m.get("orb_30m", {}).get("status") or "INSIDE_RANGE").upper()
+            chop_val = vwap_m.get("choppiness_index")
+            chop = float(chop_val.get("chop") if isinstance(chop_val, dict) else (chop_val or 50.0))
 
-        # Confluence alignment bonus / penalty
-        if (macro_dir > 0 and swing_dir > 0 and flow_dir >= 0) or (macro_dir < 0 and swing_dir < 0 and flow_dir <= 0):
-            confluence_mag = 92.0 # Perfect tripartite alignment
-        elif (macro_dir == 0 and swing_dir == 0 and abs(writer_dom) < 4.0):
-            confluence_mag = 88.0 # Perfect neutral / consolidation alignment
-        elif (macro_dir > 0 and swing_dir < 0) or (macro_dir < 0 and swing_dir > 0):
-            confluence_mag = 35.0 # Direct conflict between macro and swing
+            if "BREAKOUT" in orb_status or (dist_vwap_pts > 35.0 and chop < 48.0):
+                pa_mag = 90.0
+                pa_dir = 1.0
+            elif "BREAKDOWN" in orb_status or (dist_vwap_pts < -35.0 and chop < 48.0):
+                pa_mag = 90.0
+                pa_dir = -1.0
+            elif chop >= 55.0 or "INSIDE" in orb_status:
+                pa_mag = 85.0 if chop >= 60.0 else 65.0
+                pa_dir = 0.0
+            else:
+                pa_mag = 60.0
+                pa_dir = float(np.sign(dist_vwap_pts))
+
+            # 2. Option Chain Delta Flow & PCR (30% Weight)
+            oi_flow_diff = net_pe_chg - net_ce_chg
+            if oi_flow_diff > 1_500_000 or near_pcr > 1.25:
+                flow_mag = 90.0
+                flow_dir = 1.0
+            elif oi_flow_diff < -1_500_000 or near_pcr < 0.80:
+                flow_mag = 90.0
+                flow_dir = -1.0
+            elif 0.90 <= near_pcr <= 1.15:
+                flow_mag = 85.0
+                flow_dir = 0.0
+            else:
+                flow_mag = 60.0
+                flow_dir = 1.0 if oi_flow_diff > 0 else -1.0
+
+            # 3. Gamma Exposure (GEX & Zero-Gamma Flip) (20% Weight)
+            flip_level = float(gex_m.get("zero_gamma_flip_level") or spot_price)
+            gex_regime = str(gex_m.get("market_gex_regime") or "LONG_GAMMA_STABILIZING").upper()
+            dist_flip = spot_price - flip_level
+
+            if "SHORT_GAMMA" in gex_regime:
+                gex_mag = 88.0
+                gex_dir = 1.0 if dist_flip > 0 else -1.0
+            else:
+                gex_mag = 85.0 if abs(dist_flip) < 30.0 else 65.0
+                gex_dir = 0.0
+
+            # 4. Sector Breadth & Bank vs IT Synchronization (20% Weight)
+            breadth_green = float(sec_m.get("breadth_pct_green") or 50.0)
+            bank_chg = float(sec_m.get("bank_change_pct") or 0.0)
+            it_chg = float(sec_m.get("it_change_pct") or 0.0)
+
+            if breadth_green >= 65.0 and bank_chg > 0.10:
+                sec_mag = 88.0
+                sec_dir = 1.0
+            elif breadth_green <= 35.0 and bank_chg < -0.10:
+                sec_mag = 88.0
+                sec_dir = -1.0
+            elif 40.0 <= breadth_green <= 60.0:
+                sec_mag = 80.0
+                sec_dir = 0.0
+            else:
+                sec_mag = 60.0
+                sec_dir = 0.0
+
+            # Pure Intraday Total Confidence Score
+            total_confidence = (
+                pa_mag * 0.30 +
+                flow_mag * 0.30 +
+                gex_mag * 0.20 +
+                sec_mag * 0.20
+            )
+            total_confidence = float(np.clip(round(total_confidence, 1), 10.0, 98.0))
+
+            # Pure Intraday Directional Synthesis
+            directional_synth = (
+                pa_dir * 35.0 +
+                flow_dir * 35.0 +
+                gex_dir * 15.0 +
+                sec_dir * 15.0
+            )
+            directional_synth = float(np.clip(round(directional_synth, 1), -100.0, 100.0))
+
+            confluence_mag = pa_mag
+            confluence_dir = pa_dir
+            pcr_mag = flow_mag
+            vol_mag = gex_mag
+
         else:
-            confluence_mag = 65.0 # Partial alignment
+            # -----------------------------------------------------------------
+            # POSITIONAL (WEEKLY & MONTHLY) EVALUATION
+            # Driven by T+5 Structural Framework, Medium-Term Breadth & Macro
+            # -----------------------------------------------------------------
+            macro_dir = 1.0 if "BULL" in t5_verdict else (-1.0 if "BEAR" in t5_verdict else 0.0)
+            swing_dir = 1.0 if "BULL" in t1_verdict else (-1.0 if "BEAR" in t1_verdict else 0.0)
 
-        # ---------------------------------------------------------------------
-        # PILLAR 2: OPTION CHAIN DELTA FLOW & PCR (25% Weight)
-        # ---------------------------------------------------------------------
-        oi_flow_diff = net_pe_chg - net_ce_chg
-        if oi_flow_diff > 1_500_000:
-            pcr_mag = 90.0
-            pcr_dir = 1.0
-        elif oi_flow_diff < -1_500_000:
-            pcr_mag = 90.0
-            pcr_dir = -1.0
-        elif near_pcr > 1.25:
-            pcr_mag = 75.0
-            pcr_dir = 1.0
-        elif near_pcr < 0.80:
-            pcr_mag = 75.0
-            pcr_dir = -1.0
-        else:
-            # Balanced flow indicates range-bound conviction
-            pcr_mag = 80.0 if (0.90 <= near_pcr <= 1.10) else 55.0
-            pcr_dir = 0.0
+            if (macro_dir > 0 and swing_dir > 0) or (macro_dir < 0 and swing_dir < 0):
+                confluence_mag = 92.0
+            elif macro_dir == 0 and swing_dir == 0:
+                confluence_mag = 88.0
+            elif (macro_dir > 0 and swing_dir < 0) or (macro_dir < 0 and swing_dir > 0):
+                confluence_mag = 35.0
+            else:
+                confluence_mag = 65.0
 
-        # ---------------------------------------------------------------------
-        # PILLAR 3: PRICE ACTION & VWAP / ORB BREAKOUT (20% Weight)
-        # ---------------------------------------------------------------------
-        vwap = float(vwap_m.get("vwap") or spot_price)
-        dist_vwap_pts = float(vwap_m.get("vwap_distance_pts") or (spot_price - vwap))
-        orb_status = str(vwap_m.get("orb_30m", {}).get("status") or "INSIDE_RANGE").upper()
-        chop_val = vwap_m.get("choppiness_index")
-        chop = float(chop_val.get("chop") if isinstance(chop_val, dict) else (chop_val or 50.0))
+            confluence_dir = macro_dir if horizon == "MONTHLY" else (macro_dir * 0.60 + swing_dir * 0.40)
 
-        if "BREAKOUT" in orb_status or (dist_vwap_pts > 40.0 and chop < 48.0):
-            pa_mag = 88.0
-            pa_dir = 1.0
-        elif "BREAKDOWN" in orb_status or (dist_vwap_pts < -40.0 and chop < 48.0):
-            pa_mag = 88.0
-            pa_dir = -1.0
-        elif chop >= 58.0 or "INSIDE" in orb_status:
-            # Range-bound conviction
-            pa_mag = 82.0 if chop >= 60.0 else 60.0
-            pa_dir = 0.0
-        else:
-            pa_mag = 55.0
-            pa_dir = np.sign(dist_vwap_pts)
+            # Option flow support
+            pcr_mag = 80.0 if (0.90 <= near_pcr <= 1.15) else 65.0
+            pcr_dir = 1.0 if near_pcr > 1.20 else (-1.0 if near_pcr < 0.80 else 0.0)
 
-        # ---------------------------------------------------------------------
-        # PILLAR 4: VOLATILITY & ZERO-GAMMA FLIP DISTANCE (15% Weight)
-        # ---------------------------------------------------------------------
-        flip_level = float(gex_m.get("zero_gamma_flip_level") or spot_price)
-        gex_regime = str(gex_m.get("market_gex_regime") or "LONG_GAMMA_STABILIZING").upper()
-        dist_flip = spot_price - flip_level
+            # Trend & Volatility
+            vol_mag = 80.0
+            vol_dir = confluence_dir
+            pa_mag = 70.0
+            pa_dir = confluence_dir
+            sec_mag = 70.0
+            sec_dir = confluence_dir
 
-        if "SHORT_GAMMA" in gex_regime:
-            # Short gamma = high volatility breakout potential
-            vol_mag = 85.0 if abs(dist_flip) > 35.0 else 60.0
-            vol_dir = 1.0 if dist_flip > 0 else -1.0
-        else:
-            # Long gamma = pinning / mean-reverting
-            vol_mag = 85.0 if abs(dist_flip) < 30.0 else 65.0
-            vol_dir = 0.0
+            total_confidence = (
+                confluence_mag * 0.45 +
+                pcr_mag * 0.20 +
+                vol_mag * 0.20 +
+                sec_mag * 0.15
+            )
+            total_confidence = float(np.clip(round(total_confidence, 1), 10.0, 98.0))
 
-        # ---------------------------------------------------------------------
-        # PILLAR 5: SECTORAL BREADTH SYNCHRONIZATION (10% Weight)
-        # ---------------------------------------------------------------------
-        breadth_green = float(sec_m.get("breadth_pct_green") or 50.0)
-        bank_chg = float(sec_m.get("bank_change_pct") or 0.0)
-        it_chg = float(sec_m.get("it_change_pct") or 0.0)
+            directional_synth = (
+                confluence_dir * 60.0 +
+                pcr_dir * 20.0 +
+                vol_dir * 20.0
+            )
+            directional_synth = float(np.clip(round(directional_synth, 1), -100.0, 100.0))
 
-        if breadth_green >= 70.0 and bank_chg > 0.15 and it_chg > 0.15:
-            sec_mag = 90.0
-            sec_dir = 1.0
-        elif breadth_green <= 30.0 and bank_chg < -0.15 and it_chg < -0.15:
-            sec_mag = 90.0
-            sec_dir = -1.0
-        elif 40.0 <= breadth_green <= 60.0:
-            sec_mag = 75.0
-            sec_dir = 0.0
-        else:
-            sec_mag = 55.0
-            sec_dir = 0.0
-
-        # ---------------------------------------------------------------------
-        # COMPOSITE CONFIDENCE SCORE CALCULATION (0.0 to 100.0%)
-        # ---------------------------------------------------------------------
-        total_confidence = (
-            confluence_mag * 0.30 +
-            pcr_mag * 0.25 +
-            pa_mag * 0.20 +
-            vol_mag * 0.15 +
-            sec_mag * 0.10
-        )
-        total_confidence = float(np.clip(round(total_confidence, 1), 10.0, 98.0))
-
-        # Directional synthesis (-100 to +100)
-        directional_synth = (
-            confluence_dir * 35.0 +
-            pcr_dir * 25.0 +
-            pa_dir * 20.0 +
-            vol_dir * 10.0 +
-            sec_dir * 10.0
-        )
-        directional_synth = float(np.clip(round(directional_synth, 1), -100.0, 100.0))
+            vwap = spot_price
+            dist_vwap_pts = 0.0
+            chop = 50.0
+            flip_level = spot_price
+            breadth_green = 50.0
 
         # ---------------------------------------------------------------------
         # UNIFIED REGIME & ASYMMETRIC STRATEGY ALLOCATION
