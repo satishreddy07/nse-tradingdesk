@@ -312,9 +312,9 @@ class KotakNeoEngine:
         """Resolves symbol (e.g. RELIANCE) to Kotak instrument token."""
         sym_clean = symbol.strip().upper().replace(".NS", "")
         if sym_clean in ("NIFTY 50", "NIFTY", "^NSEI"):
-            return "Nifty 50"
+            return "26000"
         if sym_clean in ("NIFTY BANK", "BANKNIFTY", "^NSEBANK"):
-            return "Nifty Bank"
+            return "26001"
 
         with self._lock:
             tok = self._symbol_to_token.get(sym_clean)
@@ -2013,16 +2013,35 @@ class KotakNeoEngine:
             return {"status": "UNAVAILABLE", "message": "Kotak Neo client not available"}
 
         try:
-            # 1. Official NSE Expiries from Kotak Neo (cached 1 hr)
+            # 1. Official NSE Expiries from Kotak Neo (cached 1 hr, with resilient calendar fallback)
             cached_exp = getattr(self, "_cached_nse_expiries", None)
             exp_list = []
             if cached_exp and (now_ts - cached_exp[0]) < 3600.0:
                 exp_list = cached_exp[1]
             else:
-                exp_data = self._client.expiries(exchange="nse_fo", underlying=underlying)
-                exp_list = exp_data.get("expiries", []) if isinstance(exp_data, dict) else (exp_data if isinstance(exp_data, list) else [])
-                if exp_list:
-                    self._cached_nse_expiries = (now_ts, exp_list)
+                try:
+                    exp_data = self._client.expiries(exchange="nse_fo", underlying=underlying)
+                    exp_list = exp_data.get("expiries", []) if isinstance(exp_data, dict) else (exp_data if isinstance(exp_data, list) else [])
+                    if exp_list:
+                        self._cached_nse_expiries = (now_ts, exp_list)
+                except Exception as e_exp:
+                    logger.debug(f"Kotak expiries API notice: {e_exp}")
+
+                # If Kotak API rate-limited or unavailable, derive authentic dates from NSE Market Calendar
+                if not exp_list:
+                    try:
+                        from core.market_calendar import NSEMarketCalendar
+                        cal_exp = NSEMarketCalendar.get_active_options_expiries()
+                        w_d = cal_exp.get("weekly_date")
+                        m_d = cal_exp.get("monthly_date")
+                        if w_d:
+                            exp_list = [w_d.isoformat()]
+                            if m_d and m_d != w_d:
+                                exp_list.append(m_d.isoformat())
+                            # Cache fallback for 60 seconds to prevent hammering API
+                            self._cached_nse_expiries = (now_ts - 3540.0, exp_list)
+                    except Exception:
+                        pass
             if not exp_list:
                 with self._lock:
                     cached = getattr(self, "_live_option_chain_cache", None)
@@ -2302,13 +2321,11 @@ class KotakNeoEngine:
         for s in symbols:
             clean_sym = s.strip().upper().replace(".NS", "")
             if clean_sym in ("NIFTY 50", "NIFTY", "^NSEI"):
-                for t in ("Nifty 50", "26000"):
-                    tokens.append({"instrument_token": t, "exchange_segment": "nse_cm"})
-                    token_to_sym[t] = "NIFTY 50"
+                tokens.append({"instrument_token": "26000", "exchange_segment": "nse_cm"})
+                token_to_sym["26000"] = "NIFTY 50"
             elif clean_sym in ("NIFTY BANK", "BANKNIFTY", "^NSEBANK"):
-                for t in ("Nifty Bank", "26001"):
-                    tokens.append({"instrument_token": t, "exchange_segment": "nse_cm"})
-                    token_to_sym[t] = "NIFTY BANK"
+                tokens.append({"instrument_token": "26001", "exchange_segment": "nse_cm"})
+                token_to_sym["26001"] = "NIFTY BANK"
             else:
                 tok = self.resolve_token(clean_sym)
                 if tok:

@@ -5901,7 +5901,13 @@ class NiftyAnalyticsEngine:
         Retrieves all active and closed option strategies from SQLite.
         For active strategies, recalculates live leg CMPs from the option chain
         and provides accurate unrealized PnL, Greeks, and portfolio metrics.
+        Cached in-memory for 4.0s to prevent throttling Kotak Neo live stream.
         """
+        now_ts = time.time()
+        cached = getattr(self, "_opt_portfolio_cache", None)
+        if cached and (now_ts - getattr(self, "_opt_portfolio_cache_ts", 0.0) < 4.0):
+            return cached
+
         with state_engine._lock:
             with state_engine._get_connection() as conn:
                 rows = conn.execute("SELECT * FROM options_strategies ORDER BY id DESC").fetchall()
@@ -6132,7 +6138,7 @@ class NiftyAnalyticsEngine:
         total_trades = wins + losses
         win_rate = round((wins / total_trades) * 100.0, 1) if total_trades > 0 else 0.0
 
-        return {
+        res = {
             "status": "OK",
             "summary": {
                 "base_capital": base_capital,
@@ -6156,6 +6162,9 @@ class NiftyAnalyticsEngine:
             "spot_price": spot_price,
             "timestamp_ist": format_ist()
         }
+        self._opt_portfolio_cache = res
+        self._opt_portfolio_cache_ts = now_ts
+        return res
 
     @staticmethod
     def _build_strategy_legs_and_metrics(

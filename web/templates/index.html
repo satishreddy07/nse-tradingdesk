@@ -46,8 +46,13 @@
     }
   </script>
   
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Lucide Icons with Multi-CDN Resilient Fallback -->
+  <script>
+    if (typeof window.lucide === 'undefined') {
+      window.lucide = { createIcons: function() {} };
+    }
+  </script>
+  <script src="https://unpkg.com/lucide@latest" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js';"></script>
   <!-- Chart.js for Quant Performance Visuals -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- TradingView Lightweight Charts for Institutional Candlesticks + SL/Target Overlays -->
@@ -9224,6 +9229,18 @@
 
   <!-- JAVASCRIPT APP LOGIC -->
   <script>
+    // Bulletproof Lucide Guard - prevents any missing icon library from breaking application initialization
+    if (typeof window.lucide === 'undefined') {
+      window.lucide = { createIcons: function() {} };
+    }
+    window.safeCreateIcons = function() {
+      try {
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+          window.lucide.createIcons();
+        }
+      } catch (e) {}
+    };
+
     function escapeHtml(str) {
       if (str == null) return '';
       return String(str)
@@ -9307,113 +9324,151 @@
 
     let lastVaultStatusCache = {};
 
-    // Initialize Lucide Icons & Clocks
-    document.addEventListener("DOMContentLoaded", () => {
-      lucide.createIcons();
-      setInterval(updateClock, 1000);
-      updateDrawerContent();
-      if (typeof loadSwingUniverseSource === 'function') loadSwingUniverseSource();
-      refreshAllData();
-      pollScanProgress();
+    // Bulletproof Application Initialization
+    let hasInitializedTradingDesk = false;
+    function initTradingDesk() {
+      if (hasInitializedTradingDesk) return;
+      hasInitializedTradingDesk = true;
 
-      // Setup Options Payoff Canvas Hover & Touch Events
-      const payoffCanvas = document.getElementById('opt-payoff-canvas');
-      if (payoffCanvas) {
-        payoffCanvas.addEventListener('mousemove', (e) => {
-          const rect = payoffCanvas.getBoundingClientRect();
-          payoffCanvasHoverX = e.clientX - rect.left;
-          drawPayoffGraph();
-        });
-        payoffCanvas.addEventListener('mouseleave', () => {
-          payoffCanvasHoverX = null;
-          drawPayoffGraph();
-          const hud = document.getElementById('payoff-crosshair-hud');
-          if (hud) hud.innerText = 'Hover graph to inspect P&L';
-        });
-        payoffCanvas.addEventListener('touchmove', (e) => {
-          if (e.touches && e.touches.length > 0) {
-            const rect = payoffCanvas.getBoundingClientRect();
-            payoffCanvasHoverX = e.touches[0].clientX - rect.left;
-            drawPayoffGraph();
-          }
-        }, { passive: true });
-        payoffCanvas.addEventListener('touchend', () => {
-          payoffCanvasHoverX = null;
-          drawPayoffGraph();
-        });
+      try {
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+          window.lucide.createIcons();
+        }
+      } catch (e) {
+        console.warn("Lucide icons init notice:", e);
       }
 
-      // Smart Bandwidth-Optimized Polling: Only poll during active market hours (09:00 AM – 03:50 PM IST)
-      // and only when browser tab is visible and focused. Idle or background tabs consume 0 bandwidth.
-      setInterval(() => {
-        // Only poll frequently (2.5s) if a scan is actively running; otherwise gentle 60s idle check
-        if (wasScanRunning) {
-          pollScanProgress();
-        }
-      }, 2500);
+      try {
+        updateClock();
+        setInterval(updateClock, 1000);
+      } catch (e) {}
 
-      setInterval(() => {
-        if (!wasScanRunning && !document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
-          pollScanProgress();
-        }
-      }, 60000);
+      try {
+        updateDrawerContent();
+      } catch (e) {}
 
-      setInterval(() => {
-        if (!document.hidden && (wasScanRunning || (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()))) {
-          refreshAllData();
-        }
-      }, 60000);
+      try {
+        if (typeof loadSwingUniverseSource === 'function') loadSwingUniverseSource();
+      } catch (e) {}
 
-      // 1. High-frequency 4-Second Live Spot Tick Streamer (Zero-Broker, bandwidth-throttled)
-      setInterval(() => {
-        if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
-          pollLiveSpotTick();
-        }
-      }, 4000);
+      // Immediately trigger data loading and continuous Kotak stream
+      try {
+        refreshAllData();
+      } catch (e) {
+        console.error("refreshAllData init error:", e);
+      }
+
+      try {
+        pollScanProgress();
+      } catch (e) {}
+
+      try {
+        pollContinuousKotakStream();
+      } catch (e) {
+        console.error("pollContinuousKotakStream init error:", e);
+      }
 
       // Continuous Kotak Neo Stream Poller: 2s active stream for live updates across Equities, Options, and Commodities
-      pollContinuousKotakStream();
-      setInterval(() => {
-        if (!document.hidden) {
-          pollContinuousKotakStream();
-        }
-      }, 2000);
-
-      // 2. 15-Second Options & Intraday Streamer (Active Desk Aware)
-      setInterval(() => {
-        if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
-          const optMod = document.getElementById('module-options');
-          const intraMod = document.getElementById('module-intraday');
-          if (optMod && !optMod.classList.contains('hidden')) {
-            loadOptionsChainDesk(false);
-          } else if (intraMod && !intraMod.classList.contains('hidden')) {
-            loadIntradayExpiryProgression(false);
+      try {
+        setInterval(() => {
+          if (!document.hidden) {
+            pollContinuousKotakStream();
           }
-        }
-      }, 15000);
+        }, 2000);
+      } catch (e) {}
 
-      // 3. 90-Second Live Price Stream for all Active Positions, Screened Stocks, and Options Strategies
-      setInterval(() => {
-        if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
-          refreshLivePrices(true);
-          loadOptionsPortfolioDesk();
+      // Setup Options Payoff Canvas Hover & Touch Events
+      try {
+        const payoffCanvas = document.getElementById('opt-payoff-canvas');
+        if (payoffCanvas) {
+          payoffCanvas.addEventListener('mousemove', (e) => {
+            const rect = payoffCanvas.getBoundingClientRect();
+            payoffCanvasHoverX = e.clientX - rect.left;
+            drawPayoffGraph();
+          });
+          payoffCanvas.addEventListener('mouseleave', () => {
+            payoffCanvasHoverX = null;
+            drawPayoffGraph();
+            const hud = document.getElementById('payoff-crosshair-hud');
+            if (hud) hud.innerText = 'Hover graph to inspect P&L';
+          });
+          payoffCanvas.addEventListener('touchmove', (e) => {
+            if (e.touches && e.touches.length > 0) {
+              const rect = payoffCanvas.getBoundingClientRect();
+              payoffCanvasHoverX = e.touches[0].clientX - rect.left;
+              drawPayoffGraph();
+            }
+          }, { passive: true });
+          payoffCanvas.addEventListener('touchend', () => {
+            payoffCanvasHoverX = null;
+            drawPayoffGraph();
+          });
         }
-      }, 90000);
+      } catch (e) {}
 
-      // Instant refresh when user switches back to this tab
-      document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) {
-          pollScanProgress();
-          refreshAllData();
-          if (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+      // Smart Bandwidth-Optimized Polling
+      try {
+        setInterval(() => {
+          if (wasScanRunning) {
+            pollScanProgress();
+          }
+        }, 2500);
+
+        setInterval(() => {
+          if (!wasScanRunning && !document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+            pollScanProgress();
+          }
+        }, 60000);
+
+        setInterval(() => {
+          if (!document.hidden && (wasScanRunning || (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()))) {
+            refreshAllData();
+          }
+        }, 60000);
+
+        // 1. High-frequency 4-Second Live Spot Tick Streamer
+        setInterval(() => {
+          if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
             pollLiveSpotTick();
+          }
+        }, 4000);
+
+        // 2. 15-Second Options & Intraday Streamer
+        setInterval(() => {
+          if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
             const optMod = document.getElementById('module-options');
+            const intraMod = document.getElementById('module-intraday');
             if (optMod && !optMod.classList.contains('hidden')) {
               loadOptionsChainDesk(false);
+            } else if (intraMod && !intraMod.classList.contains('hidden')) {
+              loadIntradayExpiryProgression(false);
             }
           }
-        }
-      });
+        }, 15000);
+
+        // 3. 90-Second Live Price Stream for all Active Positions
+        setInterval(() => {
+          if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+            refreshLivePrices(true);
+            loadOptionsPortfolioDesk();
+          }
+        }, 90000);
+
+        // Instant refresh when user switches back to this tab
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden) {
+            pollScanProgress();
+            refreshAllData();
+            if (isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
+              pollLiveSpotTick();
+              const optMod = document.getElementById('module-options');
+              if (optMod && !optMod.classList.contains('hidden')) {
+                loadOptionsChainDesk(false);
+              }
+            }
+          }
+        });
+      } catch (e) {}
 
       // URL parameter module & depth auto-loader
       try {
@@ -9440,7 +9495,14 @@
       } catch (e) {
         console.debug("URL param route notice:", e);
       }
-    });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener("DOMContentLoaded", initTradingDesk);
+    } else {
+      initTradingDesk();
+    }
+
 
     let lastSpotPrice = null;
 
