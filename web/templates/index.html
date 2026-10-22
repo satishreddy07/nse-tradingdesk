@@ -510,7 +510,7 @@
               </span>
             </div>
             <p id="p1-universe-subtitle" class="text-[11px] sm:text-xs text-slate-400 mt-1 leading-relaxed">
-              Official In-House VPS Universe (Nifty 500 Institutional) • 16-Thread C-Vectorized Indicator Engine • Telegram Cloud Vault • Strict Market-Hours Gate (09:15–15:30 IST)
+              Official In-House VPS Universe (All NSE Equities) • Screener on 2,351 Stocks • 16-Thread C-Vectorized Indicator Engine • Strict Market-Hours Gate (09:15–15:30 IST)
             </p>
           </div>
           
@@ -519,7 +519,7 @@
             <div class="flex items-center justify-between sm:justify-start bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
               <button id="p1-btn-source-inhouse" onclick="setSwingUniverseSource('IN_HOUSE')" class="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20">
                 <i data-lucide="shield-check" class="w-3.5 h-3.5 shrink-0"></i>
-                <span>In-House (N500)</span>
+                <span>In-House (All NSE)</span>
               </button>
               <button id="p1-btn-source-chartink" onclick="setSwingUniverseSource('CHARTINK')" class="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200">
                 <i data-lucide="globe" class="w-3.5 h-3.5 shrink-0"></i>
@@ -534,6 +534,44 @@
           </div>
         </div>
 
+        <!-- In-House All-NSE Screener Telemetry Bar (5 Core Institutional Metrics) -->
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 p-3 sm:p-3.5 bg-slate-900/80 border border-slate-800 rounded-2xl shadow-lg font-mono text-xs">
+          <div class="bg-slate-950/90 border border-slate-800/90 p-2.5 rounded-xl">
+            <div class="text-[10px] text-slate-400 uppercase font-semibold flex items-center justify-between">
+              <span>🏛️ Total NSE Stocks</span>
+            </div>
+            <div id="p1-summary-total-nse" class="text-base sm:text-lg font-bold text-white mt-1">2,351</div>
+            <div class="text-[9px] text-slate-500 mt-0.5 truncate">Official Active Cash Equities</div>
+          </div>
+          <div class="bg-slate-950/90 border border-cyan-500/30 p-2.5 rounded-xl bg-cyan-950/10">
+            <div class="text-[10px] text-cyan-400 uppercase font-semibold flex items-center justify-between">
+              <span>🎯 Passing Screener</span>
+            </div>
+            <div id="p1-summary-passing" class="text-base sm:text-lg font-bold text-cyan-300 mt-1">--</div>
+            <div class="text-[9px] text-slate-500 mt-0.5 truncate">Met Turnover & Criteria</div>
+          </div>
+          <div class="bg-slate-950/90 border border-emerald-500/30 p-2.5 rounded-xl bg-emerald-950/15">
+            <div class="text-[10px] text-emerald-400 uppercase font-semibold flex items-center justify-between">
+              <span>🚀 BUY NOW</span>
+            </div>
+            <div id="p1-summary-buynow" class="text-base sm:text-lg font-bold text-emerald-400 mt-1">--</div>
+            <div class="text-[9px] text-emerald-500/70 mt-0.5 truncate">6-Pillar & ML Approved</div>
+          </div>
+          <div class="bg-slate-950/90 border border-amber-500/30 p-2.5 rounded-xl bg-amber-950/15">
+            <div class="text-[10px] text-amber-400 uppercase font-semibold flex items-center justify-between">
+              <span>⏳ PULLBACK</span>
+            </div>
+            <div id="p1-summary-pullback" class="text-base sm:text-lg font-bold text-amber-300 mt-1">--</div>
+            <div class="text-[9px] text-amber-500/70 mt-0.5 truncate">Pre-Breakout & Retrace</div>
+          </div>
+          <div class="bg-slate-950/90 border border-rose-500/30 p-2.5 rounded-xl bg-rose-950/15 col-span-2 sm:col-span-1">
+            <div class="text-[10px] text-rose-400 uppercase font-semibold flex items-center justify-between">
+              <span>🛑 AVOID</span>
+            </div>
+            <div id="p1-summary-avoid" class="text-base sm:text-lg font-bold text-rose-400 mt-1">--</div>
+            <div class="text-[9px] text-rose-500/70 mt-0.5 truncate">Low Score / Trend Failure</div>
+          </div>
+        </div>
 
       <!-- Swing Sub-Section Switcher & Top Metric Status Strip -->
       <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl p-3 sm:p-3.5 shadow-lg">
@@ -675,6 +713,7 @@
             <div class="flex items-center gap-1.5 overflow-x-auto custom-scroll text-xs">
               <button data-bucket="ALL" onclick="filterP1Signals('ALL')" class="p1-filter-btn px-2.5 py-1 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold">All <span id="cnt-p1-all" class="font-mono text-[10px] opacity-80"></span></button>
               <button data-bucket="BUY_NOW" onclick="filterP1Signals('BUY_NOW')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 border border-transparent text-emerald-400 font-medium">BUY NOW <span id="cnt-p1-buy" class="font-mono text-[10px]"></span></button>
+              <button data-bucket="PULLBACK" onclick="filterP1Signals('PULLBACK')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 border border-transparent text-amber-300 font-medium">PULLBACK <span id="cnt-p1-pullback" class="font-mono text-[10px]"></span></button>
               <button data-bucket="PRE_BREAKOUT" onclick="filterP1Signals('PRE_BREAKOUT')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 border border-transparent text-cyan-400 font-medium">PRE BREAKOUT <span id="cnt-p1-pre" class="font-mono text-[10px]"></span></button>
               <button data-bucket="WAIT_PULLBACK" onclick="filterP1Signals('WAIT_PULLBACK')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 border border-transparent text-amber-400 font-medium">WAIT PULLBACK <span id="cnt-p1-wait" class="font-mono text-[10px]"></span></button>
               <button data-bucket="AVOID" onclick="filterP1Signals('AVOID')" class="p1-filter-btn px-2.5 py-1 rounded hover:bg-slate-800 border border-transparent text-rose-400 font-medium">AVOID <span id="cnt-p1-avoid" class="font-mono text-[10px]"></span></button>
@@ -18532,7 +18571,28 @@
         const cBuy = p1SignalsCache.filter(s => s.bucket === 'BUY_NOW').length;
         const cPre = p1SignalsCache.filter(s => s.bucket === 'PRE_BREAKOUT').length;
         const cWait = p1SignalsCache.filter(s => s.bucket === 'WAIT_PULLBACK').length;
+        const cPullback = cPre + cWait;
         const cAvoid = p1SignalsCache.filter(s => s.bucket === 'AVOID').length;
+
+        // Populate Dedicated 5-Card Institutional Screener Telemetry Bar
+        const totNseEl = document.getElementById('p1-summary-total-nse');
+        if (totNseEl) {
+          totNseEl.innerText = (sum && sum.nse_total_count) ? Number(sum.nse_total_count).toLocaleString('en-IN') : '2,351';
+        }
+        const passEl = document.getElementById('p1-summary-passing');
+        if (passEl) {
+          const passCnt = (sum && (sum.passing_criteria_count || sum.chartink_fetched_count)) || cAll;
+          passEl.innerText = Number(passCnt).toLocaleString('en-IN');
+        }
+        const buyEl = document.getElementById('p1-summary-buynow');
+        if (buyEl) buyEl.innerText = cBuy;
+        const pbEl = document.getElementById('p1-summary-pullback');
+        if (pbEl) pbEl.innerText = cPullback;
+        const avEl = document.getElementById('p1-summary-avoid');
+        if (avEl) avEl.innerText = cAvoid;
+
+        const cntPbEl = document.getElementById('cnt-p1-pullback');
+        if (cntPbEl) cntPbEl.innerText = `(${cPullback})`;
 
         if (document.getElementById('cnt-p1-all')) document.getElementById('cnt-p1-all').innerText = `(${cAll})`;
         if (document.getElementById('cnt-p1-buy')) document.getElementById('cnt-p1-buy').innerText = `(${cBuy})`;
@@ -18729,6 +18789,9 @@
 
       if (currentP1FilterBucket === 'ALL') {
         renderP1SignalsTable(p1SignalsCache);
+      } else if (currentP1FilterBucket === 'PULLBACK') {
+        const filtered = p1SignalsCache.filter(s => s.bucket === 'WAIT_PULLBACK' || s.bucket === 'PRE_BREAKOUT');
+        renderP1SignalsTable(filtered);
       } else {
         const filtered = p1SignalsCache.filter(s => s.bucket === currentP1FilterBucket);
         renderP1SignalsTable(filtered);
@@ -21728,7 +21791,7 @@
 
       if (p1Subtitle) {
         p1Subtitle.textContent = isInHouse
-          ? "Official In-House VPS Universe (Nifty 500 Institutional) • 16-Thread C-Vectorized Indicator Engine • Telegram Cloud Vault • Strict Market-Hours Gate (09:15–15:30 IST)"
+          ? "Official In-House VPS Universe (All NSE Equities) • Screener on 2,351 Stocks • 16-Thread C-Vectorized Indicator Engine • Strict Market-Hours Gate (09:15–15:30 IST)"
           : "Dynamic Chartink Screener Universe (All Cash Equities) • 16-Thread C-Vectorized Indicator Engine • Telegram Cloud Vault • Strict Market-Hours Gate (09:15–15:30 IST)";
       }
 

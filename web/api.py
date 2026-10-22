@@ -362,6 +362,7 @@ def get_portfolio_summary(portfolio_type: str):
         w_pb = sum(1 for s in signals if s.get("bucket") == "WAIT_PULLBACK")
         ohlcv_stats = state_engine.get_ohlcv_stats()
         chartink_cnt = p1_state.get("chartink_fetched_count") or ohlcv_stats.get("stocks_count", 0)
+        c_avoid = sum(1 for s in signals if s.get("bucket") == "AVOID")
         return {
             "portfolio_type": p_type,
             "title": "Institutional 6-Pillar Engine",
@@ -374,6 +375,8 @@ def get_portfolio_summary(portfolio_type: str):
             "available_cash": stats.get("available_cash", 0.0),
             "total_invested": stats.get("total_invested", 0.0),
             "open_risk": stats.get("open_risk", 0.0),
+            "nse_total_count": p1_state.get("nse_total_count") or state_engine.get_total_nse_stocks_count(),
+            "passing_criteria_count": p1_state.get("passing_criteria_count") or chartink_cnt,
             "chartink_fetched_count": chartink_cnt,
             "universe_size": p1_state.get("universe_size") or sig_count,
             "cache_hits_count": p1_state.get("cache_hits_count", 0),
@@ -382,6 +385,8 @@ def get_portfolio_summary(portfolio_type: str):
             "buy_now_count": p1_state.get("buy_now_count") if p1_state.get("universe_size") else b_now,
             "pre_breakout_count": p1_state.get("pre_breakout_count") if p1_state.get("universe_size") else p_brk,
             "wait_pullback_count": p1_state.get("wait_pullback_count") if p1_state.get("universe_size") else w_pb,
+            "pullback_count": p1_state.get("pullback_count") or (p_brk + w_pb),
+            "avoid_count": p1_state.get("avoid_count") or c_avoid,
             "trading_gate_open": can_trade,
             "trading_gate_message": gate_msg,
             "stats": stats
@@ -540,6 +545,11 @@ def get_scan_progress():
     prog = state_engine.get_scan_progress()
     p1_state = get_institutional_status()
     prog["chartink_fetched_count"] = p1_state.get("chartink_fetched_count", 0)
+    prog["passing_criteria_count"] = p1_state.get("passing_criteria_count", p1_state.get("chartink_fetched_count", 0))
+    prog["nse_total_count"] = p1_state.get("nse_total_count", state_engine.get_total_nse_stocks_count())
+    prog["buy_now_count"] = p1_state.get("buy_now_count", 0)
+    prog["pullback_count"] = p1_state.get("pullback_count", 0)
+    prog["avoid_count"] = p1_state.get("avoid_count", 0)
     prog["universe_size"] = p1_state.get("universe_size", 0)
     prog["queue_status"] = execution_queue.get_status()
     return prog
@@ -564,7 +574,7 @@ def trigger_scan(req: TriggerScanRequest):
     if req.source:
         state_engine.set_swing_universe_source(req.source)
     active_source = req.source or state_engine.get_swing_universe_source()
-    source_label = "In-House Nifty 500" if active_source == "IN_HOUSE" else "Chartink Live"
+    source_label = "In-House NSE" if active_source == "IN_HOUSE" else "Chartink Live"
 
     # Determine initial stage based on queue state
     if q_status.get("is_running"):

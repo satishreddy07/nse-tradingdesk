@@ -426,7 +426,7 @@ class DirectYahooFinanceFetcher:
 
         return ticker, cached_df, "FAILED"
 
-    def fetch_universe_ohlcv(self, tickers: List[str], min_bars: int = 80) -> Tuple[Dict[str, pd.DataFrame], Dict[str, int]]:
+    def fetch_universe_ohlcv(self, tickers: List[str], min_bars: int = 80, source_label: Optional[str] = None) -> Tuple[Dict[str, pd.DataFrame], Dict[str, int]]:
         """
         Multi-threaded universe OHLCV fetcher backed by the Single Master File (`data/swing_trades.db`):
         1. Always checks & syncs with the Telegram Cloud Master Vault first (`auto_restore_on_cold_boot`).
@@ -434,6 +434,9 @@ class DirectYahooFinanceFetcher:
         3. Commits all updated/new OHLCV DataFrames into the Single Master File in one batch transaction.
         """
         total_tickers = len(tickers)
+        if not source_label:
+            src = state_engine.get_swing_universe_source()
+            source_label = "In-House NSE" if src == "IN_HOUSE" else "Chartink Live"
         vault_sync = telegram_vault.auto_restore_on_cold_boot()
         ohlcv_stats = state_engine.get_ohlcv_stats()
         vault_stocks = ohlcv_stats.get("stocks_count", 0)
@@ -463,7 +466,7 @@ class DirectYahooFinanceFetcher:
         }
 
         state_engine.update_scan_progress(
-            stage=f"Step 3/6: Multi-threaded Incremental OHLCV Sync across {total_tickers} Chartink stocks (reading Telegram Master Vault cache first)...",
+            stage=f"Step 3/6: Multi-threaded Incremental OHLCV Sync across {total_tickers} {source_label} stocks (reading Telegram Master Vault cache first)...",
             percent=22,
             stocks_total=total_tickers,
             stocks_done=0,
@@ -506,7 +509,7 @@ class DirectYahooFinanceFetcher:
                     pct = 22 + int((completed / max(1, total_tickers)) * 43)
                     state_engine.update_scan_progress(
                         stage=(
-                            f"Step 3/6: OHLCV Sync ({completed}/{total_tickers} Chartink stocks) • "
+                            f"Step 3/6: OHLCV Sync ({completed}/{total_tickers} {source_label} stocks) • "
                             f"Master Vault Hit: {stats['cache_hits']} | Intraday Delta: {stats['gap_filled']} | New 2Y: {stats['full_downloads']} | "
                             f"Liquid: {stats['eligible']}"
                         ),
@@ -522,7 +525,7 @@ class DirectYahooFinanceFetcher:
             logger.info(f"Saved {saved_cnt} updated OHLCV stocks into Single Master File (data/swing_trades.db).")
 
         logger.info(
-            f"OHLCV Sync Complete: {total_tickers} Chartink stocks -> "
+            f"OHLCV Sync Complete: {total_tickers} {source_label} stocks -> "
             f"{stats['cache_hits']} cached, {stats['gap_filled']} gap-filled, {stats['full_downloads']} full 2Y -> "
             f"{len(results)} liquid stocks eligible."
         )
@@ -1451,7 +1454,7 @@ class InstitutionalEngine:
         source = universe_source or state_engine.get_swing_universe_source()
         if source not in ("IN_HOUSE", "CHARTINK"):
             source = "IN_HOUSE"
-        source_label = "In-House Nifty 500" if source == "IN_HOUSE" else "Chartink Live"
+        source_label = "In-House NSE" if source == "IN_HOUSE" else "Chartink Live"
         init_stage_msg = (
             f"Step 1/6: Sourcing universe from {source_label}..."
             if source == "IN_HOUSE" else
@@ -1478,15 +1481,13 @@ class InstitutionalEngine:
             else:
                 from_live_chartink = False
                 if source == "IN_HOUSE":
-                    logger.info("Swing candidate universe sourcing: IN_HOUSE (Nifty 500 Institutional).")
+                    logger.info("Swing candidate universe sourcing: IN_HOUSE (All NSE Equities Screener).")
                     from engines.screener_comparison_engine import screener_comparison_engine
-                    tickers = screener_comparison_engine.get_inhouse_universe_tickers()
-                    if not tickers:
-                        from engines.nifty500_engine import get_nifty500_symbols
-                        n500 = get_nifty500_symbols()
-                        tickers = [f"{s}.NS" for s in n500] if n500 else []
+                    tickers, nse_total_cnt = screener_comparison_engine.get_inhouse_screened_tickers()
+                    _institutional_engine_state["nse_total_count"] = nse_total_cnt
+                    _institutional_engine_state["passing_criteria_count"] = len(tickers)
                     _institutional_engine_state["chartink_fetched_count"] = len(tickers)
-                    stage_msg = f"Step 1/6: Sourced {len(tickers)} institutional stocks from In-House Nifty 500 Engine."
+                    stage_msg = f"Step 1/6: Sourced {len(tickers)} qualifying candidate stocks (from {nse_total_cnt} total NSE stocks passing EQ-FINAL criteria) for In-House 6-Pillar Analysis."
                 else:
                     logger.info("Swing candidate universe sourcing: CHARTINK (All Cash Equities).")
                     tickers = self.chartink.fetch_tickers()
@@ -1536,7 +1537,7 @@ class InstitutionalEngine:
             benchmarks = self.yahoo.fetch_benchmarks()
 
             # Step 3: Multi-Threaded Incremental Gap-Fill OHLCV Fetch
-            ohlcv_dict, dl_stats = self.yahoo.fetch_universe_ohlcv(tickers, min_bars=80)
+            ohlcv_dict, dl_stats = self.yahoo.fetch_universe_ohlcv(tickers, min_bars=80, source_label=source_label)
             _institutional_engine_state["cache_hits_count"] = dl_stats.get("cache_hits", 0)
             _institutional_engine_state["gap_filled_count"] = dl_stats.get("gap_filled", 0)
             _institutional_engine_state["full_downloads_count"] = dl_stats.get("full_downloads", 0)
@@ -1637,10 +1638,13 @@ class InstitutionalEngine:
             w_pb = int((signals_df['bucket'] == 'WAIT_PULLBACK').sum())
             avoid = int((signals_df['bucket'] == 'AVOID').sum())
 
+            pullback = p_brk + w_pb
             _institutional_engine_state["universe_size"] = len(signals_df)
             _institutional_engine_state["buy_now_count"] = b_now
             _institutional_engine_state["pre_breakout_count"] = p_brk
             _institutional_engine_state["wait_pullback_count"] = w_pb
+            _institutional_engine_state["pullback_count"] = pullback
+            _institutional_engine_state["avoid_count"] = avoid
             _institutional_engine_state["signals"] = records_list[:100]
             _institutional_engine_state["status"] = "COMPLETED"
 
@@ -2199,10 +2203,12 @@ class InstitutionalEngine:
                     pass
 
             elapsed = time.time() - start_time
+            nse_tot = _institutional_engine_state.get("nse_total_count") or state_engine.get_total_nse_stocks_count()
+            pass_cnt = _institutional_engine_state.get("passing_criteria_count") or len(tickers)
             summary_msg = (
-                f"{source_label} Scan Complete in {elapsed:.1f}s: {len(tickers)} {source_label} stocks fetched "
-                f"(Master Vault Hit: {dl_stats['cache_hits']}, Intraday Delta: {dl_stats['gap_filled']}, New 2Y: {dl_stats['full_downloads']}) -> "
-                f"{len(signals_df)} liquid stocks analyzed -> BUY NOW: {b_now} (Auto-Executed: {orders_placed}) | PRE BREAKOUT: {p_brk} | WAIT PULLBACK: {w_pb}{gate_notice}"
+                f"{source_label} Screener Complete in {elapsed:.1f}s: {nse_tot} NSE stocks screened -> "
+                f"{pass_cnt} passed criteria -> {len(signals_df)} liquid analyzed -> "
+                f"BUY NOW: {b_now} (Auto-Executed: {orders_placed}) | PULLBACK: {pullback} (Pre-Breakout: {p_brk}, Wait Pullback: {w_pb}) | AVOID: {avoid}{gate_notice}"
             )
             state_engine.log_scan_run(
                 scan_type=f"INSTITUTIONAL_{mode.upper()}",
@@ -2216,7 +2222,11 @@ class InstitutionalEngine:
                 details=dl_stats
             )
             state_engine.set_kv("institutional_snapshot", {
-                "chartink_fetched_count": _institutional_engine_state.get("chartink_fetched_count", len(tickers)),
+                "source": source,
+                "source_label": source_label,
+                "nse_total_count": nse_tot,
+                "passing_criteria_count": pass_cnt,
+                "chartink_fetched_count": pass_cnt,
                 "universe_size": len(signals_df),
                 "cache_hits_count": dl_stats.get("cache_hits", 0),
                 "gap_filled_count": dl_stats.get("gap_filled", 0),
@@ -2224,6 +2234,7 @@ class InstitutionalEngine:
                 "buy_now_count": b_now,
                 "pre_breakout_count": p_brk,
                 "wait_pullback_count": w_pb,
+                "pullback_count": pullback,
                 "avoid_count": avoid,
                 "last_run_time": format_ist()
             })

@@ -933,35 +933,46 @@ def scheduled_inhouse_scanner_job():
         from engines.screener_comparison_engine import screener_comparison_engine
         logger.info("⚡ [30-Min In-House Broad Screener] Running broad cash equities 6-pillar scan & dual-entry execution...")
         inst_engine = InstitutionalEngine()
-        signals = inst_engine.run(auto_execute=True, mode_override="periodic_30m")
+        active_source = state_engine.get_swing_universe_source()
+        signals = inst_engine.run(auto_execute=True, mode_override="periodic_30m", universe_source=active_source)
         # Update dual-engine parity audit cache with fresh results
         screener_comparison_engine.run_comparison_audit(force_refresh=True)
         elapsed = time.time() - t0
         b_now = int((signals["bucket"] == "BUY_NOW").sum()) if not signals.empty and "bucket" in signals.columns else 0
+        p_brk = int((signals["bucket"] == "PRE_BREAKOUT").sum()) if not signals.empty and "bucket" in signals.columns else 0
+        w_pb = int((signals["bucket"] == "WAIT_PULLBACK").sum()) if not signals.empty and "bucket" in signals.columns else 0
+        avoid = int((signals["bucket"] == "AVOID").sum()) if not signals.empty and "bucket" in signals.columns else 0
+        pullback_cnt = p_brk + w_pb
+        total_nse = state_engine.get_total_nse_stocks_count()
         state_engine.record_periodic_30m_scan_outcome(
             job_type="INHOUSE_30M_SCAN",
             status="SUCCESS",
             stocks_count=len(signals),
             buy_now_count=b_now,
+            pullback_count=pullback_cnt,
+            avoid_count=avoid,
             execution_time_sec=elapsed,
-            note=f"{b_now} BUY_NOW signals found out of {len(signals)} broad cash stocks analyzed"
+            note=f"{total_nse} NSE stocks screened -> {len(signals)} analyzed -> BUY NOW: {b_now} | PULLBACK: {pullback_cnt} | AVOID: {avoid}"
         )
         try:
             state_engine.record_system_activity(
                 category="SCANNER_PARITY",
                 action="30-Min Screener Auto-Run Complete",
                 status="SUCCESS",
-                summary=f"30-Min Screener completed in {elapsed:.1f}s: {len(signals)} evaluated, {b_now} BUY_NOW signals routed to Shadow ML & Portfolio 1.",
+                summary=f"30-Min In-House Screener completed in {elapsed:.1f}s: {total_nse} NSE stocks screened -> {len(signals)} passing criteria -> BUY NOW: {b_now} | PULLBACK: {pullback_cnt} | AVOID: {avoid}.",
                 details={
+                    "total_nse_stocks": total_nse,
                     "stocks_evaluated": len(signals),
                     "buy_now_count": b_now,
+                    "pullback_count": pullback_cnt,
+                    "avoid_count": avoid,
                     "execution_time_sec": elapsed
                 },
                 execution_sec=elapsed
             )
         except Exception:
             pass
-        logger.info(f"✓ [30-Min In-House Screener] Scan complete. {len(signals)} evaluated, {b_now} BUY_NOW signals routed to Shadow & Portfolio 1.")
+        logger.info(f"✓ [30-Min In-House Screener] Scan complete. {total_nse} NSE stocks -> {len(signals)} passing -> BUY NOW: {b_now} | PULLBACK: {pullback_cnt} | AVOID: {avoid}.")
     except Exception as e:
         logger.error(f"30-Min In-House Screener execution error: {e}", exc_info=True)
 

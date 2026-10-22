@@ -8,6 +8,7 @@ Consolidates ALL system data into ONE single master file:
 5. ohlcv_master_store- All ~800+ fetched stocks' 2-year daily OHLCV history + technical summary
 6. system_kv_store   - Engine snapshots, Nifty 500 seed list, and Telegram Cloud Vault manifest
 """
+import os
 import sqlite3
 import threading
 import json
@@ -27,6 +28,7 @@ from core.config import DB_PATH
 from core.data_quality import IST, now_ist, format_ist
 
 logger = logging.getLogger("StateEngine")
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
 def _fast_ewm_last(arr: np.ndarray, alpha: float) -> float:
@@ -419,6 +421,50 @@ class StateEngine:
                 );
                 """)
 
+                # 9. Official Pure NSE Listed Equities Master
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS nse_listed_equities_master (
+                    symbol TEXT PRIMARY KEY,
+                    company_name TEXT,
+                    series TEXT,
+                    isin TEXT,
+                    sector TEXT,
+                    is_active INTEGER DEFAULT 1,
+                    updated_at TEXT
+                );
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_nse_master_symbol ON nse_listed_equities_master(symbol);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_nse_master_series ON nse_listed_equities_master(series);")
+
+                try:
+                    cnt_row = cursor.execute("SELECT count(*) as cnt FROM nse_listed_equities_master WHERE series = 'EQ'").fetchone()
+                    if not cnt_row or cnt_row["cnt"] < 500:
+                        json_path = Path(self.db_path).parent / "nse_listed_equities_master.json"
+                        if not json_path.exists():
+                            json_path = _DATA_DIR / "nse_listed_equities_master.json"
+                        if json_path.exists():
+                            with open(str(json_path), "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                            records = [
+                                (
+                                    d["symbol"],
+                                    d.get("name", d["symbol"]),
+                                    d.get("series", "EQ"),
+                                    d.get("isin", ""),
+                                    d.get("sector", "DIVERSIFIED"),
+                                    1,
+                                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                )
+                                for d in data
+                            ]
+                            cursor.executemany("""
+                                INSERT OR REPLACE INTO nse_listed_equities_master
+                                (symbol, company_name, series, isin, sector, is_active, updated_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """, records)
+                except Exception as e_seed:
+                    pass
+
                 conn.commit()
 
                 # Automatic schema migrations for Portfolio 3 hybrid squeeze columns
@@ -494,6 +540,47 @@ class StateEngine:
             src = "IN_HOUSE"
         self.set_kv("swing_universe_source", src)
         return src
+
+    def get_all_nse_symbols(self, series: str = "EQ") -> List[str]:
+        """Returns all official active NSE listed equity symbols (e.g. 2,351 'EQ' series symbols)."""
+        with self._lock:
+            with self._get_connection() as conn:
+                try:
+                    if series:
+                        rows = conn.execute(
+                            "SELECT symbol FROM nse_listed_equities_master WHERE series = ? AND (is_active = 1 OR is_active IS NULL) ORDER BY symbol ASC",
+                            (series.upper(),)
+                        ).fetchall()
+                    else:
+                        rows = conn.execute(
+                            "SELECT symbol FROM nse_listed_equities_master WHERE is_active = 1 OR is_active IS NULL ORDER BY symbol ASC"
+                        ).fetchall()
+                    if rows and len(rows) > 100:
+                        return [r["symbol"] for r in rows]
+                except Exception as e:
+                    logger.debug(f"get_all_nse_symbols db query notice: {e}")
+
+                # Fallback: check master store or Nifty 500
+                try:
+                    meta = self.get_all_ohlcv_metadata(limit=3000)
+                    syms = [r["symbol"] for r in meta if r.get("symbol") and not str(r["symbol"]).startswith("^")]
+                    if len(syms) >= 100:
+                        return sorted(list(set(syms)))
+                except Exception:
+                    pass
+                return []
+
+    def get_total_nse_stocks_count(self) -> int:
+        """Returns total active NSE cash equities count (~2,351)."""
+        with self._lock:
+            with self._get_connection() as conn:
+                try:
+                    row = conn.execute("SELECT count(*) as cnt FROM nse_listed_equities_master WHERE series = 'EQ'").fetchone()
+                    if row and row["cnt"] > 100:
+                        return int(row["cnt"])
+                except Exception:
+                    pass
+                return 2351
 
     # --------------------------------------------------------------------------
     # UNIFIED SYSTEM ACTIVITY & PIPELINE AUDIT LOGS

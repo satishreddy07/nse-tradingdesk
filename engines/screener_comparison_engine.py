@@ -27,10 +27,10 @@ import time
 import json
 import logging
 import hashlib
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional, Set, Tuple
 
 from core.data_quality import now_ist, format_ist
-from core.stock_registry import clean_symbol
+from core.stock_registry import clean_symbol, format_nse_ticker
 from execution.state_engine import state_engine
 from engines.custom_screener_engine import custom_screener_engine
 from engines.nifty500_engine import get_nifty500_symbols
@@ -57,39 +57,38 @@ class ScreenerComparisonEngine:
         self._latest_audit_cache: Optional[Dict[str, Any]] = None
         self._cache_timestamp: float = 0.0
 
+    def get_inhouse_screened_tickers(self) -> Tuple[List[str], int]:
+        """
+        Executes In-House Screener across ALL NSE listed equities:
+        1. Sources total active NSE equities count (~2,351 EQ series stocks).
+        2. Applies the Institutional Screener Criteria (EQ-FINAL: Turnover>=1Cr, Close>75, ROCE>=10%, ROE>=10%, D/E<=1.5, PAT>0).
+        3. Returns (qualifying_candidate_tickers, total_nse_count).
+        """
+        nse_total_count = state_engine.get_total_nse_stocks_count()
+        try:
+            from engines.custom_screener_engine import custom_screener_engine
+            scan_res = custom_screener_engine.run_scan(preset_name="EQ-FINAL", force_refresh=False)
+            passing = scan_res.get("results", [])
+            if passing:
+                syms = [format_nse_ticker(s["symbol"]) for s in passing if s.get("symbol")]
+                logger.info(f"In-House Screener: {len(syms)} qualifying candidate stocks passed EQ-FINAL criteria from {nse_total_count} NSE stocks.")
+                return sorted(list(set(syms))), nse_total_count
+        except Exception as e:
+            logger.warning(f"In-House Screener criteria execution notice: {e}")
+
+        # Fallback to official Nifty 500
+        n500 = get_nifty500_symbols()
+        return [format_nse_ticker(s) for s in n500] if n500 else [], nse_total_count
+
     def get_inhouse_universe_tickers(self) -> List[str]:
         """
-        Returns all qualified cash equities (formatted as 'SYMBOL.NS') for swing trading candidate discovery.
-        STRICTLY IN-HOUSE UNIVERSE: Sourced from official Nifty 500 constituents plus active local master
-        store symbols. Zero network dependency on external Chartink calls.
+        Returns all qualified candidate stocks (formatted as 'SYMBOL.NS') that pass the
+        Institutional Screener Criteria across the broad NSE Equities Universe.
         """
-        syms_set: Set[str] = set()
-
-        # 1. Primary: Official Nifty 500 constituents (Institutional quality)
-        try:
-            n500 = get_nifty500_symbols()
-            for s in n500:
-                if s:
-                    syms_set.add(clean_symbol(s))
-        except Exception as e:
-            logger.debug(f"Nifty 500 lookup notice: {e}")
-
-        # 2. Add all local master OHLCV metadata symbols (already verified & stored locally)
-        try:
-            meta = state_engine.get_all_ohlcv_metadata(limit=2000)
-            for r in meta:
-                s = r.get("symbol")
-                if s and not str(s).startswith("^"):
-                    syms_set.add(clean_symbol(s))
-        except Exception as e:
-            logger.debug(f"Master metadata lookup notice: {e}")
-
-        if syms_set:
-            logger.info(f"Loaded {len(syms_set)} institutional stocks for In-House Nifty 500 Engine.")
-            return [f"{s}.NS" for s in sorted(syms_set)]
-
-        # Fallback to default symbols
-        return [f"{s}.NS" for s in sorted(get_nifty500_symbols())]
+        tickers, _ = self.get_inhouse_screened_tickers()
+        if tickers:
+            return tickers
+        return [format_nse_ticker(s) for s in sorted(get_nifty500_symbols())]
 
     def run_comparison_audit(
         self,
