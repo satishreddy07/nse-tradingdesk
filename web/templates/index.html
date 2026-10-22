@@ -7107,7 +7107,7 @@
           <table class="w-full text-left text-xs font-mono">
             <thead class="bg-slate-800/60 text-slate-400 border-b border-slate-700/60 uppercase text-[10px]">
               <tr>
-                <th class="p-2.5">Date</th>
+                <th class="p-2.5">Forecast Date</th>
                 <th class="p-2.5">Horizon</th>
                 <th class="p-2.5">Verdict</th>
                 <th class="p-2.5">Spot Entry</th>
@@ -21502,7 +21502,10 @@
         if (!tbody) return;
         tbody.innerHTML = rows.map(r => `
           <tr class="hover:bg-slate-800/40 transition">
-            <td class="p-2.5 text-white font-bold">${escapeHtml(r.prediction_date)}</td>
+            <td class="p-2.5 text-white font-bold whitespace-nowrap">
+              <div>${escapeHtml(r.prediction_date)}</div>
+              <div class="text-[10px] text-cyan-400 font-normal">Target: ${escapeHtml(r.target_date || '--')}</div>
+            </td>
             <td class="p-2.5 text-cyan-300">${escapeHtml(r.horizon)}</td>
             <td class="p-2.5 text-purple-300">${escapeHtml(r.verdict)}</td>
             <td class="p-2.5 text-slate-300">₹${r.spot_at_prediction ? Number(r.spot_at_prediction).toFixed(1) : '--'}</td>
