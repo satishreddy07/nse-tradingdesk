@@ -12200,7 +12200,11 @@
             };
           }
           if (textEl) textEl.textContent = 'Updated!';
-          showToast('✓ FII/DII Cash & Participant OI updated successfully.', 'success');
+          if (resData.telemetry && resData.telemetry.status === 'UP_TO_DATE') {
+            showToast(`✓ Session ${resData.telemetry.target_date || ''} is already up to date. Auto-run stopped.`, 'info');
+          } else {
+            showToast('✓ FII/DII Cash & Participant OI updated successfully.', 'success');
+          }
           setTimeout(() => {
             if (textEl) textEl.textContent = 'Update Now';
           }, 2500);

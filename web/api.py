@@ -1343,15 +1343,15 @@ def get_nifty_fii_dii_status():
 
 
 @app.post("/api/nifty/fii-dii/update-now")
-def trigger_nifty_fii_dii_manual_update():
+def trigger_nifty_fii_dii_manual_update(force: bool = False):
     """
     Manually triggers immediate check and ingestion of latest official NSE FII/DII Cash and F&O Participant OI.
-    If latest session data is already available, stops cleanly with UP_TO_DATE.
-    If not, downloads and persists latest records, updating tables and telemetry immediately.
+    If latest session data is already available, stops cleanly with UP_TO_DATE (0 redundant network fetch).
+    If not available, downloads and persists latest records from NSE, updating tables and telemetry immediately.
     """
     from engines.nifty_analytics_engine import nifty_analytics_engine
     try:
-        tel = nifty_analytics_engine.check_and_update_fii_dii_participant_oi(force_refresh=True, trigger_source="MANUAL_BUTTON")
+        tel = nifty_analytics_engine.check_and_update_fii_dii_participant_oi(force_refresh=force, trigger_source="MANUAL_BUTTON")
         flow_data = nifty_analytics_engine.fetch_fii_dii_cash_and_participant_oi(force_refresh=False)
         return _sanitize_for_json({
             "status": "OK",
