@@ -158,89 +158,83 @@
 <body class="bg-[#070a13] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black overflow-x-hidden">
 
   <!-- TOP HEADER -->
-  <header class="sticky top-0 z-40 bg-[#0b0f19]/95 backdrop-blur-md border-b border-slate-800/90">
-    <div class="w-full max-w-[1920px] mx-auto px-2.5 sm:px-4 md:px-6 2xl:px-8 h-14 sm:h-16 flex items-center justify-between gap-1.5 sm:gap-2">
+  <header class="sticky top-0 z-40 bg-[#0b0f19]/95 backdrop-blur-md border-b border-slate-800/90 overflow-x-clip">
+    <div class="w-full max-w-[1920px] mx-auto px-2 sm:px-3 lg:px-4 h-13 sm:h-14 flex items-center justify-between gap-1 sm:gap-2">
       
-      <!-- Brand Logo & Title (Shrink-proof & Non-overlapping on Mobile) -->
-      <div class="flex items-center gap-1.5 sm:gap-2 min-w-0 shrink-0">
-        <a href="#" onclick="switchModule('module-swing'); return false;" class="flex items-center gap-1.5 sm:gap-2 focus:outline-none">
-          <img src="/static/bull-logo.jpg" alt="QuantDesk Bull" class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-cyan-500/50 shadow-md shadow-cyan-500/20 shrink-0">
+      <!-- Brand Logo & Title (Ultra-Compact) -->
+      <div class="flex items-center gap-1.5 shrink-0">
+        <a href="#" onclick="switchModule('module-swing'); return false;" class="flex items-center gap-1.5 focus:outline-none">
+          <img src="/static/bull-logo.jpg" alt="QuantDesk Bull" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg object-cover border border-cyan-500/50 shadow-sm shrink-0">
           <div class="min-w-0">
-            <div class="flex items-center gap-1.5">
-              <span class="font-extrabold tracking-tight text-white text-base sm:text-lg leading-none">QUANT<span class="text-cyan-400">DESK</span></span>
-              <span class="hidden 2xl:inline-flex text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-semibold whitespace-nowrap">v3.0 MULTI-ASSET</span>
-            </div>
-            <p class="text-[10px] text-slate-400 font-medium truncate mt-0.5 hidden 2xl:block">Swing • Intraday • AI Predictions • Options</p>
+            <span class="font-extrabold tracking-tight text-white text-sm sm:text-base leading-none">QUANT<span class="text-cyan-400">DESK</span></span>
           </div>
         </a>
       </div>
 
-      <!-- Desktop Primary Module Switcher (Streamlined Segmented Control) -->
-      <div class="hidden lg:flex items-center bg-slate-900/95 p-1 rounded-xl border border-slate-800 gap-0.5 shrink-0 shadow-inner">
-        <button onclick="switchModule('module-swing')" id="desk-mod-swing" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all bg-cyan-500 text-black shadow-md shadow-cyan-500/20 whitespace-nowrap">
+      <!-- Desktop Primary Module Switcher (Streamlined Compact Segmented Control) -->
+      <div class="hidden lg:flex items-center bg-slate-900/95 p-0.5 rounded-lg border border-slate-800 gap-0.5 shrink-0 shadow-inner">
+        <button onclick="switchModule('module-swing')" id="desk-mod-swing" class="mod-btn px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-all bg-cyan-500 text-black shadow-sm whitespace-nowrap">
           <i data-lucide="trending-up" class="w-3.5 h-3.5 stroke-[2.5]"></i>
           <span>Swing</span>
         </button>
-        <button onclick="switchModule('module-intraday')" id="desk-mod-intraday" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-intraday')" id="desk-mod-intraday" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
           <span>Intraday</span>
-          <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">LIVE</span>
+          <span class="hidden 2xl:inline-flex text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">LIVE</span>
         </button>
-        <button onclick="switchModule('module-predictions')" id="desk-mod-predictions" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-predictions')" id="desk-mod-predictions" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="brain-circuit" class="w-3.5 h-3.5 text-purple-400"></i>
           <span>Predictions</span>
-          <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">ML</span>
+          <span class="hidden 2xl:inline-flex text-[9px] font-mono px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">ML</span>
         </button>
-        <button onclick="switchModule('module-options')" id="desk-mod-options" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-options')" id="desk-mod-options" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="flame" class="w-3.5 h-3.5 text-emerald-400"></i>
-          <span>Options Desk</span>
-          <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">VTX</span>
+          <span>Options<span class="hidden 2xl:inline"> Desk</span></span>
+          <span class="hidden 2xl:inline-flex text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">VTX</span>
         </button>
-        <button onclick="switchModule('module-ml-performance')" id="desk-mod-ml-performance" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-ml-performance')" id="desk-mod-ml-performance" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="gauge" class="w-3.5 h-3.5 text-rose-400"></i>
           <span class="hidden 2xl:inline">ML Performance</span>
           <span class="2xl:hidden">ML Perf</span>
         </button>
-        <button onclick="switchModule('module-commodities')" id="desk-mod-commodities" class="mod-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
+        <button onclick="switchModule('module-commodities')" id="desk-mod-commodities" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="droplet" class="w-3.5 h-3.5 text-amber-400"></i>
           <span>MCX</span>
         </button>
       </div>
 
-      <!-- Desktop Telemetry Pills (Compact on xl, Full on 2xl) -->
-      <div class="hidden xl:flex items-center gap-1.5 2xl:gap-2 text-[10px] 2xl:text-[11px] shrink-0">
-        <button onclick="openWatchdogModal()" id="gatekeeper-nav-pill" class="flex items-center gap-1 px-2 2xl:px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200 transition cursor-pointer" title="Gatekeeper Telemetry: Live Health of Swing, Intraday, Options & Predictions feeds">
-          <span id="gatekeeper-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+      <!-- Desktop Telemetry Pills (Ultra-Streamlined & Shrink-Safe) -->
+      <div class="hidden xl:flex items-center gap-1.5 text-[10px] shrink-0">
+        <button onclick="openWatchdogModal()" id="gatekeeper-nav-pill" class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200 transition cursor-pointer" title="Gatekeeper Telemetry: Live Feed Status">
+          <span id="gatekeeper-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
           <span id="gatekeeper-text" class="font-mono font-bold text-emerald-400 truncate">4/4 LIVE</span>
         </button>
 
-        <div id="market-status-pill" class="flex items-center gap-1 px-2 2xl:px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 whitespace-nowrap max-w-[120px] 2xl:max-w-[200px]" title="Market Status">
-          <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+        <div id="market-status-pill" class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 whitespace-nowrap max-w-[130px]" title="Market Status">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
           <span id="market-status-text" class="font-medium truncate">Checking...</span>
         </div>
 
-        <div class="hidden 2xl:flex px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 font-mono text-slate-400 whitespace-nowrap">
+        <div class="hidden 2xl:flex px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 font-mono text-slate-400 whitespace-nowrap text-[10px]">
           <span id="live-ist-clock">--:--:-- IST</span>
         </div>
       </div>
 
-      <!-- Right Action Buttons (Never Wrap or Overlap on Mobile) -->
-      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <!-- Right Action Buttons (Compact & Always On-Screen) -->
+      <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
 
-
-        <!-- Kotak Neo Live Stream Settings Button -->
-        <button onclick="openKotakSetupModal()" id="btn-kotak-setup" class="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-cyan-500/40 text-cyan-300 font-bold text-xs transition-all active:scale-95 whitespace-nowrap shadow-sm shadow-cyan-500/10 cursor-pointer" title="Configure Kotak Neo API & Stream">
-          <span id="kotak-header-dot" class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
-          <span class="hidden md:inline font-mono">Kotak Neo</span>
-          <span class="md:hidden font-mono">Kotak</span>
+        <!-- Kotak Neo Status Button (Compact Pill on < 2xl, Full on 2xl) -->
+        <button onclick="openKotakSetupModal()" id="btn-kotak-setup" class="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-cyan-500/40 text-cyan-300 font-bold text-xs transition-all active:scale-95 whitespace-nowrap shadow-sm cursor-pointer" title="Configure Kotak Neo API & Stream">
+          <span id="kotak-header-dot" class="w-1.5 h-1.5 rounded-full bg-slate-500 shrink-0"></span>
+          <span class="hidden 2xl:inline font-mono">Kotak Neo</span>
+          <span class="2xl:hidden font-mono">Kotak</span>
         </button>
 
         <!-- Quick Scan Trigger Dropdown -->
         <div class="relative">
-          <button id="btn-scan-menu" onclick="toggleScanMenu()" class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-black font-bold text-xs transition-all shadow-md shadow-cyan-500/20 active:scale-95 whitespace-nowrap">
+          <button id="btn-scan-menu" onclick="toggleScanMenu()" class="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-black font-bold text-xs transition-all shadow-sm active:scale-95 whitespace-nowrap">
             <i data-lucide="zap" class="w-3.5 h-3.5 stroke-[2.5] shrink-0"></i>
-            <span class="hidden sm:inline">Run Scan</span>
-            <span class="sm:hidden">Scan</span>
+            <span class="hidden sm:inline">Scan</span>
             <i data-lucide="chevron-down" class="w-3 h-3 shrink-0"></i>
           </button>
           
@@ -279,23 +273,22 @@
           </div>
         </div>
 
-        <!-- Refresh Live Prices Button -->
-        <button id="btn-header-refresh-prices" onclick="refreshLivePrices(false)" class="flex items-center gap-1.5 px-2 sm:px-2.5 2xl:px-3 py-1.5 sm:py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-semibold text-xs transition whitespace-nowrap shrink-0" title="Fetch Live Market Prices from Yahoo Finance for all stocks on page">
+        <!-- Refresh Live Prices Button (Icon-Only on < 2xl) -->
+        <button id="btn-header-refresh-prices" onclick="refreshLivePrices(false)" class="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-semibold text-xs transition whitespace-nowrap shrink-0" title="Fetch Live Market Prices from Yahoo Finance for all stocks on page">
           <i data-lucide="refresh-cw" class="w-3.5 h-3.5 shrink-0" id="refresh-icon"></i>
-          <span class="hidden 2xl:inline" id="btn-refresh-prices-text">Refresh Prices</span>
-          <span class="2xl:hidden hidden md:inline">Refresh</span>
+          <span class="hidden 2xl:inline" id="btn-refresh-prices-text">Refresh</span>
         </button>
 
         <!-- Hamburger Menu Button (Mobile & Tablet) -->
-        <button id="btn-hamburger" onclick="toggleMobileDrawer()" class="xl:hidden flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-cyan-500/50 transition active:scale-95 shadow-sm shrink-0" aria-label="Open Navigation Menu" title="Menu">
-          <i data-lucide="menu" id="hamburger-icon" class="w-4 h-4 sm:w-5 sm:h-5 text-cyan-400"></i>
+        <button id="btn-hamburger" onclick="toggleMobileDrawer()" class="xl:hidden flex items-center justify-center w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-cyan-500/50 transition active:scale-95 shadow-sm shrink-0" aria-label="Open Navigation Menu" title="Menu">
+          <i data-lucide="menu" id="hamburger-icon" class="w-4 h-4 text-cyan-400"></i>
         </button>
       </div>
 
     </div>
 
     <!-- Compact Telemetry Strip (Shown on Mobile & Tablet < xl) -->
-    <div class="xl:hidden flex items-center justify-between gap-2 px-3 sm:px-6 py-1.5 bg-slate-900/95 border-t border-slate-800/80 text-[10px] sm:text-[11px] overflow-x-auto no-scrollbar whitespace-nowrap">
+    <div class="xl:hidden flex items-center justify-between gap-2 px-3 sm:px-6 py-1 bg-slate-900/95 border-t border-slate-800/80 text-[10px] overflow-x-auto no-scrollbar whitespace-nowrap">
       <button onclick="openWatchdogModal()" id="mobile-gatekeeper-pill" class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-[10px] font-mono text-emerald-400 shrink-0">
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
         <span id="mobile-gatekeeper-text">4/4 LIVE</span>
@@ -310,26 +303,23 @@
       <div class="text-cyan-400 font-mono shrink-0" id="mobile-next-scan">
         Next: Syncing...
       </div>
-      <div class="hidden sm:inline-flex text-slate-400 font-mono shrink-0" id="next-scan-text">
-        Next: Loading...
-      </div>
     </div>
   </header>
 
-  <!-- KOTAK NEO LIVE STREAM STATUS BANNER (CLICKABLE TO OPEN MODAL) -->
-  <div id="kotak-stream-banner" class="bg-gradient-to-r from-slate-950 via-[#0a1120] to-slate-950 border-b border-cyan-500/30 px-3 sm:px-6 py-1.5 text-xs font-mono text-cyan-200 shadow-sm">
-    <div class="max-w-[1920px] mx-auto flex items-center justify-between gap-2 flex-wrap">
-      <div class="flex items-center gap-2">
+  <!-- KOTAK NEO LIVE STREAM STATUS BANNER (STREAMLINED & RESPONSIVE) -->
+  <div id="kotak-stream-banner" class="bg-gradient-to-r from-slate-950 via-[#0a1120] to-slate-950 border-b border-cyan-500/30 px-2.5 sm:px-4 py-1 text-xs font-mono text-cyan-200 shadow-sm overflow-x-clip">
+    <div class="max-w-[1920px] mx-auto flex items-center justify-between gap-2">
+      <div class="flex items-center gap-1.5 min-w-0 truncate">
         <span id="kotak-banner-dot" class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
-        <span class="font-bold text-white font-mono">📡 Kotak Neo API Stream:</span>
-        <span id="kotak-banner-status-text" class="text-slate-300">Offline (Click Configure to Connect)</span>
+        <span class="font-bold text-white font-mono shrink-0">📡 Kotak Stream:</span>
+        <span id="kotak-banner-status-text" class="text-slate-300 truncate">Offline (Click Configure to Connect)</span>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1.5 shrink-0">
         <button onclick="injectKotakTestTick('NIFTY 50')" class="hidden sm:inline-flex px-2 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition active:scale-95 cursor-pointer" title="Inject simulated Nifty tick to verify real-time stream">
           Test Tick
         </button>
-        <button onclick="openKotakSetupModal()" id="btn-kotak-banner-action" class="px-2.5 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-[11px] transition active:scale-95 cursor-pointer flex items-center gap-1">
-          <span>⚡ Configure Credentials</span>
+        <button onclick="openKotakSetupModal()" id="btn-kotak-banner-action" class="px-2 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-[11px] transition active:scale-95 cursor-pointer flex items-center gap-1 whitespace-nowrap">
+          <span>⚡ Manage Stream</span>
         </button>
       </div>
     </div>
