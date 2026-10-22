@@ -511,7 +511,9 @@ class USAnalyticsEngine:
         if vix_c is not None and float(vix_c) > 0:
             vix_spot = round(float(vix_c), 2)
             vix_9d = round(float(vix9d_c), 2) if (vix9d_c is not None and float(vix9d_c) > 0) else vix_spot
-            vix_1d = float(vix_m.get("ret_1d") or 0.0)
+            vix_1d = float(vix_m.get("ret_1d")) if vix_m.get("ret_1d") is not None else 0.0
+            vix_5d = float(vix_m.get("ret_5d")) if vix_m.get("ret_5d") is not None else None
+            vix_e20 = float(vix_m.get("ema20")) if vix_m.get("ema20") is not None else None
 
             # Contango ratio: Spot VIX / 9D VIX
             # In calm bull markets, Spot VIX > 9D VIX (Contango / Roll Yield positive).
@@ -543,6 +545,9 @@ class USAnalyticsEngine:
         else:
             vix_spot = None
             vix_9d = None
+            vix_1d = None
+            vix_5d = None
+            vix_e20 = None
             contango_ratio = None
             vix_regime = "UNAVAILABLE"
             vix_term_note = "VIX volatility data temporarily unavailable"
@@ -648,8 +653,12 @@ class USAnalyticsEngine:
         nq_c = nq_m.get("close")
         es_price = round(float(es_c), 2) if (es_c is not None and float(es_c) > 0) else None
         es_1d = float(es_m.get("ret_1d") or 0.0) if es_price is not None else 0.0
+        es_5d = float(es_m.get("ret_5d")) if es_m.get("ret_5d") is not None else None
+        es_e20 = float(es_m.get("ema20")) if es_m.get("ema20") is not None else None
         nq_price = round(float(nq_c), 2) if (nq_c is not None and float(nq_c) > 0) else None
         nq_1d = float(nq_m.get("ret_1d") or 0.0) if nq_price is not None else 0.0
+        nq_5d = float(nq_m.get("ret_5d")) if nq_m.get("ret_5d") is not None else None
+        nq_e20 = float(nq_m.get("ema20")) if nq_m.get("ema20") is not None else None
 
         # Dynamic Rolling Beta of Nifty vs S&P 500 (Historically ~0.48 to 0.58 in Indian market)
         rolling_beta = 0.52
@@ -696,8 +705,12 @@ class USAnalyticsEngine:
         futures_relative_radar = {
             "es_futures_price": es_price,
             "es_futures_ret_1d": es_1d if es_price is not None else None,
+            "es_futures_ret_5d": es_5d,
+            "es_futures_ema20": es_e20,
             "nq_futures_price": nq_price,
             "nq_futures_ret_1d": nq_1d if nq_price is not None else None,
+            "nq_futures_ret_5d": nq_5d,
+            "nq_futures_ema20": nq_e20,
             "rolling_beta_to_nifty": rolling_beta,
             "expected_fair_gap_pts": expected_fair_gap_pts,
             "expected_fair_gap_pct": expected_fair_gap_pct,
@@ -729,6 +742,9 @@ class USAnalyticsEngine:
             "volatility_surface": {
                 "vix_spot": vix_spot,
                 "vix_9d": vix_9d,
+                "ret_1d": vix_1d,
+                "ret_5d": vix_5d,
+                "ema20": vix_e20,
                 "contango_ratio": contango_ratio,
                 "regime": vix_regime,
                 "note": vix_term_note,

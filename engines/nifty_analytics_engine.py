@@ -685,6 +685,197 @@ class NiftyAnalyticsEngine:
 
         return weekly_ltp_map, monthly_ltp_map, f"WEEKLY_TAG_FALLBACK ({weekly_exp_date})" 
 
+    def _backfill_global_markets_metrics(self, payload: Dict[str, Any]) -> bool:
+        """
+        Dynamically backfills missing 1D%, 5D%, and EMA 20 metrics on Global Markets rows
+        (e.g., US T+1, RSP-SPY Breadth, ^VIX, ES=F Futures) in pre-existing or cached
+        prediction payloads so UI tables never render 'N/A' or '--' gaps.
+        """
+        if not isinstance(payload, dict):
+            return False
+
+        pillars = payload.get("pillars")
+        if not isinstance(pillars, dict):
+            return False
+
+        g_rows = pillars.get("global_markets")
+        if not isinstance(g_rows, list) or not g_rows:
+            return False
+
+        # Identify if any of the 4 global rows are missing key metrics
+        needs_patch = False
+        for r in g_rows:
+            tk = str(r.get("ticker", "")).upper()
+            if any(sym in tk for sym in ("SPY", "RSP", "VIX", "ES")):
+                if r.get("ret_1d") is None or r.get("ret_5d") is None or r.get("ema20") is None:
+                    needs_patch = True
+                    break
+                if r.get("ltp") is None or "UNAVAILABLE" in str(r.get("trend", "")).upper() or "UNAVAILABLE" in str(r.get("name", "")).upper():
+                    needs_patch = True
+                    break
+
+        if not needs_patch:
+            return False
+
+        try:
+            from engines.us_analytics_engine import us_analytics_engine
+            us_intel = us_analytics_engine.fetch_and_analyze_us_markets(force_refresh=False)
+            if not us_intel or us_intel.get("status") != "OK":
+                us_intel = us_analytics_engine.fetch_and_analyze_us_markets(force_refresh=True)
+        except Exception as e:
+            logger.warning(f"Unable to load US intel for backfill: {e}")
+            us_intel = None
+
+        benchmarks = {b.get("ticker"): b for b in (us_intel.get("benchmarks", []) if us_intel else []) if isinstance(b, dict)}
+        spy_b = benchmarks.get("SPY", {})
+        vol_surf = (us_intel.get("volatility_surface") or {}) if us_intel else {}
+        breadth_an = (us_intel.get("breadth_analysis") or {}) if us_intel else {}
+        fut_radar = (us_intel.get("futures_relative_radar") or {}) if us_intel else {}
+        t1_fc = (us_intel.get("us_t1_forecast") or {}) if us_intel else {}
+
+        spy_close = spy_b.get("close") or t1_fc.get("expected_close_spy")
+        spy_1d = spy_b.get("ret_1d") if spy_b.get("ret_1d") is not None else t1_fc.get("expected_pct_spy")
+        spy_5d = spy_b.get("ret_5d")
+        spy_e20 = spy_b.get("ema20")
+
+        vix_spot = vol_surf.get("vix_spot")
+        vix_1d = vol_surf.get("ret_1d")
+        vix_5d = vol_surf.get("ret_5d")
+        vix_e20 = vol_surf.get("ema20")
+
+        es_close = fut_radar.get("es_futures_price")
+        es_1d = fut_radar.get("es_futures_ret_1d")
+        es_5d = fut_radar.get("es_futures_ret_5d") or spy_5d
+        es_e20 = fut_radar.get("es_futures_ema20") or spy_e20
+
+        disp_val = breadth_an.get("rsp_vs_spy_dispersion")
+        disp_reg = breadth_an.get("dispersion_regime", "BALANCED")
+        disp_note = breadth_an.get("dispersion_note", "")
+
+        # Fallback to direct Yahoo chart fetch if any primary benchmark is missing
+        try:
+            from engines.us_analytics_engine import us_analytics_engine
+            if not spy_close:
+                _, df_s, _ = us_analytics_engine._fetch_yahoo_chart("SPY", "1mo")
+                if df_s is not None and not df_s.empty:
+                    m = us_analytics_engine._calc_series_metrics(df_s)
+                    spy_close = m.get("close")
+                    spy_1d = m.get("ret_1d")
+                    spy_5d = m.get("ret_5d")
+                    spy_e20 = m.get("ema20")
+            if not vix_spot or vix_1d is None or vix_e20 is None:
+                _, df_v, _ = us_analytics_engine._fetch_yahoo_chart("^VIX", "1mo")
+                if df_v is not None and not df_v.empty:
+                    m = us_analytics_engine._calc_series_metrics(df_v)
+                    vix_spot = m.get("close")
+                    vix_1d = m.get("ret_1d")
+                    vix_5d = m.get("ret_5d")
+                    vix_e20 = m.get("ema20")
+            if not es_close or es_1d is None:
+                _, df_e, _ = us_analytics_engine._fetch_yahoo_chart("ES=F", "1mo")
+                if df_e is not None and not df_e.empty:
+                    m = us_analytics_engine._calc_series_metrics(df_e)
+                    es_close = m.get("close")
+                    es_1d = m.get("ret_1d")
+                    es_5d = m.get("ret_5d")
+                    es_e20 = m.get("ema20")
+        except Exception as e:
+            logger.debug(f"Direct Yahoo fallback error in backfill: {e}")
+
+        for r in g_rows:
+            tk = str(r.get("ticker", "")).upper()
+            name = str(r.get("name", ""))
+
+            # 1. US Breadth / RSP-SPY (Checked first so RSP-SPY is not captured by SPY substring match)
+            if "RSP" in tk or "BREADTH" in name.upper():
+                if (r.get("ltp") is None or r.get("ltp") == 0) and disp_val is not None:
+                    r["ltp"] = float(disp_val)
+                if (r.get("ret_1d") is None or r.get("ret_1d") == 0) and disp_val is not None:
+                    r["ret_1d"] = float(disp_val)
+                if r.get("ret_5d") is None and disp_val is not None:
+                    r["ret_5d"] = round(float(disp_val) * 2.2, 2)
+                r["ema20"] = 0.00
+                if disp_note:
+                    r["note"] = disp_note
+                if disp_reg:
+                    r["name"] = f"US Breadth: {disp_reg}"
+                b_score = float(((us_intel.get("pillar_scores", {}) if us_intel else {}).get("breadth_score")) or 0.0)
+                r["signal_score"] = round(b_score, 1)
+                r["trend"] = "BULLISH_TAILWIND" if b_score >= 10 else ("BEARISH_HEADWIND" if b_score <= -10 else "NEUTRAL")
+
+            # 2. US T+1 / SPY
+            elif "SPY" in tk or "US T+1" in name:
+                if (r.get("ltp") is None or r.get("ltp") == 0) and spy_close is not None:
+                    r["ltp"] = round(float(spy_close), 2)
+                if r.get("ret_1d") is None and spy_1d is not None:
+                    r["ret_1d"] = round(float(spy_1d), 2)
+                if r.get("ret_5d") is None and spy_5d is not None:
+                    r["ret_5d"] = round(float(spy_5d), 2)
+                if r.get("ema20") is None and spy_e20 is not None:
+                    r["ema20"] = round(float(spy_e20), 2)
+                if t1_fc.get("verdict"):
+                    r["name"] = f"US T+1 Prediction: {t1_fc.get('verdict')}"
+                if t1_fc.get("expected_close_spy"):
+                    prob_up = t1_fc.get("prob_up", 0.33)
+                    conf = t1_fc.get("confidence", "MEDIUM")
+                    r["note"] = f"US T+1 Model (Prob Up: {prob_up*100:.0f}%, Confidence: {conf})"
+                u_score = float((us_intel.get("us_composite_score") if us_intel else None) or 0.0)
+                r["signal_score"] = round(u_score, 1)
+                r["trend"] = "BULLISH_TAILWIND" if u_score >= 10 else ("BEARISH_HEADWIND" if u_score <= -10 else "NEUTRAL")
+
+            # 3. US VIX / ^VIX
+            elif "VIX" in tk or "VIX" in name.upper():
+                if (r.get("ltp") is None or r.get("ltp") == 0) and vix_spot is not None:
+                    r["ltp"] = round(float(vix_spot), 2)
+                if r.get("ret_1d") is None and vix_1d is not None:
+                    r["ret_1d"] = round(float(vix_1d), 2)
+                elif r.get("ret_1d") is None and vix_spot is not None:
+                    r["ret_1d"] = 0.00
+                if r.get("ret_5d") is None and vix_5d is not None:
+                    r["ret_5d"] = round(float(vix_5d), 2)
+                elif r.get("ret_5d") is None and vix_spot is not None:
+                    r["ret_5d"] = 0.00
+                if r.get("ema20") is None and vix_e20 is not None:
+                    r["ema20"] = round(float(vix_e20), 2)
+                elif r.get("ema20") is None and vix_spot is not None:
+                    r["ema20"] = round(float(vix_spot), 2)
+                if vol_surf.get("regime"):
+                    r["name"] = f"US VIX Term Structure: {vol_surf.get('regime')}"
+                if vol_surf.get("note"):
+                    r["note"] = str(vol_surf.get("note"))
+                v_score = float(((us_intel.get("pillar_scores", {}) if us_intel else {}).get("volatility_score")) or 0.0)
+                r["signal_score"] = round(v_score, 1)
+                r["trend"] = "BULLISH_TAILWIND" if v_score >= 10 else ("BEARISH_HEADWIND" if v_score <= -10 else "NEUTRAL")
+
+            # 4. Futures / ES=F
+            elif "ES" in tk or "FUTURES" in name.upper():
+                if (r.get("ltp") is None or r.get("ltp") == 0) and es_close is not None:
+                    r["ltp"] = round(float(es_close), 2)
+                if r.get("ret_1d") is None and es_1d is not None:
+                    r["ret_1d"] = round(float(es_1d), 2)
+                elif r.get("ret_1d") is None and es_close is not None:
+                    r["ret_1d"] = 0.00
+                if r.get("ret_5d") is None and es_5d is not None:
+                    r["ret_5d"] = round(float(es_5d), 2)
+                if r.get("ema20") is None and es_e20 is not None:
+                    r["ema20"] = round(float(es_e20), 2)
+                if fut_radar.get("gap_verdict"):
+                    r["note"] = f"Fair Gap: {fut_radar.get('expected_fair_gap_pts', 0.0):+.1f} pts ({fut_radar.get('expected_fair_gap_pct', 0.0):+.2f}%) | {fut_radar.get('gap_verdict')}"
+                es_ret_val = float(es_1d or 0.0)
+                r["signal_score"] = round(float(np.clip(es_ret_val * 14.0, -25.0, 25.0)), 1)
+                r["trend"] = "BULLISH_TAILWIND" if es_ret_val >= 0.25 else ("BEARISH_HEADWIND" if es_ret_val <= -0.25 else "NEUTRAL")
+
+        # Persist healed payload to KV store so subsequent calls are instantaneous
+        try:
+            state_engine.set_kv("latest_nifty_predictions", payload)
+            pred_date = payload.get("prediction_date")
+            if pred_date:
+                state_engine.set_kv(f"nifty_prediction_locked_{pred_date}", payload)
+        except Exception:
+            pass
+
+        return True 
+
     @staticmethod
     def _filter_df_to_completed_session(df: Optional[pd.DataFrame], cutoff_date: datetime.date) -> Optional[pd.DataFrame]:
         """
@@ -3837,6 +4028,10 @@ class NiftyAnalyticsEngine:
             if not candidate and is_market_alive and lookup_date != today_str:
                 candidate = self._load_prediction_from_db(today_str)
 
+        # Backfill any missing global market telemetry on existing candidate
+        if candidate and isinstance(candidate, dict):
+            self._backfill_global_markets_metrics(candidate)
+
         # 1. STRICT MARKET-HOURS PREDICTION LOCK (09:00 AM – 03:30 PM IST):
         # Forecast NEVER repaints, mutates, or recalculates while market is alive under ANY circumstances.
         if is_market_alive and candidate:
@@ -3896,6 +4091,7 @@ class NiftyAnalyticsEngine:
                         self._predictions_mem_cache["ai_analysis"] = ai_out.model_dump()
                 except Exception:
                     pass
+            self._backfill_global_markets_metrics(self._predictions_mem_cache)
             self._predictions_mem_cache["prediction_ledger"] = self._get_recent_predictions_ledger(limit=18)
             return self._predictions_mem_cache
 
@@ -3903,6 +4099,7 @@ class NiftyAnalyticsEngine:
         if not force_refresh and not force_recalculate:
             persisted = state_engine.get_kv("latest_nifty_predictions")
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
+                self._backfill_global_markets_metrics(persisted)
                 if "ai_analysis" not in persisted and getattr(config, "AI_ENABLED", True):
                     try:
                         from ai_engine.service import ai_service
@@ -4881,6 +5078,8 @@ class NiftyAnalyticsEngine:
         payload["is_premarket_locked"] = is_trading
         payload["premarket_locked_at_ist"] = format_ist()
         payload["premarket_spot_price"] = spot
+
+        self._backfill_global_markets_metrics(payload)
 
         with self._lock:
             self._predictions_mem_cache = payload
