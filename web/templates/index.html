@@ -9486,6 +9486,18 @@
             switchOptionsSubTab(subtabParam);
           }, 200);
         }
+        const tabParam = urlParams.get('tab');
+        if (tabParam && typeof switchTab === 'function') {
+          setTimeout(() => {
+            switchTab(tabParam.startsWith('tab-') ? tabParam : ('tab-' + tabParam));
+          }, 250);
+        }
+        const intervalParam = urlParams.get('interval');
+        if (intervalParam && typeof switchIntradayInterval === 'function') {
+          setTimeout(() => {
+            switchIntradayInterval(intervalParam);
+          }, 250);
+        }
         const depthK = urlParams.get('depth_strike');
         if (depthK && typeof openOptionDepthModal === 'function') {
           setTimeout(() => {
@@ -16872,7 +16884,10 @@
         loadScanLogs();
         loadSystemActivityLogs();
       }
-      if (tabId === 'tab-analytics') loadAllEquityCurves();
+      if (tabId === 'tab-analytics') {
+        if (typeof loadPortfolio1 === 'function') loadPortfolio1();
+        loadAllEquityCurves();
+      }
       if (tabId === 'tab-ml-training') loadMlTrainingDesk();
     }
 
