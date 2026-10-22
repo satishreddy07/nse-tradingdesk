@@ -159,6 +159,28 @@ def get_server_public_ip(force: bool = False) -> str:
         return _cached_server_ip
 
 
+def scheduled_omni_watchdog_job():
+    """
+    Continuous 60s Omni-Watchdog & ML Sentinel Heartbeat:
+    Probes all 10 platform subsystems, 5 ML horizons, SQLite database integrity,
+    and dispatches high-priority Telegram alerts if any critical failure is detected.
+    """
+    t0 = time.perf_counter()
+    try:
+        from engines.omni_watchdog_engine import omni_watchdog
+        res = omni_watchdog.probe_all_subsystems(force_active_probe=False)
+        dur_ms = (time.perf_counter() - t0) * 1000.0
+        omni_watchdog.record_cron_job_execution("scheduled_omni_watchdog_job", dur_ms, True)
+    except Exception as e:
+        dur_ms = (time.perf_counter() - t0) * 1000.0
+        logger.error(f"[OmniWatchdog Cron] Exception in watchdog evaluation: {e}")
+        try:
+            from engines.omni_watchdog_engine import omni_watchdog
+            omni_watchdog.record_cron_job_execution("scheduled_omni_watchdog_job", dur_ms, False, str(e))
+        except Exception:
+            pass
+
+
 def scheduled_nse_holiday_sync_job():
     """
     08:55 AM IST Weekday Job (and Startup Task):
@@ -1123,6 +1145,16 @@ def start_scheduler():
         threading.Thread(target=scheduled_nse_holiday_sync_job, daemon=True).start()
 
         _scheduler = BackgroundScheduler(timezone=IST)
+
+        # Job 00: Continuous Omni-Watchdog & ML Sentinel Heartbeat (Every 60s)
+        _scheduler.add_job(
+            scheduled_omni_watchdog_job,
+            trigger=CronTrigger(second="0", timezone=IST),
+            id="job_omni_watchdog_60s",
+            name="System-Wide Omni-Watchdog & ML Sentinel 60s Heartbeat",
+            replace_existing=True,
+            misfire_grace_time=30
+        )
 
         # Job 0A-0: Daily Early Pre-Market Assessment at 08:35 AM IST Mon-Fri
         _scheduler.add_job(

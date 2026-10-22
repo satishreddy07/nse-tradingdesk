@@ -445,4 +445,109 @@ def test_invariant_11_advanced_confidence_and_asymmetric_strategy_integrity():
     assert len(legs_prb) == 4
 
 
+def test_invariant_12_omni_watchdog_and_ml_sentinel_integrity():
+    """
+    INVARIANT 12: System-Wide Omni-Watchdog & ML Sentinel Integrity.
+    1. Active master diagnostic probes all 10 platform subsystems without unhandled exceptions.
+    2. Deep ML Sentinel validates all 32 standardized features, 5 model horizons, and PSI drift.
+    3. Function interceptor @watchdog_guarded tracks latencies and records failure states accurately.
+    4. Autonomous self-healing functions cleanly recover database locks and prediction caches.
+    5. Capital preservation trading gate determines market hours and execution status with zero ambiguity.
+    """
+    from engines.omni_watchdog_engine import omni_watchdog, watchdog_guarded
+
+    # 1. Master Diagnostic Active Probe across all 10 Subsystems
+    res = omni_watchdog.probe_all_subsystems(force_active_probe=True)
+    assert res is not None
+    assert res["overall_status"] in ("HEALTHY", "DEGRADED", "CRITICAL_ALERT")
+    assert res["total_sentinels"] >= 13
+    assert res["healthy_count"] >= 10, f"Expected majority of sentinels healthy, got {res['healthy_count']}/{res['total_sentinels']}"
+
+    subsystems = res["subsystems"]
+    expected_subsystems = [
+        "swing_trading", "ohlcv_vault", "intraday_desk", "options_desk",
+        "auto_strategies", "predictions_desk", "commodities_desk",
+        "screeners", "paper_trading", "broker_gateway"
+    ]
+    for sub_name in expected_subsystems:
+        assert sub_name in subsystems, f"Subsystem {sub_name} missing from Omni-Watchdog probe!"
+        sub = subsystems[sub_name]
+        assert "status" in sub and sub["status"] in ("HEALTHY", "STANDBY", "DEGRADED", "ALERT")
+        assert "latency_ms" in sub and sub["latency_ms"] >= 0.0
+        assert "details" in sub and isinstance(sub["details"], dict)
+
+    # 2. Deep Machine Learning Sentinel Verification (5 Horizons)
+    ml = res["ml_sentinel"]
+    assert ml is not None
+    assert ml["status"] in ("HEALTHY", "DEGRADED", "ALERT")
+
+    # 2a. Dataset health (32 features, zero synthetic numbers)
+    ds = ml["dataset_health"]
+    assert ds["total_rows"] >= 50, f"Dataset must have at least 50 historical rows, got {ds['total_rows']}"
+    assert ds["verified_features_count"] == 32
+    assert ds["null_features_detected"] == 0, "No null features allowed in active learning dataset"
+    assert ds["synthetic_numbers_detected"] is False
+
+    # 2b. Concept Drift Sentinel
+    drift = ml["concept_drift"]
+    assert "population_stability_index" in drift
+    assert isinstance(drift["population_stability_index"], float)
+    assert drift["drift_status"] in ("STABLE", "DRIFT_DETECTED")
+
+    # 2c. Model Registry (Intraday, Weekly, Monthly, Swing, T+1, T+5)
+    reg = ml["models_registry"]
+    for horizon in ("intraday", "weekly", "monthly", "swing", "nifty_t+1", "nifty_t+5"):
+        assert horizon in reg, f"Model horizon {horizon} missing from registry probe"
+        h_info = reg[horizon]
+        assert h_info["status"] in ("HEALTHY", "DEGRADED", "NOT_FOUND")
+
+    # 2d. Prediction Ledger Reconciliation
+    rec = ml["ledger_reconciliation"]
+    assert rec["total_forecasts"] >= 1
+    assert rec["pending_outcomes"] >= 0
+
+    # 3. Interceptor & Telemetry Tracking Verification
+    @watchdog_guarded(domain="test_inv12", section="sentinel_check", critical=False, max_latency_ms=200.0)
+    def dummy_healthy_op():
+        return {"val": 42.0, "status": "OK"}
+
+    @watchdog_guarded(domain="test_inv12", section="sentinel_check", critical=False, max_latency_ms=200.0)
+    def dummy_faulty_op():
+        raise RuntimeError("Sentinel simulated error")
+
+    v = dummy_healthy_op()
+    assert v["val"] == 42.0
+
+    try:
+        dummy_faulty_op()
+    except RuntimeError:
+        pass
+
+    telemetry = omni_watchdog._function_telemetry
+    healthy_key = "test_inv12:dummy_healthy_op"
+    faulty_key = "test_inv12:dummy_faulty_op"
+
+    assert healthy_key in telemetry
+    assert telemetry[healthy_key]["success_count"] >= 1
+    assert telemetry[healthy_key]["status"] == "HEALTHY"
+
+    assert faulty_key in telemetry
+    assert telemetry[faulty_key]["failure_count"] >= 1
+    assert telemetry[faulty_key]["status"] == "DEGRADED"
+
+    # 4. Autonomous Self-Healing Verification
+    heal_db = omni_watchdog.execute_self_healing("database")
+    assert heal_db["success"] is True
+    assert len(heal_db["actions_taken"]) >= 1
+
+    heal_pred = omni_watchdog.execute_self_healing("predictions")
+    assert heal_pred["success"] is True
+
+    # 5. Capital Safety Trading Gate Verification
+    gate_allowed, gate_msg = omni_watchdog.is_trading_allowed()
+    assert isinstance(gate_allowed, bool)
+    assert isinstance(gate_msg, str) and len(gate_msg) > 0
+
+
+
 

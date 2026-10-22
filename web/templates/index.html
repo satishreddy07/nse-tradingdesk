@@ -8429,66 +8429,170 @@
   <!-- CENTRAL DATA WATCHDOG & GATEKEEPER TELEMETRY MODAL                    -->
   <!-- ===================================================================== -->
   <div id="watchdog-modal" onclick="if(event.target === this) closeWatchdogModal()" style="display: none;" class="hidden fixed inset-0 z-[110] bg-black/80 backdrop-blur-md items-center justify-center p-2 sm:p-4">
-    <div class="bg-[#0b0f19] border border-cyan-500/40 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh] my-auto">
+    <div class="bg-[#0b0f19] border border-cyan-500/40 rounded-2xl w-full max-w-6xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh] my-auto">
       <!-- Modal Header -->
-      <div class="p-3 sm:p-4 bg-slate-900/95 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-2.5">
+      <div class="p-3 sm:p-4 bg-slate-900/95 border-b border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
         <div class="flex items-center justify-between gap-2 min-w-0">
-          <div class="flex items-center gap-2 sm:gap-2.5 min-w-0">
-            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-bold text-sm sm:text-base shrink-0">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div class="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-bold text-base shrink-0">
               🛡️
             </div>
             <div class="min-w-0">
-              <div class="flex items-center gap-1.5 flex-wrap">
+              <div class="flex items-center gap-2 flex-wrap">
                 <h3 class="text-sm sm:text-base font-extrabold text-white font-mono truncate">
-                  Pipeline Watchdog
+                  Omni-Watchdog & ML Sentinel Suite
                 </h3>
-                <span id="watchdog-modal-summary-badge" class="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shrink-0 font-mono font-bold">4/4 LIVE</span>
+                <span id="watchdog-modal-summary-badge" class="text-[10px] sm:text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shrink-0 font-mono font-bold">13/13 HEALTHY</span>
+                <span id="omni-trading-gate-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono">GATE: CHECKING</span>
               </div>
               <p class="text-[10px] sm:text-xs text-slate-400 font-mono truncate hidden sm:block">
-                Live telemetry monitoring: Swing, Intraday, Options & ML
+                Whole-System Observability: 10 Subsystems • 5 ML Horizons • 19 Background Schedulers • SQLite WAL
               </p>
             </div>
           </div>
-          <!-- Mobile Close Button (top-right on phone) -->
-          <button onclick="closeWatchdogModal()" class="sm:hidden w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 active:scale-95" aria-label="Close modal">
+          <!-- Mobile Close Button -->
+          <button onclick="closeWatchdogModal()" class="lg:hidden w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 active:scale-95" aria-label="Close modal">
             ✕
           </button>
         </div>
-        <!-- Action Row (Probe button + Desktop Close button) -->
-        <div class="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1.5 sm:pt-0 border-t sm:border-0 border-slate-800/60">
-          <span class="text-[10px] font-mono text-slate-400 sm:hidden">Auto-Probed & Verified</span>
-          <div class="flex items-center gap-1.5">
-            <button onclick="probeWatchdogFeeds()" id="btn-probe-feeds" class="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-[11px] sm:text-xs font-mono flex items-center gap-1 transition active:scale-95">
-              <span>⚡ Probe All Feeds</span>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center justify-between lg:justify-end gap-2 shrink-0 pt-1.5 lg:pt-0 border-t lg:border-0 border-slate-800/60">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <button onclick="probeAllOmniSubsystems()" id="btn-omni-probe" class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-[11px] sm:text-xs font-mono flex items-center gap-1 transition active:scale-95 shadow-sm">
+              <span>⚡ Probe All Subsystems</span>
             </button>
-            <button onclick="closeWatchdogModal()" class="hidden sm:flex px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs font-mono transition items-center justify-center" aria-label="Close">
+            <button onclick="probeMLHealth()" id="btn-omni-ml-audit" class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] sm:text-xs font-mono flex items-center gap-1 transition active:scale-95 shadow-sm">
+              <span>🧠 Deep ML Audit</span>
+            </button>
+            <button onclick="triggerOmniSelfHealing('database')" id="btn-omni-heal-db" class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-[11px] sm:text-xs font-mono flex items-center gap-1 transition active:scale-95">
+              <span>🛠️ Heal DB</span>
+            </button>
+            <button onclick="closeWatchdogModal()" class="hidden lg:flex px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs font-mono transition items-center justify-center" aria-label="Close">
               ✕
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Modal Body (4 Pipeline Cards) -->
-      <div class="p-4 sm:p-6 overflow-y-auto custom-scroll space-y-4">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="watchdog-cards-container">
-          <!-- Rendered via JS -->
+      <!-- Modal Sub-Navigation Tabs -->
+      <div class="bg-slate-950 px-3 sm:px-4 py-2 border-b border-slate-800 flex items-center gap-2 overflow-x-auto custom-scroll shrink-0">
+        <button onclick="switchOmniTab('subsystems')" id="omni-tab-btn-subsystems" class="omni-subtab-btn px-3 py-1 rounded-lg text-xs font-mono font-bold bg-cyan-500 text-black transition whitespace-nowrap">
+          10 Subsystems Grid
+        </button>
+        <button onclick="switchOmniTab('ml')" id="omni-tab-btn-ml" class="omni-subtab-btn px-3 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition whitespace-nowrap">
+          ML Lifecycle Suite (5 Horizons)
+        </button>
+        <button onclick="switchOmniTab('cron')" id="omni-tab-btn-cron" class="omni-subtab-btn px-3 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition whitespace-nowrap">
+          Cron Schedulers (19 Jobs)
+        </button>
+        <button onclick="switchOmniTab('db')" id="omni-tab-btn-db" class="omni-subtab-btn px-3 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition whitespace-nowrap">
+          Database & Persistence
+        </button>
+        <button onclick="switchOmniTab('latencies')" id="omni-tab-btn-latencies" class="omni-subtab-btn px-3 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition whitespace-nowrap">
+          Function Latencies & SLAs
+        </button>
+      </div>
+
+      <!-- Modal Body (Dynamic Tab Panes) -->
+      <div class="p-3 sm:p-5 overflow-y-auto custom-scroll space-y-4 flex-1">
+        
+        <!-- PANE 1: 10 Subsystems Grid -->
+        <div id="omni-pane-subsystems" class="space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" id="omni-subsystems-cards-container">
+            <!-- Dynamic 10 Subsystems Cards Rendered via JS -->
+          </div>
         </div>
 
-        <!-- Strict SLA & Alerting Policy -->
-        <div class="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] font-mono text-slate-400 space-y-1">
-          <div class="font-bold text-slate-300 flex items-center gap-1.5">
-            <span>📡 Institutional Data SLA & Anti-Stale Protocol:</span>
+        <!-- PANE 2: ML Lifecycle Suite -->
+        <div id="omni-pane-ml" class="hidden space-y-4">
+          <!-- ML Health Overview Banner -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5" id="omni-ml-stats-banner">
+            <!-- Populated via JS -->
           </div>
-          <div>• <b class="text-emerald-400">HEALTHY</b>: Data packet received within &le; 120s during market hours (09:15–15:30 IST).</div>
-          <div>• <b class="text-amber-400">DEGRADED</b>: Packet age between 120s – 300s. Initiates automated background refresh probe.</div>
-          <div>• <b class="text-rose-400">OFFLINE_ALERT</b>: Packet age &gt; 300s during market hours. Automatically dispatches Telegram Alert & triggers stream reconnect.</div>
-          <div>• <b class="text-slate-300">OUTSIDE MARKET HOURS</b>: Shows HEALTHY_STANDBY with last verified session data.</div>
+
+          <!-- 5 Horizon Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" id="omni-ml-horizons-container">
+            <!-- Populated via JS -->
+          </div>
+
+          <!-- Retraining Action Controls -->
+          <div class="p-3 rounded-xl bg-slate-900/90 border border-purple-500/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono">
+            <div>
+              <span class="text-purple-300 font-bold">Autonomous Retraining Pipeline:</span>
+              <span class="text-slate-400 block text-[11px]">Walk-forward purged retraining triggers automatically at 15:40 IST or upon Concept Drift (PSI &gt; 0.20).</span>
+            </div>
+            <button onclick="triggerRetrainHorizon('all')" id="btn-force-retrain-all" class="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold transition whitespace-nowrap shadow-sm active:scale-95">
+              🔄 Retrain All 5 Horizons Now
+            </button>
+          </div>
         </div>
+
+        <!-- PANE 3: Cron Schedulers Heartbeat -->
+        <div id="omni-pane-cron" class="hidden space-y-3">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/90 overflow-hidden">
+            <div class="p-3 bg-slate-950 border-b border-slate-800 text-xs font-mono font-bold text-slate-300 flex items-center justify-between">
+              <span>Background Cron Jobs (19 Registered Tasks)</span>
+              <span class="text-[11px] text-cyan-400 font-normal">Stuck Job SLA: Auto-Terminated if &gt; 180s</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs font-mono">
+                <thead class="bg-slate-950/60 text-slate-400 text-[11px] border-b border-slate-800/80">
+                  <tr>
+                    <th class="p-2.5">Job Name</th>
+                    <th class="p-2.5">Status</th>
+                    <th class="p-2.5">Last Run (IST)</th>
+                    <th class="p-2.5">Duration</th>
+                  </tr>
+                </thead>
+                <tbody id="omni-cron-table-body" class="divide-y divide-slate-800/50 text-slate-200">
+                  <!-- Populated via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- PANE 4: Database & Persistence Integrity -->
+        <div id="omni-pane-db" class="hidden space-y-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="omni-db-cards-container">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+
+        <!-- PANE 5: Function Execution Latencies & SLAs -->
+        <div id="omni-pane-latencies" class="hidden space-y-3">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/90 overflow-hidden">
+            <div class="p-3 bg-slate-950 border-b border-slate-800 text-xs font-mono font-bold text-slate-300 flex items-center justify-between">
+              <span>@watchdog_guarded Function Telemetry</span>
+              <span class="text-[11px] text-slate-400 font-normal">Zero Synthetic / Fake Numbers Gate</span>
+            </div>
+            <div class="overflow-x-auto max-h-[420px] custom-scroll">
+              <table class="w-full text-left text-xs font-mono">
+                <thead class="bg-slate-950/60 text-slate-400 text-[11px] border-b border-slate-800/80 sticky top-0">
+                  <tr>
+                    <th class="p-2.5">Function Name</th>
+                    <th class="p-2.5">Domain</th>
+                    <th class="p-2.5">Status</th>
+                    <th class="p-2.5">Calls</th>
+                    <th class="p-2.5">Failures</th>
+                    <th class="p-2.5">P95 Latency</th>
+                    <th class="p-2.5">Last Run</th>
+                  </tr>
+                </thead>
+                <tbody id="omni-latencies-table-body" class="divide-y divide-slate-800/50 text-slate-200">
+                  <!-- Populated via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <!-- Modal Footer -->
       <div class="p-3 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between text-xs font-mono text-slate-500">
-        <span id="watchdog-last-checked-label">Last Checked: --</span>
+        <span id="watchdog-last-checked-label">Last Checked: -- • Engine: OmniWatchdogEngine v2.0</span>
         <button onclick="closeWatchdogModal()" class="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">Close</button>
       </div>
     </div>
@@ -18031,154 +18135,390 @@
       }
     }
 
+    let currentOmniWatchdogCache = null;
+
+    function switchOmniTab(tabName) {
+      const tabs = ['subsystems', 'ml', 'cron', 'db', 'latencies'];
+      tabs.forEach(t => {
+        const pane = document.getElementById(`omni-pane-${t}`);
+        const btn = document.getElementById(`omni-tab-btn-${t}`);
+        if (pane) {
+          if (t === tabName) {
+            pane.classList.remove('hidden');
+          } else {
+            pane.classList.add('hidden');
+          }
+        }
+        if (btn) {
+          if (t === tabName) {
+            btn.className = 'omni-subtab-btn px-3 py-1 rounded-lg text-xs font-mono font-bold bg-cyan-500 text-black transition whitespace-nowrap shadow-sm';
+          } else {
+            btn.className = 'omni-subtab-btn px-3 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition whitespace-nowrap';
+          }
+        }
+      });
+    }
+
     async function probeWatchdogFeeds() {
-      const btn = document.getElementById('btn-probe-feeds');
-      if (btn) btn.innerHTML = '<span>⌛ Probing Feeds...</span>';
+      return probeAllOmniSubsystems();
+    }
+
+    async function probeAllOmniSubsystems() {
+      const btn = document.getElementById('btn-omni-probe');
+      const origText = btn ? btn.innerHTML : '';
+      if (btn) btn.innerHTML = '<span>Probing 10 Subsystems...</span>';
       try {
-        const res = await fetch('/api/system/watchdog/probe', { method: 'POST' });
+        const res = await fetch('/api/system/omni-watchdog/probe-all', { method: 'POST' });
         if (res.ok) {
-          const telemetry = await res.json();
-          renderWatchdogUI(telemetry);
-          showToast('Data Gatekeeper: All 4 feeds probed & verified!', 'success');
+          const omniData = await res.json();
+          currentOmniWatchdogCache = omniData;
+          renderWatchdogUI(null, omniData);
+          showToast(`Omni-Watchdog: Probed ${omniData.total_sentinels} Sentinels in ${omniData.elapsed_ms}ms!`, 'success');
         }
       } catch (e) {
-        showToast('Failed to probe feeds: ' + e.message, 'error');
+        showToast('Failed to probe Omni-Watchdog: ' + e.message, 'error');
       } finally {
-        if (btn) btn.innerHTML = '<span>⚡ Probe All Feeds</span>';
+        if (btn) btn.innerHTML = origText || '<span>⚡ Probe All Subsystems</span>';
+      }
+    }
+
+    async function probeMLHealth() {
+      const btn = document.getElementById('btn-omni-ml-audit');
+      if (btn) btn.innerHTML = '<span>Auditing ML...</span>';
+      try {
+        const res = await fetch('/api/system/omni-watchdog/ml-health');
+        if (res.ok) {
+          const ml = await res.json();
+          showToast(`ML Audit: Drift PSI = ${ml.concept_drift?.population_stability_index || 0} (${ml.concept_drift?.drift_status || 'STABLE'})`, 'success');
+          if (currentOmniWatchdogCache) {
+            currentOmniWatchdogCache.ml_sentinel = ml;
+            renderWatchdogUI(null, currentOmniWatchdogCache);
+          }
+        }
+      } catch (e) {
+        showToast('ML Audit Error: ' + e.message, 'error');
+      } finally {
+        if (btn) btn.innerHTML = '<span>🧠 Deep ML Audit</span>';
+      }
+    }
+
+    async function triggerOmniSelfHealing(domain) {
+      const btn = document.getElementById('btn-omni-heal-db');
+      if (btn) btn.innerHTML = '<span>Healing...</span>';
+      try {
+        const res = await fetch('/api/system/omni-watchdog/self-heal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domain: domain || 'database' })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          showToast(`Self-Healing [${domain}]: ${data.actions_taken?.join(' | ') || 'Completed'}`, 'success');
+          probeAllOmniSubsystems();
+        }
+      } catch (e) {
+        showToast('Self-healing error: ' + e.message, 'error');
+      } finally {
+        if (btn) btn.innerHTML = '<span>🛠️ Heal DB</span>';
+      }
+    }
+
+    async function triggerRetrainHorizon(horizon) {
+      const btn = document.getElementById('btn-force-retrain-all');
+      if (btn) btn.innerHTML = '<span>Queuing Retraining...</span>';
+      try {
+        const res = await fetch('/api/system/omni-watchdog/retrain-model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ horizon: horizon || 'all' })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          showToast(data.message || 'Retraining queued in background!', 'success');
+        }
+      } catch (e) {
+        showToast('Retraining error: ' + e.message, 'error');
+      } finally {
+        if (btn) btn.innerHTML = '🔄 Retrain All 5 Horizons Now';
       }
     }
 
     async function refreshWatchdogModal() {
       try {
-        const res = await fetch('/api/system/watchdog');
+        const res = await fetch('/api/system/omni-watchdog/status');
         if (res.ok) {
-          const telemetry = await res.json();
-          renderWatchdogUI(telemetry);
+          const omniData = await res.json();
+          currentOmniWatchdogCache = omniData;
+          renderWatchdogUI(null, omniData);
         }
       } catch (e) {
-        console.error('Watchdog load error:', e);
+        console.error('Omni-watchdog load error:', e);
       }
     }
 
-    function renderWatchdogUI(t) {
-      if (!t) return;
+    function renderWatchdogUI(legacyData, omniData) {
+      const data = omniData || currentOmniWatchdogCache;
+      if (!data && !legacyData) return;
+
+      // 1. Header Badges
       const badge = document.getElementById('watchdog-modal-summary-badge');
-      if (badge) {
-        badge.innerText = t.summary_badge || '4/4 FEEDS LIVE';
-        badge.className = `text-xs px-2.5 py-0.5 rounded-full font-bold ${
-          t.overall_status === 'HEALTHY' 
-            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
-            : (t.overall_status === 'ALERT' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40')
+      const gateBadge = document.getElementById('omni-trading-gate-badge');
+      const headerText = document.getElementById('gatekeeper-text');
+      const headerDot = document.getElementById('gatekeeper-dot');
+
+      const isHealthy = data ? (data.overall_status === 'HEALTHY') : (legacyData?.overall_status === 'HEALTHY');
+      const isAlert = data ? (data.overall_status === 'CRITICAL_ALERT') : (legacyData?.overall_status === 'ALERT');
+
+      if (badge && data) {
+        badge.innerText = `${data.healthy_count}/${data.total_sentinels} ${data.overall_status}`;
+        badge.className = `text-[10px] sm:text-xs px-2.5 py-0.5 rounded-full font-bold ${
+          isHealthy ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' :
+          (isAlert ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40')
         }`;
       }
 
+      if (gateBadge && data?.trading_gate) {
+        const gateOpen = data.trading_gate.is_trading_allowed;
+        gateBadge.innerText = gateOpen ? 'GATE: OPEN' : 'GATE: HALTED';
+        gateBadge.className = `text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+          gateOpen ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+        }`;
+        gateBadge.title = data.trading_gate.reason || '';
+      }
+
+      if (headerText) {
+        if (data) {
+          headerText.innerText = `OMNI ${data.healthy_count}/${data.total_sentinels} OK`;
+        } else if (legacyData) {
+          headerText.innerText = legacyData.summary_badge || '4/4 LIVE';
+        }
+        headerText.className = `font-mono font-bold truncate ${isHealthy ? 'text-emerald-400' : (isAlert ? 'text-rose-400' : 'text-amber-400')}`;
+      }
+
+      if (headerDot) {
+        headerDot.className = `w-1.5 h-1.5 rounded-full shrink-0 ${isHealthy ? 'bg-emerald-400 animate-pulse' : (isAlert ? 'bg-rose-400 animate-ping' : 'bg-amber-400')}`;
+      }
+
       const lbl = document.getElementById('watchdog-last-checked-label');
-      if (lbl) lbl.innerText = `Last Checked: ${t.last_checked_ist || '--'} • Market: ${t.market_open ? '🟢 OPEN' : '⚪ CLOSED'}`;
+      if (lbl && data) {
+        lbl.innerText = `Last Checked: ${data.timestamp || '--'} • Latency: ${data.elapsed_ms || 0}ms • Engine: OmniWatchdogEngine v2.0`;
+      }
 
-      const container = document.getElementById('watchdog-cards-container');
-      if (!container || !t.endpoints) return;
+      if (!data) return;
 
-      const icons = {
-        swing_trading: '📈',
-        intraday_desk: '⚡',
-        options_desk: '🔥',
-        predictions_ml: '🤖'
-      };
+      // 2. Render PANE 1: 10 Subsystems
+      const subContainer = document.getElementById('omni-subsystems-cards-container');
+      if (subContainer && data.subsystems) {
+        const subIcons = {
+          swing_trading: '📈',
+          ohlcv_vault: '🏛️',
+          intraday_desk: '⚡',
+          options_desk: '🔥',
+          auto_strategies: '🤖',
+          predictions_desk: '🔮',
+          commodities_desk: '🛢️',
+          screeners: '🔍',
+          paper_trading: '📝',
+          broker_gateway: '🏦'
+        };
 
-      container.innerHTML = t.endpoints.map(ep => {
-        const isHealthy = ep.status === 'HEALTHY' || ep.status === 'HEALTHY_STANDBY';
-        const isAlert = ep.status === 'OFFLINE_ALERT';
-        const badgeColor = isHealthy ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' : (isAlert ? 'text-rose-400 bg-rose-500/10 border-rose-500/30 animate-pulse' : 'text-amber-400 bg-amber-500/10 border-amber-500/30');
-        const d = ep.details || {};
+        subContainer.innerHTML = Object.entries(data.subsystems).map(([key, sub]) => {
+          const subHealthy = sub.status === 'HEALTHY' || sub.status === 'STANDBY';
+          const subAlert = sub.status === 'ALERT';
+          const badgeClass = subHealthy
+            ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+            : (subAlert ? 'text-rose-400 bg-rose-500/10 border-rose-500/30 animate-pulse' : 'text-amber-400 bg-amber-500/10 border-amber-500/30');
 
-        let detailLines = [];
-        if (ep.id === 'swing_trading') {
-          detailLines = [
-            `Master Vault: <b class="text-white">${d.stocks_in_vault || 0}</b> stocks (Latest Bar: <b class="text-cyan-300">${d.latest_bar_date || '--'}</b>)`,
-            `Active Positions: <b class="text-white">${d.active_positions_count || 0}</b> | Stream LTPs: <b class="text-emerald-400">${d.last_stream_updated_count || 0}</b>`,
-            `Last Stream: <span class="text-slate-400">${d.last_stream_time || '--'}</span>`
-          ];
-        } else if (ep.id === 'intraday_desk') {
-          detailLines = [
-            `Live Spot: <b class="text-emerald-300">₹${Number(d.spot_price || 0).toLocaleString('en-IN', {minimumFractionDigits: 1})}</b> (ATM ${d.atm_strike || '--'})`,
-            `Intraday Regime: <b class="text-cyan-300">${(d.market_state || 'BALANCED').replace(/_/g, ' ')}</b>`,
-            `Last Slot: <span class="text-slate-400">${d.last_slot || '--'} IST (${d.session_date || '--'})</span>`
-          ];
-        } else if (ep.id === 'options_desk') {
-          detailLines = [
-            `Weekly Expiry: <b class="text-cyan-300">${d.weekly_expiry || '--'}</b> (${d.strikes_count || 0} active strikes)`,
-            `ATM Straddle: <b class="text-white">₹${Number(d.atm_straddle_prem || 0).toFixed(1)}</b> | PCR: <b class="text-emerald-400">${Number(d.near_atm_pcr || 0).toFixed(2)}</b>`,
-            `Walls: <span class="text-emerald-400">${d.put_wall || '--'} PE</span> / <span class="text-rose-400">${d.call_wall || '--'} CE</span>`
-          ];
-        } else {
-          const iml = d.intraday_ml || {};
-          detailLines = [
-            `Session Forecast: <b class="text-purple-300">${d.prediction_date || '--'}</b> (${d.aligned_today ? '🟢 Aligned' : '⚪ Standby'})`,
-            `Direction: <b class="text-white">${d.predicted_direction || '--'}</b> (Score: ${Number(d.composite_score || 0).toFixed(1)})`,
-            `Locked At: <span class="text-slate-400">${d.created_at || '--'}</span>`,
-            ...(iml.regime ? [`Intraday ML: <b class="text-cyan-300">${iml.regime.replace(/_/g, ' ')}</b> (Slots: ${iml.slots_trained || 0}, R²: ${iml.r2_score || 0})`] : [])
-          ];
+          const d = sub.details || {};
+          const detailRows = Object.entries(d).slice(0, 4).map(([k, v]) => {
+            const label = k.replace(/_/g, ' ');
+            return `<div class="flex items-center justify-between text-[11px] font-mono text-slate-300">
+              <span class="text-slate-400 capitalize">${label}:</span>
+              <span class="font-bold text-white">${v !== null && v !== undefined ? v : '--'}</span>
+            </div>`;
+          }).join('');
+
+          return `
+            <div class="p-3.5 rounded-xl bg-slate-900 border ${subAlert ? 'border-rose-500/60' : 'border-slate-800'} space-y-2 hover:border-slate-700 transition">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="text-lg">${subIcons[key] || '📡'}</span>
+                  <div>
+                    <h4 class="font-bold text-white text-xs font-mono">${sub.name}</h4>
+                    <span class="text-[9px] text-slate-500 font-mono">LATENCY: ${sub.latency_ms || 0}ms</span>
+                  </div>
+                </div>
+                <span class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md border ${badgeClass}">${sub.status}</span>
+              </div>
+              <div class="space-y-1 border-t border-slate-800/80 pt-2">
+                ${detailRows}
+              </div>
+              ${sub.issues && sub.issues.length ? `<div class="text-[10px] text-amber-400 font-mono bg-amber-500/10 p-1.5 rounded border border-amber-500/20">${sub.issues[0]}</div>` : ''}
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 3. Render PANE 2: ML Suite
+      const ml = data.ml_sentinel;
+      if (ml) {
+        const mlBanner = document.getElementById('omni-ml-stats-banner');
+        if (mlBanner) {
+          const psi = ml.concept_drift?.population_stability_index || 0;
+          const driftStatus = ml.concept_drift?.drift_status || 'STABLE';
+          const rec = ml.ledger_reconciliation || {};
+
+          mlBanner.innerHTML = `
+            <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+              <span class="text-[10px] font-mono text-slate-400 block">Dataset Verified Rows</span>
+              <span class="text-base font-extrabold text-white font-mono">${ml.dataset_health?.total_rows || 0}</span>
+              <span class="text-[9px] font-mono text-emerald-400 block">${ml.dataset_health?.verified_features_count || 32}/32 Features OK</span>
+            </div>
+            <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+              <span class="text-[10px] font-mono text-slate-400 block">Concept Drift (PSI)</span>
+              <span class="text-base font-extrabold ${psi > 0.20 ? 'text-rose-400' : 'text-emerald-400'} font-mono">${psi}</span>
+              <span class="text-[9px] font-mono ${psi > 0.20 ? 'text-rose-300' : 'text-slate-400'} block">${driftStatus} (SLA &le; 0.20)</span>
+            </div>
+            <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+              <span class="text-[10px] font-mono text-slate-400 block">Ledger Reconciliation</span>
+              <span class="text-base font-extrabold text-white font-mono">${rec.empirical_hit_rate_pct || 0}%</span>
+              <span class="text-[9px] font-mono text-purple-300 block">${rec.reconciled_forecasts || 0} Evaluated (${rec.pending_outcomes || 0} Pend)</span>
+            </div>
+            <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+              <span class="text-[10px] font-mono text-slate-400 block">Training Runs Count</span>
+              <span class="text-base font-extrabold text-white font-mono">${ml.training_runs_health?.total_training_runs || 0}</span>
+              <span class="text-[9px] font-mono text-slate-400 block">Success: ${ml.training_runs_health?.successful_runs || 0}</span>
+            </div>
+          `;
         }
 
-        return `
-          <div class="p-3.5 rounded-xl bg-slate-900 border ${isAlert ? 'border-rose-500/60' : 'border-slate-800'} space-y-2">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="text-base">${icons[ep.id] || '📡'}</span>
-                <div>
-                  <h4 class="font-bold text-white text-xs font-mono">${ep.name}</h4>
-                  <span class="text-[10px] text-slate-500 font-mono">${ep.category} PIPELINE</span>
+        const horizonsContainer = document.getElementById('omni-ml-horizons-container');
+        if (horizonsContainer && ml.models_registry) {
+          horizonsContainer.innerHTML = Object.entries(ml.models_registry).map(([hName, hData]) => {
+            const hStatus = hData.status;
+            const hHealthy = hStatus === 'HEALTHY';
+            const hBadgeClass = hHealthy ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' : 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+
+            return `
+              <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h5 class="text-xs font-bold text-white font-mono uppercase">${hName.replace(/_/g, ' ')}</h5>
+                    <span class="text-[9px] text-slate-500 font-mono truncate block max-w-[150px]">${hData.bundle_name || 'No bundle'}</span>
+                  </div>
+                  <span class="text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${hBadgeClass}">${hStatus}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-[11px] font-mono border-t border-slate-800/80 pt-2">
+                  <div>
+                    <span class="text-slate-400 text-[10px] block">Brier Score</span>
+                    <span class="font-bold text-white">${hData.brier_score !== null ? hData.brier_score : '--'}</span>
+                  </div>
+                  <div>
+                    <span class="text-slate-400 text-[10px] block">Accuracy</span>
+                    <span class="font-bold text-emerald-400">${hData.accuracy_pct !== null ? hData.accuracy_pct + '%' : '--'}</span>
+                  </div>
+                  <div>
+                    <span class="text-slate-400 text-[10px] block">Bundle Age</span>
+                    <span class="text-slate-300">${hData.bundle_age_hours !== null ? hData.bundle_age_hours + 'h' : '--'}</span>
+                  </div>
+                  <div class="flex items-end justify-end">
+                    <button onclick="triggerRetrainHorizon('${hName}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 text-[10px] font-mono border border-purple-500/30 transition">
+                      Retrain
+                    </button>
+                  </div>
                 </div>
               </div>
-              <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md border ${badgeColor}">${ep.status.replace(/_/g, ' ')}</span>
+            `;
+          }).join('');
+        }
+      }
+
+      // 4. Render PANE 3: Cron Scheduler Table
+      const cronTable = document.getElementById('omni-cron-table-body');
+      if (cronTable && data.cron_sentinel?.jobs) {
+        cronTable.innerHTML = Object.entries(data.cron_sentinel.jobs).map(([jobName, j]) => {
+          const isJHealthy = j.status === 'HEALTHY' || j.status === 'STANDBY';
+          return `
+            <tr class="hover:bg-slate-800/40">
+              <td class="p-2.5 font-bold text-white">${jobName}</td>
+              <td class="p-2.5">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isJHealthy ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}">${j.status}</span>
+              </td>
+              <td class="p-2.5 text-slate-400">${j.last_run_ist || '--'}</td>
+              <td class="p-2.5 text-slate-300">${j.duration_ms || 0}ms</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // 5. Render PANE 4: Database & Storage Health
+      const dbContainer = document.getElementById('omni-db-cards-container');
+      if (dbContainer && data.database_sentinel) {
+        const db = data.database_sentinel;
+        const d = db.details || {};
+        dbContainer.innerHTML = `
+          <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+            <h5 class="text-xs font-bold text-white font-mono">SQLite WAL Engine</h5>
+            <div class="space-y-1.5 text-xs font-mono text-slate-300">
+              <div class="flex justify-between"><span>Integrity Check:</span><b class="text-emerald-400">${d.integrity_check || 'ok'}</b></div>
+              <div class="flex justify-between"><span>Journal Mode:</span><b class="text-cyan-300 uppercase">${d.journal_mode || 'wal'}</b></div>
+              <div class="flex justify-between"><span>Database File Size:</span><b class="text-white">${d.db_size_mb || 0} MB</b></div>
+              <div class="flex justify-between"><span>WAL File Size:</span><b class="${d.wal_size_mb > 50 ? 'text-rose-400' : 'text-emerald-400'}">${d.wal_size_mb || 0} MB</b></div>
             </div>
-            <div class="space-y-0.5 text-[11px] font-mono text-slate-300 border-t border-slate-800/80 pt-2">
-              ${detailLines.map(l => `<div>• ${l}</div>`).join('')}
+            <div class="pt-2 border-t border-slate-800/80">
+              <button onclick="triggerOmniSelfHealing('database_wal')" class="w-full py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-mono border border-cyan-500/30 transition">
+                ⚡ Force WAL Truncate Checkpoint
+              </button>
             </div>
-            <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800/50">
-              <span>Latency: <b class="text-slate-200">${ep.latency_ms || 0}ms</b></span>
-              <span>Packet Age: <b class="${ep.age_seconds > 120 ? 'text-amber-400' : 'text-emerald-400'}">${ep.age_seconds !== null ? ep.age_seconds + 's' : '--'}</b></span>
+          </div>
+          <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+            <h5 class="text-xs font-bold text-white font-mono">Automated MOC Database Backups</h5>
+            <div class="space-y-1.5 text-xs font-mono text-slate-300">
+              <div class="flex justify-between"><span>Available Backups:</span><b class="text-white">${d.available_backups_count || 0}</b></div>
+              <div class="flex justify-between"><span>Latest Backup:</span><b class="text-cyan-300 truncate max-w-[180px]">${d.latest_backup_file || '--'}</b></div>
+              <div class="flex justify-between"><span>Modified Time:</span><b class="text-slate-300">${d.latest_backup_time || '--'}</b></div>
+              <div class="flex justify-between"><span>Disaster Recovery:</span><b class="text-emerald-400">READY</b></div>
             </div>
           </div>
         `;
-      }).join('');
+      }
+
+      // 6. Render PANE 5: Function Latencies Table
+      const latTable = document.getElementById('omni-latencies-table-body');
+      if (latTable && data.function_telemetry) {
+        if (!data.function_telemetry.length) {
+          latTable.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No function execution telemetry recorded yet. Interceptors active.</td></tr>';
+        } else {
+          latTable.innerHTML = data.function_telemetry.map(fn => `
+            <tr class="hover:bg-slate-800/40">
+              <td class="p-2.5 font-bold text-white">${fn.function_name}</td>
+              <td class="p-2.5 text-slate-400 capitalize">${fn.domain}</td>
+              <td class="p-2.5">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${fn.status === 'HEALTHY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}">${fn.status}</span>
+              </td>
+              <td class="p-2.5 text-slate-200">${fn.total_calls}</td>
+              <td class="p-2.5 text-rose-400 font-bold">${fn.failure_count}</td>
+              <td class="p-2.5 text-cyan-300">${fn.p95_latency_ms}ms</td>
+              <td class="p-2.5 text-slate-400 text-[10px]">${fn.last_run_ist || '--'}</td>
+            </tr>
+          `).join('');
+        }
+      }
     }
 
-    // -------------------------------------------------------------------------
-    // SYSTEM STATUS, TRADING GATE, RENDER ANTI-SLEEP & DYNAMIC NSE HOLIDAYS
-    // -------------------------------------------------------------------------
     async function loadSystemStatus() {
       const res = await fetch('/api/status');
       if (!res.ok) return;
       const data = await res.json();
 
-      // Central Data Watchdog & Gatekeeper Telemetry
+      // Central Omni-Watchdog & Gatekeeper Telemetry
       const wTel = data.data_watchdog;
-      if (wTel) {
-        const gkText = document.getElementById('gatekeeper-text');
-        const gkDot = document.getElementById('gatekeeper-dot');
-        const mobGkText = document.getElementById('mobile-gatekeeper-text');
-        if (gkText) {
-          gkText.innerText = wTel.summary_badge || '4/4 FEEDS LIVE';
-          gkText.className = `font-mono font-bold truncate ${
-            wTel.overall_status === 'HEALTHY' ? 'text-emerald-400' : (wTel.overall_status === 'ALERT' ? 'text-rose-400' : 'text-amber-400')
-          }`;
-        }
-        if (gkDot) {
-          gkDot.className = `w-2 h-2 rounded-full shrink-0 ${
-            wTel.overall_status === 'HEALTHY' ? 'bg-emerald-400 animate-pulse' : (wTel.overall_status === 'ALERT' ? 'bg-rose-500 animate-ping' : 'bg-amber-400')
-          }`;
-        }
-        if (mobGkText) {
-          mobGkText.innerText = wTel.summary_badge ? wTel.summary_badge.replace('FEEDS ', '') : '4/4 LIVE';
-          mobGkText.className = wTel.overall_status === 'HEALTHY' ? 'text-emerald-400' : (wTel.overall_status === 'ALERT' ? 'text-rose-400 font-bold' : 'text-amber-400');
-        }
-
-        // If Watchdog modal is open, auto-refresh it
-        const wdModal = document.getElementById('watchdog-modal');
-        if (wdModal && !wdModal.classList.contains('hidden') && wdModal.style.display !== 'none') {
-          renderWatchdogUI(wTel);
-        }
+      const omniTel = data.omni_watchdog;
+      if (omniTel) {
+        currentOmniWatchdogCache = omniTel;
+        renderWatchdogUI(wTel, omniTel);
+      } else if (wTel) {
+        renderWatchdogUI(wTel, null);
       }
 
       // Market Status

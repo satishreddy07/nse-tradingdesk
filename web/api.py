@@ -62,6 +62,7 @@ from engines.screener_comparison_engine import screener_comparison_engine
 from execution.state_engine import state_engine
 from core.execution_queue import execution_queue
 from core.data_watchdog import data_watchdog
+from engines.omni_watchdog_engine import omni_watchdog
 from scheduler.cron_scheduler import (
     start_scheduler, shutdown_scheduler, get_scheduler_status,
     register_external_request_origin
@@ -275,6 +276,7 @@ def get_system_status():
         "telegram_vault": vault_info,
         "last_price_stream": last_stream,
         "data_watchdog": data_watchdog.check_all_endpoints(force_probe=False),
+        "omni_watchdog": omni_watchdog.probe_all_subsystems(force_active_probe=False),
         "scheduled_scans_telemetry": state_engine.get_scheduled_scans_telemetry(),
         "portfolio_1_quick": {
             "chartink_fetched_count": p1_status.get("chartink_fetched_count", 0),
@@ -1137,6 +1139,55 @@ def probe_all_system_feeds():
         pass
 
     return data_watchdog.check_all_endpoints(force_probe=True)
+
+
+class SelfHealRequest(BaseModel):
+    domain: str = "database"
+
+
+class RetrainModelRequest(BaseModel):
+    horizon: str = "all"
+
+
+@app.get("/api/system/omni-watchdog/status")
+def get_omni_watchdog_status(force_probe: bool = False):
+    """Returns complete real-time health across all 10 subsystems, 5 ML horizons, and background jobs."""
+    return omni_watchdog.probe_all_subsystems(force_active_probe=force_probe)
+
+
+@app.post("/api/system/omni-watchdog/probe-all")
+def probe_all_omni_subsystems():
+    """Forces an immediate active diagnostic health probe across all 10 platform subsystems and ML suite."""
+    return omni_watchdog.probe_all_subsystems(force_active_probe=True)
+
+
+@app.get("/api/system/omni-watchdog/ml-health")
+def get_omni_watchdog_ml_health():
+    """Returns deep machine learning health, model registry integrity, drift metrics, and ledger reconciliation."""
+    return omni_watchdog.probe_ml_lifecycle()
+
+
+@app.post("/api/system/omni-watchdog/self-heal")
+def trigger_omni_self_healing(req: SelfHealRequest):
+    """Executes targeted autonomous self-healing for a specified subsystem domain."""
+    return omni_watchdog.execute_self_healing(domain=req.domain)
+
+
+@app.post("/api/system/omni-watchdog/retrain-model")
+def trigger_omni_model_retrain(req: RetrainModelRequest, background_tasks: BackgroundTasks):
+    """Triggers walk-forward retraining for an ML horizon or all horizons in the background."""
+    from engines.horizon_learning_orchestrator import horizon_learning_orchestrator
+    background_tasks.add_task(
+        horizon_learning_orchestrator.run_continuous_learning_cycle,
+        force_all=(req.horizon == "all")
+    )
+    return {
+        "status": "QUEUED",
+        "horizon": req.horizon,
+        "message": f"Retraining job queued in background for horizon '{req.horizon}'",
+        "timestamp": now_ist().strftime("%Y-%m-%d %H:%M:%S IST")
+    }
+
 
 
 def _sanitize_for_json(obj):
