@@ -1872,6 +1872,19 @@ class KotakNeoEngine:
                         target_expiry_iso = monthly_iso if exp_lower in ("monthly", "m") else weekly_iso
             except Exception as exp_err:
                 logger.debug(f"Expiry resolution error in get_option_depth: {exp_err}")
+                try:
+                    from core.market_calendar import NSEMarketCalendar
+                    cal_exp = NSEMarketCalendar.get_active_options_expiries()
+                    w_d = cal_exp.get("weekly_date")
+                    m_d = cal_exp.get("monthly_date")
+                    if w_d:
+                        self._cached_weekly_iso = w_d.isoformat()
+                    if m_d:
+                        self._cached_monthly_iso = m_d.isoformat()
+                    if not target_expiry_iso:
+                        target_expiry_iso = self._cached_monthly_iso if exp_lower in ("monthly", "m") else (self._cached_weekly_iso or "2026-10-27")
+                except Exception:
+                    pass
 
         # Resolve Token
         token = None
