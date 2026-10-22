@@ -21415,7 +21415,8 @@
         mlPerfCache.predictions = data;
 
         document.getElementById('mlperf-pred-acc').textContent = `${data.directional_accuracy_pct || 0}%`;
-        document.getElementById('mlperf-pred-mae').textContent = `${data.mean_absolute_error || 0} pts`;
+        const maeStr = data.mean_absolute_error_pts ? `${data.mean_absolute_error_pts} pts (${data.mean_absolute_error_pct}%)` : `${data.mean_absolute_error || 0}%`;
+        document.getElementById('mlperf-pred-mae').textContent = maeStr;
 
         // Render Confusion Matrix Grid
         const cm = data.confusion_matrix || {};
@@ -21461,7 +21462,7 @@
               <td class="p-2.5 font-bold ${p.predicted_class === 'BULLISH' ? 'text-emerald-400' : (p.predicted_class === 'BEARISH' ? 'text-rose-400' : 'text-slate-300')}">${escapeHtml(p.predicted_class)}</td>
               <td class="p-2.5 text-[10px] text-slate-400">${(p.prob_up*100).toFixed(0)}/${(p.prob_flat*100).toFixed(0)}/${(p.prob_down*100).toFixed(0)}</td>
               <td class="p-2.5 text-slate-300">₹${p.expected_close ? Number(p.expected_close).toFixed(1) : '--'}</td>
-              <td class="p-2.5 text-slate-200 font-bold">₹${p.actual_close ? Number(p.actual_close).toFixed(1) : '--'}</td>
+              <td class="p-2.5 text-slate-200 font-bold">${p.actual_close ? '₹' + Number(p.actual_close).toFixed(1) : '<span class="text-slate-500 italic text-[10px]">Awaiting Close (15:30 IST)</span>'}</td>
               <td class="p-2.5 font-bold text-slate-300">${escapeHtml(p.realized_direction || '--')}</td>
               <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${isHit ? 'bg-emerald-500/20 text-emerald-300' : (isMiss ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-800 text-slate-400')}">${isHit ? 'HIT' : (isMiss ? 'MISS' : 'PENDING')}</span></td>
               <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] ${p.status === 'RESOLVED' ? 'bg-cyan-500/20 text-cyan-300' : 'bg-yellow-500/20 text-yellow-300'}">${escapeHtml(p.status)}</span></td>
@@ -21498,7 +21499,7 @@
             <td class="p-2.5 text-purple-300">${escapeHtml(r.verdict)}</td>
             <td class="p-2.5 text-slate-300">₹${r.spot_at_prediction ? Number(r.spot_at_prediction).toFixed(1) : '--'}</td>
             <td class="p-2.5 text-slate-300">₹${r.expected_close ? Number(r.expected_close).toFixed(1) : '--'}</td>
-            <td class="p-2.5 text-slate-200 font-bold">₹${r.actual_close ? Number(r.actual_close).toFixed(1) : '--'}</td>
+            <td class="p-2.5 text-slate-200 font-bold">${r.actual_close ? '₹' + Number(r.actual_close).toFixed(1) : '<span class="text-slate-500 italic text-[10px]">Awaiting Close (15:30 IST)</span>'}</td>
             <td class="p-2.5 font-bold ${r.actual_return_pts >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r.actual_return_pts ? r.actual_return_pts.toFixed(1) : '--'} (${r.actual_return_pct ? r.actual_return_pct.toFixed(2) : '--'}%)</td>
             <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] ${r.direction_correct === 1 ? 'bg-emerald-500/20 text-emerald-300' : (r.direction_correct === 0 ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-800 text-slate-400')}">${r.direction_correct === 1 ? 'HIT' : (r.direction_correct === 0 ? 'MISS' : 'PENDING')}</span></td>
             <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] ${r.range_1sigma_hit === 1 ? 'bg-cyan-500/20 text-cyan-300' : 'bg-slate-800 text-slate-400'}">${r.range_1sigma_hit === 1 ? 'IN_CONE' : '--'}</span></td>

@@ -574,12 +574,21 @@ class MLPerformanceEngine:
         return {"status": "SUCCESS", "models_count": len(models), "models": models}
 
     def _inspect_artifact(self, path: Path) -> Tuple[bool, float, str]:
-        """Audits file existence, size, and SHA-256 integrity."""
-        if not path.exists():
+        """Audits file existence, size, and SHA-256 integrity across Windows and Linux."""
+        target_path = path
+        if not target_path.exists():
+            norm_str = str(path).replace("\\", "/")
+            target_path = Path(norm_str)
+        if not target_path.exists():
+            target_path = self.models_dir / path.name
+        if not target_path.exists():
+            target_path = Path.cwd() / "models" / "registry" / path.name
+
+        if not target_path.exists():
             return False, 0.0, "NOT_FOUND"
         try:
-            size_kb = round(path.stat().st_size / 1024.0, 1)
-            sha256 = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+            size_kb = round(target_path.stat().st_size / 1024.0, 1)
+            sha256 = hashlib.sha256(target_path.read_bytes()).hexdigest()[:16]
             return True, size_kb, sha256
         except Exception:
             return False, 0.0, "READ_ERROR"
@@ -729,7 +738,8 @@ class MLPerformanceEngine:
                     "is_correct": is_win if is_resolved else None,
                     "target_hit": item.get("target_hit_before_sl", 0),
                     "cone_1s_hit": 1 if item.get("exit_reason") != "SL_HIT" else 0,
-                    "error_pts": round(abs(pnl), 2),
+                    "error_pts": None,
+                    "error_pct": round(abs(pnl / max(1.0, float(item.get("capital_at_risk", 1.0)))) * 100.0, 2),
                     "status": "RESOLVED" if is_resolved else "PENDING",
                     "diagnostic": json.loads(item.get("rationale_json") or "{}")
                 })
@@ -749,16 +759,23 @@ class MLPerformanceEngine:
             if t_dir in conf_mat and p_dir in conf_mat[t_dir]:
                 conf_mat[t_dir][p_dir] += 1
 
-        # Error distribution
-        errors = [abs(p["error_pts"]) for p in matured if p.get("error_pts") is not None]
-        mae = round(float(np.mean(errors)), 2) if errors else 0.0
+        # Error distribution: Separate Nifty Index Points from Normalized % Return Error
+        nifty_errors = [abs(p["error_pts"]) for p in matured if p.get("error_pts") is not None and "NIFTY" in str(p.get("model", "")).upper()]
+        nifty_mae = round(float(np.mean(nifty_errors)), 2) if nifty_errors else 0.0
+        pct_errors = [abs(p["actual_return_pct"]) for p in matured if p.get("actual_return_pct") is not None]
+        mae_pct = round(float(np.mean(pct_errors)), 2) if pct_errors else 0.0
+
+        # Standardized MAE: reports index points for Nifty forecasts, and percentage for general portfolio
+        display_mae = nifty_mae if nifty_mae > 0 else mae_pct
 
         return {
             "total_records": len(predictions),
             "finalized_count": total_matured,
             "pending_count": len(predictions) - total_matured,
             "directional_accuracy_pct": acc_pct,
-            "mean_absolute_error": mae,
+            "mean_absolute_error": display_mae,
+            "mean_absolute_error_pts": nifty_mae,
+            "mean_absolute_error_pct": mae_pct,
             "confusion_matrix": conf_mat,
             "predictions": predictions
         }

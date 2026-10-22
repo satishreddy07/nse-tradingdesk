@@ -4748,15 +4748,36 @@ class NiftyAnalyticsEngine:
                 "sp500_ret_1d": float(sp500_ret),
                 "nifty_ret_5d": float(ret_5d)
             }
+            # Derive statistical direction strictly from model probabilities (no heuristic string overrides)
+            t1_p_up = float(t1_probs.get("up", 0.33))
+            t1_p_down = float(t1_probs.get("down", 0.33))
+            t1_p_flat = float(t1_probs.get("flat", 0.34))
+            if t1_p_up > t1_p_down and t1_p_up >= t1_p_flat:
+                t1_direction = "BULLISH"
+            elif t1_p_down > t1_p_up and t1_p_down >= t1_p_flat:
+                t1_direction = "BEARISH"
+            else:
+                t1_direction = "FLAT"
+
+            t5_p_up = float(t5_probs.get("up", 0.33))
+            t5_p_down = float(t5_probs.get("down", 0.33))
+            t5_p_flat = float(t5_probs.get("flat", 0.34))
+            if t5_p_up > t5_p_down and t5_p_up >= t5_p_flat:
+                t5_direction = "BULLISH"
+            elif t5_p_down > t5_p_up and t5_p_down >= t5_p_flat:
+                t5_direction = "BEARISH"
+            else:
+                t5_direction = "FLAT"
+
             # Log T+1
             nifty_prediction_ledger.log_forecast(
                 horizon="T+1",
                 spot=spot,
                 composite_score=composite_score,
                 verdict=t1_verdict,
-                prob_up=float(t1_probs.get("up", 0.33)),
-                prob_flat=float(t1_probs.get("flat", 0.34)),
-                prob_down=float(t1_probs.get("down", 0.33)),
+                prob_up=t1_p_up,
+                prob_flat=t1_p_flat,
+                prob_down=t1_p_down,
                 expected_close=float(t1_expected_close),
                 expected_pts=float(t1_expected_pts),
                 expected_pct=float(t1_expected_pct),
@@ -4767,7 +4788,8 @@ class NiftyAnalyticsEngine:
                 model_name="NiftyTacticalEngine",
                 model_version="prod_t1_v1.0",
                 data_as_of_date=data_date,
-                basis_breakdown=t1_basis_breakdown
+                basis_breakdown=t1_basis_breakdown,
+                predicted_direction=t1_direction
             )
             # Log T+5
             nifty_prediction_ledger.log_forecast(
@@ -4775,9 +4797,9 @@ class NiftyAnalyticsEngine:
                 spot=spot,
                 composite_score=composite_score_t5,
                 verdict=t5_verdict,
-                prob_up=float(t5_probs.get("up", 0.33)),
-                prob_flat=float(t5_probs.get("flat", 0.34)),
-                prob_down=float(t5_probs.get("down", 0.33)),
+                prob_up=t5_p_up,
+                prob_flat=t5_p_flat,
+                prob_down=t5_p_down,
                 expected_close=float(t5_expected_close),
                 expected_pts=float(t5_expected_pts),
                 expected_pct=float(t5_expected_pct),
@@ -4788,7 +4810,8 @@ class NiftyAnalyticsEngine:
                 model_name="NiftyStructuralEngine",
                 model_version="prod_t5_v1.0",
                 data_as_of_date=data_date,
-                basis_breakdown=t5_basis_breakdown
+                basis_breakdown=t5_basis_breakdown,
+                predicted_direction=t5_direction
             )
         except Exception as e_led:
             logger.debug(f"Nifty prediction ledger logging notice: {e_led}")

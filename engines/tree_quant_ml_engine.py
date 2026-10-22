@@ -103,12 +103,44 @@ class TreeQuantMLEngine:
         self._active_metadata: Dict[str, Any] = {}
         self._load_active_registry()
 
+    def _load_bundle_from_disk(self, horizon: str) -> Optional[Dict[str, Any]]:
+        """Loads the active production bundle from models/registry for the given horizon."""
+        horizon = horizon.upper()
+        reg = state_engine.get_kv("tree_model_registry", {})
+        h_ver = reg.get(f"{horizon}_active_version") if isinstance(reg, dict) else None
+        h_meta = reg.get(f"{horizon}_metadata", {}) if isinstance(reg, dict) else {}
+        art_path = h_meta.get("artifact_path") or (f"models/registry/{h_ver}.bundle" if h_ver else None)
+
+        candidates = []
+        if art_path:
+            norm_str = str(art_path).replace("\\", "/")
+            candidates.append(Path(norm_str))
+            candidates.append(self.models_dir / Path(norm_str).name)
+        if h_ver:
+            candidates.append(self.models_dir / f"{h_ver}.bundle")
+        candidates.extend(sorted(self.models_dir.glob(f"{horizon.lower()}*.bundle"), reverse=True))
+
+        for p in candidates:
+            if p.exists() and p.is_file():
+                try:
+                    with open(p, "rb") as f:
+                        bundle = pickle.load(f)
+                    with self._lock:
+                        self._active_models[horizon] = bundle
+                    logger.info(f"Loaded active {horizon} bundle from {p}")
+                    return bundle
+                except Exception as e:
+                    logger.debug(f"Could not load {horizon} bundle from {p}: {e}")
+        return None
+
     def _load_active_registry(self):
         """Loads active model pointers and metadata from SQLite or models directory."""
         with self._lock:
             reg = state_engine.get_kv("tree_model_registry", {})
             if isinstance(reg, dict) and reg:
                 self._active_metadata = reg
+            for h in ["INTRADAY", "WEEKLY", "MONTHLY", "SWING"]:
+                self._load_bundle_from_disk(h)
 
     # =========================================================================
     # 1. MODEL TRAINING PIPELINE (LIGHTGBM, XGBOOST, ENSEMBLE)
@@ -428,7 +460,9 @@ class TreeQuantMLEngine:
         horizon = horizon.upper()
         bundle = self._active_models.get(horizon) or self._candidate_models.get(horizon)
         if not bundle:
-            # Try to train or load
+            bundle = self._load_bundle_from_disk(horizon)
+        if not bundle:
+            # Try to train if empirical data available
             self.train_horizon_models(horizon)
             bundle = self._active_models.get(horizon) or self._candidate_models.get(horizon)
             if not bundle:
@@ -490,6 +524,8 @@ class TreeQuantMLEngine:
         """
         horizon = horizon.upper()
         bundle = self._active_models.get(horizon) or self._candidate_models.get(horizon)
+        if not bundle:
+            bundle = self._load_bundle_from_disk(horizon)
         if not bundle:
             self.train_horizon_models(horizon)
             bundle = self._active_models.get(horizon) or self._candidate_models.get(horizon)
@@ -553,6 +589,8 @@ class TreeQuantMLEngine:
         """
         horizon = horizon.upper()
         bundle = self._active_models.get(horizon) or self._candidate_models.get(horizon)
+        if not bundle:
+            bundle = self._load_bundle_from_disk(horizon)
         if not bundle:
             self.train_horizon_models(horizon)
             bundle = self._active_models.get(horizon) or self._candidate_models.get(horizon)
