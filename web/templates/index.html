@@ -4110,7 +4110,7 @@
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
           <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
             <div class="text-[10px] font-mono uppercase text-amber-400">Nifty Spot & ATM</div>
-            <div id="intra-kpi-spot" class="text-base sm:text-xl font-mono font-bold text-white mt-1">--</div>
+            <div id="intra-kpi-spot" class="text-base sm:text-xl font-mono font-bold text-white mt-1 flex items-center justify-between gap-1.5">--</div>
             <div id="intra-kpi-spot-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">ATM: -- | Exp: --</div>
           </div>
           <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
@@ -9629,6 +9629,40 @@
       }
     };
 
+    // Unified Intraday Spot & ATM State Tracker (Guarantees zero flicker or jitter between stream and overview)
+    window._latestIntradaySpotState = { spot: null, atm: null, isLive: false, diffStr: '', slotNote: '' };
+    window.updateIntradaySpotAtmCard = function(spot, atm, isLive, diffStr, slotNote) {
+      const s = window._latestIntradaySpotState;
+      if (spot && spot > 0) s.spot = spot;
+      if (atm && atm > 0) s.atm = atm;
+      if (typeof isLive === 'boolean') s.isLive = isLive;
+      if (diffStr) s.diffStr = diffStr;
+      if (slotNote !== undefined && slotNote !== null) s.slotNote = slotNote;
+
+      const spotEl = document.getElementById('intra-kpi-spot');
+      if (spotEl && s.spot > 0) {
+        const badge = s.isLive
+          ? `<span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse align-middle whitespace-nowrap shrink-0">LIVE TICK</span>`
+          : `<span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 align-middle whitespace-nowrap shrink-0">MARKET CLOSED</span>`;
+        const formatted = '₹' + s.spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const newHtml = `<span class="truncate">${formatted}</span> ${badge}`;
+        if (spotEl.innerHTML !== newHtml) {
+          spotEl.innerHTML = newHtml;
+        }
+      }
+
+      const spotSub = document.getElementById('intra-kpi-spot-sub');
+      if (spotSub) {
+        const curAtm = s.atm || Math.round((s.spot || 0) / 50) * 50;
+        const diff = s.diffStr ? ` | ${s.diffStr}` : '';
+        const slot = s.slotNote ? ` | ${s.slotNote}` : '';
+        const newHtml = `ATM ${curAtm}${diff}${slot}`;
+        if (spotSub.innerHTML !== newHtml) {
+          spotSub.innerHTML = newHtml;
+        }
+      }
+    };
+
     async function pollLiveSpotTick() {
       if (document.hidden) return;
       try {
@@ -9658,7 +9692,8 @@
           const isMarketOpen = Boolean(data.is_live && (data.market_status === 'OPEN' || data.session_phase === 'REGULAR_HOURS'));
           updateOptionsDeskStreamIndicator(spot, isMarketOpen, data.source);
 
-          // Update Intraday Desk Top Spot Badge if present
+          // Update Intraday Desk Top Spot Card via unified controller
+          updateIntradaySpotAtmCard(spot, data.atm_strike, isMarketOpen, diffStr, null);
           const intraSpotBadge = document.getElementById('intraday-spot-badge');
           if (intraSpotBadge) {
             intraSpotBadge.innerHTML = `NIFTY: ${formatted} ${diffStr}`;
@@ -10136,22 +10171,13 @@
       const isLive = Boolean(liveSpot.is_live && isMarketOpen);
       const spotDiff = liveSpot.change_pts !== undefined ? Number(liveSpot.change_pts) : Number(meta.spot_from_open || 0);
       const spotDiffPct = liveSpot.change_pct !== undefined ? Number(liveSpot.change_pct) : 0;
-      const spotEl = document.getElementById('intra-kpi-spot');
-      const spotSub = document.getElementById('intra-kpi-spot-sub');
-      if (spotEl) {
-        const badge = isLive 
-          ? `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse align-middle">LIVE TICK</span>` 
-          : `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 align-middle">MARKET CLOSED</span>`;
-        spotEl.innerHTML = spot > 0 
-          ? `₹${spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${badge}` 
-          : '--';
-      }
       const curAtm = synced.atm_strike || latest.atm_strike || Math.round(spot / 50) * 50;
-      if (spotSub) {
-        const diffSign = spotDiff >= 0 ? '+' : '';
-        const slotNote = latest.slot_time ? ` | Slot ${latest.slot_time}: ₹${(latest.spot_price || 0).toFixed(1)}` : '';
-        spotSub.innerText = `ATM ${curAtm} | ΔDay: ${diffSign}${spotDiff.toFixed(1)} (${diffSign}${spotDiffPct.toFixed(2)}%)${slotNote}`;
-      }
+      const diffSign = spotDiff >= 0 ? '+' : '';
+      const diffStr = (spotDiff !== 0 || spotDiffPct !== 0) 
+        ? `ΔDay: <span class="${spotDiff >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">${diffSign}${spotDiff.toFixed(1)} (${diffSign}${spotDiffPct.toFixed(2)}%)</span>` 
+        : '';
+      const slotNote = latest.slot_time ? `Slot ${latest.slot_time}: ₹${(latest.spot_price || 0).toFixed(1)}` : '';
+      updateIntradaySpotAtmCard(spot, curAtm, isLive, diffStr, slotNote);
 
       const strad = Number(synced.straddle_premium !== undefined && synced.straddle_premium > 0 ? synced.straddle_premium : (latest.straddle_premium || 0));
       const decayPct = Number(meta.straddle_decay_pct || 0);
@@ -24660,16 +24686,11 @@
 
               updateOptionsDeskStreamIndicator(spot, data.is_market_open, 'KOTAK_NEO_STREAM', tickCount);
 
-              // Live Intraday Desk Top KPIs & Analysis Synchronization
-              const spotEl = document.getElementById('intra-kpi-spot');
-              if (spotEl) {
-                spotEl.innerHTML = `₹${spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse align-middle">LIVE TICK</span>`;
-              }
+              // Live Intraday Desk Top KPIs & Analysis Synchronization via unified non-flickering controller
+              const isMarketOpen = Boolean(data.is_market_open);
+              const isLiveStreaming = Boolean(data.is_streaming && isMarketOpen);
               const curAtm = intra.atm_strike || Math.round(spot / 50) * 50;
-              const spotSub = document.getElementById('intra-kpi-spot-sub');
-              if (spotSub) {
-                spotSub.innerText = `ATM ${curAtm} | Live Kotak Neo Tick Stream`;
-              }
+              updateIntradaySpotAtmCard(spot, curAtm, isLiveStreaming, null, null);
 
               if (intra.straddle_premium > 0) {
                 const stradEl = document.getElementById('intra-kpi-straddle');
