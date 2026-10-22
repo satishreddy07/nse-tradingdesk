@@ -500,6 +500,36 @@ class TreeQuantMLEngine:
 
         parsed_tree = _parse_node(selected_tree.get("tree_structure", {}), depth=0)
 
+        flat_nodes = []
+        def _flatten(n, node_id=0, branch="Root"):
+            if not n:
+                return
+            if n.get("type") == "decision_split":
+                flat_nodes.append({
+                    "node_id": node_id,
+                    "split_feature": n.get("feature"),
+                    "split_threshold": n.get("threshold"),
+                    "gain": n.get("gain"),
+                    "depth": n.get("depth", 0),
+                    "branch": branch,
+                    "decision_rule": n.get("decision_rule"),
+                    "is_leaf": False
+                })
+                _flatten(n.get("left_child (Yes)"), node_id * 2 + 1, "Left (Yes)")
+                _flatten(n.get("right_child (No)"), node_id * 2 + 2, "Right (No)")
+            else:
+                flat_nodes.append({
+                    "node_id": node_id,
+                    "split_feature": f"Leaf Output [{n.get('leaf_value', 0.0):.4f}]",
+                    "split_threshold": n.get("leaf_value"),
+                    "sample_count": n.get("sample_count", 0),
+                    "depth": n.get("depth", 0),
+                    "branch": branch,
+                    "is_leaf": True
+                })
+
+        _flatten(parsed_tree)
+
         return {
             "status": "OK",
             "horizon": horizon,
@@ -507,7 +537,8 @@ class TreeQuantMLEngine:
             "tree_index": tree_index,
             "total_trees": len(tree_dump),
             "max_depth": 4,
-            "tree_topology": parsed_tree
+            "tree_topology": parsed_tree,
+            "nodes": flat_nodes
         }
 
     # =========================================================================

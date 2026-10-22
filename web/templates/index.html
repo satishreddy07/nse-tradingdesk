@@ -21565,15 +21565,50 @@
         const nodesContainer = document.getElementById('mlperf-tree-nodes-container');
         if (nodesContainer && data.tree_topology) {
           const topo = data.tree_topology;
-          const nodes = topo.nodes || [];
+          let nodes = topo.nodes || data.nodes || [];
+          if ((!nodes || nodes.length === 0) && (topo.tree_topology || topo.type)) {
+            const root = topo.tree_topology || topo;
+            nodes = [];
+            let nId = 0;
+            function walk(n, path = 'Root') {
+              if (!n) return;
+              const curId = nId++;
+              if (n.type === 'decision_split') {
+                nodes.push({
+                  node_id: curId,
+                  split_feature: n.feature,
+                  split_threshold: n.threshold,
+                  gain: n.gain,
+                  depth: n.depth || 0,
+                  branch: path,
+                  decision_rule: n.decision_rule,
+                  is_leaf: false
+                });
+                walk(n['left_child (Yes)'], 'Left (Yes)');
+                walk(n['right_child (No)'], 'Right (No)');
+              } else {
+                nodes.push({
+                  node_id: curId,
+                  split_feature: `Leaf Output [${Number(n.leaf_value || 0).toFixed(4)}]`,
+                  split_threshold: n.leaf_value,
+                  sample_count: n.sample_count,
+                  depth: n.depth || 0,
+                  branch: path,
+                  is_leaf: true
+                });
+              }
+            }
+            walk(root);
+          }
+
           nodesContainer.innerHTML = nodes.map(n => `
-            <div class="bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/60 flex items-center justify-between">
+            <div class="bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/60 flex items-center justify-between" style="margin-left: ${Math.min((n.depth || 0) * 12, 48)}px">
               <div>
-                <span class="text-rose-400 font-bold">Node ${n.node_id || 0}:</span>
-                <span class="text-white ml-1.5 font-bold">${escapeHtml(n.split_feature || 'Root')} &le; ${Number(n.split_threshold || 0).toFixed(2)}</span>
-                <div class="text-[10px] text-slate-400 mt-0.5">Left: Node ${n.left_child || '--'} • Right: Node ${n.right_child || '--'}</div>
+                <span class="${n.is_leaf ? 'text-emerald-400' : 'text-rose-400'} font-bold">Node ${n.node_id || 0}:</span>
+                <span class="text-white ml-1.5 font-bold">${escapeHtml(n.is_leaf ? n.split_feature : (n.decision_rule || `${n.split_feature} &le; ${Number(n.split_threshold || 0).toFixed(2)}`))}</span>
+                <div class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(n.branch || 'Branch')} ${n.is_leaf ? ('• ' + (n.sample_count || 0) + ' samples') : (n.gain != null ? ('• Gain: ' + Number(n.gain).toFixed(1)) : '')}</div>
               </div>
-              <span class="text-[11px] text-cyan-300 font-bold">${n.sample_count || 42} samples</span>
+              <span class="text-[11px] ${n.is_leaf ? 'text-emerald-300' : 'text-cyan-300'} font-bold">${n.is_leaf ? 'Leaf Terminal' : 'Decision Split'}</span>
             </div>
           `).join('');
         }
