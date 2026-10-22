@@ -876,6 +876,26 @@ class NiftyAnalyticsEngine:
 
         return True 
 
+    def _refresh_candidate_fii_dii(self, payload: Dict[str, Any]) -> bool:
+        """
+        Dynamically refreshes FII/DII cash turnover & participant OI in cached prediction payloads.
+        Guarantees that even when the T+1/T+5 directional forecast is locked from morning,
+        post-market FII/DII tables always reflect the latest session official data from SQLite
+        and NEVER revert to the prior day.
+        """
+        if not isinstance(payload, dict):
+            return False
+        try:
+            fresh_inst = self.fetch_fii_dii_cash_and_participant_oi(force_refresh=False)
+            if fresh_inst and fresh_inst.get("latest_cash"):
+                payload["fii_dii_and_oi"] = fresh_inst
+                if "pillars" in payload and isinstance(payload.get("pillars"), dict):
+                    payload["pillars"]["institutional_flows"] = fresh_inst
+                return True
+        except Exception as e:
+            logger.debug(f"Error refreshing candidate fii_dii: {e}")
+        return False
+
     @staticmethod
     def _filter_df_to_completed_session(df: Optional[pd.DataFrame], cutoff_date: datetime.date) -> Optional[pd.DataFrame]:
         """
@@ -3024,6 +3044,12 @@ class NiftyAnalyticsEngine:
         }
         try:
             state_engine.set_kv("fii_dii_autorun_telemetry", telemetry)
+            if self._predictions_mem_cache and isinstance(self._predictions_mem_cache, dict):
+                self._refresh_candidate_fii_dii(self._predictions_mem_cache)
+            persisted = state_engine.get_kv("latest_nifty_predictions")
+            if persisted and isinstance(persisted, dict):
+                self._refresh_candidate_fii_dii(persisted)
+                state_engine.set_kv("latest_nifty_predictions", persisted)
         except Exception:
             pass
         return telemetry
@@ -4031,6 +4057,7 @@ class NiftyAnalyticsEngine:
         # Backfill any missing global market telemetry on existing candidate
         if candidate and isinstance(candidate, dict):
             self._backfill_global_markets_metrics(candidate)
+            self._refresh_candidate_fii_dii(candidate)
 
         # 1. STRICT MARKET-HOURS PREDICTION LOCK (09:00 AM – 03:30 PM IST):
         # Forecast NEVER repaints, mutates, or recalculates while market is alive under ANY circumstances.
@@ -4058,6 +4085,7 @@ class NiftyAnalyticsEngine:
                 except Exception:
                     pass
             candidate["prediction_ledger"] = self._get_recent_predictions_ledger(limit=18)
+            self._refresh_candidate_fii_dii(candidate)
             with self._lock:
                 self._predictions_mem_cache = candidate
                 self._predictions_cache_ts = now_ts
@@ -4075,6 +4103,7 @@ class NiftyAnalyticsEngine:
                     except Exception:
                         pass
                 candidate["prediction_ledger"] = self._get_recent_predictions_ledger(limit=18)
+                self._refresh_candidate_fii_dii(candidate)
                 with self._lock:
                     self._predictions_mem_cache = candidate
                     self._predictions_cache_ts = now_ts
@@ -4092,6 +4121,7 @@ class NiftyAnalyticsEngine:
                 except Exception:
                     pass
             self._backfill_global_markets_metrics(self._predictions_mem_cache)
+            self._refresh_candidate_fii_dii(self._predictions_mem_cache)
             self._predictions_mem_cache["prediction_ledger"] = self._get_recent_predictions_ledger(limit=18)
             return self._predictions_mem_cache
 
@@ -4100,6 +4130,7 @@ class NiftyAnalyticsEngine:
             persisted = state_engine.get_kv("latest_nifty_predictions")
             if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
                 self._backfill_global_markets_metrics(persisted)
+                self._refresh_candidate_fii_dii(persisted)
                 if "ai_analysis" not in persisted and getattr(config, "AI_ENABLED", True):
                     try:
                         from ai_engine.service import ai_service

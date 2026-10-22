@@ -10666,6 +10666,20 @@
         }
         const data = await res.json();
         if (data && data.status === 'OK') {
+          // Guard against stale predictions payload reverting FII/DII data:
+          if (faoHistoryCache && faoHistoryCache.latest_cash && faoHistoryCache.latest_cash.date) {
+            const cacheDate = faoHistoryCache.latest_cash.date;
+            const incDate = (data.fii_dii_and_oi?.latest_cash?.date) || '';
+            if (cacheDate >= incDate && faoHistoryCache.cash_history && faoHistoryCache.cash_history.length > 0) {
+              data.fii_dii_and_oi = {
+                ...(data.fii_dii_and_oi || {}),
+                latest_cash: faoHistoryCache.latest_cash,
+                latest_oi: faoHistoryCache.latest_oi,
+                one_week_cash_history: faoHistoryCache.cash_history,
+                one_week_participant_oi_history: faoHistoryCache.oi_history
+              };
+            }
+          }
           niftyPredictionsCache = data;
           renderPredictionsUI(data);
           if (data.ai_analysis) {
@@ -12164,9 +12178,9 @@
 
     async function triggerFiiDiiManualUpdate() {
       const btn = document.getElementById('btn-fii-dii-update-now');
-      const textEl = document.getElementById('btn-fii-dii-update-text');
-      const iconEl = document.getElementById('fii-dii-update-icon');
       if (!btn) return;
+      const textEl = document.getElementById('btn-fii-dii-update-text');
+      const iconEl = btn.querySelector('svg, i');
 
       btn.disabled = true;
       if (iconEl) iconEl.classList.add('animate-spin');
@@ -12178,12 +12192,22 @@
         if (resData.status === 'OK') {
           if (resData.telemetry) updateFiiDiiTelemetryUI(resData.telemetry);
           if (resData.data) {
+            const freshInst = {
+              ...resData.data,
+              one_week_cash_history: resData.data.one_week_cash_history || resData.data.cash_history || [],
+              one_week_participant_oi_history: resData.data.one_week_participant_oi_history || resData.data.oi_history || []
+            };
+            faoHistoryCache = {
+              status: 'OK',
+              latest_cash: resData.data.latest_cash || {},
+              latest_oi: resData.data.latest_oi || {},
+              cash_history: freshInst.one_week_cash_history,
+              oi_history: freshInst.one_week_participant_oi_history
+            };
             if (typeof niftyPredictionsCache !== 'undefined' && niftyPredictionsCache) {
               niftyPredictionsCache.fii_dii_and_oi = {
                 ...(niftyPredictionsCache.fii_dii_and_oi || {}),
-                ...resData.data,
-                one_week_cash_history: resData.data.one_week_cash_history || resData.data.cash_history || [],
-                one_week_participant_oi_history: resData.data.one_week_participant_oi_history || resData.data.oi_history || []
+                ...freshInst
               };
               if (typeof renderPredictionsUI === 'function') {
                 renderPredictionsUI(niftyPredictionsCache);
@@ -12191,13 +12215,6 @@
             } else if (typeof loadPredictionsDesk === 'function') {
               loadPredictionsDesk(false);
             }
-            faoHistoryCache = {
-              status: 'OK',
-              latest_cash: resData.data.latest_cash || {},
-              latest_oi: resData.data.latest_oi || {},
-              cash_history: resData.data.one_week_cash_history || resData.data.cash_history || [],
-              oi_history: resData.data.one_week_participant_oi_history || resData.data.oi_history || []
-            };
           }
           if (textEl) textEl.textContent = 'Updated!';
           if (resData.telemetry && resData.telemetry.status === 'UP_TO_DATE') {
@@ -12205,9 +12222,6 @@
           } else {
             showToast('✓ FII/DII Cash & Participant OI updated successfully.', 'success');
           }
-          setTimeout(() => {
-            if (textEl) textEl.textContent = 'Update Now';
-          }, 2500);
         } else {
           if (textEl) textEl.textContent = 'Retry';
           showToast(`Update notice: ${resData.message || 'Failed'}`, 'warning');
@@ -12216,13 +12230,17 @@
         console.error("Manual FII/DII update failed:", err);
         if (textEl) textEl.textContent = 'Failed';
         showToast(`Update notice: ${err.message || 'Error updating data'}`, 'error');
-        setTimeout(() => {
-          if (textEl) textEl.textContent = 'Update Now';
-        }, 3000);
       } finally {
         btn.disabled = false;
-        if (iconEl) iconEl.classList.remove('animate-spin');
-        lucide.createIcons();
+        const currentIcon = btn.querySelector('svg, i');
+        if (currentIcon) currentIcon.classList.remove('animate-spin');
+        setTimeout(() => {
+          const resetIcon = btn.querySelector('svg, i');
+          if (resetIcon) resetIcon.classList.remove('animate-spin');
+          if (textEl && (textEl.textContent === 'Updated!' || textEl.textContent === 'Failed' || textEl.textContent === 'Checking NSE...')) {
+            textEl.textContent = 'Update Now';
+          }
+        }, 2000);
       }
     }
 
