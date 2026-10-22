@@ -2192,24 +2192,36 @@ class KotakNeoEngine:
                     c_quote = c.get("quote", {})
                     c_oi_dict = c.get("oi", {})
                     c_oi = int(float(c_oi_dict.get("cur") or 0))
+                    if c_oi < 0 or c_oi > 50_000_000:
+                        c_oi = 0
                     c_prev_oi = int(float(c_oi_dict.get("prev") or c_oi))
+                    if c_prev_oi < 0 or c_prev_oi > 50_000_000:
+                        c_prev_oi = c_oi
                     c_chg_oi = c_oi - c_prev_oi
                     c_ltp = float(c_quote.get("ltp") or 0.0)
                     c_pc = float(c_quote.get("pc") or c_ltp)
                     c_chg = round(c_ltp - c_pc, 2)
                     c_pchg = round((c_chg / c_pc) * 100.0, 2) if c_pc > 0 else 0.0
                     c_vol = int(float(c_quote.get("vol") or 0))
+                    if c_vol < 0 or c_vol > 500_000_000:
+                        c_vol = 0
 
                     p_quote = p.get("quote", {})
                     p_oi_dict = p.get("oi", {})
                     p_oi = int(float(p_oi_dict.get("cur") or 0))
+                    if p_oi < 0 or p_oi > 50_000_000:
+                        p_oi = 0
                     p_prev_oi = int(float(p_oi_dict.get("prev") or p_oi))
+                    if p_prev_oi < 0 or p_prev_oi > 50_000_000:
+                        p_prev_oi = p_oi
                     p_chg_oi = p_oi - p_prev_oi
                     p_ltp = float(p_quote.get("ltp") or 0.0)
                     p_pc = float(p_quote.get("pc") or p_ltp)
                     p_chg = round(p_ltp - p_pc, 2)
                     p_pchg = round((p_chg / p_pc) * 100.0, 2) if p_pc > 0 else 0.0
                     p_vol = int(float(p_quote.get("vol") or 0))
+                    if p_vol < 0 or p_vol > 500_000_000:
+                        p_vol = 0
 
                     c_iv = self._calc_implied_vol(c_ltp, spot_price, k, dte_years, is_call=True) if spot_price > 0 and c_ltp > 0 else 0.0
                     p_iv = self._calc_implied_vol(p_ltp, spot_price, k, dte_years, is_call=False) if spot_price > 0 and p_ltp > 0 else 0.0

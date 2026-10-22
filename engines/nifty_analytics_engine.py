@@ -751,8 +751,14 @@ class NiftyAnalyticsEngine:
             pe = item.get("PE") or {}
 
             ce_oi = int(ce.get("openInterest") or 0)
+            if ce_oi < 0 or ce_oi > 50_000_000:
+                ce_oi = 0
             ce_chg_oi = int(ce.get("changeinOpenInterest") or 0)
+            if abs(ce_chg_oi) > 50_000_000:
+                ce_chg_oi = 0
             ce_vol = int(ce.get("totalTradedVolume") or 0)
+            if ce_vol < 0 or ce_vol > 500_000_000:
+                ce_vol = 0
             ce_iv = float(ce.get("impliedVolatility") or 0.0)
             ce_ltp = float(ce.get("lastPrice") or 0.0)
             ce_chg = float(ce.get("change") or 0.0)
@@ -764,8 +770,14 @@ class NiftyAnalyticsEngine:
             ce_micro_px = float(ce.get("micro_price") or ce_ltp)
 
             pe_oi = int(pe.get("openInterest") or 0)
+            if pe_oi < 0 or pe_oi > 50_000_000:
+                pe_oi = 0
             pe_chg_oi = int(pe.get("changeinOpenInterest") or 0)
+            if abs(pe_chg_oi) > 50_000_000:
+                pe_chg_oi = 0
             pe_vol = int(pe.get("totalTradedVolume") or 0)
+            if pe_vol < 0 or pe_vol > 500_000_000:
+                pe_vol = 0
             pe_iv = float(pe.get("impliedVolatility") or 0.0)
             pe_ltp = float(pe.get("lastPrice") or 0.0)
             pe_chg = float(pe.get("change") or 0.0)
@@ -833,8 +845,8 @@ class NiftyAnalyticsEngine:
         total_ce_chg_oi = sum(s["ce_chg_oi"] for s in strikes_data)
         total_pe_chg_oi = sum(s["pe_chg_oi"] for s in strikes_data)
 
-        overall_pcr = round(total_pe_oi / max(1, total_ce_oi), 3)
-        volume_pcr = round(total_pe_vol / max(1, total_ce_vol), 3)
+        overall_pcr = round(min(10.0, total_pe_oi / max(1, total_ce_oi)), 3)
+        volume_pcr = round(min(10.0, total_pe_vol / max(1, total_ce_vol)), 3)
 
         # 2. Near-ATM (±5 strikes) & Exact ATM (±1 strike) & Active Window (±8 strikes)
         near_slice = strikes_data[max(0, atm_idx - 5): min(len(strikes_data), atm_idx + 6)]
@@ -843,17 +855,17 @@ class NiftyAnalyticsEngine:
 
         near_ce_oi = sum(s["ce_oi"] for s in near_slice)
         near_pe_oi = sum(s["pe_oi"] for s in near_slice)
-        near_atm_pcr = round(near_pe_oi / max(1, near_ce_oi), 3)
+        near_atm_pcr = round(min(10.0, near_pe_oi / max(1, near_ce_oi)), 3)
 
         atm_ce_oi = sum(s["ce_oi"] for s in atm_slice)
         atm_pe_oi = sum(s["pe_oi"] for s in atm_slice)
-        atm_pcr = round(atm_pe_oi / max(1, atm_ce_oi), 3)
+        atm_pcr = round(min(10.0, atm_pe_oi / max(1, atm_ce_oi)), 3)
 
         near_ce_chg = sum(s["ce_chg_oi"] for s in active_slice)
         near_pe_chg = sum(s["pe_chg_oi"] for s in active_slice)
         pos_ce_chg = sum(max(0, s["ce_chg_oi"]) for s in active_slice)
         pos_pe_chg = sum(max(0, s["pe_chg_oi"]) for s in active_slice)
-        chg_oi_pcr = round(pos_pe_chg / max(1, pos_ce_chg), 3)
+        chg_oi_pcr = round(min(10.0, pos_pe_chg / max(1, pos_ce_chg)), 3)
 
         # 3. ATM Straddle & Implied Range
         atm_row = strikes_data[atm_idx]
