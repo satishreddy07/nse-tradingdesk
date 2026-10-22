@@ -18252,7 +18252,8 @@
       const dKotakDot = document.getElementById('drawer-kotak-dot');
       const dKotakBadge = document.getElementById('drawer-kotak-badge');
 
-      if (kNeo.is_authenticated && (kNeo.is_streaming || kNeo.stream_mode === 'WEBSOCKET')) {
+      const isKotakLiveOpen = Boolean(kNeo.is_authenticated && mStatus.is_open && (kNeo.is_streaming || kNeo.stream_mode === 'WEBSOCKET'));
+      if (isKotakLiveOpen) {
         if (kDot) kDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
         if (bDot) bDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
         if (bText) bText.innerHTML = `<span class="text-emerald-400 font-bold">STREAMING LIVE</span> • Mode: <span class="text-white">${kNeo.stream_mode}</span> • Ticks: <span class="text-cyan-400 font-bold">${kNeo.ticks_received_total || 0}</span> • Tracked: <span class="text-slate-300">${kNeo.subscribed_symbols_count || 0}</span>`;
@@ -18263,14 +18264,15 @@
           dKotakBadge.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
         }
       } else if (kNeo.is_authenticated) {
-        if (kDot) kDot.className = 'w-2 h-2 rounded-full bg-cyan-400 shrink-0';
-        if (bDot) bDot.className = 'w-2 h-2 rounded-full bg-cyan-400 shrink-0';
-        if (bText) bText.innerHTML = `<span class="text-cyan-400 font-bold">AUTHENTICATED (STANDBY)</span> • Ready for market ticks`;
+        if (kDot) kDot.className = 'w-2 h-2 rounded-full bg-slate-500 shrink-0';
+        if (bDot) bDot.className = 'w-2 h-2 rounded-full bg-slate-500 shrink-0';
+        const sessionLabel = !mStatus.is_open ? 'STANDBY (Market Closed)' : 'AUTHENTICATED (Standby)';
+        if (bText) bText.innerHTML = `<span class="text-slate-400 font-bold">${sessionLabel}</span> • Mode: <span class="text-slate-300">${kNeo.stream_mode || 'STANDBY'}</span> • Session Ticks: <span class="text-slate-300 font-bold">${(kNeo.ticks_received_total || 0).toLocaleString()}</span> • Tracked: <span class="text-slate-400">${kNeo.subscribed_symbols_count || 0}</span>`;
         if (bBtn) bBtn.innerHTML = '<span>⚙️ Manage Stream</span>';
-        if (dKotakDot) dKotakDot.className = 'w-2 h-2 rounded-full bg-cyan-400 shrink-0';
+        if (dKotakDot) dKotakDot.className = 'w-2 h-2 rounded-full bg-slate-500 shrink-0';
         if (dKotakBadge) {
-          dKotakBadge.innerText = 'ONLINE';
-          dKotakBadge.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
+          dKotakBadge.innerText = !mStatus.is_open ? 'STANDBY' : 'ONLINE';
+          dKotakBadge.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700';
         }
       } else {
         if (kDot) kDot.className = 'w-2 h-2 rounded-full bg-slate-500 shrink-0';
@@ -24757,7 +24759,7 @@
               streamBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block"></span> ⚡ Kotak Neo Live Stream (${mode}: ${tickCount} ticks)`;
             } else {
               streamBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 inline-flex items-center gap-1.5';
-              streamBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-slate-500 inline-block"></span> 🔴 Market Closed • Standby (${tickCount} ticks)`;
+              streamBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-slate-500 inline-block"></span> 🔴 Market Closed • Standby (${tickCount} session ticks)`;
             }
           }
         } catch (e) { console.debug("Kotak badge update notice:", e); }
@@ -25047,7 +25049,8 @@
         // Update badge & header dot
         const badge = document.getElementById('kotak-modal-status-badge');
         const hDot = document.getElementById('kotak-header-dot');
-        if (stat.is_authenticated && (stat.is_streaming || stat.stream_mode === 'WEBSOCKET')) {
+        const isLiveOpen = Boolean(stat.is_authenticated && stat.is_streaming && window.isServerMarketOpen);
+        if (isLiveOpen) {
           if (badge) {
             badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-mono font-bold';
             badge.innerText = 'STREAMING LIVE';
@@ -25055,10 +25058,10 @@
           if (hDot) hDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
         } else if (stat.is_authenticated) {
           if (badge) {
-            badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 font-mono font-bold';
-            badge.innerText = 'AUTHENTICATED (STANDBY)';
+            badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-mono font-bold';
+            badge.innerText = !window.isServerMarketOpen ? 'STANDBY (Market Closed)' : 'AUTHENTICATED (STANDBY)';
           }
-          if (hDot) hDot.className = 'w-2 h-2 rounded-full bg-cyan-400 shrink-0';
+          if (hDot) hDot.className = 'w-2 h-2 rounded-full bg-slate-500 shrink-0';
         } else {
           if (badge) {
             badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-mono font-bold';

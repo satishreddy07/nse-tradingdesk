@@ -638,6 +638,24 @@ class KotakNeoEngine:
 
         logger.info("⏹️ Kotak Neo WebSocket and REST streams disconnected cleanly.")
 
+    def pause_stream_to_standby(self):
+        """Safely pauses active WebSocket and REST streams to STANDBY mode outside market hours while keeping the watchdog alive."""
+        self._stop_stream.set()
+        self._stop_rest_stream.set()
+        with self._lock:
+            self._is_connected = False
+
+        if self._active_ws and self._loop and self._loop.is_running():
+            try:
+                import asyncio
+                fut = asyncio.run_coroutine_threadsafe(self._active_ws.close(), self._loop)
+                fut.result(timeout=2.0)
+            except Exception:
+                pass
+            self._active_ws = None
+
+        logger.info("⏸️ [Kotak Neo] Paused live streaming to STANDBY mode (Market Closed).")
+
     def _run_ws_worker(self):
         """Dedicated background thread running the asyncio event loop for SFeedWebSocket."""
         loop = asyncio.new_event_loop()
@@ -1030,6 +1048,9 @@ class KotakNeoEngine:
             return
 
         now_str = format_ist()
+        dt_now = now_ist()
+        mkt_status = NSEMarketCalendar.get_market_status(dt_now)
+        is_equity_open = mkt_status.get("is_open", False)
 
         # Check if message is an Option Contract (by token or symbol)
         tok = str(getattr(message, "instrument_token", "") or getattr(message, "tk", "") or "").strip()
@@ -1119,7 +1140,8 @@ class KotakNeoEngine:
                                 "source": "KOTAK_NEO_WS_FO"
                             }
                             self._live_ticks[full_sym] = self._option_ticks[(strike, opt_type)]
-                            self._ticks_received_count += 1
+                            if is_equity_open:
+                                self._ticks_received_count += 1
                             self._last_tick_time_ist = now_str
                         return
             except Exception as oe:
@@ -1171,7 +1193,8 @@ class KotakNeoEngine:
                                 "updated_at": now_str,
                                 "source": "KOTAK_NEO_WS"
                             }
-                            self._ticks_received_count += 1
+                            if is_equity_open:
+                                self._ticks_received_count += 1
                             self._last_tick_time_ist = now_str
             except Exception as pe:
                 logger.debug(f"SFeedScrip parse notice: {pe}")
@@ -1218,7 +1241,8 @@ class KotakNeoEngine:
                                 self._live_ticks["NIFTY BANK"] = self._live_ticks[sym]
                                 self._live_ticks["BANKNIFTY"] = self._live_ticks[sym]
                                 self._live_ticks["^NSEBANK"] = self._live_ticks[sym]
-                            self._ticks_received_count += 1
+                            if is_equity_open:
+                                self._ticks_received_count += 1
                             self._last_tick_time_ist = now_str
             except Exception as ie:
                 logger.debug(f"SFeedIndex parse notice: {ie}")
@@ -2355,7 +2379,11 @@ class KotakNeoEngine:
 
 
     def is_streaming_active(self) -> bool:
-        """Returns True if engine is actively streaming live market data via WebSocket or REST."""
+        """Returns True only if engine is actively streaming live market data during open market hours."""
+        dt_now = now_ist()
+        mkt_status = NSEMarketCalendar.get_market_status(dt_now)
+        if not mkt_status.get("is_open", False):
+            return False
         with self._lock:
             if not self._is_authenticated:
                 return False
@@ -2363,7 +2391,6 @@ class KotakNeoEngine:
                 return False
             if self._is_connected:
                 return True
-            # Active if REST streamer is running and has primed cache or ticks
             return not self._stop_rest_stream.is_set() and (self._ticks_received_count > 0 or bool(self._live_ticks))
 
     # --------------------------------------------------------------------------
@@ -2551,7 +2578,7 @@ class KotakNeoEngine:
                     if 555 <= mins <= 935:
                         # 1. Check if disconnected and attempt reconnect
                         if self._is_authenticated and not self._is_connected:
-                            logger.info("🔄 [Kotak Neo Watchdog] Stream disconnected during market hours. Reconnecting...")
+                            logger.info("🔄 [Kotak Neo Watchdog] Market is OPEN. Reconnecting live stream...")
                             self.connect_stream()
 
                         # 2. Check for new symbols to auto-subscribe
@@ -2559,6 +2586,11 @@ class KotakNeoEngine:
                         unsub = [s for s in active_syms if s not in self._subscribed_symbols]
                         if unsub:
                             self.subscribe_symbols(unsub)
+                    else:
+                        # Market is CLOSED: Pause equity stream to STANDBY mode
+                        if self._is_connected:
+                            logger.info("⏸️ [Kotak Neo Watchdog] Market is CLOSED. Pausing equity stream to STANDBY...")
+                            self.pause_stream_to_standby()
             except Exception as e:
                 logger.debug(f"Kotak Neo watchdog loop notice: {e}")
             time.sleep(30)
@@ -2660,9 +2692,13 @@ class KotakNeoEngine:
         saved_creds = state_engine.get_kv("KOTAK_NEO_CREDENTIALS") or {}
         ucc_val = config.KOTAK_NEO_UCC or saved_creds.get("ucc", "")
         mob_val = config.KOTAK_NEO_MOBILE_NUMBER or saved_creds.get("mobile_number", "")
+        dt_now = now_ist()
+        mkt_status = NSEMarketCalendar.get_market_status(dt_now)
+        is_mkt_open = mkt_status.get("is_open", False)
+
         with self._lock:
-            is_stream = bool(self._is_authenticated and (self._is_connected or self._ticks_received_count > 0 or bool(self._live_ticks)))
-            stream_mode = "WEBSOCKET" if self._is_connected else ("REST_STREAM" if self._is_authenticated else "OFFLINE")
+            is_stream = bool(self._is_authenticated and is_mkt_open and (self._is_connected or self._ticks_received_count > 0))
+            stream_mode = "WEBSOCKET" if (self._is_connected and is_mkt_open) else ("STANDBY" if self._is_authenticated else "OFFLINE")
             return {
                 "has_sdk_installed": HAS_NEO_API,
                 "is_enabled": config.KOTAK_NEO_ENABLED,
