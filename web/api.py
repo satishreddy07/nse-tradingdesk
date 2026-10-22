@@ -1359,6 +1359,8 @@ def trigger_nifty_fii_dii_manual_update():
             "data": {
                 "latest_cash": flow_data.get("latest_cash", {}),
                 "latest_oi": flow_data.get("latest_oi", {}),
+                "one_week_cash_history": flow_data.get("one_week_cash_history", []),
+                "one_week_participant_oi_history": flow_data.get("one_week_participant_oi_history", []),
                 "cash_history": flow_data.get("one_week_cash_history", []),
                 "oi_history": flow_data.get("one_week_participant_oi_history", []),
                 "flow_score": flow_data.get("flow_score", 0.0),
