@@ -9549,13 +9549,24 @@
     }
 
     // Unified Nifty Spot / ATM Strike State Tracker (Guarantees zero flicker or jitter)
-    window._latestSpotAtmState = { spot: null, atmStrike: null, expiry: null, diffStr: '' };
-    window.updateNiftySpotAtmCard = function(spot, atmStrike, expiry, diffStr) {
+    window._latestSpotAtmState = { spot: null, atmStrike: null, expiry: null, diffStr: '', prevClose: null };
+    window.updateNiftySpotAtmCard = function(spot, atmStrike, expiry, diffStr, prevClose) {
       const s = window._latestSpotAtmState;
       if (spot && spot > 0) s.spot = spot;
       if (atmStrike) s.atmStrike = atmStrike;
       if (expiry && expiry !== '--') s.expiry = expiry;
-      if (diffStr) s.diffStr = diffStr;
+      if (prevClose && prevClose > 0) s.prevClose = prevClose;
+
+      const isBogusZero = diffStr && (diffStr.includes('+0.0 (+0.00%)') || diffStr.includes('+0.0 (0.00%)') || diffStr.includes('0.0 (0.00%)'));
+      if (diffStr && !isBogusZero) {
+        s.diffStr = diffStr;
+      } else if (s.spot > 0 && s.prevClose > 0) {
+        const dPts = s.spot - s.prevClose;
+        const dPct = (dPts / s.prevClose) * 100;
+        const sign = dPts >= 0 ? '+' : '';
+        const cls = dPts >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        s.diffStr = `<span class="${cls} font-bold">${sign}${dPts.toFixed(1)} (${sign}${dPct.toFixed(2)}%)</span>`;
+      }
 
       const spotEl = document.getElementById('opt-kpi-spot');
       if (spotEl && s.spot > 0) {
@@ -9569,9 +9580,9 @@
       if (atmEl && s.atmStrike) {
         const exp = s.expiry ? ` (${s.expiry})` : '';
         const diff = s.diffStr ? ` • ${s.diffStr}` : '';
-        const newText = `ATM Strike: ${s.atmStrike}${exp}${diff}`;
-        if (atmEl.innerText !== newText) {
-          atmEl.innerText = newText;
+        const newHtml = `ATM Strike: ${s.atmStrike}${exp}${diff}`;
+        if (atmEl.innerHTML !== newHtml) {
+          atmEl.innerHTML = newHtml;
         }
       }
     };
@@ -9587,12 +9598,19 @@
           const formatted = '₹' + spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           const chgPts = Number(data.change_pts || 0);
           const chgPct = Number(data.change_pct || 0);
-          const sign = chgPts >= 0 ? '+' : '';
-          const diffStr = `${sign}${chgPts.toFixed(1)} (${sign}${chgPct.toFixed(2)}%)`;
+          const prevClose = Number(data.prev_close || 0);
+          let diffStr = '';
+          const diffVal = (chgPts !== 0 || chgPct !== 0) ? chgPts : (prevClose > 0 ? (spot - prevClose) : 0);
+          const diffPctVal = (chgPts !== 0 || chgPct !== 0) ? chgPct : (prevClose > 0 ? ((diffVal / prevClose) * 100) : 0);
+          if (diffVal !== 0 || diffPctVal !== 0) {
+            const sign = diffVal >= 0 ? '+' : '';
+            const cls = diffVal >= 0 ? 'text-emerald-400' : 'text-rose-400';
+            diffStr = `<span class="${cls} font-bold">${sign}${diffVal.toFixed(1)} (${sign}${diffPctVal.toFixed(2)}%)</span>`;
+          }
 
           // Update Options Desk Spot & ATM KPI via unified non-flickering controller
           lastSpotPrice = spot;
-          updateNiftySpotAtmCard(spot, data.atm_strike, (niftyOptionsChainCache?.weekly?.expiry), diffStr);
+          updateNiftySpotAtmCard(spot, data.atm_strike, (niftyOptionsChainCache?.weekly?.expiry), diffStr, prevClose);
 
           // Update Options Desk Stream Indicator
           const isMarketOpen = Boolean(data.is_live && (data.market_status === 'OPEN' || data.session_phase === 'REGULAR_HOURS'));
@@ -9601,7 +9619,7 @@
           // Update Intraday Desk Top Spot Badge if present
           const intraSpotBadge = document.getElementById('intraday-spot-badge');
           if (intraSpotBadge) {
-            intraSpotBadge.innerText = `NIFTY: ${formatted} ${diffStr}`;
+            intraSpotBadge.innerHTML = `NIFTY: ${formatted} ${diffStr}`;
           }
         }
       } catch (e) {
@@ -12559,7 +12577,16 @@
       const vol = active.volatility_and_gex || {};
 
       // Update Spot & ATM KPI smoothly preserving live diff
-      updateNiftySpotAtmCard(canonicalSpot, active.atm_strike, active.expiry, null);
+      const ocPrevClose = Number(data.prev_close || (data.weekly && data.weekly.prev_close) || (data.monthly && data.monthly.prev_close) || 0);
+      let ocDiffStr = null;
+      const ocChgPts = (data.change_pts !== undefined && data.change_pts !== null) ? Number(data.change_pts) : ((active.change_pts !== undefined) ? Number(active.change_pts) : null);
+      const ocChgPct = (data.change_pct !== undefined && data.change_pct !== null) ? Number(data.change_pct) : ((active.change_pct !== undefined) ? Number(active.change_pct) : null);
+      if (ocChgPts !== null && ocChgPct !== null && (ocChgPts !== 0 || ocChgPct !== 0)) {
+        const sign = ocChgPts >= 0 ? '+' : '';
+        const cls = ocChgPts >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        ocDiffStr = `<span class="${cls} font-bold">${sign}${ocChgPts.toFixed(1)} (${sign}${ocChgPct.toFixed(2)}%)</span>`;
+      }
+      updateNiftySpotAtmCard(canonicalSpot, active.atm_strike, active.expiry, ocDiffStr, ocPrevClose);
 
       if (document.getElementById('opt-kpi-overall-pcr')) document.getElementById('opt-kpi-overall-pcr').innerText = Number(pcr.overall_oi_pcr || 0).toFixed(3);
       if (document.getElementById('opt-kpi-vol-pcr')) document.getElementById('opt-kpi-vol-pcr').innerText = `Vol PCR: ${Number(pcr.overall_vol_pcr || 0).toFixed(2)}`;
