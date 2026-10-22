@@ -1805,6 +1805,30 @@ def get_advanced_active_strategies_endpoint(horizon: Optional[str] = None):
     }
 
 
+@app.get("/api/options/advanced/adjustments-log")
+def get_advanced_options_adjustments_log_endpoint(strategy_id: Optional[str] = None, limit: int = 50):
+    """Returns chronological audit log of all automated strategy adjustments."""
+    from execution.state_engine import state_engine
+    query = "SELECT * FROM options_strategy_adjustments_log"
+    params = []
+    if strategy_id:
+        query += " WHERE strategy_id = ?"
+        params.append(strategy_id)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+
+    with state_engine._lock:
+        with state_engine._get_connection() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+
+    return {
+        "status": "OK",
+        "adjustments": [dict(r) for r in rows],
+        "count": len(rows),
+        "timestamp_ist": format_ist()
+    }
+
+
 
 # ==============================================================================
 # UNIFIED MACHINE LEARNING, DECISION TREE & CONTINUOUS IMPROVEMENT SUITE

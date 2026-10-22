@@ -202,7 +202,7 @@ class StrategyAdjustmentEngine:
             # -----------------------------------------------------------------
             # LAYER 4: DYNAMIC AUTO-ADJUSTMENTS FOR TESTED WINGS
             # -----------------------------------------------------------------
-            adjusted, adj_legs, adj_note = self._check_and_apply_adjustments(strat_id, strat_name, updated_legs, spot_price)
+            adjusted, adj_legs, adj_note = self._check_and_apply_adjustments(strat_id, strat_name, updated_legs, spot_price, horizon)
             if adjusted:
                 updated_legs = adj_legs
                 adjusted_count += 1
@@ -274,53 +274,226 @@ class StrategyAdjustmentEngine:
         strategy_id: str,
         strat_name: str,
         legs: List[Dict[str, Any]],
-        spot_price: float
+        spot_price: float,
+        horizon: str = "WEEKLY"
     ) -> Tuple[bool, List[Dict[str, Any]], str]:
         """
-        Evaluates dynamic adjustment rules:
-        - For Iron Fly: If spot breaches ATM by > 1.0 straddle width, roll untested wing closer.
+        Evaluates dynamic adjustment rules for Intraday, Weekly, and Monthly horizons:
+        1. Institutional Iron Fly:
+           - Intraday Trigger: ±70 pts drift from ATM.
+           - Weekly/Monthly Trigger: ±120 pts drift from ATM.
+           - Action: Roll decayed untested short & long wing 50 pts closer to spot.
+        2. Bull Broken Wing Butterfly (PE BWB):
+           - Trigger: Spot drops within 25 pts of short strike K2 (threatens broken wing).
+           - Action: Roll long K3 PE wing up 50 pts to tighten wing into symmetric fly and eliminate tail risk.
+        3. Bear Broken Wing Butterfly (CE BWB):
+           - Trigger: Spot rallies within 25 pts of short strike K2 (threatens broken wing).
+           - Action: Roll long K3 CE wing down 50 pts to tighten wing into symmetric fly and eliminate tail risk.
+        4. Call Ratio Backspread (1x2 Call):
+           - Trigger: Spot stalls in Valley of Death between K1 and K2.
+           - Action: Deploy OTM Put Credit Spread hedge to inject credit and finance valley drag.
+        5. Put Ratio Backspread (1x2 Put):
+           - Trigger: Spot stalls in Valley of Death between K2 and K1.
+           - Action: Deploy OTM Call Credit Spread hedge to inject credit and finance valley drag.
         """
-        if "Iron Fly" in strat_name and len(legs) == 4 and spot_price > 0:
+        if not legs or spot_price <= 0:
+            return False, legs, ""
+
+        import copy
+        old_legs = copy.deepcopy(legs)
+        is_intraday = ("INTRADAY" in horizon.upper())
+        drift_threshold = 70.0 if is_intraday else 120.0
+
+        from engines.advanced_options_pricing_engine import calculate_bsm_greeks
+
+        # ---------------------------------------------------------------------
+        # 1. INSTITUTIONAL IRON FLY ADJUSTMENT
+        # ---------------------------------------------------------------------
+        if "Iron Fly" in strat_name and len(legs) >= 4:
             atm_ce = next((l for l in legs if l["action"] == "SELL" and l["type"] == "CE"), None)
             atm_pe = next((l for l in legs if l["action"] == "SELL" and l["type"] == "PE"), None)
+            wing_ce = next((l for l in legs if l["action"] == "BUY" and l["type"] == "CE"), None)
+            wing_pe = next((l for l in legs if l["action"] == "BUY" and l["type"] == "PE"), None)
 
             if atm_ce and atm_pe:
                 atm_strike = atm_ce["strike"]
                 drift = spot_price - atm_strike
 
-                # If spot drifted down > 120 pts, the Call side is 80%+ decayed
-                if drift <= -120.0 and atm_ce.get("state") != "ADJUSTED_ROLLED":
-                    # Roll CE strike down 50 points to collect extra credit
+                # Drift Down: Call side decayed -> Roll Call wing down 50 pts
+                if drift <= -drift_threshold and atm_ce.get("state") != "ADJUSTED_ROLLED":
                     new_ce_strike = atm_strike - 50
                     atm_ce["strike"] = new_ce_strike
                     atm_ce["state"] = "ADJUSTED_ROLLED"
-                    adj_note = f"Auto-Adjustment: Rolled untested Call wing down to {new_ce_strike} CE to widen put breakeven."
+                    # Analytical Greeks update
+                    g = calculate_bsm_greeks(spot_price, new_ce_strike, 1.0 / 365.0, 0.07, 0.135, "CE")
+                    atm_ce["premium"] = g["price"]
+                    atm_ce["greeks"] = g
+
+                    if wing_ce:
+                        wing_ce["strike"] = wing_ce["strike"] - 50
+                        gw = calculate_bsm_greeks(spot_price, wing_ce["strike"], 1.0 / 365.0, 0.07, 0.135, "CE")
+                        wing_ce["premium"] = gw["price"]
+                        wing_ce["greeks"] = gw
+
+                    adj_note = f"Auto-Adjustment [{horizon}]: Rolled untested Call wing down to {new_ce_strike} CE (Drift: {drift:.1f} pts) to expand lower breakeven."
                     logger.info(f"⚙️ [{strategy_id}] {adj_note}")
-                    self._record_adjustment(strategy_id, "IRON_FLY_WING_ROLL_DOWN", adj_note, spot_price, legs)
+                    self._record_adjustment(strategy_id, "IRON_FLY_WING_ROLL_DOWN", adj_note, spot_price, old_legs, legs, credit_collected=g["price"])
                     return True, legs, adj_note
 
-                # If spot drifted up > 120 pts, the Put side is 80%+ decayed
-                elif drift >= 120.0 and atm_pe.get("state") != "ADJUSTED_ROLLED":
+                # Drift Up: Put side decayed -> Roll Put wing up 50 pts
+                elif drift >= drift_threshold and atm_pe.get("state") != "ADJUSTED_ROLLED":
                     new_pe_strike = atm_strike + 50
                     atm_pe["strike"] = new_pe_strike
                     atm_pe["state"] = "ADJUSTED_ROLLED"
-                    adj_note = f"Auto-Adjustment: Rolled untested Put wing up to {new_pe_strike} PE to widen call breakeven."
+                    g = calculate_bsm_greeks(spot_price, new_pe_strike, 1.0 / 365.0, 0.07, 0.135, "PE")
+                    atm_pe["premium"] = g["price"]
+                    atm_pe["greeks"] = g
+
+                    if wing_pe:
+                        wing_pe["strike"] = wing_pe["strike"] + 50
+                        gw = calculate_bsm_greeks(spot_price, wing_pe["strike"], 1.0 / 365.0, 0.07, 0.135, "PE")
+                        wing_pe["premium"] = gw["price"]
+                        wing_pe["greeks"] = gw
+
+                    adj_note = f"Auto-Adjustment [{horizon}]: Rolled untested Put wing up to {new_pe_strike} PE (Drift: {drift:+.1f} pts) to expand upper breakeven."
                     logger.info(f"⚙️ [{strategy_id}] {adj_note}")
-                    self._record_adjustment(strategy_id, "IRON_FLY_WING_ROLL_UP", adj_note, spot_price, legs)
+                    self._record_adjustment(strategy_id, "IRON_FLY_WING_ROLL_UP", adj_note, spot_price, old_legs, legs, credit_collected=g["price"])
+                    return True, legs, adj_note
+
+        # ---------------------------------------------------------------------
+        # 2. BULL BROKEN WING BUTTERFLY (PE BWB) ADJUSTMENT
+        # ---------------------------------------------------------------------
+        elif "Bull Broken Wing" in strat_name or ("Bull" in strat_name and any(l["type"] == "PE" for l in legs)):
+            short_pe = next((l for l in legs if l["action"] == "SELL" and l["type"] == "PE"), None)
+            if short_pe:
+                k2 = short_pe["strike"]
+                long_pe_k3 = next((l for l in legs if l["action"] == "BUY" and l["type"] == "PE" and l["strike"] < k2), None)
+                # If spot drops and threatens short strike K2 (approaches broken wing risk zone)
+                threat_threshold = k2 + (25.0 if is_intraday else 50.0)
+                if spot_price <= threat_threshold and long_pe_k3 and long_pe_k3.get("state") != "ADJUSTED_TIGHTENED":
+                    old_k3 = long_pe_k3["strike"]
+                    new_k3 = old_k3 + 50
+                    long_pe_k3["strike"] = new_k3
+                    long_pe_k3["state"] = "ADJUSTED_TIGHTENED"
+                    g = calculate_bsm_greeks(spot_price, new_k3, 1.0 / 365.0, 0.07, 0.135, "PE")
+                    long_pe_k3["premium"] = g["price"]
+                    long_pe_k3["greeks"] = g
+
+                    adj_note = f"Auto-Adjustment [{horizon}]: Tightened broken put wing from {old_k3} to {new_k3} PE. Neutralized downside gap risk."
+                    logger.info(f"⚙️ [{strategy_id}] {adj_note}")
+                    self._record_adjustment(strategy_id, "BULL_BWB_WING_TIGHTEN_UP", adj_note, spot_price, old_legs, legs)
+                    return True, legs, adj_note
+
+        # ---------------------------------------------------------------------
+        # 3. BEAR BROKEN WING BUTTERFLY (CE BWB) ADJUSTMENT
+        # ---------------------------------------------------------------------
+        elif "Bear Broken Wing" in strat_name or ("Bear" in strat_name and any(l["type"] == "CE" for l in legs)):
+            short_ce = next((l for l in legs if l["action"] == "SELL" and l["type"] == "CE"), None)
+            if short_ce:
+                k2 = short_ce["strike"]
+                long_ce_k3 = next((l for l in legs if l["action"] == "BUY" and l["type"] == "CE" and l["strike"] > k2), None)
+                # If spot rallies and threatens short strike K2 (approaches broken wing risk zone)
+                threat_threshold = k2 - (25.0 if is_intraday else 50.0)
+                if spot_price >= threat_threshold and long_ce_k3 and long_ce_k3.get("state") != "ADJUSTED_TIGHTENED":
+                    old_k3 = long_ce_k3["strike"]
+                    new_k3 = old_k3 - 50
+                    long_ce_k3["strike"] = new_k3
+                    long_ce_k3["state"] = "ADJUSTED_TIGHTENED"
+                    g = calculate_bsm_greeks(spot_price, new_k3, 1.0 / 365.0, 0.07, 0.135, "CE")
+                    long_ce_k3["premium"] = g["price"]
+                    long_ce_k3["greeks"] = g
+
+                    adj_note = f"Auto-Adjustment [{horizon}]: Tightened broken call wing from {old_k3} to {new_k3} CE. Neutralized upside breakout risk."
+                    logger.info(f"⚙️ [{strategy_id}] {adj_note}")
+                    self._record_adjustment(strategy_id, "BEAR_BWB_WING_TIGHTEN_DOWN", adj_note, spot_price, old_legs, legs)
+                    return True, legs, adj_note
+
+        # ---------------------------------------------------------------------
+        # 4. CALL RATIO BACKSPREAD (1x2 Call Backspread) ADJUSTMENT
+        # ---------------------------------------------------------------------
+        elif "Call Ratio Backspread" in strat_name or ("Call" in strat_name and "Backspread" in strat_name):
+            short_ce = next((l for l in legs if l["action"] == "SELL" and l["type"] == "CE"), None)
+            long_ce = next((l for l in legs if l["action"] == "BUY" and l["type"] == "CE"), None)
+            if short_ce and long_ce:
+                k1 = short_ce["strike"]
+                k2 = long_ce["strike"]
+                has_hedge = any(l["type"] == "PE" for l in legs)
+                # Valley of Death: Spot stalls between K1 and K2 without explosive breakout
+                if k1 <= spot_price <= k2 and not has_hedge and short_ce.get("state") != "ADJUSTED_VALLEY_FINANCED":
+                    # Sell OTM Put Credit Spread (K1 - 100 / K1 - 150) to finance valley drag
+                    hedge_short_k = k1 - 100
+                    hedge_long_k = k1 - 150
+                    g_hs = calculate_bsm_greeks(spot_price, hedge_short_k, 1.0 / 365.0, 0.07, 0.135, "PE")
+                    g_hl = calculate_bsm_greeks(spot_price, hedge_long_k, 1.0 / 365.0, 0.07, 0.135, "PE")
+                    credit_got = round((g_hs["price"] - g_hl["price"]) * NIFTY_LOT_SIZE, 2)
+
+                    legs.append({"action": "SELL", "type": "PE", "strike": hedge_short_k, "qty": NIFTY_LOT_SIZE, "ratio": 1, "premium": g_hs["price"], "greeks": g_hs, "state": "HEDGE_LEG"})
+                    legs.append({"action": "BUY", "type": "PE", "strike": hedge_long_k, "qty": NIFTY_LOT_SIZE, "ratio": 1, "premium": g_hl["price"], "greeks": g_hl, "state": "HEDGE_LEG"})
+                    short_ce["state"] = "ADJUSTED_VALLEY_FINANCED"
+
+                    adj_note = f"Auto-Adjustment [{horizon}]: Deployed Put Credit Spread ({hedge_short_k}/{hedge_long_k} PE, Credit: ₹{credit_got:.0f}) to finance Valley of Death stall at {k1}-{k2}."
+                    logger.info(f"⚙️ [{strategy_id}] {adj_note}")
+                    self._record_adjustment(strategy_id, "CALL_RATIO_VALLEY_FINANCED", adj_note, spot_price, old_legs, legs, credit_collected=credit_got)
+                    return True, legs, adj_note
+
+        # ---------------------------------------------------------------------
+        # 5. PUT RATIO BACKSPREAD (1x2 Put Backspread) ADJUSTMENT
+        # ---------------------------------------------------------------------
+        elif "Put Ratio Backspread" in strat_name or ("Put" in strat_name and "Backspread" in strat_name):
+            short_pe = next((l for l in legs if l["action"] == "SELL" and l["type"] == "PE"), None)
+            long_pe = next((l for l in legs if l["action"] == "BUY" and l["type"] == "PE"), None)
+            if short_pe and long_pe:
+                k1 = short_pe["strike"]
+                k2 = long_pe["strike"]
+                has_hedge = any(l["type"] == "CE" for l in legs)
+                # Valley of Death: Spot stalls between K2 and K1 without downward acceleration
+                if k2 <= spot_price <= k1 and not has_hedge and short_pe.get("state") != "ADJUSTED_VALLEY_FINANCED":
+                    # Sell OTM Call Credit Spread (K1 + 100 / K1 + 150) to finance valley drag
+                    hedge_short_k = k1 + 100
+                    hedge_long_k = k1 + 150
+                    g_hs = calculate_bsm_greeks(spot_price, hedge_short_k, 1.0 / 365.0, 0.07, 0.135, "CE")
+                    g_hl = calculate_bsm_greeks(spot_price, hedge_long_k, 1.0 / 365.0, 0.07, 0.135, "CE")
+                    credit_got = round((g_hs["price"] - g_hl["price"]) * NIFTY_LOT_SIZE, 2)
+
+                    legs.append({"action": "SELL", "type": "CE", "strike": hedge_short_k, "qty": NIFTY_LOT_SIZE, "ratio": 1, "premium": g_hs["price"], "greeks": g_hs, "state": "HEDGE_LEG"})
+                    legs.append({"action": "BUY", "type": "CE", "strike": hedge_long_k, "qty": NIFTY_LOT_SIZE, "ratio": 1, "premium": g_hl["price"], "greeks": g_hl, "state": "HEDGE_LEG"})
+                    short_pe["state"] = "ADJUSTED_VALLEY_FINANCED"
+
+                    adj_note = f"Auto-Adjustment [{horizon}]: Deployed Call Credit Spread ({hedge_short_k}/{hedge_long_k} CE, Credit: ₹{credit_got:.0f}) to finance Valley of Death stall at {k2}-{k1}."
+                    logger.info(f"⚙️ [{strategy_id}] {adj_note}")
+                    self._record_adjustment(strategy_id, "PUT_RATIO_VALLEY_FINANCED", adj_note, spot_price, old_legs, legs, credit_collected=credit_got)
                     return True, legs, adj_note
 
         return False, legs, ""
 
-    def _record_adjustment(self, strat_id: str, adj_type: str, reason: str, spot: float, legs: List[Dict[str, Any]]):
+    def _record_adjustment(
+        self,
+        strat_id: str,
+        adj_type: str,
+        reason: str,
+        spot: float,
+        old_legs: List[Dict[str, Any]],
+        new_legs: Optional[List[Dict[str, Any]]] = None,
+        credit_collected: float = 0.0
+    ):
         """Records an adjustment event in SQLite audit log."""
         with state_engine._lock:
             with state_engine._get_connection() as conn:
                 conn.execute("""
                     INSERT INTO options_strategy_adjustments_log (
                         strategy_id, adjustment_type, trigger_reason, spot_at_adjustment,
-                        old_legs_json, timestamp_ist
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                """, (strat_id, adj_type, reason, spot, json.dumps(legs), format_ist()))
+                        old_legs_json, new_legs_json, credit_collected, timestamp_ist
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    strat_id,
+                    adj_type,
+                    reason,
+                    spot,
+                    json.dumps(old_legs),
+                    json.dumps(new_legs if new_legs is not None else old_legs),
+                    credit_collected,
+                    format_ist()
+                ))
                 conn.commit()
 
     def _execute_exit(self, strategy_id: str, exit_reason: str, exit_note: str, spot_exit: float, realized_pnl: float):
