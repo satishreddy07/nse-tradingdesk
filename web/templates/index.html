@@ -18533,6 +18533,22 @@
         if (expEl) expEl.innerText = `${st.expectancy_r >= 0 ? '+' : ''}${st.expectancy_r || 0} R`;
         const ratioEl = document.getElementById('p1-kpi-ratio');
         if (ratioEl) ratioEl.innerText = `Avg Win: +${st.avg_win_r || 0}R | Loss: ${st.avg_loss_r || 0}R`;
+        // 3. Populate Dedicated 5-Card Institutional Screener Telemetry Bar
+        const totNseEl = document.getElementById('p1-summary-total-nse');
+        if (totNseEl) {
+          totNseEl.innerText = sum.nse_total_count ? Number(sum.nse_total_count).toLocaleString('en-IN') : '2,351';
+        }
+        const passEl = document.getElementById('p1-summary-passing');
+        if (passEl) {
+          const passCnt = sum.passing_criteria_count || sum.chartink_fetched_count || sum.universe_size || 0;
+          passEl.innerText = Number(passCnt).toLocaleString('en-IN');
+        }
+        const buyEl = document.getElementById('p1-summary-buynow');
+        if (buyEl) buyEl.innerText = sum.buy_now_count !== undefined ? sum.buy_now_count : 0;
+        const pbEl = document.getElementById('p1-summary-pullback');
+        if (pbEl) pbEl.innerText = sum.pullback_count !== undefined ? sum.pullback_count : ((sum.pre_breakout_count || 0) + (sum.wait_pullback_count || 0));
+        const avEl = document.getElementById('p1-summary-avoid');
+        if (avEl) avEl.innerText = sum.avoid_count !== undefined ? sum.avoid_count : (sum.universe_size || 0);
       }
 
       if (posRes.ok) {
