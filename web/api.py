@@ -1726,6 +1726,87 @@ def post_options_positional_train_ml_endpoint(horizon: str = "WEEKLY"):
 
 
 # ==============================================================================
+# ADVANCED CONFIDENCE-DRIVEN AUTO-STRATEGY & REAL-TIME WATCHDOG API
+# ==============================================================================
+class AdvancedAutoDeployRequest(BaseModel):
+    horizon: str = "INTRADAY"
+    force_refresh: bool = False
+    custom_threshold: Optional[float] = None
+    lot_size: int = NIFTY_LOT_SIZE
+    bypass_market_hours: bool = False
+
+
+@app.get("/api/options/advanced/confidence")
+def get_advanced_options_confidence_endpoint(horizon: str = "INTRADAY", force_refresh: bool = False):
+    """
+    Returns real-time dynamic confidence score, confidence grade, unified regime,
+    recommended asymmetric strategy, and pillar contributions.
+    """
+    from engines.advanced_confidence_engine import advanced_confidence_engine
+    return advanced_confidence_engine.compute_dynamic_confidence(
+        horizon=horizon,
+        force_refresh=force_refresh
+    )
+
+
+@app.post("/api/options/advanced/deploy")
+def post_advanced_options_deploy_endpoint(req: Optional[AdvancedAutoDeployRequest] = None):
+    """
+    Evaluates dynamic confidence score and executes advanced options strategies
+    (Broken Wing Butterfly, Iron Fly, Ratio Backspread) when system feels confident.
+    """
+    from engines.advanced_auto_strategy_orchestrator import advanced_auto_strategy_orchestrator
+    h = req.horizon if req else "INTRADAY"
+    force = req.force_refresh if req else False
+    thresh = req.custom_threshold if req else None
+    lots = req.lot_size if req else NIFTY_LOT_SIZE
+    bypass = req.bypass_market_hours if req else False
+    return advanced_auto_strategy_orchestrator.evaluate_and_deploy_strategy(
+        horizon=h,
+        force_refresh=force,
+        custom_threshold=thresh,
+        lot_size=lots,
+        bypass_market_hours=bypass
+    )
+
+
+@app.post("/api/options/advanced/watchdog-tick")
+@app.get("/api/options/advanced/watchdog-tick")
+def get_advanced_options_watchdog_tick_endpoint(force_execution: bool = False):
+    """
+    Runs an immediate watchdog tick across all active strategies to update trailing stops,
+    check profit-locking milestones, and trigger dynamic auto-adjustments.
+    """
+    from engines.strategy_adjustment_engine import strategy_adjustment_engine
+    return strategy_adjustment_engine.tick_watchdog(force_execution=force_execution)
+
+
+@app.get("/api/options/advanced/active-strategies")
+def get_advanced_active_strategies_endpoint(horizon: Optional[str] = None):
+    """Returns all active advanced options strategies with live mark-to-market status and trailing stop telemetry."""
+    from execution.state_engine import state_engine
+    query = "SELECT * FROM options_strategies WHERE status = 'ACTIVE'"
+    params = []
+    if horizon:
+        query += " AND expiry_type = ?"
+        params.append(horizon.upper())
+    query += " ORDER BY id DESC"
+
+    with state_engine._lock:
+        with state_engine._get_connection() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+
+    return {
+        "status": "OK",
+        "horizon": horizon or "ALL",
+        "strategies": [dict(r) for r in rows],
+        "count": len(rows),
+        "timestamp_ist": format_ist()
+    }
+
+
+
+# ==============================================================================
 # UNIFIED MACHINE LEARNING, DECISION TREE & CONTINUOUS IMPROVEMENT SUITE
 # ==============================================================================
 @app.get("/api/ml/overview")

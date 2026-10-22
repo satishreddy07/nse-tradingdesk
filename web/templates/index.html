@@ -15864,328 +15864,186 @@
       if (!container) return;
 
       const h = currentRulesHorizon;
-      const slPctStr = (h === 'WEEKLY') ? '40%' : (h === 'MONTHLY' ? '50%' : '30%/40%');
+      container.innerHTML = `
+        <!-- 1. Strong Bullish -->
+        <div class="bg-slate-900/90 border border-emerald-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-emerald-500 transition">
+          <div>
+            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
+                1. Strong Bullish
+              </span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Ratio Backspread</span>
+            </div>
+            <div class="space-y-2 text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                <div class="text-[10px] text-emerald-300 font-bold uppercase">Call Ratio Backspread:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; Sell 1x ATM CE + Buy 2x OTM CE</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; Unlimited upside breakout; small credit if flat</div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+            <span>Risk Profile:</span>
+            <span class="text-emerald-300 font-bold">Asymmetric Upside</span>
+          </div>
+        </div>
 
-      if (h === 'WEEKLY' || h === 'MONTHLY') {
-        const sl = h === 'WEEKLY' ? '40%' : '50%';
-        container.innerHTML = `
-          <!-- 1. Strong Bullish -->
-          <div class="bg-slate-900/90 border border-emerald-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-emerald-500 transition">
-            <div>
-              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                  <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
-                  1. Strong Bullish
-                </span>
-                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">SL ${sl}</span>
-              </div>
-              <div class="space-y-2 text-[11px]">
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
-                  <div class="text-[10px] text-emerald-300 font-bold uppercase">${h.capitalize()} Strategy:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1-Sigma Strike</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: ${sl} increase in premium</div>
-                </div>
-              </div>
+        <!-- 2. Mild Bullish -->
+        <div class="bg-slate-900/90 border border-teal-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-teal-500 transition">
+          <div>
+            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-teal-400 flex items-center gap-1.5">
+                <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
+                2. Mild Bullish
+              </span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">Bull Put BWB</span>
             </div>
-            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
-              <span>Re-entry:</span>
-              <span class="text-emerald-300 font-bold">1-Time @ &le; P0</span>
+            <div class="space-y-2 text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                <div class="text-[10px] text-teal-300 font-bold uppercase">Bull Broken Wing Butterfly:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; +1 ATM PE, -2 OTM PE, +1 Skip PE</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; Zero upside risk (Net Credit); profit tent at shorts</div>
+              </div>
             </div>
           </div>
+          <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+            <span>Risk Profile:</span>
+            <span class="text-teal-300 font-bold">Zero Upside Risk</span>
+          </div>
+        </div>
 
-          <!-- 2. Strong Bearish -->
-          <div class="bg-slate-900/90 border border-rose-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-rose-500 transition">
-            <div>
-              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                <span class="text-xs font-bold text-rose-400 flex items-center gap-1.5">
-                  <i data-lucide="trending-down" class="w-3.5 h-3.5"></i>
-                  2. Strong Bearish
-                </span>
-                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">SL ${sl}</span>
-              </div>
-              <div class="space-y-2 text-[11px]">
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
-                  <div class="text-[10px] text-rose-300 font-bold uppercase">${h.capitalize()} Strategy:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1-Sigma Strike</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: ${sl} increase in premium</div>
-                </div>
-              </div>
+        <!-- 3. Range-Bound -->
+        <div class="bg-slate-900/90 border border-cyan-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-cyan-500 transition">
+          <div>
+            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                <i data-lucide="split" class="w-3.5 h-3.5"></i>
+                3. Range-Bound
+              </span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">Iron Fly</span>
             </div>
-            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
-              <span>Re-entry:</span>
-              <span class="text-rose-300 font-bold">1-Time @ &le; P0</span>
+            <div class="space-y-2 text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                <div class="text-[10px] text-cyan-300 font-bold uppercase">Institutional Iron Fly:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; Sell ATM Straddle + Buy OTM Wings</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; Peak theta harvest; dynamic wing-roll defense</div>
+              </div>
             </div>
           </div>
+          <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+            <span>Defense:</span>
+            <span class="text-cyan-300 font-bold">Untested Wing Roll</span>
+          </div>
+        </div>
 
-          <!-- 3. Mild Bullish -->
-          <div class="bg-slate-900/90 border border-teal-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-teal-500 transition">
-            <div>
-              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                <span class="text-xs font-bold text-teal-400 flex items-center gap-1.5">
-                  <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
-                  3. Mild Bullish
-                </span>
-                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">SL ${sl}</span>
-              </div>
-              <div class="space-y-2 text-[11px]">
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
-                  <div class="text-[10px] text-teal-300 font-bold uppercase">${h.capitalize()} Strategy:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1-Sigma Strike</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: ${sl} increase in premium</div>
-                </div>
-              </div>
+        <!-- 4. Mild Bearish -->
+        <div class="bg-slate-900/90 border border-amber-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-amber-500 transition">
+          <div>
+            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                <i data-lucide="arrow-down-right" class="w-3.5 h-3.5"></i>
+                4. Mild Bearish
+              </span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">Bear Call BWB</span>
             </div>
-            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
-              <span>Re-entry:</span>
-              <span class="text-teal-300 font-bold">1-Time @ &le; P0</span>
+            <div class="space-y-2 text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                <div class="text-[10px] text-amber-300 font-bold uppercase">Bear Broken Wing Butterfly:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; +1 ATM CE, -2 OTM CE, +1 Skip CE</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; Zero downside risk (Net Credit); profit tent at shorts</div>
+              </div>
             </div>
           </div>
+          <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+            <span>Risk Profile:</span>
+            <span class="text-amber-300 font-bold">Zero Downside Risk</span>
+          </div>
+        </div>
 
-          <!-- 4. Mild Bearish -->
-          <div class="bg-slate-900/90 border border-amber-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-amber-500 transition">
-            <div>
-              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                <span class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                  <i data-lucide="arrow-down-right" class="w-3.5 h-3.5"></i>
-                  4. Mild Bearish
-                </span>
-                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">SL ${sl}</span>
-              </div>
-              <div class="space-y-2 text-[11px]">
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
-                  <div class="text-[10px] text-amber-300 font-bold uppercase">${h.capitalize()} Strategy:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1-Sigma Strike</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: ${sl} increase in premium</div>
-                </div>
-              </div>
+        <!-- 5. Strong Bearish -->
+        <div class="bg-slate-900/90 border border-rose-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-rose-500 transition">
+          <div>
+            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                <i data-lucide="trending-down" class="w-3.5 h-3.5"></i>
+                5. Strong Bearish
+              </span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">Put Backspread</span>
             </div>
-            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
-              <span>Re-entry:</span>
-              <span class="text-amber-300 font-bold">1-Time @ &le; P0</span>
+            <div class="space-y-2 text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                <div class="text-[10px] text-rose-300 font-bold uppercase">Put Ratio Backspread:</div>
+                <div class="text-white mt-0.5 font-semibold">&bull; Sell 1x ATM PE + Buy 2x OTM PE</div>
+                <div class="text-slate-400 text-[10px] mt-0.5">&bull; Unlimited crash profits; ZERO naked puts permitted</div>
+              </div>
             </div>
           </div>
-
-          <!-- 5. Range-Bound -->
-          <div class="bg-slate-900/90 border border-cyan-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-cyan-500 transition">
-            <div>
-              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                <span class="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
-                  <i data-lucide="split" class="w-3.5 h-3.5"></i>
-                  5. Range-Bound
-                </span>
-                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">SL ${sl}</span>
-              </div>
-              <div class="space-y-2 text-[11px]">
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
-                  <div class="text-[10px] text-cyan-300 font-bold uppercase">${h.capitalize()} Strangle:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1&sigma; + Sell PE @ 1&sigma;</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; ${sl} Stop-Loss independently per leg</div>
-                </div>
-              </div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
-              <span>Re-entry:</span>
-              <span class="text-cyan-300 font-bold">1-Time @ &le; P0</span>
-            </div>
+          <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
+            <span>Risk Profile:</span>
+            <span class="text-rose-400 font-bold">Unlimited Crash Profit</span>
           </div>
-        `;
-      } else {
-        // INTRADAY
-        container.innerHTML = `
-          <!-- 1. Strong Bullish -->
-          <div class="bg-slate-900/90 border border-emerald-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-emerald-500 transition">
-            <div>
-              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                  <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
-                  1. Strong Bullish
-                </span>
-                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">SL 30%</span>
-              </div>
-              <div class="space-y-2 text-[11px]">
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
-                  <div class="text-[10px] text-emerald-300 font-bold uppercase">Primary Strategy:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1-Sigma Strike</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 30% increase in premium</div>
-                </div>
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-purple-500/20">
-                  <div class="text-[10px] text-purple-300 font-bold uppercase">Experimental Asymmetric:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1&sigma; + Sell CE @ 2&sigma;</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; 30% SL independently per leg</div>
-                </div>
-              </div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
-              <span>Re-entry:</span>
-              <span class="text-emerald-300 font-bold">1-Time @ &le; P0</span>
-            </div>
-          </div>
-
-          <!-- 2. Strong Bearish -->
-          <div class="bg-slate-900/90 border border-rose-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-rose-500 transition">
-            <div>
-              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                <span class="text-xs font-bold text-rose-400 flex items-center gap-1.5">
-                  <i data-lucide="trending-down" class="w-3.5 h-3.5"></i>
-                  2. Strong Bearish
-                </span>
-                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">SL 30%</span>
-              </div>
-              <div class="space-y-2 text-[11px]">
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
-                  <div class="text-[10px] text-rose-300 font-bold uppercase">Primary Strategy:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1-Sigma Strike</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 30% increase in premium</div>
-                </div>
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-purple-500/20">
-                  <div class="text-[10px] text-purple-300 font-bold uppercase">Experimental Asymmetric:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1&sigma; + Sell PE @ 2&sigma;</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; 30% SL independently per leg</div>
-                </div>
-              </div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
-              <span>Re-entry:</span>
-              <span class="text-rose-300 font-bold">1-Time @ &le; P0</span>
-            </div>
-          </div>
-
-          <!-- 3. Mild Bullish -->
-          <div class="bg-slate-900/90 border border-teal-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-teal-500 transition">
-            <div>
-              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                <span class="text-xs font-bold text-teal-400 flex items-center gap-1.5">
-                  <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
-                  3. Mild Bullish
-                </span>
-                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">SL 40%</span>
-              </div>
-              <div class="space-y-2 text-[11px]">
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
-                  <div class="text-[10px] text-teal-300 font-bold uppercase">Primary Strategy:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell PE @ 1-Sigma Strike</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 40% increase in premium</div>
-                </div>
-              </div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
-              <span>Re-entry:</span>
-              <span class="text-teal-300 font-bold">1-Time @ &le; P0</span>
-            </div>
-          </div>
-
-          <!-- 4. Mild Bearish -->
-          <div class="bg-slate-900/90 border border-amber-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-amber-500 transition">
-            <div>
-              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                <span class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                  <i data-lucide="arrow-down-right" class="w-3.5 h-3.5"></i>
-                  4. Mild Bearish
-                </span>
-                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">SL 40%</span>
-              </div>
-              <div class="space-y-2 text-[11px]">
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
-                  <div class="text-[10px] text-amber-300 font-bold uppercase">Primary Strategy:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1-Sigma Strike</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Stop-Loss: 40% increase in premium</div>
-                </div>
-              </div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
-              <span>Re-entry:</span>
-              <span class="text-amber-300 font-bold">1-Time @ &le; P0</span>
-            </div>
-          </div>
-
-          <!-- 5. Range-Bound -->
-          <div class="bg-slate-900/90 border border-cyan-500/40 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg hover:border-cyan-500 transition">
-            <div>
-              <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                <span class="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
-                  <i data-lucide="split" class="w-3.5 h-3.5"></i>
-                  5. Range-Bound
-                </span>
-                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">SL 40%</span>
-              </div>
-              <div class="space-y-2 text-[11px]">
-                <div class="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
-                  <div class="text-[10px] text-cyan-300 font-bold uppercase">Primary Strategy:</div>
-                  <div class="text-white mt-0.5 font-semibold">&bull; Sell CE @ 1&sigma; + Sell PE @ 1&sigma;</div>
-                  <div class="text-slate-400 text-[10px] mt-0.5">&bull; Short Strangle (40% SL per leg)</div>
-                </div>
-              </div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex justify-between">
-              <span>Re-entry:</span>
-              <span class="text-cyan-300 font-bold">1-Time @ &le; P0</span>
-            </div>
-          </div>
-        `;
-      }
+        </div>
+      `;
     }
 
     function renderReentryFlowDiagram() {
       const container = document.getElementById('reentry-flow-container');
       if (!container) return;
 
-      const h = currentRulesHorizon;
-      const slText = h === 'WEEKLY' ? '₹140 (+40% SL)' : (h === 'MONTHLY' ? '₹150 (+50% SL)' : '₹130/₹140 (30%/40% SL)');
-      const slPct = h === 'WEEKLY' ? '40%' : (h === 'MONTHLY' ? '50%' : '30%/40%');
-
       container.innerHTML = `
         <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
           <div class="flex items-center gap-2 text-cyan-400 font-bold">
             <span class="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-[10px]">1</span>
-            <span>Initial Sell Entry</span>
+            <span>Confidence Trigger</span>
           </div>
-          <div class="text-white mt-2 font-semibold">Sell Option @ P0 (e.g. ₹100)</div>
+          <div class="text-white mt-2 font-semibold">Confidence &ge; 70%</div>
           <p class="text-[10px] text-slate-400 mt-1">
-            Leg set to ACTIVE. Calculate initial stop trigger: P0 &times; (1 + SL%) = ${slText}.
+            Real-time multi-pillar confidence engine triggers entry with multi-timeframe alignment.
           </p>
         </div>
 
         <div class="bg-slate-950/80 border border-rose-500/30 rounded-xl p-3">
           <div class="flex items-center gap-2 text-rose-400 font-bold">
             <span class="w-5 h-5 rounded-full bg-rose-500/20 text-rose-300 flex items-center justify-center text-[10px]">2</span>
-            <span>Stop-Loss Exit</span>
+            <span>Fixed Stop-Loss</span>
           </div>
-          <div class="text-white mt-2 font-semibold">Premium reaches ${slText}</div>
+          <div class="text-white mt-2 font-semibold">Capital Preservation</div>
           <p class="text-[10px] text-slate-400 mt-1">
-            Trigger buy exit on executable quotes (accounting for slippage). Record actual exit fill. State &rarr; SL_EXITED.
+            Hard stop-loss barrier cuts loss immediately if total strategy drawdown hits maximum threshold.
           </p>
         </div>
 
         <div class="bg-slate-950/80 border border-amber-500/30 rounded-xl p-3">
           <div class="flex items-center gap-2 text-amber-400 font-bold">
             <span class="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center text-[10px]">3</span>
-            <span>Monitor Same Strike</span>
+            <span>Milestone 1: Break-Even</span>
           </div>
-          <div class="text-white mt-2 font-semibold">Track Contract &amp; Quotes</div>
+          <div class="text-white mt-2 font-semibold">40% Target Reached</div>
           <p class="text-[10px] text-slate-400 mt-1">
-            No new prediction required. Continuous watchdog monitors live bid/ask quotes for the exact same strike.
+            Trailing stop automatically moves to ₹0.0 (Cost-to-Cost). The trade becomes 100% risk-free.
           </p>
         </div>
 
         <div class="bg-slate-950/80 border border-emerald-500/30 rounded-xl p-3">
           <div class="flex items-center gap-2 text-emerald-400 font-bold">
             <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center text-[10px]">4</span>
-            <span>Price-Triggered Re-Entry</span>
+            <span>Milestone 2: Profit Lock</span>
           </div>
-          <div class="text-white mt-2 font-semibold">Premium &le; P0 (e.g. &le; ₹100)</div>
+          <div class="text-white mt-2 font-semibold">65% Target Reached</div>
           <p class="text-[10px] text-slate-400 mt-1">
-            Submit new sell order. Strictly 1 re-entry per cycle. New SL trigger = Actual Re-entry Fill &times; (1 + ${slPct}). State &rarr; RE_ENTERED.
+            Locks in 50% profit floor and steps up with a 15% High-Water Mark trailing stop.
           </p>
         </div>
 
         <div class="bg-slate-950/80 border border-purple-500/30 rounded-xl p-3">
           <div class="flex items-center gap-2 text-purple-400 font-bold">
             <span class="w-5 h-5 rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center text-[10px]">5</span>
-            <span>Final Exit / Expiry Settlement</span>
+            <span>Dynamic Auto-Adjustment</span>
           </div>
-          <div class="text-white mt-2 font-semibold">Final SL or Expiry Settlement</div>
+          <div class="text-white mt-2 font-semibold">Wing-Roll Defense</div>
           <p class="text-[10px] text-slate-400 mt-1">
-            If re-entered leg hits new SL &rarr; FINAL_SL_EXITED (zero further re-entries). Else hold into expiry decay for full credit.
+            When spot breaches Iron Fly breakeven, untested decayed wing rolls closer to spot to collect credit.
           </p>
         </div>
       `;
@@ -16274,38 +16132,21 @@
         badgeCls = 'bg-rose-500/20 text-rose-300 border-rose-500/30';
       }
 
-      if (h === 'INTRADAY') {
-        if (srcBadge) {
-          srcBadge.className = `px-2 py-0.5 rounded text-[9px] font-bold font-mono border ${badgeCls}`;
-          srcBadge.innerText = '⚡ PURE INTRADAY ANALYSIS (VWAP • ORB • GEX • SLOT ML)';
-        }
-        if (scoreText) {
-          const sc = Number(data.intraday_composite_score || 0);
-          const conf = data.daytime_confidence ? ` | Daytime Conf: ${data.daytime_confidence.intraday_confidence_pct}% [${data.daytime_confidence.confidence_grade}]` : '';
-          scoreText.innerText = `(Intraday Score: ${sc >= 0 ? '+' : ''}${sc.toFixed(1)}${conf})`;
-        }
-      } else {
-        if (srcBadge) {
-          srcBadge.className = `px-2 py-0.5 rounded text-[9px] font-bold font-mono border ${badgeCls}`;
-          srcBadge.innerText = '📅 WEEKLY PREDICTION MODEL (T+5 STRUCTURAL • BREADTH • FII OI)';
-        }
-        if (scoreText) {
-          const sc = Number(data.weekly_composite_score || 0);
-          const winner = (data.pre_trade_strategy_tournament && data.pre_trade_strategy_tournament.tournament_winner)
-            ? ` | Best P(win): ${data.pre_trade_strategy_tournament.tournament_winner.p_win_pct}% [${data.pre_trade_strategy_tournament.tournament_winner.architecture}]`
-            : '';
-          scoreText.innerText = `(Weekly Score: ${sc >= 0 ? '+' : ''}${sc.toFixed(1)}${winner})`;
-        }
+      if (srcBadge) {
+        srcBadge.className = `px-2 py-0.5 rounded text-[9px] font-bold font-mono border ${badgeCls}`;
+        srcBadge.innerText = `⚡ MULTI-PILLAR CONFIDENCE ENGINE (${data.confidence_grade || 'ACTIVE'})`;
+      }
+      if (scoreText) {
+        const confPct = Number(data.confidence_score_pct || 0);
+        const strat = data.strategy_name ? ` • Strategy: ${data.strategy_name}` : '';
+        scoreText.innerText = `(Confidence: ${confPct.toFixed(1)}% [${data.confidence_grade || 'EVAL'}]${strat})`;
       }
 
       if (regText) {
         regText.className = `text-sm sm:text-base font-bold font-mono ${regColor}`;
-        regText.innerText = reg;
+        regText.innerText = reg.replace(/_/g, ' ');
       }
-      let summaryText = data.rationale || 'Real-time quantitative analysis active.';
-      if (h !== 'INTRADAY' && data.pre_trade_strategy_tournament && data.pre_trade_strategy_tournament.analysis_summary) {
-        summaryText += ' • ' + data.pre_trade_strategy_tournament.analysis_summary;
-      }
+      let summaryText = data.rationale || 'Real-time multi-pillar quantitative analysis active.';
       if (ratText) ratText.innerText = summaryText;
       if (window.lucide) lucide.createIcons();
     }
@@ -16315,30 +16156,26 @@
       updateDynamicSigmaDisplay();
 
       try {
-        const tradeUrl = (h === 'INTRADAY')
-          ? '/api/options/intraday-rules/active-trades'
-          : `/api/options/positional-rules/active-trades?horizon=${h}`;
+        const tradeUrl = `/api/options/advanced/active-strategies?horizon=${h}`;
 
         const mlUrl = (h === 'INTRADAY')
           ? '/api/options/intraday-rules/ml-metrics'
           : `/api/options/positional-rules/ml-metrics?horizon=${h}`;
 
-        const regimeUrl = (h === 'INTRADAY')
-          ? `/api/options/intraday-rules/regime?force_refresh=${forceRefresh}`
-          : `/api/options/positional-rules/regime?force_refresh=${forceRefresh}`;
+        const confidenceUrl = `/api/options/advanced/confidence?horizon=${h}&force_refresh=${forceRefresh}`;
 
-        const regimePromise = fetch(regimeUrl)
+        const regimePromise = fetch(confidenceUrl)
           .then(r => r.ok ? r.json() : null)
           .then(data => {
             if (data) renderRulesRegimeBanner(data, h);
-          }).catch(e => console.error(`Error loading ${h} regime:`, e));
+          }).catch(e => console.error(`Error loading ${h} confidence:`, e));
 
         const ledgerPromise = fetch(tradeUrl)
           .then(r => r.ok ? r.json() : null)
           .then(data => {
-            if (data && data.trades) {
-              rulesActiveTradesCache[h] = data.trades;
-              renderIntradayTradesLedger(data.trades);
+            if (data && data.strategies) {
+              rulesActiveTradesCache[h] = data.strategies;
+              renderIntradayTradesLedger(data.strategies);
             }
           }).catch(e => console.error(`Error loading ${h} trades ledger:`, e));
 
@@ -16875,35 +16712,31 @@
       const origHtml = btn ? btn.innerHTML : '';
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Evaluating ${h.capitalize()} Confidence &amp; Deploying...`;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Evaluating ${h.capitalize()} Dynamic Confidence &amp; Deploying...`;
       }
 
       try {
-        const url = (h === 'INTRADAY')
-          ? '/api/options/intraday-rules/auto-deploy'
-          : '/api/options/positional-rules/auto-deploy';
-
-        const body = (h === 'INTRADAY')
-          ? { force_refresh: true, confidence_threshold: 8.0, lot_size: NIFTY_LOT_SIZE }
-          : { horizon: h, force_refresh: true, confidence_threshold: 8.0, lot_size: NIFTY_LOT_SIZE };
-
-        const res = await fetch(url, {
+        const res = await fetch('/api/options/advanced/deploy', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
+          body: JSON.stringify({
+            horizon: h,
+            force_refresh: true,
+            bypass_market_hours: false
+          })
         });
         const data = await res.json();
         if (res.ok && data.status === 'OK') {
-          const depList = data.deployed_strategies || (data.strategy_name ? [data] : []);
-          if (depList.length > 0) {
-            const names = depList.map(s => `${s.strategy_name || s.name}`).join(', ');
-            showToast(`${h.capitalize()} Auto-Trades Executed: Deployed ${depList.length} strategies: ${names}`, 'success');
-          } else {
-            showToast(`Auto-Trader notice: ${data.reason || 'Active strategy already active or confidence threshold not met.'}`, 'info');
-          }
+          showToast(`🚀 ${h.capitalize()} Advanced Strategy Deployed: ${data.strategy_name} [Conf: ${data.confidence_score_pct}%]`, 'success');
           await loadRulesHorizonData(true);
+        } else if (data.status === 'BLOCKED_ACTIVE_EXISTS') {
+          showToast(`Active Strategy Guard: An active ${h} strategy is already open (${data.existing_strategy_id}). Max 1 active strategy enforced.`, 'info');
+        } else if (data.status === 'STANDBY_LOW_CONFIDENCE') {
+          showToast(`Confidence Standby: Score ${data.confidence_score_pct}% is below activation threshold (${data.confidence_threshold}%). Waiting for conviction.`, 'info');
+        } else if (data.status === 'BLOCKED_MARKET_CLOSED') {
+          showToast(`Market Closed: Auto-strategies execute during active market hours.`, 'info');
         } else {
-          showToast(`Execution notice: ${data.detail || data.reason || 'Unable to deploy'}`, 'info');
+          showToast(`Auto-Trader notice: ${data.reason || data.detail || 'Unable to deploy'}`, 'info');
         }
       } catch (err) {
         console.error(`${h} Auto trade execution error:`, err);

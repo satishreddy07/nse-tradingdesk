@@ -715,6 +715,21 @@ def _intraday_collector_watchdog():
                     except Exception:
                         pass
 
+                    # Advanced Options Strategy Watchdog: Profit Locking, Trailing Stops & Auto-Adjustments
+                    try:
+                        from engines.strategy_adjustment_engine import strategy_adjustment_engine
+                        strategy_adjustment_engine.tick_watchdog(force_execution=False)
+                    except Exception as e_wd:
+                        logger.debug(f"Strategy adjustment watchdog notice: {e_wd}")
+
+                    # Autonomous Advanced Options Deployment when Confident (09:35 to 14:45 IST)
+                    if 575 <= mins <= 885:
+                        try:
+                            from engines.advanced_auto_strategy_orchestrator import advanced_auto_strategy_orchestrator
+                            advanced_auto_strategy_orchestrator.evaluate_and_deploy_strategy("INTRADAY", force_refresh=False)
+                        except Exception as e_adv_auto:
+                            logger.debug(f"Advanced auto-strategy deploy notice: {e_adv_auto}")
+
                     # Autonomous Auto-Trades Evaluation: Deploy intraday trades when system feels confident (09:45 to 14:45 IST)
                     if 585 <= mins <= 885:
                         try:

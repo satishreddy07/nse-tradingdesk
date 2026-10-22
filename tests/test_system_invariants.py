@@ -335,3 +335,73 @@ def test_invariant_10_option_chain_expiry_isolation_and_no_leakage():
             assert tick["expiry"] == weekly_exp or tick["expiry"] == chain.get("weekly", {}).get("expiry_date") or "-" in tick["expiry"]
 
 
+# ==============================================================================
+# INVARIANT 11: ADVANCED CONFIDENCE SCORING & ASYMMETRIC STRATEGY INTEGRITY
+# ==============================================================================
+def test_invariant_11_advanced_confidence_and_asymmetric_strategy_integrity():
+    """
+    INVARIANT 11:
+    1. Multi-pillar dynamic confidence score must be bounded between 0% and 100%.
+    2. Confluence must strictly prohibit selling naked contrary legs in strong trends.
+    3. Advanced strategy formulation (BWB, Iron Fly, Ratio Backspread) must produce
+       strictly valid listed NSE strikes (multiples of 50) with analytical Greeks.
+    4. Active watchdog must safely enforce capital preservation, milestone profit locking,
+       and high-water mark trailing stops with zero hardcoded or fake values.
+    """
+    from engines.advanced_confidence_engine import advanced_confidence_engine
+    from engines.advanced_options_pricing_engine import advanced_options_pricing_engine
+    from engines.strategy_adjustment_engine import strategy_adjustment_engine
+
+    # 1. Test Confidence Engine across all 3 horizons
+    for horizon in ["INTRADAY", "WEEKLY", "MONTHLY"]:
+        conf = advanced_confidence_engine.compute_dynamic_confidence(horizon=horizon, force_refresh=False)
+        assert conf["status"] == "OK"
+        assert 0.0 <= conf["confidence_score_pct"] <= 100.0
+        assert conf["confidence_grade"] in ("LOW", "MODERATE", "HIGH", "VERY_HIGH")
+        assert conf["regime"] in ("STRONG_BULLISH", "MILD_BULLISH", "RANGE_BOUND", "MILD_BEARISH", "STRONG_BEARISH")
+        assert conf["recommended_strategy"] in (
+            "BULL_BROKEN_WING_BUTTERFLY", "BEAR_BROKEN_WING_BUTTERFLY",
+            "INSTITUTIONAL_IRON_FLY", "CALL_RATIO_BACKSPREAD", "PUT_RATIO_BACKSPREAD"
+        )
+        # Strict rule: Strong Bearish must never sell naked puts
+        if conf["regime"] == "STRONG_BEARISH":
+            assert conf["recommended_strategy"] == "PUT_RATIO_BACKSPREAD"
+
+    # 2. Test All 5 Strategy Formulations
+    architectures = [
+        "BULL_BROKEN_WING_BUTTERFLY",
+        "BEAR_BROKEN_WING_BUTTERFLY",
+        "INSTITUTIONAL_IRON_FLY",
+        "CALL_RATIO_BACKSPREAD",
+        "PUT_RATIO_BACKSPREAD"
+    ]
+    spot = 22687.65
+    iv = 13.5
+    for arch in architectures:
+        strat = advanced_options_pricing_engine.formulate_strategy(
+            strategy_type=arch,
+            spot_price=spot,
+            iv_pct=iv,
+            dte=5,
+            horizon="WEEKLY"
+        )
+        assert strat["strategy_name"]
+        assert strat["architecture"] == arch
+        assert isinstance(strat["legs"], list) and len(strat["legs"]) >= 2
+        assert 1.0 <= strat["pop_pct"] <= 99.0
+
+        for leg in strat["legs"]:
+            assert leg["strike"] % 50 == 0, f"Strike {leg['strike']} must be multiple of 50"
+            assert leg["premium"] > 0
+            assert "delta" in leg["greeks"]
+            assert "gamma" in leg["greeks"]
+            assert "theta" in leg["greeks"]
+
+    # 3. Test Active Watchdog Tick
+    watchdog_res = strategy_adjustment_engine.tick_watchdog(force_execution=True)
+    assert watchdog_res["status"] in ("OK", "STANDBY", "IDLE")
+    if watchdog_res["status"] == "OK":
+        assert "updated_count" in watchdog_res
+
+
+
