@@ -1676,7 +1676,7 @@ class KotakNeoEngine:
             return {
                 f"{k[0]}_{k[1]}": dict(v)
                 for k, v in self._option_ticks.items()
-                if isinstance(k[0], (int, float)) and min_k <= k[0] <= max_k
+                if len(k) == 2 and isinstance(k[0], (int, float)) and min_k <= k[0] <= max_k
             }
 
     def fetch_option_quotes(self, near_atm_only: bool = True) -> Dict[str, Any]:
@@ -2253,18 +2253,42 @@ class KotakNeoEngine:
                     c_tok = str(c.get("inst", {}).get("neoSymbol", "")).split("|")[-1]
                     p_tok = str(p.get("inst", {}).get("neoSymbol", "")).split("|")[-1]
                     with self._lock:
+                        # Expiry-Aware Option Ticks Storage:
+                        # Weekly contracts populate the primary 2-tuple key (k, type).
+                        # Monthly and longer-dated contracts MUST NOT overwrite weekly strike quotes!
+                        is_weekly = (exp_iso_str == weekly_iso)
+                        if is_weekly:
+                            if c_ltp > 0 or c_oi > 0:
+                                self._option_ticks[(k, "CE")] = {
+                                    "strike": k, "type": "CE", "ltp": c_ltp, "oi": c_oi,
+                                    "oi_change": c_chg_oi, "volume": c_vol, "change": c_chg,
+                                    "change_pct": c_pchg, "token": c_tok, "expiry": exp_iso_str,
+                                    "updated_at": now_str,
+                                    "source": "KOTAK_NEO_OPTION_CHAIN"
+                                }
+                            if p_ltp > 0 or p_oi > 0:
+                                self._option_ticks[(k, "PE")] = {
+                                    "strike": k, "type": "PE", "ltp": p_ltp, "oi": p_oi,
+                                    "oi_change": p_chg_oi, "volume": p_vol, "change": p_chg,
+                                    "change_pct": p_pchg, "token": p_tok, "expiry": exp_iso_str,
+                                    "updated_at": now_str,
+                                    "source": "KOTAK_NEO_OPTION_CHAIN"
+                                }
+                        # Always preserve full expiry-specific quote for multi-expiry lookups
                         if c_ltp > 0 or c_oi > 0:
-                            self._option_ticks[(k, "CE")] = {
+                            self._option_ticks[(k, "CE", exp_iso_str)] = {
                                 "strike": k, "type": "CE", "ltp": c_ltp, "oi": c_oi,
                                 "oi_change": c_chg_oi, "volume": c_vol, "change": c_chg,
-                                "change_pct": c_pchg, "token": c_tok, "updated_at": now_str,
+                                "change_pct": c_pchg, "token": c_tok, "expiry": exp_iso_str,
+                                "updated_at": now_str,
                                 "source": "KOTAK_NEO_OPTION_CHAIN"
                             }
                         if p_ltp > 0 or p_oi > 0:
-                            self._option_ticks[(k, "PE")] = {
+                            self._option_ticks[(k, "PE", exp_iso_str)] = {
                                 "strike": k, "type": "PE", "ltp": p_ltp, "oi": p_oi,
                                 "oi_change": p_chg_oi, "volume": p_vol, "change": p_chg,
-                                "change_pct": p_pchg, "token": p_tok, "updated_at": now_str,
+                                "change_pct": p_pchg, "token": p_tok, "expiry": exp_iso_str,
+                                "updated_at": now_str,
                                 "source": "KOTAK_NEO_OPTION_CHAIN"
                             }
 

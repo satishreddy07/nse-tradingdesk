@@ -9659,7 +9659,14 @@
       if (spot && spot > 0) s.spot = spot;
       if (atm && atm > 0) s.atm = atm;
       if (typeof isLive === 'boolean') s.isLive = isLive;
-      if (diffStr) s.diffStr = diffStr;
+      if (diffStr) {
+        let cleanDiff = diffStr.trim();
+        // Ensure consistent 'ΔDay: ' prefix so text never flickers between having/not having it
+        if (!cleanDiff.startsWith('ΔDay:') && !cleanDiff.startsWith('ΔDay')) {
+          cleanDiff = `ΔDay: ${cleanDiff}`;
+        }
+        s.diffStr = cleanDiff;
+      }
       if (slotNote !== undefined && slotNote !== null) s.slotNote = slotNote;
 
       const spotEl = document.getElementById('intra-kpi-spot');
@@ -25041,39 +25048,44 @@
 
         // 4. Real-time Near-ATM Option Strike Updates directly from Kotak Neo Ticks
         try {
-          if (data.options_ticks && typeof data.options_ticks === 'object') {
-            Object.entries(data.options_ticks).forEach(([key, opt]) => {
-              const strike = opt.strike;
-              const type = (opt.type || '').toLowerCase();
-              if (!strike || !type) return;
+          // CRITICAL: Strike quotes must ONLY mutate during live trading hours when market is open
+          if (data.is_market_open && data.options_ticks && typeof data.options_ticks === 'object') {
+            const currentExpiryType = (typeof selectedOptionsExpiryType !== 'undefined') ? selectedOptionsExpiryType : 'weekly';
+            // Only update weekly option table cells when viewing weekly expiry
+            if (currentExpiryType === 'weekly') {
+              Object.entries(data.options_ticks).forEach(([key, opt]) => {
+                const strike = opt.strike;
+                const type = (opt.type || '').toLowerCase();
+                if (!strike || !type) return;
 
-              const ltpEl = document.getElementById(`opt-${type}-ltp-${strike}`);
-              if (ltpEl && opt.ltp) {
-                const oldLtp = parseFloat(ltpEl.getAttribute('data-prev-ltp') || '0');
-                const newLtp = Number(opt.ltp);
-                const pchg = opt.change_pct !== undefined ? opt.change_pct : 0;
-                const sign = pchg >= 0 ? '+' : '';
-                const pchgCls = pchg >= 0 ? 'text-emerald-400' : 'text-rose-400';
-                ltpEl.innerHTML = `₹${newLtp.toFixed(2)} <span id="opt-${type}-pchg-${strike}" class="text-[10px] ${pchgCls}">(${sign}${Number(pchg).toFixed(0)}%)</span>`;
-                ltpEl.setAttribute('data-prev-ltp', newLtp);
+                const ltpEl = document.getElementById(`opt-${type}-ltp-${strike}`);
+                if (ltpEl && opt.ltp) {
+                  const oldLtp = parseFloat(ltpEl.getAttribute('data-prev-ltp') || '0');
+                  const newLtp = Number(opt.ltp);
+                  const pchg = opt.change_pct !== undefined ? opt.change_pct : 0;
+                  const sign = pchg >= 0 ? '+' : '';
+                  const pchgCls = pchg >= 0 ? 'text-emerald-400' : 'text-rose-400';
+                  ltpEl.innerHTML = `₹${newLtp.toFixed(2)} <span id="opt-${type}-pchg-${strike}" class="text-[10px] ${pchgCls}">(${sign}${Number(pchg).toFixed(0)}%)</span>`;
+                  ltpEl.setAttribute('data-prev-ltp', newLtp);
 
-                if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.05) {
-                  const flashCls = newLtp >= oldLtp ? 'bg-emerald-500/30 text-emerald-300' : 'bg-rose-500/30 text-rose-300';
-                  ltpEl.classList.add(flashCls, 'rounded', 'px-1');
-                  setTimeout(() => ltpEl.classList.remove(flashCls, 'rounded', 'px-1'), 800);
+                  if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.05) {
+                    const flashCls = newLtp >= oldLtp ? 'bg-emerald-500/30 text-emerald-300' : 'bg-rose-500/30 text-rose-300';
+                    ltpEl.classList.add(flashCls, 'rounded', 'px-1');
+                    setTimeout(() => ltpEl.classList.remove(flashCls, 'rounded', 'px-1'), 800);
+                  }
                 }
-              }
 
-              const oiEl = document.getElementById(`opt-${type}-oi-${strike}`);
-              if (oiEl && opt.oi) {
-                oiEl.innerText = Number(opt.oi).toLocaleString('en-IN');
-              }
+                const oiEl = document.getElementById(`opt-${type}-oi-${strike}`);
+                if (oiEl && opt.oi) {
+                  oiEl.innerText = Number(opt.oi).toLocaleString('en-IN');
+                }
 
-              const volEl = document.getElementById(`opt-${type}-vol-${strike}`);
-              if (volEl && opt.volume) {
-                volEl.innerText = Number(opt.volume).toLocaleString('en-IN');
-              }
-            });
+                const volEl = document.getElementById(`opt-${type}-vol-${strike}`);
+                if (volEl && opt.volume) {
+                  volEl.innerText = Number(opt.volume).toLocaleString('en-IN');
+                }
+              });
+            }
           }
         } catch (e) { console.debug("Kotak options update notice:", e); }
 
@@ -25123,7 +25135,7 @@
 
         // 5. Live Option Chain dynamic refresh when user is on Options Desk (every 10s: 5 ticks x 2s)
         try {
-          if (typeof currentModule !== 'undefined' && currentModule === 'module-options') {
+          if (data.is_market_open && typeof currentModule !== 'undefined' && currentModule === 'module-options') {
             window._optChainPollCounter = (window._optChainPollCounter || 0) + 1;
             if (window._optChainPollCounter % 5 === 0) {
               loadOptionsChainDesk(false, false);
@@ -25133,7 +25145,7 @@
 
         // 5b. Live Intraday Option Expiry Desk dynamic refresh when user is on Intraday Desk (every 10s)
         try {
-          if (typeof currentModule !== 'undefined' && currentModule === 'module-intraday') {
+          if (data.is_market_open && typeof currentModule !== 'undefined' && currentModule === 'module-intraday') {
             window._intraDeskPollCounter = (window._intraDeskPollCounter || 0) + 1;
             if (window._intraDeskPollCounter % 5 === 0) {
               loadIntradayExpiryDesk(false);

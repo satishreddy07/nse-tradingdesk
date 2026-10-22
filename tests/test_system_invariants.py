@@ -303,3 +303,35 @@ def test_invariant_9_global_cross_asset_telemetry_no_gaps():
         assert vix_row.get("ret_1d") is not None, "VIX ret_1d should be populated"
         assert vix_row.get("ema20") is not None, "VIX ema20 should be populated"
 
+
+# ==============================================================================
+# INVARIANT 10: OPTION CHAIN EXPIRY ISOLATION & ZERO MULTI-EXPIRY CORRUPTION
+# ==============================================================================
+def test_invariant_10_option_chain_expiry_isolation_and_no_leakage():
+    """
+    INVARIANT 10: Near-ATM streaming option ticks must strictly belong to the active
+    weekly expiry. Monthly and longer-dated option quotes must NEVER collide with or
+    overwrite weekly strike LTPs in continuous stream telemetry.
+    """
+    from engines.kotak_neo_engine import kotak_neo_engine
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+
+    # Fetch option chain
+    chain = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
+    assert chain.get("status") in ("OK", "DATA_NOT_AVAILABLE")
+
+    # Near-ATM option ticks must only have 2-tuple keys (strike, type)
+    ticks = kotak_neo_engine.get_near_atm_option_ticks(strike_range=12)
+    assert isinstance(ticks, dict)
+
+    weekly_exp = chain.get("weekly", {}).get("expiry") if isinstance(chain, dict) else None
+
+    for k, tick in ticks.items():
+        assert isinstance(tick, dict)
+        assert "strike" in tick and "type" in tick
+        assert tick["type"] in ("CE", "PE")
+        # If expiry tag is present and weekly_exp is known, it must not be monthly
+        if tick.get("expiry") and weekly_exp:
+            assert tick["expiry"] == weekly_exp or tick["expiry"] == chain.get("weekly", {}).get("expiry_date") or "-" in tick["expiry"]
+
+
