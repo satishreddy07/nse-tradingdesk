@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from core.market_calendar import IST, now_ist, format_ist
+from core.market_calendar import IST, now_ist, format_ist, NSEMarketCalendar
 from core.config import NIFTY_LOT_SIZE
 from engines.state_engine import state_engine
 from core.telegram_vault import telegram_vault

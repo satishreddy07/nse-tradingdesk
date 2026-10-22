@@ -946,8 +946,8 @@ class NiftyAnalyticsEngine:
         else:
             gex_regime = "NEUTRAL_GAMMA_TRANSITION"
 
-        # 8. Display Table (±12 strikes around ATM)
-        display_strikes = strikes_data[max(0, atm_idx - 12): min(len(strikes_data), atm_idx + 13)]
+        # 8. Display Table (±30 strikes around ATM, up to 61 strikes)
+        display_strikes = strikes_data[max(0, atm_idx - 30): min(len(strikes_data), atm_idx + 31)]
 
         # 9. Sentiment Verdict & Institutional Summary
         if near_atm_pcr >= 1.25 and chg_oi_pcr >= 1.20:
@@ -1125,7 +1125,7 @@ class NiftyAnalyticsEngine:
         """
         from engines.kotak_neo_engine import kotak_neo_engine
 
-        chain_res = kotak_neo_engine.fetch_live_option_chain("NIFTY", count=32)
+        chain_res = kotak_neo_engine.fetch_live_option_chain("NIFTY", count=50)
         if not chain_res or chain_res.get("status") != "OK":
             return {
                 "status": "UNAVAILABLE",
@@ -1151,6 +1151,25 @@ class NiftyAnalyticsEngine:
 
         weekly_analysis = self._analyze_single_expiry_chain(w_rows, effective_spot, weekly_exp, timestamp_str)
         monthly_analysis = self._analyze_single_expiry_chain(m_rows, effective_spot, monthly_exp, timestamp_str)
+
+        # Resilient Monthly Option Chain Retention
+        if not m_rows or monthly_analysis.get("status") == "EMPTY":
+            prev_m = getattr(self, "_last_valid_monthly_analysis", None)
+            if not prev_m and self._option_chain_mem_cache:
+                pm = self._option_chain_mem_cache.get("monthly")
+                if pm and pm.get("status") == "OK":
+                    prev_m = pm
+            if not prev_m:
+                persisted = state_engine.get_kv("latest_nifty_option_chain_deep")
+                if persisted and isinstance(persisted, dict):
+                    pm = persisted.get("monthly")
+                    if pm and pm.get("status") == "OK":
+                        prev_m = pm
+            if prev_m:
+                monthly_analysis = dict(prev_m)
+                monthly_analysis["spot_price"] = round(effective_spot, 2)
+        else:
+            self._last_valid_monthly_analysis = monthly_analysis
         suggestions = self._build_options_quant_suggestions(weekly_analysis, monthly_analysis)
 
         is_market_open, _ = NSEMarketCalendar.can_execute_trades()
@@ -1272,7 +1291,7 @@ class NiftyAnalyticsEngine:
     # 2. INTRADAY MULTI-INTERVAL WEEKLY EXPIRY COLLECTOR (15m / 30m / 50m IST)
     # ==========================================================================
     @staticmethod
-    def _determine_current_slot(dt_ist: datetime.datetime, interval_mode: str = "30m") -> str:
+    def _determine_current_slot(dt_ist: datetime.datetime, interval_mode: str = "15m") -> str:
         """
         Maps current IST timestamp to the active slot for the chosen interval:
         - 15m: 09:30, 09:45, 10:00 ... 15:30 (25 slots)
@@ -1304,7 +1323,7 @@ class NiftyAnalyticsEngine:
         self,
         slot_override: Optional[str] = None,
         sync_cloud: bool = False,
-        interval_mode: str = "30m"
+        interval_mode: str = "15m"
     ) -> Dict[str, Any]:
         """
         Captures a live Weekly Option Expiry snapshot, compares against earlier
@@ -1534,7 +1553,7 @@ class NiftyAnalyticsEngine:
     def auto_gapfill_missed_intraday_slots(
         self,
         session_date: Optional[str] = None,
-        interval_mode: str = "30m"
+        interval_mode: str = "15m"
     ) -> int:
         """
         Guarantees ZERO MISSING SLOTS in the Intraday Weekly Option Expiry schedule:
@@ -1717,7 +1736,7 @@ class NiftyAnalyticsEngine:
     def get_intraday_expiry_dashboard(
         self,
         session_date: Optional[str] = None,
-        interval_mode: str = "30m",
+        interval_mode: str = "15m",
         force_refresh: bool = False
     ) -> Dict[str, Any]:
         """

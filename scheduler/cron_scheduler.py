@@ -641,7 +641,7 @@ def scheduled_nifty_intraday_50min_job(slot_label: Optional[str] = None):
         from engines.nifty_analytics_engine import nifty_analytics_engine
         dash = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override=slot_label, sync_cloud=True)
         # Auto-gapfill any missed earlier slots so the dashboard is 100% complete
-        nifty_analytics_engine.auto_gapfill_missed_intraday_slots(interval_mode="30m")
+        nifty_analytics_engine.auto_gapfill_missed_intraday_slots(interval_mode="15m")
         snap = dash.get("latest_snapshot") or {}
         slot_t = snap.get('slot_time') or slot_label or current_dt.strftime("%H:%M")
         logger.info(

@@ -1843,12 +1843,40 @@ class KotakNeoEngine:
                 "expiry": expiry
             }
 
-        # Resolve official expiries from Kotak Neo if not cached
-        if not target_expiry_iso or not getattr(self, "_cached_weekly_iso", None):
+        # Resolve target expiry from engine cache first
+        if not target_expiry_iso:
+            target_expiry_iso = getattr(self, "_cached_monthly_iso", None) if exp_lower in ("monthly", "m") else getattr(self, "_cached_weekly_iso", None)
+
+        if not target_expiry_iso:
+            cached_exp = getattr(self, "_cached_nse_expiries", None)
+            if cached_exp and (now_ts - cached_exp[0]) < 3600.0 and cached_exp[1]:
+                exp_list = cached_exp[1]
+                weekly_iso = exp_list[0]
+                now_ym = now_ist().strftime("%Y-%m")
+                cur_month_expiries = [e for e in exp_list if e.startswith(now_ym)]
+                if len(cur_month_expiries) > 1 and cur_month_expiries[-1] != weekly_iso:
+                    monthly_iso = cur_month_expiries[-1]
+                elif len(exp_list) > 1:
+                    next_month = [e for e in exp_list if not e.startswith(now_ym)]
+                    if next_month:
+                        pfx = next_month[0][:7]
+                        t_m = [e for e in next_month if e.startswith(pfx)]
+                        monthly_iso = t_m[-1]
+                    else:
+                        monthly_iso = exp_list[1]
+                else:
+                    monthly_iso = weekly_iso
+                self._cached_weekly_iso = weekly_iso
+                self._cached_monthly_iso = monthly_iso
+                target_expiry_iso = monthly_iso if exp_lower in ("monthly", "m") else weekly_iso
+
+        # If still not cached, fetch official expiries from Kotak Neo or NSE Calendar
+        if not target_expiry_iso:
             try:
                 exps = self._client.expiries(exchange="nse_fo", underlying="NIFTY")
                 exp_list = exps.get("expiries", []) if isinstance(exps, dict) else (exps if isinstance(exps, list) else [])
                 if exp_list:
+                    self._cached_nse_expiries = (now_ts, exp_list)
                     weekly_iso = exp_list[0]
                     now_ym = now_ist().strftime("%Y-%m")
                     cur_month_expiries = [e for e in exp_list if e.startswith(now_ym)]
@@ -1867,9 +1895,7 @@ class KotakNeoEngine:
 
                     self._cached_weekly_iso = weekly_iso
                     self._cached_monthly_iso = monthly_iso
-
-                    if not target_expiry_iso:
-                        target_expiry_iso = monthly_iso if exp_lower in ("monthly", "m") else weekly_iso
+                    target_expiry_iso = monthly_iso if exp_lower in ("monthly", "m") else weekly_iso
             except Exception as exp_err:
                 logger.debug(f"Expiry resolution error in get_option_depth: {exp_err}")
                 try:
@@ -1995,7 +2021,7 @@ class KotakNeoEngine:
             "expiry": target_expiry_iso or expiry
         }
 
-    def fetch_live_option_chain(self, underlying: str = "NIFTY", count: int = 32, force_refresh: bool = False) -> Dict[str, Any]:
+    def fetch_live_option_chain(self, underlying: str = "NIFTY", count: int = 50, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Fetches the 100% authentic, real-time live Option Chain from Kotak Neo API.
         Retrieves official NSE contract expiries via client.expiries(), then pulls
@@ -2092,6 +2118,8 @@ class KotakNeoEngine:
 
             weekly_label = _iso_to_label(weekly_iso)
             monthly_label = _iso_to_label(monthly_iso)
+            self._cached_weekly_iso = weekly_iso
+            self._cached_monthly_iso = monthly_iso
 
             # 2. Authentic Option Chain for Weekly and Monthly
             try:
@@ -2102,9 +2130,14 @@ class KotakNeoEngine:
 
             try:
                 m_chain = self._client.option_chain(exchange="nse_fo", underlying=underlying, expiry=monthly_iso, count=count) if (monthly_iso != weekly_iso and w_chain is not None) else w_chain
+                if m_chain and isinstance(m_chain, dict) and m_chain.get("call") and m_chain.get("put"):
+                    self._cached_monthly_chain_raw = m_chain
             except Exception as m_err:
                 logger.warning(f"Kotak monthly option chain request notice: {m_err}")
-                m_chain = w_chain
+                m_chain = getattr(self, "_cached_monthly_chain_raw", None) or w_chain
+
+            if not isinstance(m_chain, dict) or not m_chain.get("call") or not m_chain.get("put"):
+                m_chain = getattr(self, "_cached_monthly_chain_raw", None) or w_chain
 
             if not isinstance(w_chain, dict) or not w_chain.get("call") or not w_chain.get("put"):
                 with self._lock:
@@ -2243,6 +2276,10 @@ class KotakNeoEngine:
 
             w_rows = _parse_chain_rows(w_chain, weekly_iso)
             m_rows = _parse_chain_rows(m_chain, monthly_iso) if m_chain != w_chain else w_rows
+            if m_rows:
+                self._cached_monthly_rows = m_rows
+            elif getattr(self, "_cached_monthly_rows", None):
+                m_rows = self._cached_monthly_rows
 
             payload = {
                 "status": "OK",

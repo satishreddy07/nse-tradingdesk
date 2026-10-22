@@ -887,7 +887,7 @@ def get_nifty_live_spot(force_refresh: bool = False):
 
 
 @app.get("/api/nifty/intraday-expiry")
-def get_nifty_intraday_expiry(session_date: Optional[str] = None, interval_mode: str = "30m", force_refresh: bool = False):
+def get_nifty_intraday_expiry(session_date: Optional[str] = None, interval_mode: str = "15m", force_refresh: bool = False):
     """Returns the Intraday Weekly Option Expiry progression (15m / 30m Institutional Standard / 50m)."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     return nifty_analytics_engine.get_intraday_expiry_dashboard(session_date=session_date, interval_mode=interval_mode, force_refresh=force_refresh)
@@ -922,7 +922,7 @@ def get_nifty_intraday_ml(force_refresh: bool = False):
 
 
 @app.post("/api/nifty/intraday-expiry/capture")
-def capture_nifty_intraday_snapshot(slot_override: Optional[str] = None, interval_mode: str = "30m"):
+def capture_nifty_intraday_snapshot(slot_override: Optional[str] = None, interval_mode: str = "15m"):
     """Manually or automatically captures a live Weekly Option Expiry snapshot and syncs to Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     return nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override=slot_override, sync_cloud=True, interval_mode=interval_mode)

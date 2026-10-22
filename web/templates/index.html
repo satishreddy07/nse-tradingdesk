@@ -4048,8 +4048,8 @@
           <div class="flex flex-wrap items-center gap-2 shrink-0">
             <!-- Interval Mode Selector -->
             <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800" title="30-Minute interval is the recommended Institutional Standard: aligns with NSE 30m Market Profile TPO brackets and European open without micro-noise.">
-              <button onclick="switchIntradayInterval('15m')" id="btn-intra-15m" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition">15m</button>
-              <button onclick="switchIntradayInterval('30m')" id="btn-intra-30m" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-amber-500 text-black shadow-md transition">30m (Inst.)</button>
+              <button onclick="switchIntradayInterval('15m')" id="btn-intra-15m" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-amber-500 text-black shadow-md transition">15m (Default)</button>
+              <button onclick="switchIntradayInterval('30m')" id="btn-intra-30m" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition">30m (Inst.)</button>
               <button onclick="switchIntradayInterval('50m')" id="btn-intra-50m" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition">50m</button>
             </div>
             <button onclick="captureIntradaySnapshotNow()" id="btn-intra-capture" class="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
@@ -9531,14 +9531,18 @@
         ? Boolean(isLive) 
         : (typeof window.isServerMarketOpen === 'boolean' ? window.isServerMarketOpen : false);
 
-      const ticksLabel = tickCount ? ` (${tickCount} ticks)` : '';
-
       if (isMarketOpen) {
-        if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 max-w-full overflow-hidden shrink-0";
+        if (streamPillEl) {
+          streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 max-w-full overflow-hidden shrink-0";
+          if (tickCount) streamPillEl.title = `⚡ Kotak Neo Live Tick Stream: ${tickCount} ticks processed`;
+        }
         if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0";
-        streamTextEl.innerText = `⚡ KOTAK NEO LIVE STREAM: Spot ${formatted}${ticksLabel}`;
+        streamTextEl.innerText = `⚡ KOTAK NEO LIVE STREAM: Spot ${formatted}`;
       } else {
-        if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 max-w-full overflow-hidden shrink-0";
+        if (streamPillEl) {
+          streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 max-w-full overflow-hidden shrink-0";
+          if (tickCount) streamPillEl.title = `Standby: ${tickCount} ticks processed`;
+        }
         if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-slate-400 shrink-0";
         streamTextEl.innerText = `● MARKET CLOSED: Spot ${formatted}`;
       }
@@ -9954,10 +9958,10 @@
     // =========================================================================
     // MODULE 2: NIFTY 50 INTRADAY MULTI-INTERVAL WEEKLY OPTION EXPIRY TELEMETRY
     // =========================================================================
-    let currentIntradayInterval = '30m';
+    let currentIntradayInterval = '15m';
 
     function updateIntradayIntervalHeaders(mode) {
-      const cleanMode = mode || currentIntradayInterval || '30m';
+      const cleanMode = mode || currentIntradayInterval || '15m';
       const intervalNum = cleanMode.replace('m', '');
       const titleEl = document.getElementById('intra-timeline-title');
       const descEl = document.getElementById('intra-timeline-desc');
@@ -12413,7 +12417,9 @@
     }
 
     async function loadOptionsChainDesk(forceRefresh = false, showUserToast = false) {
-      if (niftyOptionsChainCache && !forceRefresh) {
+      const tbody = document.getElementById('opt-chain-tbody');
+      const tableHasRows = tbody && tbody.children.length > 1;
+      if (niftyOptionsChainCache && !forceRefresh && !tableHasRows) {
         renderOptionsChainUI(niftyOptionsChainCache);
         if (typeof renderBuilderCompactChain === 'function') {
           renderBuilderCompactChain();
@@ -12583,13 +12589,38 @@
       // Weekly vs Monthly Term Structure Comparison
       const termDiv = document.getElementById('opt-term-comparison');
       if (termDiv) {
+        const mWStrad = Number(w.straddle?.straddle_premium || 0);
+        const mMStrad = Number(m.straddle?.straddle_premium || 0);
+        const wStradTxt = mWStrad > 0 ? `₹${mWStrad.toFixed(1)} (±${Number(w.straddle?.implied_move_pct || 0).toFixed(2)}%)` : '--';
+        const mStradTxt = mMStrad > 0 ? `₹${mMStrad.toFixed(1)} (±${Number(m.straddle?.implied_move_pct || 0).toFixed(2)}%)` : '--';
+
+        const mWPcr = Number(w.pcr?.near_atm_pcr || 0);
+        const mMPcr = Number(m.pcr?.near_atm_pcr || 0);
+        const wPcrTxt = mWPcr > 0 ? `${mWPcr.toFixed(2)} / ${Number(w.pcr?.overall_oi_pcr || 0).toFixed(2)}` : '--';
+        const mPcrTxt = mMPcr > 0 ? `${mMPcr.toFixed(2)} / ${Number(m.pcr?.overall_oi_pcr || 0).toFixed(2)}` : '--';
+
+        const mWPw = w.walls_and_pain?.put_wall_1;
+        const mWCw = w.walls_and_pain?.call_wall_1;
+        const mMPw = m.walls_and_pain?.put_wall_1;
+        const mMCw = m.walls_and_pain?.call_wall_1;
+        const wWallsTxt = (mWPw && mWCw) ? `${mWPw}P / ${mWCw}C` : '--';
+        const mWallsTxt = (mMPw && mMCw) ? `${mMPw}P / ${mMCw}C` : '--';
+
+        const wMpTxt = w.walls_and_pain?.max_pain ? `${w.walls_and_pain.max_pain}` : '--';
+        const mMpTxt = m.walls_and_pain?.max_pain ? `${m.walls_and_pain.max_pain}` : '--';
+
+        const wIv = Number(w.volatility_and_gex?.atm_iv || 0);
+        const mIv = Number(m.volatility_and_gex?.atm_iv || 0);
+        const wIvTxt = wIv > 0 ? `${wIv.toFixed(2)}% (${Number(w.volatility_and_gex?.iv_skew || 0) >= 0 ? '+' : ''}${Number(w.volatility_and_gex?.iv_skew || 0).toFixed(2)})` : '--';
+        const mIvTxt = mIv > 0 ? `${mIv.toFixed(2)}% (${Number(m.volatility_and_gex?.iv_skew || 0) >= 0 ? '+' : ''}${Number(m.volatility_and_gex?.iv_skew || 0).toFixed(2)})` : '--';
+
         const rows = [
           { lbl: 'Expiry Date', wv: w.expiry || '--', mv: m.expiry || '--' },
-          { lbl: 'ATM Straddle ₹', wv: `₹${Number(w.straddle?.straddle_premium || 0).toFixed(1)} (±${Number(w.straddle?.implied_move_pct || 0).toFixed(2)}%)`, mv: `₹${Number(m.straddle?.straddle_premium || 0).toFixed(1)} (±${Number(m.straddle?.implied_move_pct || 0).toFixed(2)}%)` },
-          { lbl: 'Near-ATM / Overall PCR', wv: `${Number(w.pcr?.near_atm_pcr || 0).toFixed(2)} / ${Number(w.pcr?.overall_oi_pcr || 0).toFixed(2)}`, mv: `${Number(m.pcr?.near_atm_pcr || 0).toFixed(2)} / ${Number(m.pcr?.overall_oi_pcr || 0).toFixed(2)}` },
-          { lbl: 'Put Wall / Call Wall', wv: `${w.walls_and_pain?.put_wall_1 || '--'}P / ${w.walls_and_pain?.call_wall_1 || '--'}C`, mv: `${m.walls_and_pain?.put_wall_1 || '--'}P / ${m.walls_and_pain?.call_wall_1 || '--'}C` },
-          { lbl: 'Max Pain Strike', wv: `${w.walls_and_pain?.max_pain || '--'}`, mv: `${m.walls_and_pain?.max_pain || '--'}` },
-          { lbl: 'ATM IV % & 25Δ Skew', wv: `${Number(w.volatility_and_gex?.atm_iv || 0).toFixed(2)}% (${Number(w.volatility_and_gex?.iv_skew || 0) >= 0 ? '+' : ''}${Number(w.volatility_and_gex?.iv_skew || 0).toFixed(2)})`, mv: `${Number(m.volatility_and_gex?.atm_iv || 0).toFixed(2)}% (${Number(m.volatility_and_gex?.iv_skew || 0) >= 0 ? '+' : ''}${Number(m.volatility_and_gex?.iv_skew || 0).toFixed(2)})` },
+          { lbl: 'ATM Straddle ₹', wv: wStradTxt, mv: mStradTxt },
+          { lbl: 'Near-ATM / Overall PCR', wv: wPcrTxt, mv: mPcrTxt },
+          { lbl: 'Put Wall / Call Wall', wv: wWallsTxt, mv: mWallsTxt },
+          { lbl: 'Max Pain Strike', wv: wMpTxt, mv: mMpTxt },
+          { lbl: 'ATM IV % & 25Δ Skew', wv: wIvTxt, mv: mIvTxt },
         ];
         termDiv.innerHTML = `
           <div class="grid grid-cols-3 text-[10px] text-slate-400 uppercase pb-1 border-b border-slate-800 font-bold">
@@ -24456,11 +24487,11 @@
           }
         } catch (e) {}
 
-        // 5. Live Option Chain dynamic refresh when user is on Options Desk (every 4s)
+        // 5. Live Option Chain dynamic refresh when user is on Options Desk (every 10s: 5 ticks x 2s)
         try {
           if (typeof currentModule !== 'undefined' && currentModule === 'module-options') {
             window._optChainPollCounter = (window._optChainPollCounter || 0) + 1;
-            if (window._optChainPollCounter % 2 === 0) {
+            if (window._optChainPollCounter % 5 === 0) {
               loadOptionsChainDesk(false, false);
             }
           }
