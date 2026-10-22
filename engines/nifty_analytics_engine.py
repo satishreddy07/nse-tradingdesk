@@ -3997,7 +3997,7 @@ class NiftyAnalyticsEngine:
                 "put_wall_2": w_oc.get("walls_and_pain", {}).get("put_wall_2"),
                 "straddle_premium": w_oc.get("straddle", {}).get("straddle_premium"),
                 "atm_iv": float(vg_block.get("atm_iv") or 0.0),
-                "iv_skew_25delta": float(vg_block.get("iv_skew") or 6.96),
+                "iv_skew_25delta": float(vg_block.get("iv_skew")) if vg_block.get("iv_skew") is not None else None,
                 "gex_regime": vg_block.get("gex_regime") or "POSITIVE_GAMMA",
             }
         else:

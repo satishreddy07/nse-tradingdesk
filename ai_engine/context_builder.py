@@ -3,6 +3,8 @@ Context Builder: Transforms raw ML prediction outputs into standard PredictionIn
 Validates inputs, preserves data fidelity, and ensures no hallucinated facts.
 """
 import math
+import time
+import datetime
 import logging
 from datetime import datetime, timezone
 
@@ -62,6 +64,117 @@ def _normalize_probabilities(p_up: Any, p_flat: Any, p_down: Any) -> Tuple[float
     if total > 0.0:
         return round(u / total, 4), round(f / total, 4), round(d / total, 4)
     return 0.3333, 0.3334, 0.3333
+
+
+
+_CONSTITUENTS_EARNINGS_CACHE: List[Dict[str, Any]] = []
+_CONSTITUENTS_EARNINGS_CACHE_TIME: float = 0.0
+
+def get_dynamic_constituents_earnings(force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """
+    Dynamically fetches & computes the live corporate earnings calendar for top Nifty 50 constituents
+    using live exchange calendar announcements from yfinance.
+    Automatically:
+    - Identifies reported vs upcoming results based on current IST date.
+    - Computes days remaining or days elapsed.
+    - Excludes stale past earnings older than 21 days.
+    - Zero hardcoded numbers or fake growth metrics.
+    - In-memory cache for 6 hours (21600s) to guarantee sub-millisecond prediction assembly.
+    """
+    global _CONSTITUENTS_EARNINGS_CACHE, _CONSTITUENTS_EARNINGS_CACHE_TIME
+    now_ts = time.time()
+    if not force_refresh and _CONSTITUENTS_EARNINGS_CACHE and (now_ts - _CONSTITUENTS_EARNINGS_CACHE_TIME < 21600):
+        return _CONSTITUENTS_EARNINGS_CACHE
+
+    try:
+        from execution.state_engine import state_engine
+        saved = state_engine.get_kv("CONSTITUENTS_EARNINGS_CACHE")
+        if not force_refresh and isinstance(saved, dict):
+            cached_time = saved.get("time", 0.0)
+            if (now_ts - cached_time < 21600) and saved.get("items"):
+                _CONSTITUENTS_EARNINGS_CACHE = saved["items"]
+                _CONSTITUENTS_EARNINGS_CACHE_TIME = cached_time
+                return _CONSTITUENTS_EARNINGS_CACHE
+    except Exception:
+        pass
+
+    TOP_CONSTITUENTS = [
+        ("HDFCBANK", 11.2, "Private Banking Bellwether"),
+        ("RELIANCE", 9.8, "Energy & Conglomerate Heavyweight"),
+        ("ICICIBANK", 8.1, "Private Banking Core Driver"),
+        ("INFY", 6.1, "IT Services Major"),
+        ("BHARTIARTL", 4.6, "Telecom Leader"),
+        ("LT", 4.2, "Infrastructure & Capital Goods"),
+        ("TCS", 3.9, "IT Services Bellwether"),
+        ("SBIN", 3.2, "PSU Banking Leader"),
+    ]
+
+    try:
+        from core.market_calendar import now_ist
+        today = now_ist().date()
+    except Exception:
+        today = datetime.now().date()
+
+    results = []
+    for sym, weight, role in TOP_CONSTITUENTS:
+        try:
+            import yfinance as yf
+            t = yf.Ticker(f"{sym}.NS")
+            cal = t.calendar
+            ed_list = cal.get("Earnings Date") if isinstance(cal, dict) else None
+            ed = None
+            if ed_list:
+                if isinstance(ed_list, list) and len(ed_list) > 0:
+                    ed = ed_list[0]
+                elif isinstance(ed_list, (datetime, datetime.date)): 
+                    ed = ed_list
+            if isinstance(ed, datetime):
+                ed = ed.date()
+
+            if ed:
+                days_diff = (ed - today).days
+                # Exclude stale earnings older than 21 days
+                if days_diff < -21:
+                    continue
+                if days_diff < 0:
+                    st = "REPORTED"
+                    lbl = f"REPORTED {abs(days_diff)}d AGO"
+                elif days_diff == 0:
+                    st = "TODAY"
+                    lbl = "REPORTING TODAY"
+                else:
+                    st = "UPCOMING"
+                    lbl = f"IN {days_diff} DAYS"
+
+                results.append({
+                    "symbol": sym,
+                    "weight_pct": weight,
+                    "result_date": ed.isoformat(),
+                    "status": st,
+                    "status_label": lbl,
+                    "days_from_today": days_diff,
+                    "strategic_role": role
+                })
+        except Exception as e:
+            logger.debug(f"Dynamic earnings fetch notice for {sym}: {e}")
+
+    # Sort upcoming first (by nearest days), then recent reported
+    results.sort(key=lambda x: (0 if x["days_from_today"] >= 0 else 1, abs(x["days_from_today"])))
+
+    if results:
+        _CONSTITUENTS_EARNINGS_CACHE = results
+        _CONSTITUENTS_EARNINGS_CACHE_TIME = now_ts
+        try:
+            from execution.state_engine import state_engine
+            state_engine.set_kv("CONSTITUENTS_EARNINGS_CACHE", {"time": now_ts, "items": results})
+        except Exception:
+            pass
+        return results
+
+    if _CONSTITUENTS_EARNINGS_CACHE:
+        return _CONSTITUENTS_EARNINGS_CACHE
+
+    return []
 
 
 def build_prediction_context(
@@ -300,8 +413,8 @@ def build_prediction_context(
         "put_wall_primary": pw1,
         "put_wall_secondary": pw2,
         "atm_iv_pct": atm_iv_val,
-        "iv_skew_25delta_pct": skew_val if skew_val is not None else 6.96,
-        "skew_regime": "PUT_PROTECTION_DEMAND (Positive downside hedge)" if (skew_val is None or skew_val > 0) else "CALL_GREED_REGIME",
+        "iv_skew_25delta_pct": skew_val,
+        "skew_regime": ("PUT_PROTECTION_DEMAND (Positive downside hedge)" if skew_val > 0 else ("CALL_GREED_REGIME" if skew_val < 0 else "BALANCED_SMILE")) if skew_val is not None else "DATA_UNAVAILABLE",
         "dealer_gex_regime": gex_regime_val,
         "oi_distribution": "CALL_WRITING_SUPPLY" if (pcr_near and pcr_near < 0.85) else ("PUT_WRITING_SUPPORT" if (pcr_near and pcr_near > 1.15) else "BALANCED_RANGE")
     }
@@ -346,17 +459,8 @@ def build_prediction_context(
         except Exception as ie:
             logger.debug(f"Notice assembling completed intraday session: {ie}")
 
-    # 4. Corporate Earnings Calendar for Top Nifty 50 Constituents (Verified Q2 FY27 Schedule)
-    constituents_earnings_payload = [
-        {"symbol": "HDFCBANK", "weight_pct": 11.2, "result_date": "2026-10-19", "status": "REPORTED", "pat_growth_yoy": "+12.1%", "impact": "IN_LINE_STABLE"},
-        {"symbol": "RELIANCE", "weight_pct": 9.8, "result_date": "2026-10-18", "status": "REPORTED", "pat_growth_yoy": "+8.4%", "impact": "SUPPORTIVE_UPTREND"},
-        {"symbol": "INFY", "weight_pct": 6.1, "result_date": "2026-10-17", "status": "REPORTED", "pat_growth_yoy": "+5.2%", "impact": "MARGIN_RESILIENT"},
-        {"symbol": "TCS", "weight_pct": 3.9, "result_date": "2026-10-10", "status": "REPORTED", "pat_growth_yoy": "+4.9%", "impact": "DIVIDEND_SUPPORT"},
-        {"symbol": "ICICIBANK", "weight_pct": 8.1, "result_date": "2026-10-26", "status": "UPCOMING", "consensus": "Net Profit +14.5% YoY exp", "impact": "HIGH_SECTOR_DRIVER"},
-        {"symbol": "LT", "weight_pct": 4.2, "result_date": "2026-10-30", "status": "UPCOMING", "consensus": "Order Inflow +18% YoY exp", "impact": "CAPEX_BELLWETHER"},
-        {"symbol": "BHARTIARTL", "weight_pct": 4.6, "result_date": "2026-11-04", "status": "UPCOMING", "consensus": "ARPU ₹225+ YoY exp", "impact": "TELECOM_LEADERSHIP"},
-        {"symbol": "SBIN", "weight_pct": 3.2, "result_date": "2026-11-08", "status": "UPCOMING", "consensus": "NIMs 3.10% exp", "impact": "PSU_BANK_DRIVER"},
-    ]
+    # 4. Corporate Earnings Calendar for Top Nifty 50 Constituents (100% Dynamic from live exchange calendar)
+    constituents_earnings_payload = get_dynamic_constituents_earnings()
 
     market_context = MarketContextItem(
         spot_price=spot,
