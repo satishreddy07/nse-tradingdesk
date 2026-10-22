@@ -14794,6 +14794,16 @@
                 if (window.toggleClosedStrategyDetail) window.toggleClosedStrategyDetail(targetId);
               }, 120);
             }
+
+            const modalTarget = new URLSearchParams(window.location.search).get('open_modal');
+            if (modalTarget && closedList.length > 0) {
+              const mId = (modalTarget === '1' || modalTarget === 'first') ? closedList[0].strategy_id : modalTarget;
+              if (mId) {
+                setTimeout(() => {
+                  if (typeof openStrategyDetailModal === 'function') openStrategyDetailModal(mId);
+                }, 200);
+              }
+            }
           } catch (e) {}
         }
       }
