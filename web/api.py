@@ -2946,6 +2946,12 @@ def get_continuous_live_stream_endpoint():
         or kotak_neo_engine.get_live_price("^NSEI")
         or 0.0
     )
+    if nifty_spot <= 0.0:
+        try:
+            live_spot = nifty_analytics_engine.get_live_nifty_spot()
+            nifty_spot = float(live_spot.get("price") or 0.0)
+        except Exception:
+            pass
     banknifty_spot = float(
         kotak_neo_engine.get_live_price("NIFTY BANK")
         or kotak_neo_engine.get_live_price("BANKNIFTY")

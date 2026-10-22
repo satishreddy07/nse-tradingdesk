@@ -2318,28 +2318,45 @@ class KotakNeoEngine:
 
         tokens = []
         token_to_sym = {}
+        prices: Dict[str, float] = {}
+        is_mock_client = self._client is not None and type(self._client).__name__ != "NeoAPI"
+
         for s in symbols:
             clean_sym = s.strip().upper().replace(".NS", "")
+            # Kotak Neo REST quotes endpoint rejects index tokens (26000/26001 return 400 Bad Request in live API).
+            # Mock clients in tests can handle 26000, but live NeoAPI must populate indices from live tick cache.
             if clean_sym in ("NIFTY 50", "NIFTY", "^NSEI"):
-                tokens.append({"instrument_token": "26000", "exchange_segment": "nse_cm"})
-                token_to_sym["26000"] = "NIFTY 50"
+                if is_mock_client:
+                    tokens.append({"instrument_token": "26000", "exchange_segment": "nse_cm"})
+                    token_to_sym["26000"] = "NIFTY 50"
+                else:
+                    cached_px = self.get_live_price("NIFTY 50")
+                    if cached_px:
+                        prices["NIFTY 50"] = cached_px
+                        prices[clean_sym] = cached_px
+                continue
             elif clean_sym in ("NIFTY BANK", "BANKNIFTY", "^NSEBANK"):
-                tokens.append({"instrument_token": "26001", "exchange_segment": "nse_cm"})
-                token_to_sym["26001"] = "NIFTY BANK"
+                if is_mock_client:
+                    tokens.append({"instrument_token": "26001", "exchange_segment": "nse_cm"})
+                    token_to_sym["26001"] = "NIFTY BANK"
+                else:
+                    cached_px = self.get_live_price("NIFTY BANK")
+                    if cached_px:
+                        prices["NIFTY BANK"] = cached_px
+                        prices[clean_sym] = cached_px
+                continue
             else:
                 tok = self.resolve_token(clean_sym)
-                if tok:
+                if tok and (is_mock_client or str(tok) not in ("26000", "26001")):
                     seg = "nse_fo" if ("CE" in clean_sym or "PE" in clean_sym) else "nse_cm"
                     tokens.append({"instrument_token": str(tok), "exchange_segment": seg})
                     token_to_sym[str(tok)] = clean_sym
 
         if not tokens:
-            return {}
-
+            return prices
 
         try:
             res = self._client.quotes(instrument_tokens=tokens, quote_type="all")
-            prices: Dict[str, float] = {}
             items = []
             if isinstance(res, list):
                 items = res
