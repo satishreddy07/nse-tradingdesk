@@ -1319,6 +1319,56 @@ def get_nifty_fao_history():
         return {"status": "ERROR", "message": str(e), "cash_history": [], "oi_history": []}
 
 
+@app.get("/api/nifty/fii-dii/status")
+def get_nifty_fii_dii_status():
+    """Returns auto-run telemetry and latest available session dates for FII/DII cash and participant OI."""
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    try:
+        from scheduler.cron_scheduler import _scheduler
+        next_run_ist = None
+        if _scheduler and _scheduler.running:
+            for j_id in ("job_fii_dii_participant_oi_postmarket", "job_fii_dii_participant_oi_0830"):
+                j = _scheduler.get_job(j_id)
+                if j and j.next_run_time:
+                    nr = j.next_run_time.strftime("%Y-%m-%d %H:%M:%S IST")
+                    if not next_run_ist or nr < next_run_ist:
+                        next_run_ist = nr
+    except Exception:
+        next_run_ist = None
+
+    tel = nifty_analytics_engine.get_fii_dii_autorun_status()
+    if next_run_ist:
+        tel["next_run_ist"] = next_run_ist
+    return _sanitize_for_json({"status": "OK", "telemetry": tel})
+
+
+@app.post("/api/nifty/fii-dii/update-now")
+def trigger_nifty_fii_dii_manual_update():
+    """
+    Manually triggers immediate check and ingestion of latest official NSE FII/DII Cash and F&O Participant OI.
+    If latest session data is already available, stops cleanly with UP_TO_DATE.
+    If not, downloads and persists latest records, updating tables and telemetry immediately.
+    """
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    try:
+        tel = nifty_analytics_engine.check_and_update_fii_dii_participant_oi(force_refresh=True, trigger_source="MANUAL_BUTTON")
+        flow_data = nifty_analytics_engine.fetch_fii_dii_cash_and_participant_oi(force_refresh=False)
+        return _sanitize_for_json({
+            "status": "OK",
+            "telemetry": tel,
+            "data": {
+                "latest_cash": flow_data.get("latest_cash", {}),
+                "latest_oi": flow_data.get("latest_oi", {}),
+                "cash_history": flow_data.get("one_week_cash_history", []),
+                "oi_history": flow_data.get("one_week_participant_oi_history", []),
+                "flow_score": flow_data.get("flow_score", 0.0),
+            }
+        })
+    except Exception as e:
+        logger.error(f"Manual FII/DII update error: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
 # --------------------------------------------------------------------------
 # OPTIONS STRATEGY BUILDER & PORTFOLIO DESK ENDPOINTS
 # --------------------------------------------------------------------------

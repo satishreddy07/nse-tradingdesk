@@ -5161,10 +5161,25 @@
               Official NSE Cash Turnover & F&O Clearing Corporation Participant Wise Open Interest (Client, DII, FII, Pro). Real contracts & ₹ Crores — Zero synthetic estimates.
             </p>
           </div>
-          <div class="flex items-center gap-2 flex-wrap" id="pred-inst-regime-pill">
-            <span class="px-2.5 py-1 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold">
+          <div class="flex items-center gap-2 flex-wrap" id="pred-inst-controls">
+            <!-- Auto-Run Timestamp & Status Badge -->
+            <div id="fii-dii-autorun-pill" class="px-2.5 py-1 rounded-xl text-[10px] font-mono bg-slate-800/90 text-slate-300 border border-slate-700/80 flex items-center gap-1.5 shadow-sm" title="Automated NSE Post-Market & Pre-Market Ingestion Status">
+              <span id="fii-dii-status-dot" class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+              <span id="fii-dii-status-text">Auto-Run: Checking...</span>
+            </div>
+
+            <!-- Manual Update Now Button -->
+            <button id="btn-fii-dii-update-now" onclick="triggerFiiDiiManualUpdate()" class="px-3 py-1 rounded-xl bg-cyan-600/30 hover:bg-cyan-500/40 border border-cyan-500/50 text-cyan-200 text-xs font-mono font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm active:scale-95" title="Check & ingest latest official NSE FII/DII cash turnover & participant OI immediately">
+              <i data-lucide="refresh-cw" id="fii-dii-update-icon" class="w-3.5 h-3.5"></i>
+              <span id="btn-fii-dii-update-text">Update Now</span>
+            </button>
+
+            <!-- FII OI Regime Badge -->
+            <span id="pred-inst-regime-badge" class="px-2.5 py-1 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold">
               FII OI: LOADING...
             </span>
+
+            <!-- 1-Week FAO History Button -->
             <button onclick="openFaoHistoryModal()" class="px-2.5 py-1 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/50 text-purple-200 text-xs font-mono font-bold flex items-center gap-1 transition cursor-pointer shadow-sm">
               <span>🔍 1-Week FAO History</span>
             </button>
@@ -11113,9 +11128,15 @@
           const r5Str = (isAvail && item.ret_5d !== null && item.ret_5d !== undefined) ? 
             `<span class="${r5 >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${r5 >= 0 ? '+' : ''}${r5.toFixed(2)}%</span>` : 
             `<span class="text-slate-500 font-normal">N/A</span>`;
-          const emaStr = (isAvail && item.ema20 !== null && item.ema20 !== undefined && Number(item.ema20) > 0) ? 
-            Number(item.ema20).toFixed(2) : 
-            '<span class="text-slate-500">--</span>';
+          let emaStr = '<span class="text-slate-500">--</span>';
+          if (isAvail && item.ema20 !== null && item.ema20 !== undefined && !isNaN(Number(item.ema20))) {
+            const eVal = Number(item.ema20);
+            if (item.ticker === 'RSP-SPY') {
+              emaStr = '<span class="text-slate-400">0.00 (Equil)</span>';
+            } else if (eVal > 0) {
+              emaStr = eVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+          }
 
           const tr = (item.trend || item.impact_on_nifty || (isAvail ? 'NEUTRAL' : 'UNAVAILABLE'));
           const isSevereHeadwind = tr.includes('SEVERE');
@@ -11299,14 +11320,16 @@
       const latestCash = instData.latest_cash || {};
       const latestOi = instData.latest_oi || {};
 
-      const instRegimeEl = document.getElementById('pred-inst-regime-pill');
+      const instRegimeEl = document.getElementById('pred-inst-regime-badge');
       if (instRegimeEl) {
         const reg = latestOi.oi_regime || 'NEUTRAL';
         const isSqueeze = reg.includes('SQUEEZE') || reg.includes('BULL');
         const isBear = reg.includes('SHORT') || reg.includes('BEAR');
         const pillCls = isSqueeze ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : (isBear ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40');
-        instRegimeEl.innerHTML = `<span class="px-2.5 py-1 rounded text-[10px] font-mono border font-bold ${pillCls}">FII OI: ${reg}</span>`;
+        instRegimeEl.className = `px-2.5 py-1 rounded text-[10px] font-mono border font-bold ${pillCls}`;
+        instRegimeEl.textContent = `FII OI: ${reg}`;
       }
+      loadFiiDiiStatus();
 
       const instKpiGrid = document.getElementById('pred-inst-kpi-grid');
       if (instKpiGrid) {
@@ -12089,6 +12112,93 @@
     // =========================================================================
     let faoHistoryCache = null;
     let currentSelectedFaoDate = null;
+
+    async function loadFiiDiiStatus() {
+      try {
+        const res = await fetch('/api/nifty/fii-dii/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        const tel = data.telemetry || {};
+        updateFiiDiiTelemetryUI(tel);
+      } catch (e) {
+        console.debug("Failed to load FII/DII auto-run status:", e);
+      }
+    }
+
+    function updateFiiDiiTelemetryUI(tel) {
+      const dotEl = document.getElementById('fii-dii-status-dot');
+      const textEl = document.getElementById('fii-dii-status-text');
+      const pillEl = document.getElementById('fii-dii-autorun-pill');
+      if (!textEl) return;
+
+      const st = tel.status || 'IDLE';
+      const lastRun = tel.last_run_ist ? tel.last_run_ist.split(' ')[1] : '--';
+      const nextRun = tel.next_run_ist ? tel.next_run_ist.split(' ')[1] : '';
+      const latestDate = tel.latest_cash_date || tel.target_date || '--';
+
+      if (st === 'UP_TO_DATE') {
+        if (dotEl) dotEl.className = 'w-2 h-2 rounded-full bg-emerald-400 shrink-0';
+        textEl.innerHTML = `<span class="text-emerald-300 font-bold">Auto-Run: UP TO DATE</span> (${latestDate}) • Next: ${nextRun || 'Scheduled'}`;
+        if (pillEl) pillEl.title = tel.message || `Session ${latestDate} data is up to date. Auto-run stopped.`;
+      } else if (st === 'INGESTED') {
+        if (dotEl) dotEl.className = 'w-2 h-2 rounded-full bg-cyan-400 shrink-0 animate-pulse';
+        textEl.innerHTML = `<span class="text-cyan-300 font-bold">Auto-Run: INGESTED</span> (${latestDate}) • ${lastRun} IST`;
+        if (pillEl) pillEl.title = tel.message || 'Latest NSE data successfully ingested.';
+      } else if (st === 'AWAITING_NSE_RELEASE') {
+        if (dotEl) dotEl.className = 'w-2 h-2 rounded-full bg-amber-400 shrink-0 animate-pulse';
+        textEl.innerHTML = `<span class="text-amber-300 font-bold">Auto-Run: Awaiting NSE</span> • Next: ${nextRun || 'Scheduled'}`;
+        if (pillEl) pillEl.title = tel.message || 'NSE has not published today’s file yet.';
+      } else {
+        if (dotEl) dotEl.className = 'w-2 h-2 rounded-full bg-slate-400 shrink-0';
+        textEl.innerHTML = `Auto-Run: ${st} • ${latestDate}`;
+        if (pillEl) pillEl.title = tel.message || '';
+      }
+    }
+
+    async function triggerFiiDiiManualUpdate() {
+      const btn = document.getElementById('btn-fii-dii-update-now');
+      const textEl = document.getElementById('btn-fii-dii-update-text');
+      const iconEl = document.getElementById('fii-dii-update-icon');
+      if (!btn) return;
+
+      btn.disabled = true;
+      if (iconEl) iconEl.classList.add('animate-spin');
+      if (textEl) textEl.textContent = 'Checking NSE...';
+
+      try {
+        const res = await fetch('/api/nifty/fii-dii/update-now', { method: 'POST' });
+        const resData = await res.json();
+        if (resData.status === 'OK') {
+          if (resData.telemetry) updateFiiDiiTelemetryUI(resData.telemetry);
+          if (resData.data) {
+            renderPredictionsDeskUI({ fii_dii_and_oi: resData.data });
+            faoHistoryCache = {
+              status: 'OK',
+              latest_cash: resData.data.latest_cash || {},
+              latest_oi: resData.data.latest_oi || {},
+              cash_history: resData.data.cash_history || [],
+              oi_history: resData.data.oi_history || []
+            };
+          }
+          if (textEl) textEl.textContent = 'Updated!';
+          showToast('✓ FII/DII Cash & Participant OI updated successfully.', 'success');
+          setTimeout(() => {
+            if (textEl) textEl.textContent = 'Update Now';
+          }, 2000);
+        } else {
+          if (textEl) textEl.textContent = 'Retry';
+          showToast(`Update notice: ${resData.message || 'Failed'}`, 'warning');
+        }
+      } catch (err) {
+        console.error("Manual FII/DII update failed:", err);
+        if (textEl) textEl.textContent = 'Failed';
+        showToast('Network error while checking NSE.', 'error');
+      } finally {
+        btn.disabled = false;
+        if (iconEl) iconEl.classList.remove('animate-spin');
+        lucide.createIcons();
+      }
+    }
 
     async function openFaoHistoryModal(targetDate = null) {
       const modal = document.getElementById('fao-history-modal');

@@ -235,3 +235,71 @@ def test_invariant_7_core_endpoints_schema_health():
         assert resp.status_code == 200, f"Endpoint {ep} failed with status {resp.status_code}"
         json_data = resp.json()
         assert isinstance(json_data, (dict, list)), f"Endpoint {ep} returned non-JSON payload"
+
+
+# ==============================================================================
+# INVARIANT 8: FII/DII AUTO-RUN & MANUAL UPDATE CONTRACT
+# ==============================================================================
+def test_invariant_8_fii_dii_autorun_and_manual_update_contract():
+    """
+    INVARIANT 8:
+    1. If target completed trading session data is already in SQLite,
+       check_and_update_fii_dii_participant_oi(force_refresh=False) must stop auto-run
+       with status 'UP_TO_DATE' and skip redundant network fetch.
+    2. Endpoints /api/nifty/fii-dii/status and /api/nifty/fii-dii/update-now must return HTTP 200.
+    """
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+
+    # Status endpoint check
+    st_res = client.get("/api/nifty/fii-dii/status")
+    assert st_res.status_code == 200
+    st_data = st_res.json()
+    assert st_data.get("status") == "OK"
+    assert "telemetry" in st_data
+    tel = st_data["telemetry"]
+    assert "status" in tel
+    assert "latest_cash_date" in tel
+
+    # Manual update endpoint check
+    up_res = client.post("/api/nifty/fii-dii/update-now")
+    assert up_res.status_code == 200
+    up_data = up_res.json()
+    assert up_data.get("status") == "OK"
+    assert "telemetry" in up_data
+    assert "data" in up_data
+
+    # Auto-run idempotency: after manual update has ingested latest data,
+    # auto-run with force_refresh=False must stop with UP_TO_DATE
+    auto_res = nifty_analytics_engine.check_and_update_fii_dii_participant_oi(force_refresh=False, trigger_source="TEST_INVARIANT")
+    assert auto_res.get("status") == "UP_TO_DATE", f"Expected UP_TO_DATE, got {auto_res.get('status')}"
+    assert auto_res.get("action_taken") == "SKIPPED_ALREADY_AVAILABLE"
+
+
+# ==============================================================================
+# INVARIANT 9: GLOBAL & CROSS-ASSET TELEMETRY (NO HARDCODED GAPS)
+# ==============================================================================
+def test_invariant_9_global_cross_asset_telemetry_no_gaps():
+    """
+    INVARIANT 9: Global markets table items (US T+1, VIX, E-mini Futures) must not have
+    hardcoded None gaps for 5D % and EMA 20 when market data series are available.
+    """
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+
+    # Fetch premarket predictions without forced network recalculate
+    preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=False)
+    assert preds.get("status") == "OK"
+    g_rows = preds.get("pillars", {}).get("global_markets", [])
+    assert len(g_rows) >= 4, "Must contain at least 4 global market rows"
+
+    # Find VIX and Futures rows
+    vix_row = next((r for r in g_rows if "^VIX" in r.get("ticker", "")), None)
+    es_row = next((r for r in g_rows if "ES=F" in r.get("ticker", "")), None)
+
+    assert vix_row is not None, "VIX row missing from global_markets"
+    assert es_row is not None, "ES=F row missing from global_markets"
+
+    # If VIX LTP is present, 1D, 5D and EMA 20 must not be hardcoded None
+    if vix_row.get("ltp") is not None:
+        assert vix_row.get("ret_1d") is not None, "VIX ret_1d should be populated"
+        assert vix_row.get("ema20") is not None, "VIX ema20 should be populated"
+

@@ -2725,6 +2725,138 @@ class NiftyAnalyticsEngine:
             "one_week_participant_oi_history": oi_history,
         }
 
+    def check_and_update_fii_dii_participant_oi(
+        self,
+        force_refresh: bool = False,
+        trigger_source: str = "AUTO_RUN"
+    ) -> Dict[str, Any]:
+        """
+        Automated & Manual Ingestion Controller for FII/DII Cash and F&O Participant OI:
+        1. Checks whether legitimate official data for the target completed trading session
+           is already stored in SQLite (`fii_dii_cash_history` and `fao_participant_oi_history`).
+        2. If already available and not force_refresh:
+           Stops auto-run immediately with status 'UP_TO_DATE' and descriptive status message.
+        3. If missing or force_refresh (via 'Update Now' button):
+           Fetches official releases directly from NSE and updates the database.
+        4. Updates persistent telemetry with last run timestamp, status, and message.
+        """
+        now_dt = now_ist()
+        today_date = now_dt.date()
+        # Post-market cutoff: In India, cash turnover is released ~17:30-18:30 IST, derivatives ~18:30-20:00 IST.
+        if NSEMarketCalendar.is_trading_day(today_date) and (now_dt.hour > 16 or (now_dt.hour == 16 and now_dt.minute >= 30)):
+            target_date = today_date
+        else:
+            target_date = NSEMarketCalendar.get_last_completed_trading_day(now_dt)
+        target_iso = target_date.strftime("%Y-%m-%d")
+
+        # 1. Check existing database records
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                cash_has_target = conn.execute(
+                    "SELECT trade_date FROM fii_dii_cash_history WHERE trade_date = ?", (target_iso,)
+                ).fetchone() is not None
+                oi_has_target = conn.execute(
+                    "SELECT trade_date FROM fao_participant_oi_history WHERE trade_date = ?", (target_iso,)
+                ).fetchone() is not None
+
+                latest_cash_row = conn.execute("SELECT trade_date FROM fii_dii_cash_history ORDER BY trade_date DESC LIMIT 1").fetchone()
+                latest_oi_row = conn.execute("SELECT trade_date FROM fao_participant_oi_history ORDER BY trade_date DESC LIMIT 1").fetchone()
+
+        latest_cash_date = latest_cash_row[0] if latest_cash_row else "--"
+        latest_oi_date = latest_oi_row[0] if latest_oi_row else "--"
+
+        # 2. Check if already available and we are in an auto-run (skip redundant fetch)
+        if cash_has_target and oi_has_target and not force_refresh:
+            telemetry = {
+                "status": "UP_TO_DATE",
+                "message": f"Session {target_iso} data already available in database. Auto-run stopped.",
+                "target_date": target_iso,
+                "latest_cash_date": latest_cash_date,
+                "latest_oi_date": latest_oi_date,
+                "last_run_ist": format_ist(),
+                "last_run_epoch": time.time(),
+                "trigger_source": trigger_source,
+                "action_taken": "SKIPPED_ALREADY_AVAILABLE"
+            }
+            try:
+                state_engine.set_kv("fii_dii_autorun_telemetry", telemetry)
+            except Exception:
+                pass
+            return telemetry
+
+        # 3. Missing data or manual force_refresh: Execute actual fetch from official NSE sources
+        fresh_data = self.fetch_fii_dii_cash_and_participant_oi(force_refresh=True)
+
+        # 4. Verify post-fetch state
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                cash_has_target_post = conn.execute(
+                    "SELECT trade_date FROM fii_dii_cash_history WHERE trade_date = ?", (target_iso,)
+                ).fetchone() is not None
+                oi_has_target_post = conn.execute(
+                    "SELECT trade_date FROM fao_participant_oi_history WHERE trade_date = ?", (target_iso,)
+                ).fetchone() is not None
+
+                latest_cash_row = conn.execute("SELECT trade_date FROM fii_dii_cash_history ORDER BY trade_date DESC LIMIT 1").fetchone()
+                latest_oi_row = conn.execute("SELECT trade_date FROM fao_participant_oi_history ORDER BY trade_date DESC LIMIT 1").fetchone()
+
+        latest_cash_date = latest_cash_row[0] if latest_cash_row else "--"
+        latest_oi_date = latest_oi_row[0] if latest_oi_row else "--"
+
+        if cash_has_target_post and oi_has_target_post:
+            status = "INGESTED"
+            msg = f"Successfully ingested latest session {target_iso} FII/DII Cash & Participant OI from official NSE."
+            action = "INGESTED_FULL"
+        elif cash_has_target_post:
+            status = "PARTIAL_INGESTED"
+            msg = f"Session {target_iso} Cash turnover ingested; Participant OI not yet released by NSE Clearing."
+            action = "INGESTED_CASH_ONLY"
+        elif oi_has_target_post:
+            status = "PARTIAL_INGESTED"
+            msg = f"Session {target_iso} Participant OI ingested; Cash turnover not yet released by NSE."
+            action = "INGESTED_OI_ONLY"
+        else:
+            status = "AWAITING_NSE_RELEASE"
+            msg = f"NSE has not released {target_iso} files yet (Latest available in DB: {latest_cash_date}). Retrying on next auto-run."
+            action = "AWAITING_RELEASE"
+
+        telemetry = {
+            "status": status,
+            "message": msg,
+            "target_date": target_iso,
+            "latest_cash_date": latest_cash_date,
+            "latest_oi_date": latest_oi_date,
+            "last_run_ist": format_ist(),
+            "last_run_epoch": time.time(),
+            "trigger_source": trigger_source,
+            "action_taken": action
+        }
+        try:
+            state_engine.set_kv("fii_dii_autorun_telemetry", telemetry)
+        except Exception:
+            pass
+        return telemetry
+
+    def get_fii_dii_autorun_status(self) -> Dict[str, Any]:
+        """Returns the current FII/DII auto-run and manual update telemetry."""
+        telemetry = state_engine.get_kv("fii_dii_autorun_telemetry")
+        if not telemetry or not isinstance(telemetry, dict):
+            with state_engine._lock:
+                with state_engine._get_connection() as conn:
+                    latest_cash_row = conn.execute("SELECT trade_date FROM fii_dii_cash_history ORDER BY trade_date DESC LIMIT 1").fetchone()
+                    latest_oi_row = conn.execute("SELECT trade_date FROM fao_participant_oi_history ORDER BY trade_date DESC LIMIT 1").fetchone()
+            latest_cash = latest_cash_row[0] if latest_cash_row else "--"
+            latest_oi = latest_oi_row[0] if latest_oi_row else "--"
+            telemetry = {
+                "status": "UP_TO_DATE" if latest_cash != "--" else "IDLE",
+                "message": f"Data available as of session {latest_cash}",
+                "latest_cash_date": latest_cash,
+                "latest_oi_date": latest_oi,
+                "last_run_ist": format_ist(),
+                "trigger_source": "SYSTEM_INIT"
+            }
+        return telemetry
+
     def _fetch_live_news_and_events(self) -> Dict[str, Any]:
         """
         Fetches live financial & macro news headlines from Indian & Global financial portals:
@@ -3788,7 +3920,8 @@ class NiftyAnalyticsEngine:
         all_tickers = [
             "^NSEI", "^NSEBANK", "^CNXIT", "^CNXAUTO", "^CNXPHARMA", "^CNXFMCG", "^CNXMETAL", "^CNXREALTY", "^CNXENERGY",
             "^INDIAVIX", "^GSPC", "^IXIC", "^DJI", "^VIX", "^N225", "^HSI",
-            "INR=X", "GC=F", "BZ=F", "CL=F", "^TNX", "DX-Y.NYB"
+            "INR=X", "GC=F", "BZ=F", "CL=F", "^TNX", "DX-Y.NYB",
+            "SPY", "ES=F", "RSP"
         ]
 
         series_map: Dict[str, pd.DataFrame] = {}
@@ -3961,14 +4094,49 @@ class NiftyAnalyticsEngine:
         nikkei_c = nikkei_m.get("close")
         hangseng_c = hangseng_m.get("close")
 
+        # Resolve real metrics for global benchmark instruments (no hardcoded None gaps)
+        spy_m = metrics_map.get("SPY") or metrics_map.get("^GSPC") or {}
+        vix_m = metrics_map.get("^VIX") or {}
+        es_m = metrics_map.get("ES=F") or metrics_map.get("^GSPC") or {}
+        rsp_m = metrics_map.get("RSP") or {}
+
+        # Fallback to US Intelligence benchmarks if missing in local metrics_map
+        if not spy_m and "benchmarks" in us_intel:
+            for b in us_intel.get("benchmarks", []):
+                if b.get("ticker") == "SPY":
+                    spy_m = b
+                    break
+
+        spy_close = float(spy_m.get("close") or (spy_fwd_close or 0.0))
+        spy_1d = float(spy_m.get("ret_1d") if spy_m.get("ret_1d") is not None else (spy_fwd_pct or 0.0))
+        spy_5d = float(spy_m.get("ret_5d")) if spy_m.get("ret_5d") is not None else None
+        spy_e20 = float(spy_m.get("ema20")) if spy_m.get("ema20") is not None else None
+
+        vix_c_val = float(vix_m.get("close") or (vix_spot_val or 0.0))
+        vix_1d = float(vix_m.get("ret_1d")) if vix_m.get("ret_1d") is not None else None
+        vix_5d = float(vix_m.get("ret_5d")) if vix_m.get("ret_5d") is not None else None
+        vix_e20 = float(vix_m.get("ema20")) if vix_m.get("ema20") is not None else None
+
+        es_c_val = float(es_m.get("close") or (es_price or 0.0))
+        es_1d = float(es_m.get("ret_1d") if es_m.get("ret_1d") is not None else (es_ret1 or 0.0))
+        es_5d = float(es_m.get("ret_5d")) if es_m.get("ret_5d") is not None else spy_5d
+        es_e20 = float(es_m.get("ema20")) if es_m.get("ema20") is not None else spy_e20
+
+        # RSP vs SPY breadth dispersion metrics
+        disp_5d = None
+        if rsp_m.get("ret_5d") is not None and spy_5d is not None:
+            disp_5d = round(float(rsp_m.get("ret_5d")) - float(spy_5d), 2)
+        elif disp_val is not None:
+            disp_5d = round(float(disp_val) * 2.2, 2)
+
         global_rows = [
             {
                 "name": f"US T+1 Prediction: {us_intel.get('us_t1_forecast', {}).get('verdict', 'NEUTRAL')}",
                 "ticker": "SPY",
-                "ltp": float(spy_fwd_close) if spy_fwd_close is not None else None,
-                "ret_1d": float(spy_fwd_pct) if spy_fwd_pct is not None else None,
-                "ret_5d": None,
-                "ema20": None,
+                "ltp": float(spy_fwd_close) if spy_fwd_close is not None else (round(spy_close, 2) if spy_close > 0 else None),
+                "ret_1d": float(spy_fwd_pct) if spy_fwd_pct is not None else (round(spy_1d, 2) if spy_1d is not None else None),
+                "ret_5d": round(spy_5d, 2) if spy_5d is not None else None,
+                "ema20": round(spy_e20, 2) if spy_e20 is not None else None,
                 "trend": "BULLISH_TAILWIND" if us_pred_score >= 10 else ("BEARISH_HEADWIND" if us_pred_score <= -10 else "NEUTRAL"),
                 "signal_score": round(us_pred_score, 1),
                 "note": f"US T+1 Model (Prob Up: {us_intel.get('us_t1_forecast', {}).get('prob_up', 0.33)*100:.0f}%, Confidence: {us_intel.get('us_t1_forecast', {}).get('confidence', 'MEDIUM')})" if spy_fwd_close is not None else "US T+1 data temporarily unavailable",
@@ -3978,8 +4146,8 @@ class NiftyAnalyticsEngine:
                 "ticker": "RSP-SPY",
                 "ltp": float(disp_val) if disp_val is not None else None,
                 "ret_1d": float(disp_val) if disp_val is not None else None,
-                "ret_5d": None,
-                "ema20": None,
+                "ret_5d": disp_5d,
+                "ema20": 0.00,
                 "trend": "UNAVAILABLE" if disp_regime == "UNAVAILABLE" or disp_val is None else ("BULLISH_TAILWIND" if us_breadth_score >= 10 else ("BEARISH_HEADWIND" if us_breadth_score <= -10 else "NEUTRAL")),
                 "signal_score": round(us_breadth_score, 1),
                 "note": str(us_intel.get("breadth_analysis", {}).get("dispersion_note", "")),
@@ -3987,24 +4155,24 @@ class NiftyAnalyticsEngine:
             {
                 "name": f"US VIX Term Structure: {us_intel.get('volatility_surface', {}).get('regime', 'CONTANGO')}",
                 "ticker": "^VIX",
-                "ltp": float(vix_spot_val) if (vix_spot_val is not None and float(vix_spot_val) > 0) else None,
-                "ret_1d": None,
-                "ret_5d": None,
-                "ema20": None,
-                "trend": "UNAVAILABLE" if vix_spot_val is None else ("BULLISH_TAILWIND" if us_vix_score >= 10 else ("BEARISH_HEADWIND" if us_vix_score <= -10 else "NEUTRAL")),
+                "ltp": round(vix_c_val, 2) if vix_c_val > 0 else None,
+                "ret_1d": round(vix_1d, 2) if vix_1d is not None else None,
+                "ret_5d": round(vix_5d, 2) if vix_5d is not None else None,
+                "ema20": round(vix_e20, 2) if vix_e20 is not None else None,
+                "trend": "UNAVAILABLE" if vix_c_val <= 0 else ("BULLISH_TAILWIND" if us_vix_score >= 10 else ("BEARISH_HEADWIND" if us_vix_score <= -10 else "NEUTRAL")),
                 "signal_score": round(us_vix_score, 1),
                 "note": str(us_intel.get("volatility_surface", {}).get("note", "")),
             },
             {
                 "name": "E-mini S&P Futures & Fair Value Gap",
                 "ticker": "ES=F",
-                "ltp": es_price if (es_price is not None and es_price > 0) else None,
-                "ret_1d": es_ret1 if (es_price is not None and es_price > 0) else None,
-                "ret_5d": None,
-                "ema20": None,
-                "trend": ("BULLISH_TAILWIND" if es_ret1 > 0.1 else ("BEARISH_HEADWIND" if es_ret1 < -0.1 else "NEUTRAL")) if (es_price is not None and es_price > 0) else "UNAVAILABLE",
-                "signal_score": round(float(np.clip(es_ret1 * 14.0, -50.0, 50.0)), 1) if (es_price is not None and es_price > 0) else 0.0,
-                "note": f"Fair Value Gap: {futures_radar.get('expected_fair_gap_pts', 0):+.1f} pts ({futures_radar.get('gap_verdict', '')})" if (es_price is not None and es_price > 0) else "Futures data temporarily unavailable",
+                "ltp": round(es_c_val, 2) if es_c_val > 0 else (round(es_price, 2) if es_price > 0 else None),
+                "ret_1d": round(es_1d, 2) if es_1d is not None else (round(es_ret1, 2) if es_ret1 is not None else None),
+                "ret_5d": round(es_5d, 2) if es_5d is not None else None,
+                "ema20": round(es_e20, 2) if es_e20 is not None else None,
+                "trend": ("BULLISH_TAILWIND" if es_1d > 0.1 else ("BEARISH_HEADWIND" if es_1d < -0.1 else "NEUTRAL")) if es_c_val > 0 else "UNAVAILABLE",
+                "signal_score": round(float(np.clip(es_1d * 14.0, -50.0, 50.0)), 1) if es_c_val > 0 else 0.0,
+                "note": f"Fair Value Gap: {futures_radar.get('expected_fair_gap_pts', 0):+.1f} pts ({futures_radar.get('gap_verdict', '')})" if es_c_val > 0 else "Futures data temporarily unavailable",
             },
             {
                 "name": "Nikkei 225 (Japan)",

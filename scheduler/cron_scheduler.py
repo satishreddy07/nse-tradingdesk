@@ -1080,6 +1080,23 @@ def scheduled_kotak_session_job():
         logger.warning(f"Kotak Neo scheduled session job notice: {e}")
 
 
+def scheduled_fii_dii_participant_oi_job(force_refresh: bool = False, trigger_source: str = "AUTO_RUN") -> Dict[str, Any]:
+    """
+    Automated Post-Market & Pre-Market FII/DII Cash & F&O Participant OI Ingestion Job.
+    Checks if latest trading session data is already available; if so, stops cleanly.
+    If not, attempts download from official NSE sources and updates database & telemetry.
+    """
+    try:
+        from engines.nifty_analytics_engine import nifty_analytics_engine
+        logger.info("🏛️ [FII/DII Auto-Run] Checking latest session FII/DII Cash & Participant OI...")
+        res = nifty_analytics_engine.check_and_update_fii_dii_participant_oi(force_refresh=force_refresh, trigger_source=trigger_source)
+        logger.info(f"🏛️ [FII/DII Auto-Run] Outcome: {res.get('status')} - {res.get('message')}")
+        return res
+    except Exception as e:
+        logger.error(f"FII/DII scheduled job error: {e}", exc_info=True)
+        return {"status": "ERROR", "message": str(e)}
+
+
 def start_scheduler():
     """Initializes and starts the BackgroundScheduler with IST triggers & Render Anti-Sleep Guard."""
     global _scheduler
@@ -1352,12 +1369,33 @@ def start_scheduler():
             misfire_grace_time=600
         )
 
+        # Job 10A: 08:30 AM Pre-Market FII/DII & Participant OI Catch-Up (Mon-Fri)
+        _scheduler.add_job(
+            scheduled_fii_dii_participant_oi_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=8, minute=30, timezone=IST),
+            id="job_fii_dii_participant_oi_0830",
+            name="08:30 AM Pre-Market FII/DII & Participant OI Catch-Up",
+            replace_existing=True,
+            misfire_grace_time=300
+        )
+
+        # Job 10B: Post-Market FII/DII Cash & Participant OI Sync (Every 30m, 17:15–21:45 IST Mon-Fri)
+        _scheduler.add_job(
+            scheduled_fii_dii_participant_oi_job,
+            trigger=CronTrigger(day_of_week="mon-fri", hour="17-21", minute="15,45", timezone=IST),
+            id="job_fii_dii_participant_oi_postmarket",
+            name="Post-Market FII/DII Cash & F&O Participant OI Sync (Every 30m)",
+            replace_existing=True,
+            misfire_grace_time=300
+        )
+
         _scheduler.start()
-        # Trigger an immediate keep-alive check, live price refresh, Kotak Neo stream init, server IP detection, and Nifty 50m option capture if in market hours
+        # Trigger an immediate keep-alive check, live price refresh, Kotak Neo stream init, server IP detection, Nifty 50m option capture, and FII/DII check
         threading.Thread(target=get_server_public_ip, daemon=True, name="ServerIPDetection").start()
         threading.Thread(target=scheduled_live_price_stream_job, daemon=True).start()
         threading.Thread(target=scheduled_kotak_session_job, daemon=True, name="KotakNeoStartupInit").start()
         threading.Thread(target=scheduled_nifty_intraday_50min_job, daemon=True).start()
+        threading.Thread(target=scheduled_fii_dii_participant_oi_job, daemon=True, name="FiiDiiStartupCheck").start()
         # Launch dedicated continuous Intraday Watchdog
         threading.Thread(target=_intraday_collector_watchdog, daemon=True, name="IntradayWatchdog").start()
         # Zero-Failure Cold-Boot Catch-Up: If container booted >= 08:45 AM on a trading day and prediction not locked, dispatch immediately
@@ -1473,5 +1511,6 @@ def get_scheduler_status() -> Dict[str, Any]:
             "pings_today": 0,
             "last_ping_status": "24/7 DEDICATED HOST — NO KEEPALIVE NEEDED"
         },
+        "fii_dii_telemetry": state_engine.get_kv("fii_dii_autorun_telemetry") or {},
         "nse_holidays_meta": holiday_meta
     }
