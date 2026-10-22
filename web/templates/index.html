@@ -9643,6 +9643,9 @@
           else if (modTarget === 'module-intraday' && typeof loadIntradayExpiryDesk === 'function') loadIntradayExpiryDesk(false);
           else if (modTarget === 'module-ml-performance' && typeof loadMLPerformanceData === 'function') loadMLPerformanceData(false);
         }
+        if (urlParams.get('modal') === 'watchdog' && typeof openWatchdogModal === 'function') {
+          setTimeout(openWatchdogModal, 200);
+        }
         const mltabParam = urlParams.get('mltab') || urlParams.get('ml_tab') || (modTarget === 'module-ml-performance' ? urlParams.get('tab') : null);
         if (mltabParam && typeof switchMLPerfTab === 'function') {
           setTimeout(() => {
