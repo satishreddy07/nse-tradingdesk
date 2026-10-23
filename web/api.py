@@ -3110,11 +3110,11 @@ def get_server_ip_endpoint(refresh: bool = False):
 # CONTINUOUS MULTI-DESK LIVE STREAM ENDPOINT (POWERED BY KOTAK NEO)
 # ==============================================================================
 @app.get("/api/stream/continuous")
-def get_continuous_live_stream_endpoint():
+def get_continuous_live_stream_endpoint(strike_range: Optional[int] = None, expiry: str = "weekly"):
     """
     Ultra-low latency continuous data stream endpoint powered by Kotak Neo API:
     Streams live market prices, MTM valuations, trailing stops, Nifty 50 spot, VWAP levels,
-    and Options portfolio metrics continuously to frontend desks without Yahoo/NSE overhead.
+    Options portfolio metrics, and Full Option Chain strikes continuously to frontend desks without Yahoo/NSE overhead.
     """
     from engines.kotak_neo_engine import kotak_neo_engine
     from engines.nifty_analytics_engine import nifty_analytics_engine
@@ -3194,8 +3194,9 @@ def get_continuous_live_stream_endpoint():
     # 4. Options Desk: Portfolio Valuation
     opt_portfolio = nifty_analytics_engine.get_options_portfolio()
 
-    # 5. Near-ATM Option Ticks for Real-Time Strike Streaming
-    opt_ticks = kotak_neo_engine.get_near_atm_option_ticks(spot_price=nifty_spot, strike_range=12)
+    # 5. Full Option Chain & Real-Time Strike Streaming (Supports all strikes across weekly & monthly)
+    opt_ticks = kotak_neo_engine.get_near_atm_option_ticks(spot_price=nifty_spot, strike_range=strike_range, expiry=expiry)
+    opt_ticks_monthly = kotak_neo_engine.get_monthly_option_ticks(spot_price=nifty_spot, strike_range=strike_range)
 
     # 6. Commodities Desk: Active MCX Contracts Live Quotes & Metrics
     from engines.commodities_engine import commodities_engine
@@ -3254,6 +3255,7 @@ def get_continuous_live_stream_endpoint():
             "strategies": opt_portfolio.get("active_strategies", [])
         },
         "options_ticks": opt_ticks,
+        "options_ticks_monthly": opt_ticks_monthly,
         "commodities": commodities_data,
         "equity_ticks": {
             s: {

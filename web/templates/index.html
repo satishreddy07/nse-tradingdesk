@@ -25306,14 +25306,17 @@
           }
         } catch (e) { console.debug("Kotak swing update notice:", e); }
 
-        // 4. Real-time Near-ATM Option Strike Updates directly from Kotak Neo Ticks
+        // 4. Real-time Full Option Chain Strike Updates directly from Kotak Neo Ticks
         try {
           // CRITICAL: Strike quotes must ONLY mutate during live trading hours when market is open
-          if (data.is_market_open && data.options_ticks && typeof data.options_ticks === 'object') {
+          if (data.is_market_open) {
             const currentExpiryType = (typeof selectedOptionsExpiryType !== 'undefined') ? selectedOptionsExpiryType : 'weekly';
-            // Only update weekly option table cells when viewing weekly expiry
-            if (currentExpiryType === 'weekly') {
-              Object.entries(data.options_ticks).forEach(([key, opt]) => {
+            const targetTicks = (currentExpiryType === 'monthly' && data.options_ticks_monthly && Object.keys(data.options_ticks_monthly).length > 0)
+              ? data.options_ticks_monthly
+              : data.options_ticks;
+
+            if (targetTicks && typeof targetTicks === 'object') {
+              Object.entries(targetTicks).forEach(([key, opt]) => {
                 const strike = opt.strike;
                 const type = (opt.type || '').toLowerCase();
                 if (!strike || !type) return;
@@ -25336,12 +25339,12 @@
                 }
 
                 const oiEl = document.getElementById(`opt-${type}-oi-${strike}`);
-                if (oiEl && opt.oi) {
+                if (oiEl && opt.oi !== undefined && opt.oi !== null) {
                   oiEl.innerText = Number(opt.oi).toLocaleString('en-IN');
                 }
 
                 const volEl = document.getElementById(`opt-${type}-vol-${strike}`);
-                if (volEl && opt.volume) {
+                if (volEl && opt.volume !== undefined && opt.volume !== null) {
                   volEl.innerText = Number(opt.volume).toLocaleString('en-IN');
                 }
               });

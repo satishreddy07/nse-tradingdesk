@@ -665,12 +665,23 @@ class OmniWatchdogEngine:
                 issues.append(f"Near-ATM PCR ({near_pcr:.2f}) outside realistic market bounds [0.35, 2.80]")
                 if status != "ALERT": status = "DEGRADED"
 
+            # 6. Intraday ML & Market Breadth Sentinel
+            ml_regime = "DATA_UNAVAILABLE"
+            try:
+                from engines.intraday_ml_engine import intraday_ml_engine
+                ml_res = intraday_ml_engine.train_and_predict(force_refresh=False)
+                ml_regime = ml_res.get("predicted_regime", "DATA_UNAVAILABLE")
+            except Exception:
+                pass
+
             details = {
                 "spot_price": spot_px,
                 "atm_strike": atm_k,
                 "weekly_expiry": weekly_data.get("expiry"),
                 "weekly_strikes_count": weekly_s_cnt,
                 "near_atm_coverage_pct": f"{coverage_pct}%",
+                "full_option_chain_live": weekly_s_cnt >= 50,
+                "intraday_ml_regime": ml_regime,
                 "kotak_stream_mode": stream_mode,
                 "kotak_options_ticks": opt_ticks_cnt,
                 "kotak_tokens_mapped": opt_tokens_cnt,

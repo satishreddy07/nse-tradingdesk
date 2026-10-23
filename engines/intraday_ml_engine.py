@@ -198,17 +198,17 @@ class IntradayMLEngine:
         writer_bias = round(float(np.clip(writer_bias, -100.0, 100.0)), 1)
 
         # Regime determination (Directional calibration for 3-class distribution)
-        if (p_up >= 0.40 and p_up > p_down) or (p_up > p_flat and p_up > p_down) or (writer_bias >= 18.0 and p_up > p_down):
+        if (p_up >= 0.38 and p_up > p_down) or (p_up > p_flat and p_up > p_down) or (writer_bias >= 10.0 and p_up > p_down):
             regime = "BULLISH_EXPANSION"
             regime_desc = "Put writers aggressively dominating; calls unwinding. Upward drift expected."
             strategy_rec = "BULL_PUT_SPREAD (Credit) or ATM_CALL_MOMENTUM"
-        elif (p_down >= 0.40 and p_down > p_up) or (p_down > p_flat and p_down > p_up) or (writer_bias <= -18.0 and p_down > p_up):
+        elif (p_down >= 0.38 and p_down > p_up) or (p_down > p_flat and p_down > p_up) or (writer_bias <= -10.0 and p_down > p_up):
             regime = "BEARISH_BREAKDOWN"
             regime_desc = "Call writers pressing down; put unwinding detected. Downside vulnerability."
             strategy_rec = "BEAR_CALL_SPREAD (Credit) or ATM_PUT_MOMENTUM"
         else:
             regime = "PINNED_CONSOLIDATION"
-            regime_desc = "Two-way writer pinning; theta decay active. High probability of range-bound pin."
+            regime_desc = "Two-way writer pinning; theta decay active. Balanced straddle/range-bound pin."
             strategy_rec = "IRON_CONDOR or SHORT_STRADDLE / STRANGLE (Theta Harvesting)"
 
         latency_ms = round((time.time() - t0) * 1000.0, 1)
@@ -318,10 +318,10 @@ class IntradayMLEngine:
         # Expected return delta %
         pred_ret = float(np.clip(momentum * 0.15, -0.6, 0.6))
 
-        # Softmax probabilities
-        logit_up = 1.0 + momentum * 1.5
-        logit_down = 1.0 - momentum * 1.5
-        logit_flat = 1.2 - abs(momentum) * 0.5  # Pinning is high when momentum is near zero
+        # Softmax probabilities with balanced Bayesian prior
+        logit_up = 1.0 + momentum * 1.8
+        logit_down = 1.0 - momentum * 1.8
+        logit_flat = 1.0 - abs(momentum) * 0.8  # Balanced prior: pinning only when writer momentum is near zero
 
         exp_vals = np.exp([logit_up, logit_flat, logit_down])
         probs = exp_vals / np.sum(exp_vals)

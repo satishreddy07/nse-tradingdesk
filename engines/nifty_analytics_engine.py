@@ -2553,6 +2553,21 @@ class NiftyAnalyticsEngine:
                 if np.isnan(chg):
                     continue
 
+                # Live Kotak Neo Tick Overlay for 100% Real-Time Market Breadth
+                try:
+                    from engines.kotak_neo_engine import kotak_neo_engine
+                    live_t = kotak_neo_engine.get_live_tick(clean_sym)
+                    if live_t and live_t.get("ltp") and float(live_t["ltp"]) > 0:
+                        c = float(live_t["ltp"])
+                        if live_t.get("change_pct") is not None:
+                            chg = float(live_t["change_pct"])
+                        elif len(s_series) >= 2:
+                            prev_c = float(s_series.iloc[-2])
+                            if prev_c > 0:
+                                chg = round(((c - prev_c) / prev_c) * 100.0, 2)
+                except Exception:
+                    pass
+
                 if chg > 0.05:
                     n50_adv += 1
                 elif chg < -0.05:

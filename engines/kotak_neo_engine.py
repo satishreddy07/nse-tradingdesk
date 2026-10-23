@@ -1588,9 +1588,17 @@ class KotakNeoEngine:
         except Exception:
             pass
 
-        # 4. Market Benchmarks
+        # 4. Market Benchmarks & Nifty 50 Constituents for Real-Time Breadth
         symbols.add("NIFTY 50")
         symbols.add("NIFTY BANK")
+        try:
+            from engines.nifty_analytics_engine import NIFTY_50_CONSTITUENTS
+            for c_sym in NIFTY_50_CONSTITUENTS:
+                clean_c = c_sym.replace(".NS", "").strip().upper()
+                if clean_c:
+                    symbols.add(clean_c)
+        except Exception:
+            pass
 
         return list(symbols)
 
@@ -1713,22 +1721,45 @@ class KotakNeoEngine:
     def get_all_option_ticks(self) -> Dict[str, Dict[str, Any]]:
         """Returns snapshot of all option ticks."""
         with self._lock:
-            return {f"{k[0]}_{k[1]}": dict(v) for k, v in self._option_ticks.items()}
+            return {f"{k[0]}_{k[1]}": dict(v) for k, v in self._option_ticks.items() if len(k) == 2}
 
-    def get_near_atm_option_ticks(self, spot_price: Optional[float] = None, strike_range: int = 12) -> Dict[str, Dict[str, Any]]:
-        """Returns near-ATM option ticks for continuous UI streaming. Zero hardcoded fallbacks."""
+    def get_near_atm_option_ticks(self, spot_price: Optional[float] = None, strike_range: Optional[int] = None, expiry: str = "weekly") -> Dict[str, Dict[str, Any]]:
+        """
+        Returns real-time option ticks for continuous UI streaming across the option chain.
+        If strike_range is None or >= 50, streams the entire listed option chain (all strikes).
+        Supports weekly and monthly contract views. Zero hardcoded fallbacks.
+        """
         spot = spot_price or self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY") or self.get_live_price("^NSEI")
-        if not spot or float(spot) <= 0:
-            return {}
-        atm = int(round(float(spot) / 50.0) * 50)
-        min_k = atm - strike_range * 50
-        max_k = atm + strike_range * 50
+        target_expiry = getattr(self, "_cached_monthly_iso", None) if expiry.lower() in ("monthly", "m") else getattr(self, "_cached_weekly_iso", None)
+
         with self._lock:
+            ticks_dict = {}
+            if expiry.lower() in ("monthly", "m") and target_expiry:
+                for k, v in self._option_ticks.items():
+                    if len(k) == 3 and k[2] == target_expiry:
+                        ticks_dict[f"{k[0]}_{k[1]}"] = dict(v)
+            if not ticks_dict:
+                for k, v in self._option_ticks.items():
+                    if len(k) == 2 and isinstance(k[0], (int, float)):
+                        ticks_dict[f"{k[0]}_{k[1]}"] = dict(v)
+
+            if not ticks_dict:
+                return {}
+
+            if strike_range is None or strike_range >= 50 or not spot or float(spot) <= 0:
+                return ticks_dict
+
+            atm = int(round(float(spot) / 50.0) * 50)
+            min_k = atm - strike_range * 50
+            max_k = atm + strike_range * 50
             return {
-                f"{k[0]}_{k[1]}": dict(v)
-                for k, v in self._option_ticks.items()
-                if len(k) == 2 and isinstance(k[0], (int, float)) and min_k <= k[0] <= max_k
+                key: val for key, val in ticks_dict.items()
+                if min_k <= val.get("strike", 0) <= max_k
             }
+
+    def get_monthly_option_ticks(self, spot_price: Optional[float] = None, strike_range: Optional[int] = None) -> Dict[str, Dict[str, Any]]:
+        """Returns snapshot of monthly option ticks across all strikes."""
+        return self.get_near_atm_option_ticks(spot_price=spot_price, strike_range=strike_range, expiry="monthly")
 
     def fetch_option_quotes(self, near_atm_only: bool = True) -> Dict[str, Any]:
         """
