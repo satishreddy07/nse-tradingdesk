@@ -5929,137 +5929,6 @@
           <div class="lg:col-span-7 space-y-4">
 
             <!-- StockMojo Ready-Made Strategy Visualizer Deck -->
-            <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4">
-              <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-800">
-                <div class="flex items-center gap-1.5">
-                  <i data-lucide="layout-grid" class="w-4 h-4 text-blue-400"></i>
-                  <span class="text-xs font-bold text-white uppercase tracking-wider">Ready-Made Strategies</span>
-                </div>
-                <!-- Category Filter Pills (StockMojo Style) -->
-                <div class="inline-flex gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-xs">
-                  <button onclick="filterReadyMadeCards('ALL')" data-category="ALL" class="sm-cat-pill px-2.5 py-1 rounded-md font-semibold text-slate-400 hover:text-white transition">All</button>
-                  <button onclick="filterReadyMadeCards('BULLISH')" data-category="BULLISH" class="sm-cat-pill px-2.5 py-1 rounded-md font-semibold text-slate-400 hover:text-emerald-400 transition">Bullish</button>
-                  <button onclick="filterReadyMadeCards('BEARISH')" data-category="BEARISH" class="sm-cat-pill px-2.5 py-1 rounded-md font-semibold text-slate-400 hover:text-rose-400 transition">Bearish</button>
-                  <button onclick="filterReadyMadeCards('NEUTRAL')" data-category="NEUTRAL" class="sm-cat-pill px-2.5 py-1 rounded-md font-bold bg-blue-600 text-white transition">Neutral</button>
-                  <button onclick="filterReadyMadeCards('OTHER')" data-category="OTHER" class="sm-cat-pill px-2.5 py-1 rounded-md font-semibold text-slate-400 hover:text-white transition">Other</button>
-                </div>
-              </div>
-
-              <!-- 4x2 Grid of StockMojo-Style Strategy Cards with Crisp Mini SVG Payoff Curves -->
-              <div id="ready-made-cards-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                
-                <!-- 1. Short Straddle -->
-                <div onclick="selectReadyMadeCard('SHORT_STRADDLE', this)" data-category="NEUTRAL" class="sm-strategy-card selected" title="Sell ATM Call + Sell ATM Put">
-                  <svg viewBox="0 0 160 80">
-                    <line x1="10" y1="45" x2="150" y2="45" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>
-                    <polygon points="45,45 80,15 115,45" fill="rgba(34,197,94,0.18)"/>
-                    <polygon points="15,70 45,45 15,45" fill="rgba(239,68,68,0.18)"/>
-                    <polygon points="115,45 145,70 145,45" fill="rgba(239,68,68,0.18)"/>
-                    <polyline points="45,45 80,15 115,45" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round"/>
-                    <polyline points="15,70 45,45" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
-                    <polyline points="115,45 145,70" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
-                  </svg>
-                  <div class="text-xs font-bold text-slate-200 mt-1">Short Straddle</div>
-                </div>
-
-                <!-- 2. Short Strangle -->
-                <div onclick="selectReadyMadeCard('SHORT_STRANGLE', this)" data-category="NEUTRAL" class="sm-strategy-card" title="Sell OTM Call + Sell OTM Put">
-                  <svg viewBox="0 0 160 80">
-                    <line x1="10" y1="45" x2="150" y2="45" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>
-                    <polygon points="35,45 60,18 100,18 125,45" fill="rgba(34,197,94,0.18)"/>
-                    <polygon points="15,70 35,45 15,45" fill="rgba(239,68,68,0.18)"/>
-                    <polygon points="125,45 145,70 145,45" fill="rgba(239,68,68,0.18)"/>
-                    <polyline points="35,45 60,18 100,18 125,45" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round"/>
-                    <polyline points="15,70 35,45" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
-                    <polyline points="125,45 145,70" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
-                  </svg>
-                  <div class="text-xs font-bold text-slate-200 mt-1">Short Strangle</div>
-                </div>
-
-                <!-- 3. Short Iron Condor -->
-                <div onclick="selectReadyMadeCard('IRON_CONDOR', this)" data-category="NEUTRAL" class="sm-strategy-card" title="Sell Strangle + Buy OTM Wings">
-                  <svg viewBox="0 0 160 80">
-                    <line x1="10" y1="45" x2="150" y2="45" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>
-                    <polygon points="40,45 60,20 100,20 120,45" fill="rgba(34,197,94,0.18)"/>
-                    <polygon points="15,58 30,58 40,45 15,45" fill="rgba(239,68,68,0.18)"/>
-                    <polygon points="120,45 130,58 145,58 145,45" fill="rgba(239,68,68,0.18)"/>
-                    <polyline points="40,45 60,20 100,20 120,45" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round"/>
-                    <polyline points="15,58 30,58 40,45" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linejoin="round"/>
-                    <polyline points="120,45 130,58 145,58" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linejoin="round"/>
-                  </svg>
-                  <div class="text-xs font-bold text-slate-200 mt-1">Short Iron Condor</div>
-                </div>
-
-                <!-- 4. Short Iron Butterfly -->
-                <div onclick="selectReadyMadeCard('IRON_BUTTERFLY', this)" data-category="NEUTRAL" class="sm-strategy-card" title="Sell Straddle + Buy Wings">
-                  <svg viewBox="0 0 160 80">
-                    <line x1="10" y1="45" x2="150" y2="45" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>
-                    <polygon points="45,45 80,18 115,45" fill="rgba(34,197,94,0.18)"/>
-                    <polygon points="15,58 35,58 45,45 15,45" fill="rgba(239,68,68,0.18)"/>
-                    <polygon points="115,45 125,58 145,58 145,45" fill="rgba(239,68,68,0.18)"/>
-                    <polyline points="45,45 80,18 115,45" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round"/>
-                    <polyline points="15,58 35,58 45,45" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linejoin="round"/>
-                    <polyline points="115,45 125,58 145,58" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linejoin="round"/>
-                  </svg>
-                  <div class="text-xs font-bold text-slate-200 mt-1">Short Iron Fly</div>
-                </div>
-
-                <!-- 5. Batman -->
-                <div onclick="selectReadyMadeCard('BATMAN', this)" data-category="NEUTRAL OTHER" class="sm-strategy-card" title="Batman Double Wing Ratio">
-                  <svg viewBox="0 0 160 80">
-                    <line x1="10" y1="45" x2="150" y2="45" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>
-                    <polygon points="30,45 50,18 80,32 110,18 130,45" fill="rgba(34,197,94,0.18)"/>
-                    <polygon points="15,70 30,45 15,45" fill="rgba(239,68,68,0.18)"/>
-                    <polygon points="130,45 145,70 145,45" fill="rgba(239,68,68,0.18)"/>
-                    <polyline points="30,45 50,18 80,32 110,18 130,45" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round"/>
-                    <polyline points="15,70 30,45" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
-                    <polyline points="130,45 145,70" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
-                  </svg>
-                  <div class="text-xs font-bold text-slate-200 mt-1">Batman</div>
-                </div>
-
-                <!-- 6. Jade Lizard -->
-                <div onclick="selectReadyMadeCard('JADE_LIZARD', this)" data-category="BULLISH NEUTRAL" class="sm-strategy-card" title="Sell OTM Put + Bear Call Spread (No Upside Risk)">
-                  <svg viewBox="0 0 160 80">
-                    <line x1="10" y1="45" x2="150" y2="45" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>
-                    <polygon points="35,45 60,20 110,20 145,28 145,45" fill="rgba(34,197,94,0.18)"/>
-                    <polygon points="15,70 35,45 15,45" fill="rgba(239,68,68,0.18)"/>
-                    <polyline points="35,45 60,20 110,20 145,28" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round"/>
-                    <polyline points="15,70 35,45" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
-                  </svg>
-                  <div class="text-xs font-bold text-slate-200 mt-1">Jade Lizard</div>
-                </div>
-
-                <!-- 7. Reverse Jade Lizard -->
-                <div onclick="selectReadyMadeCard('REVERSE_JADE_LIZARD', this)" data-category="BEARISH NEUTRAL" class="sm-strategy-card" title="Sell OTM Call + Bull Put Spread (No Downside Risk)">
-                  <svg viewBox="0 0 160 80">
-                    <line x1="10" y1="45" x2="150" y2="45" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>
-                    <polygon points="15,28 50,20 100,20 125,45 15,45" fill="rgba(34,197,94,0.18)"/>
-                    <polygon points="125,45 145,70 145,45" fill="rgba(239,68,68,0.18)"/>
-                    <polyline points="15,28 50,20 100,20 125,45" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round"/>
-                    <polyline points="125,45 145,70" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
-                  </svg>
-                  <div class="text-xs font-bold text-slate-200 mt-1">Reverse Lizard</div>
-                </div>
-
-                <!-- 8. Double Plateau -->
-                <div onclick="selectReadyMadeCard('DOUBLE_PLATEAU', this)" data-category="NEUTRAL OTHER" class="sm-strategy-card" title="Double Credit Strangle Plateau">
-                  <svg viewBox="0 0 160 80">
-                    <line x1="10" y1="45" x2="150" y2="45" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>
-                    <polygon points="30,55 45,22 65,22 75,55" fill="rgba(34,197,94,0.18)"/>
-                    <polygon points="85,55 95,22 115,22 130,55" fill="rgba(34,197,94,0.18)"/>
-                    <polyline points="30,55 45,22 65,22 75,55" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round"/>
-                    <polyline points="85,55 95,22 115,22 130,55" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round"/>
-                    <polyline points="15,55 30,55" fill="none" stroke="#ef4444" stroke-width="2.5"/>
-                    <polyline points="75,55 85,55" fill="none" stroke="#ef4444" stroke-width="2.5"/>
-                    <polyline points="130,55 145,55" fill="none" stroke="#ef4444" stroke-width="2.5"/>
-                  </svg>
-                  <div class="text-xs font-bold text-slate-200 mt-1">Double Plateau</div>
-                </div>
-
-              </div>
-            </div>
-
             <!-- Key Metric Cards Ribbon (StockMojo / Opstra Metrics) -->
             <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
               <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
@@ -14180,7 +14049,7 @@
       renderBuilderCompactChain();
     }
 
-    function renderStrategyLegs() {
+        function renderStrategyLegs() {
       const activeLegsCount = strategyLegs.filter(l => l.active !== false).length;
       const countEl = document.getElementById('strat-legs-count');
       if (countEl) countEl.innerText = `${activeLegsCount}/${strategyLegs.length}`;
@@ -14197,7 +14066,7 @@
       if (strategyLegs.length === 0) {
         container.innerHTML = `
           <div class="text-slate-500 py-8 text-center font-sans">
-            No legs added yet. Click <b>Auto-Pick</b> above or click <b>+B / +S</b> on any strike in the Option Chain table below.
+            No legs added yet. Click <b>+B / +S</b> on any strike in the Option Chain table below.
           </div>
         `;
         return;
@@ -14217,8 +14086,11 @@
         const isBuy = l.action === 'BUY';
         const isCe = l.type === 'CE';
         const actBadge = isBuy
-          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-          : 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+          : 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30';
+        const typeBadge = isCe
+          ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
+          : 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30';
 
         const bs = calculateBsOption(spotVal, l.strike, targetDte, Math.max(3, (Number(l.iv) || 14) + ivShift), l.type);
         const sign = isBuy ? 1 : -1;
@@ -14232,425 +14104,186 @@
           : (Number(l.currentPrice) || Number(l.price) || 0);
 
         const hasExit = l.exitPrice !== null && l.exitPrice !== undefined && l.exitPrice !== '' && Number(l.exitPrice) > 0;
-        const hasTgt = l.targetPrice !== null && l.targetPrice !== undefined && Number(l.targetPrice) > 0;
-        const hasSl = l.slPrice !== null && l.slPrice !== undefined && Number(l.slPrice) > 0;
-        const hasSlOrTarget = hasExit || hasTgt || hasSl;
+        const entPx = Number(l.price) || 0;
+        const curPx = liveCmp > 0 ? liveCmp : entPx;
+        const unrealizedPnl = (isBuy ? (curPx - entPx) : (entPx - curPx)) * l.qty;
+        const isMtmProfit = unrealizedPnl >= 0;
 
-        let exitPnlBadge = `<span class="text-slate-500 italic">Open (Active)</span>`;
+        let exitPnlBadge = '';
         if (hasExit) {
           const exPx = Number(l.exitPrice);
-          const entPx = Number(l.price) || 0;
           const legPnl = (isBuy ? (exPx - entPx) : (entPx - exPx)) * l.qty;
           const legPct = entPx > 0 ? ((legPnl / (entPx * l.qty)) * 100) : 0;
           const isProfit = legPnl >= 0;
           const pnlColor = isProfit ? 'text-emerald-300 bg-emerald-500/20 border-emerald-500/40' : 'text-rose-300 bg-rose-500/20 border-rose-500/40';
-          exitPnlBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${pnlColor}">🏁 Realized ${isProfit ? 'Profit' : 'Loss'}: ${legPnl >= 0 ? '+' : ''}₹${Math.round(legPnl).toLocaleString('en-IN')} (${legPct >= 0 ? '+' : ''}${legPct.toFixed(1)}%)</span>`;
+          exitPnlBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold border ${pnlColor}">🏁 Realized ${isProfit ? 'Profit' : 'Loss'}: ${legPnl >= 0 ? '+' : ''}₹${Math.round(legPnl).toLocaleString('en-IN')} (${legPct >= 0 ? '+' : ''}${legPct.toFixed(1)}%)</span>`;
         }
 
         return `
-          <div class="bg-slate-900 border ${isActive ? 'border-slate-800' : 'border-slate-800/40 opacity-55'} rounded-lg p-2 transition">
+          <div class="bg-slate-900/95 border ${hasExit ? 'border-amber-500/40 bg-amber-950/10' : (isActive ? 'border-slate-800' : 'border-slate-800/40 opacity-60')} rounded-xl p-3 transition space-y-2.5 shadow-sm">
+            
+            <!-- ROW 1: PRIMARY STRIKE BAR -->
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-1.5 min-w-0">
-                <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleStrategyLegActive(${l.id})" class="w-3.5 h-3.5 rounded bg-slate-950 border-slate-700 text-cyan-500 focus:ring-0 cursor-pointer" title="${isActive ? 'Included in Strategy (Click to Inactivate)' : 'Inactive (Click to Include)'}">
-                <span class="text-[10px] text-slate-500">#${idx + 1}</span>
-                <button onclick="updateStrategyLeg(${l.id}, 'action', '${isBuy ? 'SELL' : 'BUY'}'); renderStrategyLegs();" class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${actBadge} hover:opacity-80 transition cursor-pointer">
+              <div class="flex items-center gap-1.5 flex-wrap min-w-0">
+                <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleStrategyLegActive(${l.id})" class="rounded bg-slate-950 border-slate-700 text-cyan-500 cursor-pointer w-3.5 h-3.5" title="Toggle leg active in payoff calculations">
+                <span class="text-slate-400 font-mono text-[11px] font-bold">#${idx + 1}</span>
+
+                <!-- Action Button (BUY / SELL) -->
+                <button onclick="toggleStrategyLegAction(${l.id})" class="px-2 py-0.5 rounded text-xs font-mono font-extrabold border transition cursor-pointer ${actBadge}" title="Click to flip BUY ↔ SELL">
                   ${l.action}
                 </button>
-                <button onclick="updateStrategyLeg(${l.id}, 'type', '${isCe ? 'PE' : 'CE'}'); renderStrategyLegs();" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCe ? 'bg-cyan-500/20 text-cyan-300' : 'bg-purple-500/20 text-purple-300'} hover:opacity-80 transition cursor-pointer">
+
+                <!-- Type Button (CE / PE) -->
+                <button onclick="toggleStrategyLegType(${l.id})" class="px-2 py-0.5 rounded text-xs font-mono font-extrabold border transition cursor-pointer ${typeBadge}" title="Click to flip CE ↔ PE">
                   ${l.type}
                 </button>
-                <div class="flex items-center bg-slate-950 border border-slate-800 rounded px-1">
-                  <button onclick="stepStrategyLegStrike(${l.id}, -50)" class="text-[10px] font-bold text-slate-400 hover:text-cyan-300 px-1 py-0.5 transition cursor-pointer" title="Roll Down 50 pts">▼</button>
-                  <span class="font-bold text-white text-xs px-1 ${!isActive ? 'line-through text-slate-500' : ''}">${l.strike}</span>
-                  <button onclick="stepStrategyLegStrike(${l.id}, 50)" class="text-[10px] font-bold text-slate-400 hover:text-cyan-300 px-1 py-0.5 transition cursor-pointer" title="Roll Up 50 pts">▲</button>
+
+                <!-- Strike Stepper Dropdown -->
+                <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg overflow-hidden">
+                  <select onchange="updateStrategyLeg(${l.id}, 'strike', this.value)" class="bg-transparent text-white font-mono font-bold text-xs px-2 py-0.5 focus:outline-none cursor-pointer">
+                    ${getNearbyStrikes(spotVal, l.strike).map(s => `<option value="${s}" ${s === l.strike ? 'selected' : ''} class="bg-slate-900 text-white">${s}</option>`).join('')}
+                  </select>
+                  <div class="flex flex-col border-l border-slate-800">
+                    <button onclick="cycleStrategyLegStrike(${l.id}, 1)" class="px-1 py-0.2 hover:bg-slate-800 text-[9px] text-slate-400 hover:text-white cursor-pointer" title="Strike Up">▲</button>
+                    <button onclick="cycleStrategyLegStrike(${l.id}, -1)" class="px-1 py-0.2 hover:bg-slate-800 text-[9px] text-slate-400 hover:text-white cursor-pointer" title="Strike Down">▼</button>
+                  </div>
                 </div>
-                <button onclick="flipStrategyLeg(${l.id})" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-amber-900/40 text-slate-400 hover:text-amber-300 border border-slate-700 transition cursor-pointer" title="Flip Buy ↔ Sell">
-                  ⇄
-                </button>
+
+                <!-- Lots Stepper -->
+                <div class="flex items-center bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-0.5">
+                  <button onclick="changeStrategyLegLots(${l.id}, -1)" class="w-4 h-4 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer">-</button>
+                  <span class="text-xs font-mono font-bold text-white px-1.5 whitespace-nowrap">${Math.round(l.qty / NIFTY_LOT_SIZE)}L <span class="text-[10px] text-slate-400 font-normal">(${l.qty})</span></span>
+                  <button onclick="changeStrategyLegLots(${l.id}, 1)" class="w-4 h-4 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer">+</button>
+                </div>
               </div>
 
-              <div class="flex items-center gap-2">
-                <div class="flex items-center gap-1 text-[11px]" title="Position Initial Entry Price">
-                  <span class="text-slate-400 font-bold">Entry: ₹</span>
-                  <input type="number" step="0.5" value="${l.price}" onchange="updateStrategyLeg(${l.id}, 'price', this.value)" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-white text-right font-bold">
+              <!-- Right: Entry Price, Live CMP, Live MTM P&L, Delete -->
+              <div class="flex items-center gap-2 flex-wrap">
+                <!-- Entry Price Input -->
+                <div class="flex items-center gap-1 text-[11px] bg-slate-950 border border-slate-800 rounded-lg px-2 py-0.5" title="Initial Entry Price">
+                  <span class="text-slate-400 font-bold">Entry:</span>
+                  <span class="text-slate-400 font-bold">₹</span>
+                  <input type="number" step="0.5" value="${l.price}" onchange="updateStrategyLeg(${l.id}, 'price', this.value)" class="w-16 bg-transparent text-xs text-white text-right font-bold focus:outline-none">
                 </div>
+
+                <!-- Live CMP & Floating P&L -->
                 ${liveCmp > 0 ? `
-                  <div class="hidden sm:flex items-center gap-1 text-[10px] font-mono text-slate-400" title="Live Market Price (LTP / CMP)">
-                    <span>CMP:</span>
-                    <b class="text-cyan-300">₹${liveCmp.toFixed(1)}</b>
+                  <div class="flex items-center gap-1.5 text-[11px] font-mono bg-slate-950 border border-slate-800 rounded-lg px-2 py-0.5" title="Live Market Price & Floating MTM">
+                    <span class="text-slate-400">CMP:</span>
+                    <b class="text-cyan-300 font-bold">₹${liveCmp.toFixed(1)}</b>
+                    ${!hasExit ? `
+                      <span class="text-[10px] font-bold ${isMtmProfit ? 'text-emerald-400' : 'text-rose-400'}">
+                        (${isMtmProfit ? '+' : ''}₹${Math.round(unrealizedPnl).toLocaleString('en-IN')})
+                      </span>
+                    ` : ''}
                   </div>
                 ` : ''}
-                <div class="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5">
-                  <button onclick="changeStrategyLegLots(${l.id}, -1)" class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer" title="Decrease 1 Lot">-</button>
-                  <span class="text-xs font-mono font-bold text-white px-1 whitespace-nowrap">${Math.round(l.qty / NIFTY_LOT_SIZE)}L <span class="text-[10px] text-slate-400 font-normal">(${l.qty})</span></span>
-                  <button onclick="changeStrategyLegLots(${l.id}, 1)" class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer" title="Increase 1 Lot">+</button>
-                </div>
-                ${hasExit ? `
-                  <button onclick="updateLegExitPrice(${l.id}, '')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition cursor-pointer" title="Leg Exited. Click to Re-Open.">
-                    🏁 Exited @ ₹${l.exitPrice}
-                  </button>
-                ` : `
-                  <button onclick="quickExitLegAtCmp(${l.id})" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-rose-950/70 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-700/60 transition cursor-pointer" title="Square off / Exit leg at current market price (₹${liveCmp.toFixed(1)})">
-                    Exit Leg
-                  </button>
-                `}
-                <button onclick="toggleLegSlDrawer(${l.id})" class="px-2 py-0.5 rounded text-[10px] font-bold ${hasSlOrTarget ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700'} transition flex items-center gap-1 cursor-pointer" title="Configure Manual Exit Price, Stop Loss & Target">
-                  <span>🎯 SL/Tgt</span>
-                  ${hasExit ? '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>' : ''}
-                </button>
-                <button onclick="deleteStrategyLeg(${l.id})" class="p-1 rounded bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 transition cursor-pointer" title="Delete Leg">
+
+                <!-- Delete Leg Button -->
+                <button onclick="deleteStrategyLeg(${l.id})" class="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 transition cursor-pointer text-xs" title="Delete Leg">
                   ✕
                 </button>
               </div>
             </div>
 
-            <!-- Opstra Leg Greeks Sub-Row & IV Adjuster -->
-            <div class="w-full flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1 mt-1 border-t border-slate-800/60">
-              <div class="flex items-center gap-2">
-                <span>Δ: <b class="${legDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${legDelta >= 0 ? '+' : ''}${legDelta.toFixed(2)}</b></span>
-                <span>Θ: <b class="${legTheta >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${legTheta >= 0 ? '+' : ''}₹${Math.round(legTheta)}/d</b></span>
-                <span>V: <b class="text-cyan-400">₹${Math.round(legVega)}/%</b></span>
+            <!-- ROW 2: OPSTRA GREEKS & IV ADJUSTER -->
+            <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 px-1 pt-1 border-t border-slate-800/60">
+              <div class="flex items-center gap-3">
+                <span>Δ: <b class="${legDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">${legDelta >= 0 ? '+' : ''}${legDelta.toFixed(2)}</b></span>
+                <span>Θ: <b class="${legTheta >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">${legTheta >= 0 ? '+' : ''}₹${Math.round(legTheta)}/d</b></span>
+                <span>V: <b class="text-cyan-400 font-bold">₹${Math.round(legVega)}/%</b></span>
               </div>
               <div class="flex items-center gap-1">
-                <span>IV:</span>
+                <span class="text-[10px] text-slate-400">Leg IV:</span>
                 <input type="number" step="0.5" min="1" max="100" value="${(Number(l.iv) || 14).toFixed(1)}" onchange="updateStrategyLegIv(${l.id}, this.value)" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.2 text-[10px] text-white text-right" title="Tweak leg IV">
-                <span>%</span>
+                <span class="text-[10px] text-slate-400">%</span>
               </div>
             </div>
 
-            <!-- Stop Loss, Target & Manual Exit Price Config Drawer -->
-            ${(l.showSlTarget || hasSlOrTarget) ? `
-              <div class="mt-2 pt-2 border-t border-slate-800/80 bg-slate-950/70 rounded-lg p-2.5 space-y-2 text-[11px] font-mono">
-                <!-- Exit Price Manual Edit Row -->
-                <div class="flex flex-wrap items-center justify-between gap-1.5 bg-slate-900/90 border border-slate-800 rounded p-1.5">
-                  <div class="flex flex-wrap items-center gap-1.5">
-                    <span class="text-[10px] font-bold text-amber-300 uppercase">Exit Price:</span>
-                    <div class="flex items-center gap-0.5">
-                      <span class="text-slate-400">₹</span>
-                      <input type="number" step="0.5" placeholder="Open (₹0)" value="${hasExit ? l.exitPrice : ''}" onchange="updateLegExitPrice(${l.id}, this.value)" class="w-20 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-xs text-white text-right font-bold focus:border-cyan-400">
-                    </div>
-                    <button onclick="quickExitLegAtCmp(${l.id})" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition cursor-pointer" title="Auto-fill latest LTP / CMP as exit price">
-                      ⚡ Exit @ CMP (${liveCmp > 0 ? ('₹' + liveCmp.toFixed(1)) : 'Live'})
-                    </button>
-                    ${hasExit ? `<button onclick="updateLegExitPrice(${l.id}, '')" class="text-[9px] text-rose-400 hover:underline px-1 cursor-pointer" title="Re-open leg back to floating live market prices">↺ Re-open</button>` : ''}
+            <!-- ROW 3: DEDICATED ADJUSTMENT BAR: EXIT, TARGET & STOP LOSS (DIRECTLY VISIBLE ON EVERY STRIKE) -->
+            <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 space-y-2 text-xs font-mono">
+              
+              <!-- SUB-ROW A: EXIT & REALIZED P&L CONTROLS -->
+              <div class="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-slate-800/70">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="text-[10px] font-bold text-amber-300 uppercase tracking-wider">Exit Price:</span>
+                  <div class="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5">
+                    <span class="text-slate-400 font-bold">₹</span>
+                    <input type="number" step="0.5" placeholder="Open (₹0)" value="${hasExit ? l.exitPrice : ''}" onchange="updateLegExitPrice(${l.id}, this.value)" class="w-20 bg-transparent text-xs text-white text-right font-bold focus:outline-none" title="Enter manual exit price">
                   </div>
-                  <div>
-                    ${exitPnlBadge}
+                  ${!hasExit ? `
+                    <button onclick="quickExitLegAtCmp(${l.id})" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition cursor-pointer flex items-center gap-1 shadow-sm" title="Instant 1-Click Exit at CMP">
+                      <span>⚡ Exit @ CMP (${liveCmp > 0 ? ('₹' + liveCmp.toFixed(1)) : 'Live'})</span>
+                    </button>
+                  ` : `
+                    <button onclick="updateLegExitPrice(${l.id}, '')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-rose-300 border border-slate-700 hover:underline transition cursor-pointer" title="Re-open leg back to active floating market prices">
+                      ↺ Re-open Leg
+                    </button>
+                  `}
+                </div>
+
+                <!-- Realized P&L Badge if Exited -->
+                <div>
+                  ${hasExit ? exitPnlBadge : '<span class="text-[10px] text-emerald-400 font-semibold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">● Position Open</span>'}
+                </div>
+              </div>
+
+              <!-- SUB-ROW B: DUAL TARGET & STOP LOSS CONTROLS -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <!-- TARGET MODULE -->
+                <div class="bg-slate-900/90 border border-emerald-500/30 rounded-lg p-2 space-y-1.5">
+                  <div class="flex items-center justify-between text-[10px]">
+                    <span class="text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <span>🎯 Target</span>
+                    </span>
+                    <div class="flex items-center gap-1">
+                      <button onclick="applyLegPresetTgt(${l.id}, ${isBuy ? 30 : 50})" class="px-1.5 py-0.5 rounded bg-emerald-950 hover:bg-emerald-900 text-emerald-300 text-[9px] border border-emerald-800/60 font-bold cursor-pointer transition">${isBuy ? '+30%' : '50%'}</button>
+                      <button onclick="applyLegPresetTgt(${l.id}, ${isBuy ? 50 : 70})" class="px-1.5 py-0.5 rounded bg-emerald-950 hover:bg-emerald-900 text-emerald-300 text-[9px] border border-emerald-800/60 font-bold cursor-pointer transition">${isBuy ? '+50%' : '70%'}</button>
+                      <button onclick="applyLegPresetTgt(${l.id}, ${isBuy ? 80 : 80})" class="px-1.5 py-0.5 rounded bg-emerald-950 hover:bg-emerald-900 text-emerald-300 text-[9px] border border-emerald-800/60 font-bold cursor-pointer transition">${isBuy ? '+80%' : '80%'}</button>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-1 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 flex-1">
+                      <span class="text-[10px] text-slate-400">₹</span>
+                      <input type="number" id="leg-tgt-px-${l.id}" step="0.5" placeholder="Tgt Price" value="${(l.targetPrice !== null && l.targetPrice !== undefined) ? l.targetPrice : ''}" oninput="updateLegTargetPrice(${l.id}, this.value)" class="w-full bg-transparent text-xs text-emerald-300 text-right font-bold focus:outline-none">
+                    </div>
+                    <div class="flex items-center gap-1 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 w-20">
+                      <input type="number" id="leg-tgt-pct-${l.id}" step="5" placeholder="Tgt" value="${(l.targetPct !== null && l.targetPct !== undefined) ? l.targetPct : ''}" oninput="updateLegTargetPct(${l.id}, this.value)" class="w-full bg-transparent text-xs text-emerald-300 text-right font-bold focus:outline-none">
+                      <span class="text-[10px] text-slate-400">%</span>
+                    </div>
                   </div>
                 </div>
 
-                <!-- Stop Loss & Target Dual Controls -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <!-- Target Setting -->
-                  <div class="bg-slate-900/90 border border-emerald-500/30 rounded p-1.5 space-y-1">
-                    <div class="flex items-center justify-between text-[10px]">
-                      <span class="text-emerald-400 font-bold uppercase">🎯 Target</span>
-                      <div class="flex items-center gap-1">
-                        <button onclick="applyLegPresetTgt(${l.id}, ${isBuy ? 30 : 50})" class="px-1 py-0.2 rounded bg-emerald-950 hover:bg-emerald-900 text-emerald-300 text-[9px] border border-emerald-800/50 cursor-pointer">${isBuy ? '+30%' : '50%'}</button>
-                        <button onclick="applyLegPresetTgt(${l.id}, ${isBuy ? 50 : 70})" class="px-1 py-0.2 rounded bg-emerald-950 hover:bg-emerald-900 text-emerald-300 text-[9px] border border-emerald-800/50 cursor-pointer">${isBuy ? '+50%' : '70%'}</button>
-                        <button onclick="applyLegPresetTgt(${l.id}, ${isBuy ? 100 : 80})" class="px-1 py-0.2 rounded bg-emerald-950 hover:bg-emerald-900 text-emerald-300 text-[9px] border border-emerald-800/50 cursor-pointer">${isBuy ? '+100%' : '80%'}</button>
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                      <div class="flex items-center gap-0.5 text-[10px] text-slate-400">
-                        <span>₹</span>
-                        <input type="number" id="leg-tgt-px-${l.id}" step="0.5" placeholder="₹ Tgt" value="${(l.targetPrice !== null && l.targetPrice !== undefined) ? l.targetPrice : ''}" oninput="updateLegTargetPrice(${l.id}, this.value)" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-emerald-300 text-right font-bold">
-                      </div>
-                      <div class="flex items-center gap-0.5 text-[10px] text-slate-400">
-                        <input type="number" id="leg-tgt-pct-${l.id}" step="5" placeholder="%" value="${(l.targetPct !== null && l.targetPct !== undefined) ? l.targetPct : ''}" oninput="updateLegTargetPct(${l.id}, this.value)" class="w-14 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-emerald-300 text-right font-bold">
-                        <span>%</span>
-                      </div>
+                <!-- STOP LOSS MODULE -->
+                <div class="bg-slate-900/90 border border-rose-500/30 rounded-lg p-2 space-y-1.5">
+                  <div class="flex items-center justify-between text-[10px]">
+                    <span class="text-rose-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <span>🛑 Stop Loss</span>
+                    </span>
+                    <div class="flex items-center gap-1">
+                      <button onclick="applyLegPresetSl(${l.id}, 30)" class="px-1.5 py-0.5 rounded bg-rose-950 hover:bg-rose-900 text-rose-300 text-[9px] border border-rose-800/60 font-bold cursor-pointer transition">30%</button>
+                      <button onclick="applyLegPresetSl(${l.id}, 50)" class="px-1.5 py-0.5 rounded bg-rose-950 hover:bg-rose-900 text-rose-300 text-[9px] border border-rose-800/60 font-bold cursor-pointer transition">50%</button>
+                      <button onclick="applyLegPresetSl(${l.id}, 100)" class="px-1.5 py-0.5 rounded bg-rose-950 hover:bg-rose-900 text-rose-300 text-[9px] border border-rose-800/60 font-bold cursor-pointer transition">100%</button>
                     </div>
                   </div>
-
-                  <!-- Stop Loss Setting -->
-                  <div class="bg-slate-900/90 border border-rose-500/30 rounded p-1.5 space-y-1">
-                    <div class="flex items-center justify-between text-[10px]">
-                      <span class="text-rose-400 font-bold uppercase">🛑 Stop Loss</span>
-                      <div class="flex items-center gap-1">
-                        <button onclick="applyLegPresetSl(${l.id}, ${isBuy ? 20 : 30})" class="px-1 py-0.2 rounded bg-rose-950 hover:bg-rose-900 text-rose-300 text-[9px] border border-rose-800/50 cursor-pointer">${isBuy ? '-20%' : '30%'}</button>
-                        <button onclick="applyLegPresetSl(${l.id}, ${isBuy ? 30 : 50})" class="px-1 py-0.2 rounded bg-rose-950 hover:bg-rose-900 text-rose-300 text-[9px] border border-rose-800/50 cursor-pointer">${isBuy ? '-30%' : '50%'}</button>
-                        <button onclick="applyLegPresetSl(${l.id}, ${isBuy ? 50 : 100})" class="px-1 py-0.2 rounded bg-rose-950 hover:bg-rose-900 text-rose-300 text-[9px] border border-rose-800/50 cursor-pointer">${isBuy ? '-50%' : '100%'}</button>
-                      </div>
+                  <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-1 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 flex-1">
+                      <span class="text-[10px] text-slate-400">₹</span>
+                      <input type="number" id="leg-sl-px-${l.id}" step="0.5" placeholder="SL Price" value="${(l.slPrice !== null && l.slPrice !== undefined) ? l.slPrice : ''}" oninput="updateLegSlPrice(${l.id}, this.value)" class="w-full bg-transparent text-xs text-rose-300 text-right font-bold focus:outline-none">
                     </div>
-                    <div class="flex items-center gap-1.5">
-                      <div class="flex items-center gap-0.5 text-[10px] text-slate-400">
-                        <span>₹</span>
-                        <input type="number" id="leg-sl-px-${l.id}" step="0.5" placeholder="₹ SL" value="${(l.slPrice !== null && l.slPrice !== undefined) ? l.slPrice : ''}" oninput="updateLegSlPrice(${l.id}, this.value)" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-rose-300 text-right font-bold">
-                      </div>
-                      <div class="flex items-center gap-0.5 text-[10px] text-slate-400">
-                        <input type="number" id="leg-sl-pct-${l.id}" step="5" placeholder="%" value="${(l.slPct !== null && l.slPct !== undefined) ? l.slPct : ''}" oninput="updateLegSlPct(${l.id}, this.value)" class="w-14 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-rose-300 text-right font-bold">
-                        <span>%</span>
-                      </div>
+                    <div class="flex items-center gap-1 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 w-20">
+                      <input type="number" id="leg-sl-pct-${l.id}" step="5" placeholder="SL" value="${(l.slPct !== null && l.slPct !== undefined) ? l.slPct : ''}" oninput="updateLegSlPct(${l.id}, this.value)" class="w-full bg-transparent text-xs text-rose-300 text-right font-bold focus:outline-none">
+                      <span class="text-[10px] text-slate-400">%</span>
                     </div>
                   </div>
                 </div>
               </div>
-            ` : ''}
+
+            </div>
           </div>
         `;
       }).join('');
     }
-
-    function applyStrategyPreset(preset) {
-      const active = (selectedOptionsExpiryType === 'monthly')
-        ? (niftyOptionsChainCache?.monthly || {})
-        : (niftyOptionsChainCache?.weekly || {});
-      const spot = active.spot_price || optionsPortfolioCache?.spot_price || niftyOptionsChainCache?.spot_price || 0;
-      const atm = active.atm_strike || (Math.round(spot / 50) * 50);
-      const strikes = (active.all_strikes && active.all_strikes.length > 0) ? active.all_strikes : (active.strikes || []);
-
-      const getStrikeLtp = (k, type) => {
-        const found = strikes.find(s => s.strike === k);
-        if (found) {
-          if (type === 'CE') return { price: found.ce_ltp || 80, iv: found.ce_iv || 13.5 };
-          return { price: found.pe_ltp || 80, iv: found.pe_iv || 13.5 };
-        }
-        const dist = Math.abs(k - spot);
-        const est = Math.max(10, 130 - (dist * 0.45));
-        return { price: Math.round(est * 10) / 10, iv: 13.5 };
-      };
-
-      strategyLegs = [];
-      const stratNameInput = document.getElementById('strat-name-input');
-
-      if (preset === 'AUTO') {
-        const comp = niftyPredictionsCache?.composite_score || 0;
-        const pcr = active.pcr?.near_atm_pcr || 1.0;
-        if (comp < -5 || pcr <= 0.85) {
-          if (stratNameInput) stratNameInput.value = "Bear Call Credit Spread";
-          const sellC = getStrikeLtp(atm + 100, 'CE');
-          const buyC = getStrikeLtp(atm + 300, 'CE');
-          strategyLegs.push({ id: 1, strike: atm + 100, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sellC.price, iv: sellC.iv });
-          strategyLegs.push({ id: 2, strike: atm + 300, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: buyC.price, iv: buyC.iv });
-          showToast(`⚡ Auto-Picked BEAR CALL CREDIT SPREAD (Score ${comp.toFixed(1)}, PCR ${pcr.toFixed(2)})`, 'info');
-        } else if (comp > 5 || pcr >= 1.15) {
-          if (stratNameInput) stratNameInput.value = "Bull Put Credit Spread";
-          const sellP = getStrikeLtp(atm - 100, 'PE');
-          const buyP = getStrikeLtp(atm - 300, 'PE');
-          strategyLegs.push({ id: 1, strike: atm - 100, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sellP.price, iv: sellP.iv });
-          strategyLegs.push({ id: 2, strike: atm - 300, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: buyP.price, iv: buyP.iv });
-          showToast(`⚡ Auto-Picked BULL PUT CREDIT SPREAD (Score ${comp.toFixed(1)}, PCR ${pcr.toFixed(2)})`, 'info');
-        } else {
-          if (stratNameInput) stratNameInput.value = "Range-Bound Iron Condor";
-          const sC = getStrikeLtp(atm + 200, 'CE');
-          const bC = getStrikeLtp(atm + 400, 'CE');
-          const sP = getStrikeLtp(atm - 200, 'PE');
-          const bP = getStrikeLtp(atm - 400, 'PE');
-          strategyLegs.push({ id: 1, strike: atm + 200, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sC.price, iv: sC.iv });
-          strategyLegs.push({ id: 2, strike: atm + 400, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bC.price, iv: bC.iv });
-          strategyLegs.push({ id: 3, strike: atm - 200, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sP.price, iv: sP.iv });
-          strategyLegs.push({ id: 4, strike: atm - 400, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bP.price, iv: bP.iv });
-          showToast(`⚡ Auto-Picked RANGE-BOUND IRON CONDOR (Score ${comp.toFixed(1)}, PCR ${pcr.toFixed(2)})`, 'info');
-        }
-      } else if (preset === 'BULL_CALL') {
-        if (stratNameInput) stratNameInput.value = "Bull Call Spread";
-        const b = getStrikeLtp(atm, 'CE');
-        const s = getStrikeLtp(atm + 200, 'CE');
-        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: b.price, iv: b.iv });
-        strategyLegs.push({ id: 2, strike: atm + 200, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: s.price, iv: s.iv });
-      } else if (preset === 'BULL_PUT_CREDIT') {
-        if (stratNameInput) stratNameInput.value = "Bull Put Credit Spread";
-        const s = getStrikeLtp(atm - 100, 'PE');
-        const b = getStrikeLtp(atm - 300, 'PE');
-        strategyLegs.push({ id: 1, strike: atm - 100, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: s.price, iv: s.iv });
-        strategyLegs.push({ id: 2, strike: atm - 300, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: b.price, iv: b.iv });
-      } else if (preset === 'LONG_CALL') {
-        if (stratNameInput) stratNameInput.value = "Long Call";
-        const b = getStrikeLtp(atm, 'CE');
-        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: b.price, iv: b.iv });
-      } else if (preset === 'CALL_RATIO_BACKSPREAD') {
-        if (stratNameInput) stratNameInput.value = "Call Ratio Backspread";
-        const s = getStrikeLtp(atm, 'CE');
-        const b = getStrikeLtp(atm + 200, 'CE');
-        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: s.price, iv: s.iv });
-        strategyLegs.push({ id: 2, strike: atm + 200, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE * 2, price: b.price, iv: b.iv });
-      } else if (preset === 'BEAR_PUT') {
-        if (stratNameInput) stratNameInput.value = "Bear Put Spread";
-        const b = getStrikeLtp(atm, 'PE');
-        const s = getStrikeLtp(atm - 200, 'PE');
-        strategyLegs.push({ id: 1, strike: atm, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: b.price, iv: b.iv });
-        strategyLegs.push({ id: 2, strike: atm - 200, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: s.price, iv: s.iv });
-      } else if (preset === 'BEAR_CALL_CREDIT') {
-        if (stratNameInput) stratNameInput.value = "Bear Call Credit Spread";
-        const s = getStrikeLtp(atm + 100, 'CE');
-        const b = getStrikeLtp(atm + 300, 'CE');
-        strategyLegs.push({ id: 1, strike: atm + 100, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: s.price, iv: s.iv });
-        strategyLegs.push({ id: 2, strike: atm + 300, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: b.price, iv: b.iv });
-      } else if (preset === 'LONG_PUT') {
-        if (stratNameInput) stratNameInput.value = "Long Put";
-        const b = getStrikeLtp(atm, 'PE');
-        strategyLegs.push({ id: 1, strike: atm, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: b.price, iv: b.iv });
-      } else if (preset === 'PUT_RATIO_BACKSPREAD') {
-        if (stratNameInput) stratNameInput.value = "Put Ratio Backspread";
-        const s = getStrikeLtp(atm, 'PE');
-        const b = getStrikeLtp(atm - 200, 'PE');
-        strategyLegs.push({ id: 1, strike: atm, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: s.price, iv: s.iv });
-        strategyLegs.push({ id: 2, strike: atm - 200, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE * 2, price: b.price, iv: b.iv });
-      } else if (preset === 'SHORT_STRADDLE') {
-        if (stratNameInput) stratNameInput.value = "Short Straddle";
-        const c = getStrikeLtp(atm, 'CE');
-        const p = getStrikeLtp(atm, 'PE');
-        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: c.price, iv: c.iv });
-        strategyLegs.push({ id: 2, strike: atm, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: p.price, iv: p.iv });
-      } else if (preset === 'SHORT_STRANGLE') {
-        if (stratNameInput) stratNameInput.value = "Short Strangle";
-        const c = getStrikeLtp(atm + 200, 'CE');
-        const p = getStrikeLtp(atm - 200, 'PE');
-        strategyLegs.push({ id: 1, strike: atm + 200, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: c.price, iv: c.iv });
-        strategyLegs.push({ id: 2, strike: atm - 200, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: p.price, iv: p.iv });
-      } else if (preset === 'IRON_CONDOR') {
-        if (stratNameInput) stratNameInput.value = "Iron Condor";
-        const sC = getStrikeLtp(atm + 200, 'CE');
-        const bC = getStrikeLtp(atm + 400, 'CE');
-        const sP = getStrikeLtp(atm - 200, 'PE');
-        const bP = getStrikeLtp(atm - 400, 'PE');
-        strategyLegs.push({ id: 1, strike: atm + 200, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sC.price, iv: sC.iv });
-        strategyLegs.push({ id: 2, strike: atm + 400, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bC.price, iv: bC.iv });
-        strategyLegs.push({ id: 3, strike: atm - 200, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sP.price, iv: sP.iv });
-        strategyLegs.push({ id: 4, strike: atm - 400, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bP.price, iv: bP.iv });
-      } else if (preset === 'IRON_BUTTERFLY') {
-        if (stratNameInput) stratNameInput.value = "Iron Butterfly";
-        const sC = getStrikeLtp(atm, 'CE');
-        const sP = getStrikeLtp(atm, 'PE');
-        const bC = getStrikeLtp(atm + 300, 'CE');
-        const bP = getStrikeLtp(atm - 300, 'PE');
-        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sC.price, iv: sC.iv });
-        strategyLegs.push({ id: 2, strike: atm, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sP.price, iv: sP.iv });
-        strategyLegs.push({ id: 3, strike: atm + 300, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bC.price, iv: bC.iv });
-        strategyLegs.push({ id: 4, strike: atm - 300, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bP.price, iv: bP.iv });
-      } else if (preset === 'JADE_LIZARD') {
-        if (stratNameInput) stratNameInput.value = "Jade Lizard";
-        const sP = getStrikeLtp(atm - 200, 'PE');
-        const sC = getStrikeLtp(atm + 100, 'CE');
-        const bC = getStrikeLtp(atm + 200, 'CE');
-        strategyLegs.push({ id: 1, strike: atm - 200, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sP.price, iv: sP.iv });
-        strategyLegs.push({ id: 2, strike: atm + 100, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sC.price, iv: sC.iv });
-        strategyLegs.push({ id: 3, strike: atm + 200, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bC.price, iv: bC.iv });
-      } else if (preset === 'LONG_STRADDLE') {
-        if (stratNameInput) stratNameInput.value = "Long Straddle";
-        const c = getStrikeLtp(atm, 'CE');
-        const p = getStrikeLtp(atm, 'PE');
-        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: c.price, iv: c.iv });
-        strategyLegs.push({ id: 2, strike: atm, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: p.price, iv: p.iv });
-      } else if (preset === 'LONG_STRANGLE') {
-        if (stratNameInput) stratNameInput.value = "Long Strangle";
-        const c = getStrikeLtp(atm + 200, 'CE');
-        const p = getStrikeLtp(atm - 200, 'PE');
-        strategyLegs.push({ id: 1, strike: atm + 200, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: c.price, iv: c.iv });
-        strategyLegs.push({ id: 2, strike: atm - 200, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: p.price, iv: p.iv });
-      } else if (preset === 'BATMAN') {
-        if (stratNameInput) stratNameInput.value = "Batman Strategy";
-        const sC = getStrikeLtp(atm, 'CE');
-        const sP = getStrikeLtp(atm, 'PE');
-        const bC = getStrikeLtp(atm + 250, 'CE');
-        const bP = getStrikeLtp(atm - 250, 'PE');
-        strategyLegs.push({ id: 1, strike: atm, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sC.price, iv: sC.iv });
-        strategyLegs.push({ id: 2, strike: atm, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sP.price, iv: sP.iv });
-        strategyLegs.push({ id: 3, strike: atm + 250, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bC.price, iv: bC.iv });
-        strategyLegs.push({ id: 4, strike: atm - 250, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bP.price, iv: bP.iv });
-      } else if (preset === 'REVERSE_JADE_LIZARD') {
-        if (stratNameInput) stratNameInput.value = "Reverse Jade Lizard";
-        const sC = getStrikeLtp(atm + 150, 'CE');
-        const sP = getStrikeLtp(atm - 100, 'PE');
-        const bP = getStrikeLtp(atm - 200, 'PE');
-        strategyLegs.push({ id: 1, strike: atm + 150, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sC.price, iv: sC.iv });
-        strategyLegs.push({ id: 2, strike: atm - 100, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sP.price, iv: sP.iv });
-        strategyLegs.push({ id: 3, strike: atm - 200, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bP.price, iv: bP.iv });
-      } else if (preset === 'DOUBLE_PLATEAU') {
-        if (stratNameInput) stratNameInput.value = "Double Plateau";
-        const sC = getStrikeLtp(atm + 100, 'CE');
-        const bC = getStrikeLtp(atm + 200, 'CE');
-        const sP = getStrikeLtp(atm - 100, 'PE');
-        const bP = getStrikeLtp(atm - 200, 'PE');
-        strategyLegs.push({ id: 1, strike: atm + 100, type: 'CE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sC.price, iv: sC.iv });
-        strategyLegs.push({ id: 2, strike: atm + 200, type: 'CE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bC.price, iv: bC.iv });
-        strategyLegs.push({ id: 3, strike: atm - 100, type: 'PE', action: 'SELL', qty: NIFTY_LOT_SIZE, price: sP.price, iv: sP.iv });
-        strategyLegs.push({ id: 4, strike: atm - 200, type: 'PE', action: 'BUY', qty: NIFTY_LOT_SIZE, price: bP.price, iv: bP.iv });
-      }
-
-      renderStrategyLegs();
-      recalculateStrategyMetrics();
-      drawPayoffGraph();
-    }
-
-    let payoffSpotShift = 0;
-    let latestMatrixRows = [];
-
-    function onPayoffTargetDateSlider(val) {
-      payoffTargetDteOffset = Number(val);
-      const lbl1 = document.getElementById('slider-target-days-lbl');
-      const lbl2 = document.getElementById('slider-target-dte-lbl');
-      if (lbl1) lbl1.innerText = val === '0' || val === 0 ? 'Today (T+Now)' : `T+${val} Days`;
-      if (lbl2) lbl2.innerText = `${val} days elapsed`;
-      recalculateStrategyMetrics();
-      drawPayoffGraph();
-    }
-
-    function onPayoffIvShiftSlider(val) {
-      payoffIvShiftPct = Number(val);
-      const lbl = document.getElementById('slider-iv-shift-lbl');
-      if (lbl) lbl.innerText = `${Number(val) >= 0 ? '+' : ''}${Number(val).toFixed(1)}%`;
-      recalculateStrategyMetrics();
-      drawPayoffGraph();
-    }
-
-    function onPayoffSpotShiftSlider(val) {
-      payoffSpotShift = Number(val);
-      const cache = window.niftyOptionsChainCache || (typeof niftyOptionsChainCache !== 'undefined' ? niftyOptionsChainCache : null);
-      const activeChain = (selectedOptionsExpiryType === 'monthly') ? (cache?.monthly || {}) : (cache?.weekly || {});
-      const spot = activeChain.spot_price || optionsPortfolioCache?.spot_price || cache?.spot_price || 24500;
-      const pct = spot > 0 ? ((payoffSpotShift / spot) * 100).toFixed(1) : '0.0';
-      const lbl = document.getElementById('slider-spot-shift-lbl');
-      if (lbl) lbl.innerText = `${payoffSpotShift >= 0 ? '+' : ''}${payoffSpotShift} pts (${payoffSpotShift >= 0 ? '+' : ''}${pct}%)`;
-      recalculateStrategyMetrics();
-      drawPayoffGraph();
-    }
-
-    function resetPayoffSpotShift() {
-      payoffSpotShift = 0;
-      const slider = document.getElementById('slider-spot-shift');
-      if (slider) slider.value = 0;
-      const lbl = document.getElementById('slider-spot-shift-lbl');
-      if (lbl) lbl.innerText = '0 pts (0.0%)';
-      recalculateStrategyMetrics();
-      drawPayoffGraph();
-    }
-
-    function toggleStrategyLegActive(id) {
-      const leg = strategyLegs.find(l => l.id === id);
-      if (leg) {
-        leg.active = (leg.active === false) ? true : false;
-        renderStrategyLegs();
-        recalculateStrategyMetrics();
-        drawPayoffGraph();
-      }
-    }
-
-    function flipStrategyLeg(id) {
-      const leg = strategyLegs.find(l => l.id === id);
-      if (leg) {
-        leg.action = leg.action === 'BUY' ? 'SELL' : 'BUY';
-        renderStrategyLegs();
-        recalculateStrategyMetrics();
-        drawPayoffGraph();
-      }
-    }
-
-    function flipAllStrategyLegs() {
-      if (!strategyLegs || strategyLegs.length === 0) {
-        showToast('No legs to flip', 'warning');
-        return;
-      }
-      strategyLegs.forEach(l => {
-        l.action = l.action === 'BUY' ? 'SELL' : 'BUY';
-      });
-      renderStrategyLegs();
-      recalculateStrategyMetrics();
-      drawPayoffGraph();
-      showToast('Flipped strategy (Buy ↔ Sell on all legs)', 'info');
-    }
-
     function toggleAllStrategyLegs() {
       if (!strategyLegs || strategyLegs.length === 0) return;
       const anyInactive = strategyLegs.some(l => l.active === false);
