@@ -13629,8 +13629,48 @@
     let strategyLegs = [];
     let payoffTargetDteOffset = 0; // Days elapsed from today
     let payoffIvShiftPct = 0; // IV shift in % (-20% to +20%)
+    let payoffSpotShift = 0; // Target spot shift in points
     let latestPayoffCurveData = null;
     let payoffCanvasHoverX = null;
+
+    function onPayoffTargetDateSlider(val) {
+      payoffTargetDteOffset = parseFloat(val) || 0;
+      const daysLbl = document.getElementById('slider-target-days-lbl');
+      const dteLbl = document.getElementById('slider-target-dte-lbl');
+      if (daysLbl) {
+        daysLbl.innerText = payoffTargetDteOffset === 0 ? 'Today (T+Now)' : `T+${payoffTargetDteOffset}d`;
+      }
+      if (dteLbl) {
+        dteLbl.innerText = `${payoffTargetDteOffset} days elapsed`;
+      }
+      recalculateStrategyMetrics();
+    }
+
+    function onPayoffIvShiftSlider(val) {
+      payoffIvShiftPct = parseFloat(val) || 0;
+      const lbl = document.getElementById('slider-iv-shift-lbl');
+      if (lbl) {
+        lbl.innerText = `${payoffIvShiftPct >= 0 ? '+' : ''}${payoffIvShiftPct.toFixed(1)}%`;
+      }
+      recalculateStrategyMetrics();
+    }
+
+    function onPayoffSpotShiftSlider(val) {
+      payoffSpotShift = parseFloat(val) || 0;
+      const lbl = document.getElementById('slider-spot-shift-lbl');
+      if (lbl) {
+        const spot = window.latestPayoffCurveData?.spot || 22600;
+        const pct = spot > 0 ? (payoffSpotShift / spot) * 100 : 0;
+        lbl.innerText = `${payoffSpotShift >= 0 ? '+' : ''}${Math.round(payoffSpotShift)} pts (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`;
+      }
+      recalculateStrategyMetrics();
+    }
+
+    function resetPayoffSpotShift() {
+      const slider = document.getElementById('slider-spot-shift');
+      if (slider) slider.value = 0;
+      onPayoffSpotShiftSlider(0);
+    }
 
     // Standard Normal CDF approximation (Hart's Abramowitz & Stegun erf formula)
     function normalCdf(x) {
