@@ -2440,6 +2440,16 @@ class NiftyAnalyticsEngine:
             dashboard_reason = f"Market is closed. No intraday option snapshots recorded for session date {session_date}."
 
         # Generate Real-Time Dynamic Analysis from Live Spot & Options Depth
+        first_snap = first if first else None
+        spot_open_ref = float(first_snap.get("spot_price") or spot_p) if first_snap else spot_p
+
+        atm_iv = float(
+            w_chain.get("volatility_and_gex", {}).get("atm_iv")
+            or w_chain.get("volatility_and_sentiment", {}).get("atm_iv")
+            or latest.get("atm_iv")
+            or 13.5
+        )
+
         vwap = 0.0
         try:
             from engines.intraday_analytics_engine import intraday_analytics_engine
