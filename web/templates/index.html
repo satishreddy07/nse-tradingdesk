@@ -18837,9 +18837,10 @@
       const sumRes = results[0];
       const posRes = results[1];
       const sigRes = needSignals ? results[2] : null;
+      let sum = null;
 
       if (sumRes.ok) {
-        const sum = await sumRes.json();
+        sum = await sumRes.json();
         const st = sum.stats || {};
         const pnl = st.total_realized_pnl || 0;
         const unPnl = st.unrealized_pnl || 0;
