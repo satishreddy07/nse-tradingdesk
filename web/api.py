@@ -381,6 +381,8 @@ def get_portfolio_summary(portfolio_type: str):
             "passing_criteria_count": p1_state.get("passing_criteria_count") or chartink_cnt,
             "chartink_fetched_count": chartink_cnt,
             "universe_size": p1_state.get("universe_size") or sig_count,
+            "filtered_illiquid_count": max(0, int((p1_state.get("passing_criteria_count") or chartink_cnt) - (p1_state.get("universe_size") or sig_count))),
+            "total_avoided_count": int((p1_state.get("avoid_count") or c_avoid) + max(0, int((p1_state.get("passing_criteria_count") or chartink_cnt) - (p1_state.get("universe_size") or sig_count)))),
             "cache_hits_count": p1_state.get("cache_hits_count", 0),
             "gap_filled_count": p1_state.get("gap_filled_count", 0),
             "full_downloads_count": p1_state.get("full_downloads_count", 0),

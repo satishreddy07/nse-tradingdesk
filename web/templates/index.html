@@ -548,7 +548,7 @@
               <span>🎯 Passing Screener</span>
             </div>
             <div id="p1-summary-passing" class="text-base sm:text-lg font-bold text-cyan-300 mt-1">--</div>
-            <div class="text-[9px] text-slate-500 mt-0.5 truncate">Met Turnover & Criteria</div>
+            <div id="p1-summary-passing-sub" class="text-[9px] text-slate-400 mt-0.5 truncate">Met Turnover Criteria</div>
           </div>
           <div class="bg-slate-950/90 border border-emerald-500/30 p-2.5 rounded-xl bg-emerald-950/15">
             <div class="text-[10px] text-emerald-400 uppercase font-semibold flex items-center justify-between">
@@ -569,7 +569,7 @@
               <span>🛑 AVOID</span>
             </div>
             <div id="p1-summary-avoid" class="text-base sm:text-lg font-bold text-rose-400 mt-1">--</div>
-            <div class="text-[9px] text-rose-500/70 mt-0.5 truncate">Low Score / Trend Failure</div>
+            <div id="p1-summary-avoid-sub" class="text-[9px] text-rose-500/70 mt-0.5 truncate">Low Score / Trend Failure</div>
           </div>
         </div>
 
@@ -19496,16 +19496,29 @@
           totNseEl.innerText = sum.nse_total_count ? Number(sum.nse_total_count).toLocaleString('en-IN') : '2,351';
         }
         const passEl = document.getElementById('p1-summary-passing');
+        const passCnt = sum.passing_criteria_count || sum.chartink_fetched_count || sum.universe_size || 0;
+        const uSize = sum.universe_size || 0;
+        const filteredCnt = sum.filtered_illiquid_count !== undefined ? sum.filtered_illiquid_count : Math.max(0, passCnt - uSize);
         if (passEl) {
-          const passCnt = sum.passing_criteria_count || sum.chartink_fetched_count || sum.universe_size || 0;
           passEl.innerText = Number(passCnt).toLocaleString('en-IN');
+        }
+        const passSub = document.getElementById('p1-summary-passing-sub');
+        if (passSub && uSize > 0) {
+          passSub.innerText = `${uSize} Scored • ${filteredCnt} Filtered`;
         }
         const buyEl = document.getElementById('p1-summary-buynow');
         if (buyEl) buyEl.innerText = sum.buy_now_count !== undefined ? sum.buy_now_count : 0;
         const pbEl = document.getElementById('p1-summary-pullback');
         if (pbEl) pbEl.innerText = sum.pullback_count !== undefined ? sum.pullback_count : ((sum.pre_breakout_count || 0) + (sum.wait_pullback_count || 0));
         const avEl = document.getElementById('p1-summary-avoid');
-        if (avEl) avEl.innerText = sum.avoid_count !== undefined ? sum.avoid_count : (sum.universe_size || 0);
+        const cAv = sum.avoid_count !== undefined ? sum.avoid_count : (sum.universe_size || 0);
+        if (avEl) {
+          avEl.innerHTML = filteredCnt > 0 ? `${cAv} <span class="text-xs font-normal text-rose-300/80">(+${filteredCnt})</span>` : `${cAv}`;
+        }
+        const avSub = document.getElementById('p1-summary-avoid-sub');
+        if (avSub && filteredCnt > 0) {
+          avSub.innerText = `${cAv} Low Score • ${filteredCnt} Illiquid/IPO`;
+        }
       }
 
       if (posRes.ok) {
@@ -19553,16 +19566,28 @@
           totNseEl.innerText = (sum && sum.nse_total_count) ? Number(sum.nse_total_count).toLocaleString('en-IN') : '2,351';
         }
         const passEl = document.getElementById('p1-summary-passing');
+        const passCnt = (sum && (sum.passing_criteria_count || sum.chartink_fetched_count)) || cAll;
+        const uSize = (sum && sum.universe_size) || cAll;
+        const filteredCnt = (sum && sum.filtered_illiquid_count !== undefined) ? sum.filtered_illiquid_count : Math.max(0, passCnt - uSize);
         if (passEl) {
-          const passCnt = (sum && (sum.passing_criteria_count || sum.chartink_fetched_count)) || cAll;
           passEl.innerText = Number(passCnt).toLocaleString('en-IN');
+        }
+        const passSub = document.getElementById('p1-summary-passing-sub');
+        if (passSub && uSize > 0) {
+          passSub.innerText = `${uSize} Scored • ${filteredCnt} Filtered`;
         }
         const buyEl = document.getElementById('p1-summary-buynow');
         if (buyEl) buyEl.innerText = cBuy;
         const pbEl = document.getElementById('p1-summary-pullback');
         if (pbEl) pbEl.innerText = cPullback;
         const avEl = document.getElementById('p1-summary-avoid');
-        if (avEl) avEl.innerText = cAvoid;
+        if (avEl) {
+          avEl.innerHTML = filteredCnt > 0 ? `${cAvoid} <span class="text-xs font-normal text-rose-300/80">(+${filteredCnt})</span>` : `${cAvoid}`;
+        }
+        const avSub = document.getElementById('p1-summary-avoid-sub');
+        if (avSub && filteredCnt > 0) {
+          avSub.innerText = `${cAvoid} Low Score • ${filteredCnt} Illiquid/IPO`;
+        }
 
         const cntPbEl = document.getElementById('cnt-p1-pullback');
         if (cntPbEl) cntPbEl.innerText = `(${cPullback})`;
