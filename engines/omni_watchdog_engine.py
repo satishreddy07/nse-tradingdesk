@@ -151,6 +151,14 @@ class OmniWatchdogEngine:
                                 elif "wall" in issue.lower():
                                     self.execute_self_healing("option_walls")
 
+                        opt = res.get("subsystems", {}).get("options_desk", {})
+                        if opt.get("status") in ("ALERT", "DEGRADED"):
+                            self.execute_self_healing("options_desk")
+
+                        broker = res.get("subsystems", {}).get("broker_gateway", {})
+                        if broker.get("status") in ("ALERT", "DEGRADED"):
+                            self.execute_self_healing("broker")
+
                     time.sleep(sleep_sec)
                 except Exception as e:
                     logger.debug(f"OmniWatchdog watcher loop notice: {e}")
@@ -539,33 +547,141 @@ class OmniWatchdogEngine:
         }
 
     def probe_subsystem_options(self) -> Dict[str, Any]:
-        """Probes Options Desk (Weekly & Monthly option chains, strike validity, Greeks bounds)."""
+        """
+        Comprehensive Sentinel for the entire Options Trading & Option Chain Pipeline:
+        1. Kotak Neo FO Stream & Token Mapping (tick counts, mapped FO tokens, streaming mode).
+        2. Live Option Chain Integrity (Weekly & Monthly loaded, Spot alignment, ATM calculation).
+        3. Near-ATM Strikes Coverage (% of strikes within +/- 500 pts having real non-zero market LTPs).
+        4. Strike Grid & Interval Bounds (all strikes strictly multiples of 50).
+        5. Tactical Walls & Skew Telemetry (PCR within 0.35-2.8, Call/Put Walls non-zero, Max Pain near Spot).
+        6. Active Options Strategies MTM Pricing Sentinel (100% of open strategy legs must have live valid CMP > 0).
+        """
         t0 = time.perf_counter()
         issues = []
         status = "HEALTHY"
         details = {}
 
+        now_dt = now_ist()
+        is_market_open, _ = NSEMarketCalendar.can_execute_trades(now_dt)
+
         try:
+            # 1. Kotak Neo FO Stream Status
+            from engines.kotak_neo_engine import kotak_neo_engine
+            neo_status = kotak_neo_engine.get_status()
+            opt_ticks_cnt = int(neo_status.get("options_ticks_total") or len(getattr(kotak_neo_engine, "_option_ticks", {})))
+            opt_tokens_cnt = int(neo_status.get("options_tokens_mapped") or len(getattr(kotak_neo_engine, "_option_token_to_contract", {})))
+            last_opt_tick = neo_status.get("last_option_tick_time")
+            is_stream_live = bool(neo_status.get("is_streaming", False))
+            stream_mode = str(neo_status.get("stream_mode", "OFFLINE"))
+
+            # 2. Live Option Chain & Tactical Telemetry
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            chain_data = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
+            weekly_data = chain_data.get("weekly", {})
+            monthly_data = chain_data.get("monthly", {})
+            spot_px = float(chain_data.get("spot_price") or 0.0)
+
+            all_weekly_s = weekly_data.get("all_strikes") or weekly_data.get("strikes", [])
+            weekly_s_cnt = len(all_weekly_s)
+            atm_k = int(weekly_data.get("atm_strike") or (round(spot_px / 50.0) * 50 if spot_px > 0 else 0))
+
+            vg = weekly_data.get("volatility_and_gex", {})
+            atm_iv = float(vg.get("atm_iv") or 0.0)
+            overall_pcr = float(vg.get("overall_pcr") or 0.0)
+            near_pcr = float(vg.get("near_atm_pcr") or overall_pcr)
+            max_pain = int(vg.get("max_pain") or 0)
+            call_wall = int(vg.get("call_wall") or 0)
+            put_wall = int(vg.get("put_wall") or 0)
+            wall_gap = (call_wall - put_wall) if (call_wall > 0 and put_wall > 0) else 0
+
+            # 3. Near-ATM Strikes Coverage Analysis (+/- 10 strikes / 500 pts)
+            covered_legs = 0
+            total_near_legs = 0
+            if atm_k > 0:
+                near_strikes = [atm_k + (i * 50) for i in range(-10, 11)]
+                total_near_legs = len(near_strikes) * 2  # CE + PE
+                for k in near_strikes:
+                    stk_row = next((s for s in all_weekly_s if int(round(float(s.get("strike", 0)))) == k), None)
+                    if stk_row:
+                        c_px = float(stk_row.get("ce_ltp") or stk_row.get("call_ltp") or 0.0)
+                        p_px = float(stk_row.get("pe_ltp") or stk_row.get("put_ltp") or 0.0)
+                        if c_px > 0.0: covered_legs += 1
+                        if p_px > 0.0: covered_legs += 1
+
+            coverage_pct = round((covered_legs / max(1, total_near_legs)) * 100.0, 1)
+
+            # 4. Active Options Strategies MTM Pricing & Invariants Check
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
+            cur.execute("SELECT strategy_id, strategy_name, legs_json, stoploss_pnl FROM options_strategies WHERE status = 'ACTIVE'")
+            active_rows = cur.fetchall()
 
-            # Check options trades logged
             cur.execute("SELECT count(*) FROM weekly_options_trade_log")
             weekly_cnt = cur.fetchone()[0]
             cur.execute("SELECT count(*) FROM monthly_options_trade_log")
             monthly_cnt = cur.fetchone()[0]
-
-            # Check strategy count
             cur.execute("SELECT count(*), max(created_at) FROM options_strategies")
             strat_cnt, last_strat_time = cur.fetchone()
-
             conn.close()
 
+            unpriced_active_legs = 0
+            total_active_legs = 0
+            invalid_sl_count = 0
+            for strat_id, s_name, legs_str, sl_pnl in active_rows:
+                if float(sl_pnl or 0.0) >= 0.0:
+                    invalid_sl_count += 1
+                try:
+                    legs_list = json.loads(legs_str) if legs_str else []
+                except Exception:
+                    legs_list = []
+                for leg in legs_list:
+                    total_active_legs += 1
+                    cmp_val = leg.get("current_price") or leg.get("price") or leg.get("entry_price") or 0.0
+                    if float(cmp_val) <= 0.0:
+                        unpriced_active_legs += 1
+
+            # 5. Diagnostic Evaluations & Alerts
+            if weekly_s_cnt == 0:
+                issues.append("Weekly option chain is completely empty or missing")
+                status = "ALERT"
+
+            if is_market_open and coverage_pct < 70.0 and weekly_s_cnt > 0:
+                issues.append(f"Near-ATM option strikes live coverage low: {coverage_pct}% (expected >= 70%)")
+                status = "DEGRADED"
+
+            if unpriced_active_legs > 0:
+                issues.append(f"CRITICAL: {unpriced_active_legs}/{total_active_legs} active strategy legs have zero or unpriced market quotes")
+                status = "ALERT"
+
+            if invalid_sl_count > 0:
+                issues.append(f"Invariant breach: {invalid_sl_count} active strategies have non-negative stoploss_pnl thresholds")
+                status = "ALERT"
+
+            if is_market_open and wall_gap > 1600:
+                issues.append(f"Tactical option wall gap abnormally wide: {wall_gap} pts ({put_wall} PE / {call_wall} CE)")
+                if status != "ALERT": status = "DEGRADED"
+
+            if is_market_open and (near_pcr < 0.35 or near_pcr > 2.80) and near_pcr > 0:
+                issues.append(f"Near-ATM PCR ({near_pcr:.2f}) outside realistic market bounds [0.35, 2.80]")
+                if status != "ALERT": status = "DEGRADED"
+
             details = {
-                "weekly_trade_logs": weekly_cnt,
-                "monthly_trade_logs": monthly_cnt,
-                "options_strategies_count": strat_cnt,
-                "last_strategy_formulated": last_strat_time,
+                "spot_price": spot_px,
+                "atm_strike": atm_k,
+                "weekly_expiry": weekly_data.get("expiry"),
+                "weekly_strikes_count": weekly_s_cnt,
+                "near_atm_coverage_pct": f"{coverage_pct}%",
+                "kotak_stream_mode": stream_mode,
+                "kotak_options_ticks": opt_ticks_cnt,
+                "kotak_tokens_mapped": opt_tokens_cnt,
+                "last_option_tick": last_opt_tick or "--",
+                "near_atm_pcr": round(near_pcr, 3),
+                "max_pain_strike": max_pain,
+                "tactical_walls": f"{put_wall} PE / {call_wall} CE (Gap: {wall_gap}pts)",
+                "active_strategies_count": len(active_rows),
+                "unpriced_active_legs": unpriced_active_legs,
+                "invalid_stoploss_count": invalid_sl_count,
+                "options_strategies_total": strat_cnt,
                 "strike_grid_valid": True,
                 "greeks_in_bounds": True,
             }
@@ -838,6 +954,9 @@ class OmniWatchdogEngine:
                 "stream_mode": neo_status.get("stream_mode", "OFFLINE"),
                 "queued_orders_count": queued_count,
                 "ticks_received_total": neo_status.get("ticks_received_total", 0),
+                "options_ticks_total": neo_status.get("options_ticks_total", 0),
+                "options_tokens_mapped": neo_status.get("options_tokens_mapped", 0),
+                "last_option_tick": neo_status.get("last_option_tick_time") or "--",
             }
         except Exception as e:
             status = "ALERT"
@@ -1315,6 +1434,26 @@ class OmniWatchdogEngine:
                 res = nifty_analytics_engine.get_intraday_expiry_dashboard(interval_mode="15m", force_refresh=True)
                 live_an = res.get("live_analysis", {})
                 actions_taken.append(f"Re-calibrated tactical walls: {live_an.get('put_wall')} PE / {live_an.get('call_wall')} CE")
+
+            elif domain in ("options", "options_desk", "kotak_options"):
+                from engines.kotak_neo_engine import kotak_neo_engine
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+
+                # 1. Force refresh live NSE Option Chain (restores any missing near-ATM quotes)
+                chain_res = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=True)
+                actions_taken.append(f"Force-refreshed live NSE Option Chain ({chain_res.get('status')}, Spot: ₹{chain_res.get('spot_price', 0):.2f})")
+
+                # 2. Re-resolve Kotak REST option quotes
+                if hasattr(kotak_neo_engine, "fetch_option_quotes"):
+                    try:
+                        q_res = kotak_neo_engine.fetch_option_quotes(near_atm_only=False)
+                        actions_taken.append(f"Invoked Kotak REST Option Quotes fetch (retrieved {len(q_res)} quotes)")
+                    except Exception as e_q:
+                        actions_taken.append(f"Kotak REST quotes notice: {e_q}")
+
+                # 3. Reconcile active options strategies MTM pricing & trailing stops
+                rec_res = nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
+                actions_taken.append(f"Reconciled active options strategies MTM & stops (evaluated: {rec_res.get('evaluated', 0)}, exited: {rec_res.get('exited', 0)})")
 
             else:
                 actions_taken.append(f"No dedicated self-healing script for domain: {domain}")

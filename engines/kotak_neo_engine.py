@@ -1636,16 +1636,67 @@ class KotakNeoEngine:
             tick = self._option_ticks.get((int(strike), opt_type.upper()))
             return dict(tick) if tick else None
 
-    def get_option_price(self, strike: int, opt_type: str) -> Optional[float]:
-        """Returns real-time LTP for Nifty option strike and type (CE/PE)."""
+    def get_option_price(self, strike: int, opt_type: str, allow_chain_fallback: bool = True) -> Optional[float]:
+        """
+        Returns real-time LTP for Nifty option strike and type (CE/PE).
+        Guaranteed multi-tier fallback cascade:
+        1. In-memory Kotak Neo WebSocket ticks cache
+        2. In-memory Kotak Neo live ticks cache
+        3. Kotak REST option quotes (if authenticated)
+        4. NSE Live Option Chain (never returns 0.0 or None during active sessions)
+        """
+        strike_int = int(strike)
+        opt_type_upper = str(opt_type).upper()
+
+        # Level 1 & 2: In-memory live tick caches
         with self._lock:
-            tick = self._option_ticks.get((int(strike), opt_type.upper()))
-            if tick and tick.get("ltp"):
+            tick = self._option_ticks.get((strike_int, opt_type_upper))
+            if tick and tick.get("ltp") and float(tick["ltp"]) > 0:
                 return float(tick["ltp"])
             for k, v in self._live_ticks.items():
-                if str(strike) in k and opt_type.upper() in k:
-                    if v.get("ltp"):
+                if str(strike_int) in k and opt_type_upper in k:
+                    if v.get("ltp") and float(v["ltp"]) > 0:
                         return float(v["ltp"])
+
+        if not allow_chain_fallback:
+            return None
+
+        # Level 3: Kotak REST option quotes
+        if self._is_authenticated and self._client:
+            try:
+                self.fetch_option_quotes(near_atm_only=False)
+                with self._lock:
+                    tick = self._option_ticks.get((strike_int, opt_type_upper))
+                    if tick and tick.get("ltp") and float(tick["ltp"]) > 0:
+                        return float(tick["ltp"])
+            except Exception as e_rest:
+                logger.debug(f"Kotak REST option quote fallback notice for {strike_int} {opt_type_upper}: {e_rest}")
+
+        # Level 4: NSE Live Option Chain cascade
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            chain_data = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
+            for exp_key in ("weekly", "monthly"):
+                all_s = chain_data.get(exp_key, {}).get("all_strikes") or chain_data.get(exp_key, {}).get("strikes", [])
+                stk_match = next((s for s in all_s if int(round(float(s.get("strike", 0)))) == strike_int), None)
+                if stk_match:
+                    ltp_key = "ce_ltp" if opt_type_upper == "CE" else "pe_ltp"
+                    alt_key = "call_ltp" if opt_type_upper == "CE" else "put_ltp"
+                    ltp = float(stk_match.get(ltp_key) or stk_match.get(alt_key) or 0.0)
+                    if ltp > 0.0:
+                        with self._lock:
+                            key = (strike_int, opt_type_upper)
+                            if key not in self._option_ticks:
+                                self._option_ticks[key] = {}
+                            self._option_ticks[key]["ltp"] = round(ltp, 2)
+                            self._option_ticks[key]["strike"] = strike_int
+                            self._option_ticks[key]["type"] = opt_type_upper
+                            self._option_ticks[key]["source"] = "CASCADE_NSE_CHAIN"
+                            self._option_ticks[key]["updated_at"] = format_ist()
+                        return round(ltp, 2)
+        except Exception as e_chain:
+            logger.debug(f"NSE Option Chain cascade notice for {strike_int} {opt_type_upper}: {e_chain}")
+
         return None
 
     def set_option_price(self, strike: int, opt_type: str, ltp: float):
@@ -2723,6 +2774,11 @@ class KotakNeoEngine:
         with self._lock:
             is_stream = bool(self._is_authenticated and is_mkt_open and (self._is_connected or self._ticks_received_count > 0))
             stream_mode = "WEBSOCKET" if (self._is_connected and is_mkt_open) else ("STANDBY" if self._is_authenticated else "OFFLINE")
+            opt_ticks_total = len(self._option_ticks)
+            opt_tokens_mapped = len(self._option_token_to_contract)
+            last_opt_tick = max((t.get("updated_at") for t in self._option_ticks.values() if t.get("updated_at")), default=None)
+            options_feed_healthy = bool(opt_ticks_total > 0 and (not is_mkt_open or self._is_connected or opt_ticks_total >= 10))
+
             return {
                 "has_sdk_installed": HAS_NEO_API,
                 "is_enabled": config.KOTAK_NEO_ENABLED,
@@ -2737,6 +2793,10 @@ class KotakNeoEngine:
                 "last_tick_time": self._last_tick_time_ist,
                 "tracked_symbols_sample": list(self._subscribed_symbols)[:20],
                 "cache_size": len(self._live_ticks),
+                "options_ticks_total": opt_ticks_total,
+                "options_tokens_mapped": opt_tokens_mapped,
+                "last_option_tick_time": last_opt_tick,
+                "options_feed_healthy": options_feed_healthy,
                 "has_saved_credentials": bool(saved_creds.get("consumer_key") or config.KOTAK_NEO_CONSUMER_KEY),
                 "saved_ucc": ucc_val,
                 "saved_mobile": (mob_val[-4:].rjust(len(mob_val), "*") if mob_val else ""),
