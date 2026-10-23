@@ -64,8 +64,9 @@ from engines.us_analytics_engine import us_analytics_engine
 logger = logging.getLogger("NiftyAnalyticsEngine")
 
 
-# Scheduled 15-minute, 30-minute (Institutional Standard), and 50-minute intraday collection slots from 09:30 to 15:30 IST
+# Scheduled 15-minute, 30-minute (Institutional Standard), and 50-minute intraday collection slots from 09:15 to 15:30 IST
 INTRADAY_15M_SLOTS = [
+    ("09:15", "09:15 AM • Market Open & Baseline Positioning"),
     ("09:30", "09:30 AM • Opening Bell & Initial OI Positioning"),
     ("09:45", "09:45 AM • Opening 15m ORB & First Writer Test"),
     ("10:00", "10:00 AM • Institutional Basket Execution"),
@@ -94,6 +95,7 @@ INTRADAY_15M_SLOTS = [
 ]
 
 INTRADAY_30M_SLOTS = [
+    ("09:15", "09:15 AM • Market Open & Baseline Positioning"),
     ("09:30", "09:30 AM • Opening Bell & Initial OI Positioning"),
     ("10:00", "10:00 AM • Opening 30m ORB & Early Writer Flow"),
     ("10:30", "10:30 AM • 1-Hour Initial Balance (IB) High/Low Lock"),
@@ -110,6 +112,7 @@ INTRADAY_30M_SLOTS = [
 ]
 
 INTRADAY_50M_SLOTS = [
+    ("09:15", "09:15 AM • Market Open & Baseline Positioning"),
     ("09:30", "09:30 AM • Opening Bell & Initial OI Positioning"),
     ("10:20", "10:20 AM • Post-Opening Range & First 50m Writer Flow"),
     ("11:10", "11:10 AM • Mid-Morning Institutional OI Buildup"),
@@ -1103,8 +1106,8 @@ class NiftyAnalyticsEngine:
                 min_pain_val = pain
                 max_pain_strike = test_spot
 
-        # 5. Primary & Secondary Call Walls (Resistance) and Put Walls (Support) near Spot (±12 strikes)
-        wall_window = strikes_data[max(0, atm_idx - 25): min(len(strikes_data), atm_idx + 26)]
+        # 5. Tactical Call Walls (Resistance) and Put Walls (Support) near Spot (±10 strikes / ±500 pts)
+        wall_window = strikes_data[max(0, atm_idx - 10): min(len(strikes_data), atm_idx + 11)]
         upside_calls = [s for s in wall_window if s["strike"] >= atm_strike] or wall_window
         downside_puts = [s for s in wall_window if s["strike"] <= atm_strike] or wall_window
 
@@ -1126,6 +1129,12 @@ class NiftyAnalyticsEngine:
         lower_puts = tactical_lower or sorted([s for s in downside_puts if s["strike"] < put_wall_1], key=lambda x: x["pe_oi"], reverse=True)
         put_wall_2 = lower_puts[0]["strike"] if lower_puts else put_wall_1 - 100
         fresh_put_wall = puts_by_chg[0]["strike"] if puts_by_chg else put_wall_1
+
+        # Macro (all-chain) walls for broader structural context
+        all_upside_calls = [s for s in strikes_data if s["strike"] >= atm_strike] or strikes_data
+        all_downside_puts = [s for s in strikes_data if s["strike"] <= atm_strike] or strikes_data
+        macro_call_wall = max(all_upside_calls, key=lambda x: x["ce_oi"])["strike"] if all_upside_calls else call_wall_1
+        macro_put_wall = max(all_downside_puts, key=lambda x: x["pe_oi"])["strike"] if all_downside_puts else put_wall_1
 
         # 6. IV & Volatility Skew (OTM Put IV - OTM Call IV at ±3 strikes from ATM) (F-28)
         atm_ce_iv = atm_row["ce_iv"]
@@ -1224,6 +1233,8 @@ class NiftyAnalyticsEngine:
                 "put_wall_1_oi": put_wall_1_oi,
                 "put_wall_2": put_wall_2,
                 "fresh_put_wall": fresh_put_wall,
+                "macro_call_wall": macro_call_wall,
+                "macro_put_wall": macro_put_wall,
             },
             "volatility_and_gex": {
                 "atm_iv": atm_iv,
@@ -1241,6 +1252,14 @@ class NiftyAnalyticsEngine:
                 "net_near_chg_oi_diff": near_pe_chg - near_ce_chg,
                 "near_ce_chg_total": near_ce_chg,
                 "near_pe_chg_total": near_pe_chg,
+            },
+            "oi_flow": {
+                "net_pe_oi_chg": near_pe_chg,
+                "net_ce_oi_chg": near_ce_chg,
+                "pos_pe_chg": pos_pe_chg,
+                "pos_ce_chg": pos_ce_chg,
+                "chg_oi_pcr": chg_oi_pcr,
+                "active_strikes_count": len(active_slice),
             },
             "totals": {
                 "total_ce_oi": total_ce_oi,
@@ -2000,7 +2019,7 @@ class NiftyAnalyticsEngine:
         dt_now = now_ist()
         is_today = (session_date == dt_now.strftime("%Y-%m-%d"))
         mins_now = dt_now.hour * 60 + dt_now.minute
-        if not snaps and (not is_today or mins_now >= (9 * 60 + 28)):
+        if not snaps and (not is_today or mins_now >= (9 * 60 + 15)):
             oc = self.fetch_and_analyze_option_chain(force_refresh=False)
             if oc.get("status") == "OK":
                 self.capture_intraday_50min_snapshot(sync_cloud=False, interval_mode=interval_mode)
@@ -2130,8 +2149,19 @@ class NiftyAnalyticsEngine:
         put_wall = walls_and_pain.get("put_wall_1") or latest.get("put_wall")
         max_pain = walls_and_pain.get("max_pain") or latest.get("max_pain")
 
-        net_pe_oi_chg = int(w_chain.get("oi_flow", {}).get("net_pe_oi_chg") or latest.get("net_pe_oi_chg") or 0)
-        net_ce_oi_chg = int(w_chain.get("oi_flow", {}).get("net_ce_oi_chg") or latest.get("net_ce_oi_chg") or 0)
+        # Extract live active window ±8 strikes fresh ΔOI directly from strikes or oi_flow / volatility_and_gex
+        if strikes:
+            cur_atm = int(round(spot_p / 50.0) * 50) if spot_p > 0 else 0
+            act_strikes = [s for s in strikes if abs(int(s.get("strike", 0)) - cur_atm) <= 400]
+            if act_strikes:
+                net_pe_oi_chg = sum(int(s.get("pe_chg_oi") or 0) for s in act_strikes)
+                net_ce_oi_chg = sum(int(s.get("ce_chg_oi") or 0) for s in act_strikes)
+            else:
+                net_pe_oi_chg = int(w_chain.get("oi_flow", {}).get("net_pe_oi_chg") or w_chain.get("volatility_and_gex", {}).get("near_pe_chg_total") or latest.get("net_pe_oi_chg") or 0)
+                net_ce_oi_chg = int(w_chain.get("oi_flow", {}).get("net_ce_oi_chg") or w_chain.get("volatility_and_gex", {}).get("near_ce_chg_total") or latest.get("net_ce_oi_chg") or 0)
+        else:
+            net_pe_oi_chg = int(w_chain.get("oi_flow", {}).get("net_pe_oi_chg") or w_chain.get("volatility_and_gex", {}).get("near_pe_chg_total") or latest.get("net_pe_oi_chg") or 0)
+            net_ce_oi_chg = int(w_chain.get("oi_flow", {}).get("net_ce_oi_chg") or w_chain.get("volatility_and_gex", {}).get("near_ce_chg_total") or latest.get("net_ce_oi_chg") or 0)
 
         live_synced_metrics = {
             "spot_price": spot_p,
@@ -2160,11 +2190,9 @@ class NiftyAnalyticsEngine:
         except Exception as mle:
             logger.debug(f"Intraday ML load notice: {mle}")
 
-        dashboard_status = "OK" if latest else "DATA_UNAVAILABLE"
-        if latest:
+        dashboard_status = "OK" if (latest or market_open or w_chain) else "DATA_UNAVAILABLE"
+        if latest or market_open:
             dashboard_reason = None
-        elif market_open:
-            dashboard_reason = "Pre-market session. First intraday option snapshot scheduled at 09:30 AM IST."
         else:
             dashboard_reason = f"Market is closed. No intraday option snapshots recorded for session date {session_date}."
 
@@ -2302,7 +2330,7 @@ class NiftyAnalyticsEngine:
             "reason": dashboard_reason,
             "as_of": format_ist(),
             "session_date": session_date,
-            "expiry_date": latest.get("expiry_date", "--") if latest else "--",
+            "expiry_date": latest.get("expiry_date") or w_chain.get("expiry_date") or w_chain.get("expiry") or "--",
             "interval_mode": interval_mode,
             "interval_rationale": mode_rationale,
             "available_intervals": ["15m", "30m", "50m"],

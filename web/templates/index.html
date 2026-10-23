@@ -10292,18 +10292,18 @@
 
       const expBadge = document.getElementById('intra-expiry-badge');
       if (expBadge) {
-        if ((data.status === 'DATA_UNAVAILABLE' || data.status === 'EMPTY' || !data.latest_snapshot) && data.reason) {
-          expBadge.innerText = `⚡ ${data.reason}`;
+        if (!isMarketOpen && (data.status === 'DATA_UNAVAILABLE' || data.status === 'EMPTY' || !data.latest_snapshot) && data.reason) {
+          expBadge.innerText = \u26a1 ;
         } else {
-          expBadge.innerText = `⚡ Active Weekly Expiry: ${data.expiry_date || latest.expiry_date || '--'} • ${data.snapshots_count || 0} Slots Recorded Today`;
+          expBadge.innerText = \u26a1 Active Weekly Expiry:  \u2022  Slots Recorded Today;
         }
       }
       const sessLbl = document.getElementById('intra-session-date-label');
       if (sessLbl) {
-        if ((data.status === 'DATA_UNAVAILABLE' || data.status === 'EMPTY' || !data.latest_snapshot) && data.reason) {
-          sessLbl.innerText = `Session: ${data.session_date || '--'} • ${data.reason}`;
+        if (!isMarketOpen && (data.status === 'DATA_UNAVAILABLE' || data.status === 'EMPTY' || !data.latest_snapshot) && data.reason) {
+          sessLbl.innerText = Session:  \u2022 ;
         } else {
-          sessLbl.innerText = `Session: ${data.session_date || '--'} • Weekly Expiry: ${data.expiry_date || '--'}`;
+          sessLbl.innerText = Session:  \u2022 Weekly Expiry: ;
         }
       }
 
@@ -10347,16 +10347,17 @@
         pcrSub.innerText = `ATM: ${atmPcrVal.toFixed(2)} | ΔOI PCR: ${chgPcrVal.toFixed(2)}`;
       }
 
+      const liveAn = data.live_analysis || {};
       const wallsEl = document.getElementById('intra-kpi-walls');
       const mpEl = document.getElementById('intra-kpi-maxpain');
-      const putWall = synced.put_wall || latest.put_wall || '--';
-      const callWall = synced.call_wall || latest.call_wall || '--';
-      const maxPain = synced.max_pain || latest.max_pain || '--';
-      if (wallsEl) wallsEl.innerText = `${putWall} PE / ${callWall} CE`;
-      if (mpEl) mpEl.innerText = `Max Pain: ${maxPain} | Fresh: ${meta.fresh_put_wall || '--'}/${meta.fresh_call_wall || '--'}`;
+      const putWall = synced.put_wall || liveAn.put_wall || latest.put_wall || '--';
+      const callWall = synced.call_wall || liveAn.call_wall || latest.call_wall || '--';
+      const maxPain = synced.max_pain || liveAn.max_pain || latest.max_pain || '--';
+      if (wallsEl) wallsEl.innerText = ${putWall} PE /  CE;
+      if (mpEl) mpEl.innerText = Max Pain:  (Live);
 
-      const peChg = Number(synced.net_pe_oi_chg !== undefined ? synced.net_pe_oi_chg : (latest.net_pe_oi_chg || 0));
-      const ceChg = Number(synced.net_ce_oi_chg !== undefined ? synced.net_ce_oi_chg : (latest.net_ce_oi_chg || 0));
+      const peChg = Number(synced.net_pe_oi_chg !== undefined ? synced.net_pe_oi_chg : (liveAn.net_pe_oi_chg !== undefined ? liveAn.net_pe_oi_chg : (latest.net_pe_oi_chg || 0)));
+      const ceChg = Number(synced.net_ce_oi_chg !== undefined ? synced.net_ce_oi_chg : (liveAn.net_ce_oi_chg !== undefined ? liveAn.net_ce_oi_chg : (latest.net_ce_oi_chg || 0)));
       const netFlowLakhs = (peChg - ceChg) / 100000.0;
       const oiFlowEl = document.getElementById('intra-kpi-oiflow');
       const oiFlowSub = document.getElementById('intra-kpi-oiflow-sub');
