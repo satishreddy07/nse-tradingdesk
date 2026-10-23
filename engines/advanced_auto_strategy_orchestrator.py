@@ -37,6 +37,48 @@ class AdvancedAutoStrategyOrchestrator:
     Guarantees strict risk boundaries, zero fake data, and complete ML logging.
     """
 
+    @classmethod
+    def _resolve_live_option_quote(cls, strike: int, opt_type: str, fallback_premium: float) -> float:
+        """
+        Retrieves real executable live market quote for an option strike from:
+        1. Kotak Neo WebSocket ticks / REST quotes (ltp > 0)
+        2. NSE Live Option Chain (weekly/monthly all_strikes)
+        3. Fallback to analytical pricing only if live feeds completely unavailable.
+        """
+        # 1. Kotak Neo Engine
+        try:
+            from engines.kotak_neo_engine import kotak_neo_engine
+            k_price = kotak_neo_engine.get_option_price(strike=int(strike), opt_type=str(opt_type).upper())
+            if k_price and k_price > 0.0:
+                return round(float(k_price), 2)
+
+            ticks = kotak_neo_engine.get_near_atm_option_ticks(strike_range=30)
+            tick_key = f"{int(strike)}_{str(opt_type).upper()}"
+            if tick_key in ticks:
+                t_ltp = float(ticks[tick_key].get("ltp") or 0.0)
+                if t_ltp > 0.0:
+                    return round(t_ltp, 2)
+        except Exception as e:
+            logger.debug(f"Kotak quote fetch notice for {strike} {opt_type}: {e}")
+
+        # 2. NSE Option Chain
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            chain_data = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
+            for exp_key in ("weekly", "monthly"):
+                all_s = chain_data.get(exp_key, {}).get("all_strikes") or chain_data.get(exp_key, {}).get("strikes", [])
+                stk_match = next((s for s in all_s if int(round(float(s.get("strike", 0)))) == int(strike)), None)
+                if stk_match:
+                    ltp_key = "ce_ltp" if opt_type.upper() == "CE" else "pe_ltp"
+                    alt_key = "call_ltp" if opt_type.upper() == "CE" else "put_ltp"
+                    ltp = float(stk_match.get(ltp_key) or stk_match.get(alt_key) or 0.0)
+                    if ltp > 0.0:
+                        return round(ltp, 2)
+        except Exception as e:
+            logger.debug(f"Option chain quote fetch notice for {strike} {opt_type}: {e}")
+
+        return round(float(fallback_premium), 2)
+
     def evaluate_and_deploy_strategy(
         self,
         horizon: str = "INTRADAY",
@@ -143,12 +185,25 @@ class AdvancedAutoStrategyOrchestrator:
 
         strat_id = f"OPT-ADV-{horizon[:4]}-{now_dt.strftime('%Y%m%d%H%M%S%f')}"
 
-        # Initialize leg state machine
+        # Initialize leg state machine with REAL LIVE EXECUTION QUOTES (F-22)
+        calc_net_premium = 0.0
         for l in legs:
+            live_px = self._resolve_live_option_quote(
+                strike=l["strike"],
+                opt_type=l["type"],
+                fallback_premium=l.get("premium", 0.0)
+            )
             l["state"] = "ACTIVE"
-            l["entry_price"] = l["premium"]
-            l["current_price"] = l["premium"]
+            l["entry_price"] = live_px
+            l["price"] = live_px
+            l["premium"] = live_px
+            l["current_price"] = live_px
             l["pnl"] = 0.0
+
+            leg_dir = 1.0 if l["action"].upper() == "SELL" else -1.0
+            calc_net_premium += leg_dir * live_px * int(l.get("qty", lot_size))
+
+        net_credit = round(calc_net_premium, 2)
 
         # Define Targets & Stops
         target_pnl = round(max_profit * 0.75, 2) if max_profit > 0 else 15000.0
