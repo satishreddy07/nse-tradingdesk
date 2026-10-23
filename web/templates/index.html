@@ -13296,7 +13296,8 @@
         { id: 'chain', panel: 'opt-sub-chain', btn: 'opt-tab-btn-chain' },
         { id: 'builder', panel: 'opt-sub-builder', btn: 'opt-tab-btn-builder' },
         { id: 'portfolio', panel: 'opt-sub-portfolio', btn: 'opt-tab-btn-portfolio' },
-        { id: 'intraday_rules', panel: 'opt-sub-intraday-rules', btn: 'opt-tab-btn-intraday-rules' }
+        { id: 'intraday_rules', panel: 'opt-sub-intraday-rules', btn: 'opt-tab-btn-intraday-rules' },
+        { id: 'edge', panel: 'opt-sub-edge', btn: 'opt-tab-btn-edge' }
       ];
 
       tabConfigs.forEach(tc => {
@@ -13336,6 +13337,10 @@
       } else if (tab === 'intraday_rules') {
         setTimeout(() => {
           loadIntradayRulesData();
+        }, 50);
+      } else if (tab === 'edge') {
+        setTimeout(() => {
+          loadOptionsEdgeDesk();
         }, 50);
       }
       if (window.lucide) lucide.createIcons();
