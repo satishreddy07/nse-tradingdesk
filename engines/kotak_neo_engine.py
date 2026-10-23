@@ -2551,16 +2551,22 @@ class KotakNeoEngine:
             return prices
 
         try:
-            res = self._client.quotes(instrument_tokens=tokens, quote_type="all")
+            chunk_size = 40
             items = []
-            if isinstance(res, list):
-                items = res
-            elif isinstance(res, dict) and "data" in res and isinstance(res["data"], list):
-                items = res["data"]
-            elif isinstance(res, dict) and "data" in res and isinstance(res["data"], dict):
-                items = [res["data"]]
-            elif isinstance(res, dict) and any(k in res for k in ("ltp", "iv", "last_traded_price", "close")):
-                items = [res]
+            for i in range(0, len(tokens), chunk_size):
+                chunk = tokens[i : i + chunk_size]
+                try:
+                    res = self._client.quotes(instrument_tokens=chunk, quote_type="all")
+                    if isinstance(res, list):
+                        items.extend(res)
+                    elif isinstance(res, dict) and "data" in res and isinstance(res["data"], list):
+                        items.extend(res["data"])
+                    elif isinstance(res, dict) and "data" in res and isinstance(res["data"], dict):
+                        items.append(res["data"])
+                    elif isinstance(res, dict) and any(k in res for k in ("ltp", "iv", "last_traded_price", "close")):
+                        items.append(res)
+                except Exception as ce:
+                    logger.warning(f"[Kotak Neo] fetch_rest_quotes chunk error: {ce}")
 
             now_str = format_ist()
             ticks_added = 0

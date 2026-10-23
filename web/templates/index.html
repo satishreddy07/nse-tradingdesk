@@ -671,19 +671,31 @@
 
           <!-- Desktop Table / Mobile Cards for Holdings -->
           <div class="overflow-x-auto custom-scroll">
-            <table class="w-full text-left text-xs text-slate-300 min-w-[980px]">
+            <table class="table-fixed w-full text-left text-xs text-slate-300 min-w-[1050px] tabular-nums">
+              <colgroup>
+                <col class="w-[110px]">
+                <col class="w-[110px]">
+                <col class="w-[170px]">
+                <col class="w-[85px]">
+                <col class="w-[100px]">
+                <col class="w-[110px]">
+                <col class="w-[120px]">
+                <col class="w-[80px]">
+                <col class="w-[110px]">
+                <col class="w-[100px]">
+              </colgroup>
               <thead class="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
                 <tr>
-                  <th class="p-3.5">Symbol</th>
-                  <th class="p-3.5">Entry Date & Time (IST)</th>
-                  <th class="p-3.5">Entry / Live LTP & Day Change</th>
-                  <th class="p-3.5">Stop Loss</th>
-                  <th class="p-3.5">T1 (1.5R) / T2 (3.0R)</th>
-                  <th class="p-3.5">Qty / Value</th>
-                  <th class="p-3.5">Unrealized PnL</th>
-                  <th class="p-3.5">R-Multiple</th>
-                  <th class="p-3.5">Cloud Sync Status</th>
-                  <th class="p-3.5 text-right">Action</th>
+                  <th class="p-3.5 w-[110px] overflow-hidden whitespace-nowrap">Symbol</th>
+                  <th class="p-3.5 w-[110px] overflow-hidden whitespace-nowrap">Entry Date & Time (IST)</th>
+                  <th class="p-3.5 w-[170px] overflow-hidden whitespace-nowrap">Entry / Live LTP & Day Change</th>
+                  <th class="p-3.5 w-[85px] overflow-hidden whitespace-nowrap">Stop Loss</th>
+                  <th class="p-3.5 w-[100px] overflow-hidden whitespace-nowrap">T1 (1.5R) / T2 (3.0R)</th>
+                  <th class="p-3.5 w-[110px] overflow-hidden whitespace-nowrap">Qty / Value</th>
+                  <th class="p-3.5 w-[120px] overflow-hidden whitespace-nowrap">Unrealized PnL</th>
+                  <th class="p-3.5 w-[80px] overflow-hidden whitespace-nowrap">R-Multiple</th>
+                  <th class="p-3.5 w-[110px] overflow-hidden whitespace-nowrap">Cloud Sync Status</th>
+                  <th class="p-3.5 text-right w-[100px] overflow-hidden whitespace-nowrap">Action</th>
                 </tr>
               </thead>
               <tbody id="p1-positions-tbody" class="divide-y divide-slate-800/60 font-mono">
@@ -4422,17 +4434,27 @@
 
           <!-- Right Col: Near-ATM 7-Strike Depth Ladder (8 cols) -->
           <div class="lg:col-span-8 overflow-x-auto custom-scroll">
-            <table class="w-full text-left text-xs text-slate-300 font-mono">
+            <table class="table-fixed w-full text-left text-xs text-slate-300 font-mono min-w-[850px] tabular-nums">
+              <colgroup>
+                <col class="w-[130px]">
+                <col class="w-[75px]">
+                <col class="w-[85px]">
+                <col class="w-[85px]">
+                <col class="w-[85px]">
+                <col class="w-[75px]">
+                <col class="w-[130px]">
+                <col class="w-[80px]">
+              </colgroup>
               <thead class="bg-slate-950/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
                 <tr>
-                  <th class="p-2 text-emerald-400">CE Depth (Buy / Sell)</th>
-                  <th class="p-2 text-emerald-400">CE OBI</th>
-                  <th class="p-2 text-emerald-400">CE Micro-Price</th>
-                  <th class="p-2 text-center text-white bg-slate-900 border-x border-slate-800">Strike</th>
-                  <th class="p-2 text-rose-400">PE Micro-Price</th>
-                  <th class="p-2 text-rose-400">PE OBI</th>
-                  <th class="p-2 text-rose-400">PE Depth (Buy / Sell)</th>
-                  <th class="p-2 text-center">5-Depth</th>
+                  <th class="p-2 text-emerald-400 w-[130px] overflow-hidden whitespace-nowrap">CE Depth (Buy / Sell)</th>
+                  <th class="p-2 text-emerald-400 w-[75px] overflow-hidden whitespace-nowrap">CE OBI</th>
+                  <th class="p-2 text-emerald-400 w-[85px] overflow-hidden whitespace-nowrap">CE Micro-Price</th>
+                  <th class="p-2 text-center text-white bg-slate-900 border-x border-slate-800 w-[85px] overflow-hidden whitespace-nowrap">Strike</th>
+                  <th class="p-2 text-rose-400 w-[85px] overflow-hidden whitespace-nowrap">PE Micro-Price</th>
+                  <th class="p-2 text-rose-400 w-[75px] overflow-hidden whitespace-nowrap">PE OBI</th>
+                  <th class="p-2 text-rose-400 w-[130px] overflow-hidden whitespace-nowrap">PE Depth (Buy / Sell)</th>
+                  <th class="p-2 text-center w-[80px] overflow-hidden whitespace-nowrap">5-Depth</th>
                 </tr>
               </thead>
               <tbody id="intra-depth-ladder-tbody" class="divide-y divide-slate-800/60">
@@ -4470,23 +4492,39 @@
           <span class="text-[11px] font-mono text-slate-400">Stored in Single Master File (data/swing_trades.db) • Synced to Telegram Cloud</span>
         </div>
         <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left text-xs text-slate-300 font-mono min-w-[1200px]">
+          <table class="table-fixed w-full text-left text-xs text-slate-300 font-mono min-w-[1300px] tabular-nums">
+            <colgroup>
+              <col class="w-[80px]">
+              <col class="w-[110px]">
+              <col class="w-[90px]">
+              <col class="w-[85px]">
+              <col class="w-[120px]">
+              <col class="w-[90px]">
+              <col class="w-[85px]">
+              <col class="w-[110px]">
+              <col class="w-[95px]">
+              <col class="w-[110px]">
+              <col class="w-[80px]">
+              <col class="w-[110px]">
+              <col class="w-[95px]">
+              <col class="w-[130px]">
+            </colgroup>
             <thead class="bg-slate-950/70 text-[10px] sm:text-[11px] uppercase text-slate-400 border-b border-slate-800">
               <tr>
-                <th id="intra-th-slot" class="p-3">30m Slot</th>
-                <th class="p-3">Captured Time (IST)</th>
-                <th class="p-3">Nifty Spot</th>
-                <th class="p-3">ATM Strike</th>
-                <th class="p-3">ATM CE / PE</th>
-                <th class="p-3">Straddle ₹</th>
-                <th class="p-3">Near-ATM PCR</th>
-                <th class="p-3">Overall / ATM PCR</th>
-                <th class="p-3">Fresh ΔOI PCR</th>
-                <th class="p-3">Put / Call Wall</th>
-                <th class="p-3">Max Pain</th>
-                <th class="p-3">Net PE vs CE ΔOI</th>
-                <th class="p-3">IV / Skew</th>
-                <th class="p-3 text-right">Intraday Regime</th>
+                <th id="intra-th-slot" class="p-3 w-[80px] overflow-hidden whitespace-nowrap">30m Slot</th>
+                <th class="p-3 w-[110px] overflow-hidden whitespace-nowrap">Captured Time (IST)</th>
+                <th class="p-3 w-[90px] overflow-hidden whitespace-nowrap">Nifty Spot</th>
+                <th class="p-3 w-[85px] overflow-hidden whitespace-nowrap">ATM Strike</th>
+                <th class="p-3 w-[120px] overflow-hidden whitespace-nowrap">ATM CE / PE</th>
+                <th class="p-3 w-[90px] overflow-hidden whitespace-nowrap">Straddle ₹</th>
+                <th class="p-3 w-[85px] overflow-hidden whitespace-nowrap">Near-ATM PCR</th>
+                <th class="p-3 w-[110px] overflow-hidden whitespace-nowrap">Overall / ATM PCR</th>
+                <th class="p-3 w-[95px] overflow-hidden whitespace-nowrap">Fresh ΔOI PCR</th>
+                <th class="p-3 w-[110px] overflow-hidden whitespace-nowrap">Put / Call Wall</th>
+                <th class="p-3 w-[80px] overflow-hidden whitespace-nowrap">Max Pain</th>
+                <th class="p-3 w-[110px] overflow-hidden whitespace-nowrap">Net PE vs CE ΔOI</th>
+                <th class="p-3 w-[95px] overflow-hidden whitespace-nowrap">IV / Skew</th>
+                <th class="p-3 text-right w-[130px] overflow-hidden whitespace-nowrap">Intraday Regime</th>
               </tr>
             </thead>
             <tbody id="intra-snapshots-tbody" class="divide-y divide-slate-800/60">
@@ -5555,23 +5593,39 @@
           </div>
         </div>
         <div class="overflow-x-auto custom-scroll">
-          <table class="w-full text-left text-[11px] sm:text-xs text-slate-300 font-mono min-w-[1150px]">
+          <table id="opt-chain-table" class="table-fixed w-full text-left text-[11px] sm:text-xs text-slate-300 font-mono min-w-[1380px] tabular-nums">
+            <colgroup>
+              <col class="w-[110px]">
+              <col class="w-[115px]">
+              <col class="w-[95px]">
+              <col class="w-[85px]">
+              <col class="w-[65px]">
+              <col class="w-[170px]">
+              <col class="w-[80px]">
+              <col class="w-[170px]">
+              <col class="w-[65px]">
+              <col class="w-[85px]">
+              <col class="w-[95px]">
+              <col class="w-[115px]">
+              <col class="w-[110px]">
+              <col class="w-[75px]">
+            </colgroup>
             <thead class="bg-slate-950/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
               <tr id="opt-chain-thead-tr">
-                <th class="p-2.5 text-rose-300 col-ce">CE Buildup</th>
-                <th class="p-2.5 text-rose-300 col-ce">CE OI (Contracts)</th>
-                <th class="p-2.5 text-rose-300 col-ce">CE ΔOI</th>
-                <th class="p-2.5 text-rose-300 col-ce">CE Vol</th>
-                <th class="p-2.5 text-rose-300 col-ce">CE IV</th>
-                <th class="p-2.5 text-rose-300 col-ce">CE LTP (Chg%)</th>
-                <th class="p-2.5 text-center bg-slate-900 text-amber-300 font-bold border-x border-slate-800 col-strike">STRIKE</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE LTP (Chg%)</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE IV</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE Vol</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE ΔOI</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE OI (Contracts)</th>
-                <th class="p-2.5 text-emerald-300 col-pe">PE Buildup</th>
-                <th class="p-2.5 text-right col-pcr">Strike PCR</th>
+                <th class="p-2.5 text-rose-300 col-ce w-[110px] overflow-hidden whitespace-nowrap">CE Buildup</th>
+                <th class="p-2.5 text-rose-300 col-ce w-[115px] overflow-hidden whitespace-nowrap">CE OI (Contracts)</th>
+                <th class="p-2.5 text-rose-300 col-ce w-[95px] overflow-hidden whitespace-nowrap">CE ΔOI</th>
+                <th class="p-2.5 text-rose-300 col-ce w-[85px] overflow-hidden whitespace-nowrap">CE Vol</th>
+                <th class="p-2.5 text-rose-300 col-ce w-[65px] overflow-hidden whitespace-nowrap">CE IV</th>
+                <th class="p-2.5 text-rose-300 col-ce w-[170px] overflow-hidden whitespace-nowrap">CE LTP (Chg%)</th>
+                <th class="p-2.5 text-center bg-slate-900 text-amber-300 font-bold border-x border-slate-800 col-strike w-[80px] overflow-hidden whitespace-nowrap">STRIKE</th>
+                <th class="p-2.5 text-emerald-300 col-pe w-[170px] overflow-hidden whitespace-nowrap">PE LTP (Chg%)</th>
+                <th class="p-2.5 text-emerald-300 col-pe w-[65px] overflow-hidden whitespace-nowrap">PE IV</th>
+                <th class="p-2.5 text-emerald-300 col-pe w-[85px] overflow-hidden whitespace-nowrap">PE Vol</th>
+                <th class="p-2.5 text-emerald-300 col-pe w-[95px] overflow-hidden whitespace-nowrap">PE ΔOI</th>
+                <th class="p-2.5 text-emerald-300 col-pe w-[115px] overflow-hidden whitespace-nowrap">PE OI (Contracts)</th>
+                <th class="p-2.5 text-emerald-300 col-pe w-[110px] overflow-hidden whitespace-nowrap">PE Buildup</th>
+                <th class="p-2.5 text-right col-pcr w-[75px] overflow-hidden whitespace-nowrap">Strike PCR</th>
               </tr>
             </thead>
             <tbody id="opt-chain-tbody" class="divide-y divide-slate-800/60">
@@ -5835,7 +5889,16 @@
 
           <!-- Scrollable Table Box -->
           <div id="builder-chain-scroll-container" class="max-h-[500px] overflow-y-auto custom-scroll border border-slate-800/80 rounded-xl overflow-x-auto">
-            <table class="w-full text-center text-xs font-mono border-collapse min-w-[620px]">
+            <table class="table-fixed w-full text-center text-xs font-mono border-collapse min-w-[690px] tabular-nums">
+              <colgroup>
+                <col class="w-[85px]">
+                <col class="w-[100px]">
+                <col class="w-[105px]">
+                <col class="w-[110px]">
+                <col class="w-[105px]">
+                <col class="w-[100px]">
+                <col class="w-[85px]">
+              </colgroup>
               <thead class="bg-slate-900/90 sticky top-0 z-10 text-[10px] uppercase text-slate-400 border-b border-slate-800">
                 <tr>
                   <th colspan="3" class="p-1.5 text-rose-400/90 border-r border-slate-800 bg-rose-950/20">CALLS (CE)</th>
@@ -5843,13 +5906,13 @@
                   <th colspan="3" class="p-1.5 text-emerald-400/90 border-l border-slate-800 bg-emerald-950/20">PUTS (PE)</th>
                 </tr>
                 <tr class="text-[9px] text-slate-500 border-b border-slate-800/80">
-                  <th class="p-1">Trade</th>
-                  <th class="p-1">CE LTP</th>
-                  <th class="p-1 border-r border-slate-800">CE OI</th>
-                  <th class="p-1 bg-slate-950 text-slate-400">ATM</th>
-                  <th class="p-1 border-l border-slate-800">PE OI</th>
-                  <th class="p-1">PE LTP</th>
-                  <th class="p-1">Trade</th>
+                  <th class="p-1 w-[85px] overflow-hidden whitespace-nowrap">Trade</th>
+                  <th class="p-1 w-[100px] overflow-hidden whitespace-nowrap">CE LTP</th>
+                  <th class="p-1 border-r border-slate-800 w-[105px] overflow-hidden whitespace-nowrap">CE OI</th>
+                  <th class="p-1 bg-slate-950 text-slate-400 w-[110px] overflow-hidden whitespace-nowrap">ATM</th>
+                  <th class="p-1 border-l border-slate-800 w-[105px] overflow-hidden whitespace-nowrap">PE OI</th>
+                  <th class="p-1 w-[100px] overflow-hidden whitespace-nowrap">PE LTP</th>
+                  <th class="p-1 w-[85px] overflow-hidden whitespace-nowrap">Trade</th>
                 </tr>
               </thead>
               <tbody id="builder-compact-chain-tbody" class="divide-y divide-slate-800/50 text-[11px]">
@@ -7624,21 +7687,35 @@
         </div>
 
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
+          <table class="table-fixed w-full text-left text-xs min-w-[1210px] tabular-nums">
+            <colgroup>
+              <col class="w-[130px]">
+              <col class="w-[80px]">
+              <col class="w-[100px]">
+              <col class="w-[90px]">
+              <col class="w-[140px]">
+              <col class="w-[90px]">
+              <col class="w-[110px]">
+              <col class="w-[90px]">
+              <col class="w-[95px]">
+              <col class="w-[110px]">
+              <col class="w-[100px]">
+              <col class="w-[75px]">
+            </colgroup>
             <thead class="bg-slate-950/70 border-b border-slate-800 text-[11px] font-mono text-slate-400 uppercase tracking-wider">
               <tr>
-                <th class="py-2.5 px-3">Contract</th>
-                <th class="py-2.5 px-2">Sector</th>
-                <th class="py-2.5 px-3 text-right">LTP (₹)</th>
-                <th class="py-2.5 px-3 text-right">Change %</th>
-                <th class="py-2.5 px-3 text-right">Day Range</th>
-                <th class="py-2.5 px-3 text-right">Pivot (P)</th>
-                <th class="py-2.5 px-3 text-right">R1 / S1</th>
-                <th class="py-2.5 px-3 text-right">Volume</th>
-                <th class="py-2.5 px-3 text-right">Open Interest</th>
-                <th class="py-2.5 px-3 text-center">Trend Regime</th>
-                <th class="py-2.5 px-3 text-center">OI Buildup</th>
-                <th class="py-2.5 px-2 text-center">Action</th>
+                <th class="py-2.5 px-3 w-[130px] overflow-hidden whitespace-nowrap">Contract</th>
+                <th class="py-2.5 px-2 w-[80px] overflow-hidden whitespace-nowrap">Sector</th>
+                <th class="py-2.5 px-3 text-right w-[100px] overflow-hidden whitespace-nowrap">LTP (₹)</th>
+                <th class="py-2.5 px-3 text-right w-[90px] overflow-hidden whitespace-nowrap">Change %</th>
+                <th class="py-2.5 px-3 text-right w-[140px] overflow-hidden whitespace-nowrap">Day Range</th>
+                <th class="py-2.5 px-3 text-right w-[90px] overflow-hidden whitespace-nowrap">Pivot (P)</th>
+                <th class="py-2.5 px-3 text-right w-[110px] overflow-hidden whitespace-nowrap">R1 / S1</th>
+                <th class="py-2.5 px-3 text-right w-[90px] overflow-hidden whitespace-nowrap">Volume</th>
+                <th class="py-2.5 px-3 text-right w-[95px] overflow-hidden whitespace-nowrap">Open Interest</th>
+                <th class="py-2.5 px-3 text-center w-[110px] overflow-hidden whitespace-nowrap">Trend Regime</th>
+                <th class="py-2.5 px-3 text-center w-[100px] overflow-hidden whitespace-nowrap">OI Buildup</th>
+                <th class="py-2.5 px-2 text-center w-[75px] overflow-hidden whitespace-nowrap">Action</th>
               </tr>
             </thead>
             <tbody id="comm-table-rows" class="divide-y divide-slate-800/60 font-mono text-slate-300">
@@ -9530,13 +9607,13 @@
         console.error("pollContinuousKotakStream init error:", e);
       }
 
-      // Continuous Kotak Neo Stream Poller: 2s active stream for live updates across Equities, Options, and Commodities
+      // Continuous Kotak Neo Stream Poller: 1s active stream for live updates across Equities, Options, and Commodities
       try {
         setInterval(() => {
           if (!document.hidden) {
             pollContinuousKotakStream();
           }
-        }, 2000);
+        }, 1000);
       } catch (e) {}
 
       // Setup Options Payoff Canvas Hover & Touch Events
@@ -10633,20 +10710,20 @@
 
             return `
               <tr class="${rowBg} transition">
-                <td class="p-2 text-emerald-300">
+                <td class="p-2 text-emerald-300 w-[130px] overflow-hidden whitespace-nowrap">
                   <span class="font-bold">${(ce.total_buy || 0).toLocaleString('en-IN')}</span> / <span class="text-slate-400">${(ce.total_sell || 0).toLocaleString('en-IN')}</span>
                 </td>
-                <td class="p-2 font-bold ${ceObi >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${ceObi >= 0 ? '+' : ''}${ceObi.toFixed(2)}</td>
-                <td class="p-2 font-bold text-white">₹${Number(ce.micro_price || ce.ltp || 0).toFixed(2)}</td>
-                <td class="p-2 text-center font-extrabold bg-slate-900 border-x border-slate-800 ${isAtm ? 'text-amber-300 text-sm' : 'text-white'}">
+                <td class="p-2 font-bold ${ceObi >= 0 ? 'text-emerald-400' : 'text-rose-400'} w-[75px] overflow-hidden whitespace-nowrap">${ceObi >= 0 ? '+' : ''}${ceObi.toFixed(2)}</td>
+                <td class="p-2 font-bold text-white w-[85px] overflow-hidden whitespace-nowrap">₹${Number(ce.micro_price || ce.ltp || 0).toFixed(2)}</td>
+                <td class="p-2 text-center font-extrabold bg-slate-900 border-x border-slate-800 ${isAtm ? 'text-amber-300 text-sm' : 'text-white'} w-[85px] overflow-hidden whitespace-nowrap">
                   ${row.strike} ${isAtm ? '<span class="text-[8px] bg-amber-500 text-black px-1 rounded ml-1 font-bold">ATM</span>' : ''}
                 </td>
-                <td class="p-2 font-bold text-white">₹${Number(pe.micro_price || pe.ltp || 0).toFixed(2)}</td>
-                <td class="p-2 font-bold ${peObi >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${peObi >= 0 ? '+' : ''}${peObi.toFixed(2)}</td>
-                <td class="p-2 text-rose-300">
+                <td class="p-2 font-bold text-white w-[85px] overflow-hidden whitespace-nowrap">₹${Number(pe.micro_price || pe.ltp || 0).toFixed(2)}</td>
+                <td class="p-2 font-bold ${peObi >= 0 ? 'text-emerald-400' : 'text-rose-400'} w-[75px] overflow-hidden whitespace-nowrap">${peObi >= 0 ? '+' : ''}${peObi.toFixed(2)}</td>
+                <td class="p-2 text-rose-300 w-[130px] overflow-hidden whitespace-nowrap">
                   <span class="font-bold">${(pe.total_buy || 0).toLocaleString('en-IN')}</span> / <span class="text-slate-400">${(pe.total_sell || 0).toLocaleString('en-IN')}</span>
                 </td>
-                <td class="p-2 text-center">
+                <td class="p-2 text-center w-[80px] overflow-hidden whitespace-nowrap">
                   <div class="flex items-center justify-center gap-1">
                     <button onclick="openOptionDepthModal(${row.strike}, 'CE')" title="5-Depth for ${row.strike} CE" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 border border-blue-500/30 transition">CE</button>
                     <button onclick="openOptionDepthModal(${row.strike}, 'PE')" title="5-Depth for ${row.strike} PE" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 hover:bg-purple-500/40 text-purple-300 border border-purple-500/30 transition">PE</button>
@@ -10763,20 +10840,20 @@
             const netLakhs = ((Number(s.net_pe_oi_chg || 0) - Number(s.net_ce_oi_chg || 0)) / 100000.0);
             return `
               <tr class="hover:bg-slate-800/40 transition">
-                <td class="p-3 font-bold text-amber-300 whitespace-nowrap">${s.slot_time} IST</td>
-                <td class="p-3 text-slate-400 text-[11px] whitespace-nowrap">${s.timestamp_ist || '--'}</td>
-                <td class="p-3 font-bold text-white whitespace-nowrap">₹${Number(s.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td class="p-3 font-bold text-cyan-300 whitespace-nowrap">${s.atm_strike}</td>
-                <td class="p-3 text-slate-200 whitespace-nowrap">${Number(s.atm_ce_ltp || 0).toFixed(1)}C / ${Number(s.atm_pe_ltp || 0).toFixed(1)}P</td>
-                <td class="p-3 font-bold text-cyan-300 whitespace-nowrap">₹${Number(s.straddle_premium || 0).toFixed(2)} <span class="text-[10px] ${decay <= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${decay >= 0 ? '+' : ''}${decay.toFixed(1)}%)</span></td>
-                <td class="p-3 font-bold ${pcrCol} whitespace-nowrap">${npcr.toFixed(2)}</td>
-                <td class="p-3 text-slate-300 whitespace-nowrap">${Number(s.overall_pcr || 0).toFixed(2)} / ${Number(s.atm_pcr || 0).toFixed(2)}</td>
-                <td class="p-3 font-bold ${Number(s.chg_oi_pcr || 1) >= 1.05 ? 'text-emerald-400' : 'text-rose-400'} whitespace-nowrap">${Number(s.chg_oi_pcr || 0).toFixed(2)}</td>
-                <td class="p-3 whitespace-nowrap"><span class="text-emerald-400 font-bold">${s.put_wall}P</span> / <span class="text-rose-400 font-bold">${s.call_wall}C</span></td>
-                <td class="p-3 text-purple-300 font-bold whitespace-nowrap">${s.max_pain}</td>
-                <td class="p-3 font-bold ${netLakhs >= 0 ? 'text-emerald-400' : 'text-rose-400'} whitespace-nowrap">${netLakhs >= 0 ? '+' : ''}${netLakhs.toFixed(2)}L</td>
-                <td class="p-3 text-slate-300 whitespace-nowrap">${Number(s.atm_iv || 0).toFixed(1)}% (${Number(s.iv_skew || 0) >= 0 ? '+' : ''}${Number(s.iv_skew || 0).toFixed(2)})</td>
-                <td class="p-3 text-right whitespace-nowrap"><span class="quant-badge px-2.5 py-1 rounded text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 whitespace-nowrap font-bold">${(s.market_state || '').replace(/_/g, ' ')}</span></td>
+                <td class="p-3 font-bold text-amber-300 w-[80px] overflow-hidden whitespace-nowrap">${s.slot_time} IST</td>
+                <td class="p-3 text-slate-400 text-[11px] w-[110px] overflow-hidden whitespace-nowrap">${s.timestamp_ist || '--'}</td>
+                <td class="p-3 font-bold text-white w-[90px] overflow-hidden whitespace-nowrap">₹${Number(s.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="p-3 font-bold text-cyan-300 w-[85px] overflow-hidden whitespace-nowrap">${s.atm_strike}</td>
+                <td class="p-3 text-slate-200 w-[120px] overflow-hidden whitespace-nowrap">${Number(s.atm_ce_ltp || 0).toFixed(1)}C / ${Number(s.atm_pe_ltp || 0).toFixed(1)}P</td>
+                <td class="p-3 font-bold text-cyan-300 w-[90px] overflow-hidden whitespace-nowrap">₹${Number(s.straddle_premium || 0).toFixed(2)} <span class="text-[10px] ${decay <= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${decay >= 0 ? '+' : ''}${decay.toFixed(1)}%)</span></td>
+                <td class="p-3 font-bold ${pcrCol} w-[85px] overflow-hidden whitespace-nowrap">${npcr.toFixed(2)}</td>
+                <td class="p-3 text-slate-300 w-[110px] overflow-hidden whitespace-nowrap">${Number(s.overall_pcr || 0).toFixed(2)} / ${Number(s.atm_pcr || 0).toFixed(2)}</td>
+                <td class="p-3 font-bold ${Number(s.chg_oi_pcr || 1) >= 1.05 ? 'text-emerald-400' : 'text-rose-400'} w-[95px] overflow-hidden whitespace-nowrap">${Number(s.chg_oi_pcr || 0).toFixed(2)}</td>
+                <td class="p-3 w-[110px] overflow-hidden whitespace-nowrap"><span class="text-emerald-400 font-bold">${s.put_wall}P</span> / <span class="text-rose-400 font-bold">${s.call_wall}C</span></td>
+                <td class="p-3 text-purple-300 font-bold w-[80px] overflow-hidden whitespace-nowrap">${s.max_pain}</td>
+                <td class="p-3 font-bold ${netLakhs >= 0 ? 'text-emerald-400' : 'text-rose-400'} w-[110px] overflow-hidden whitespace-nowrap">${netLakhs >= 0 ? '+' : ''}${netLakhs.toFixed(2)}L</td>
+                <td class="p-3 text-slate-300 w-[95px] overflow-hidden whitespace-nowrap">${Number(s.atm_iv || 0).toFixed(1)}% (${Number(s.iv_skew || 0) >= 0 ? '+' : ''}${Number(s.iv_skew || 0).toFixed(2)})</td>
+                <td class="p-3 text-right w-[130px] overflow-hidden whitespace-nowrap"><span class="quant-badge px-2.5 py-1 rounded text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 whitespace-nowrap font-bold">${(s.market_state || '').replace(/_/g, ' ')}</span></td>
               </tr>
             `;
           }).join('');
@@ -13172,37 +13249,37 @@
 
         return `
           <tr class="${rowBg} transition">
-            <td class="p-2 whitespace-nowrap col-ce">${formatBuildupBadge(s.ce_buildup, true)}</td>
-            <td class="p-2 col-ce">
+            <td class="p-2 whitespace-nowrap col-ce w-[110px] overflow-hidden text-ellipsis">${formatBuildupBadge(s.ce_buildup, true)}</td>
+            <td class="p-2 col-ce w-[115px] overflow-hidden">
               <div class="flex items-center justify-between gap-1">
-                <span id="opt-ce-oi-${s.strike}" class="font-bold text-white">${(s.ce_oi || 0).toLocaleString('en-IN')}</span>
+                <span id="opt-ce-oi-${s.strike}" class="font-bold text-white tabular-nums">${(s.ce_oi || 0).toLocaleString('en-IN')}</span>
                 ${isCw1 ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[9px] bg-rose-500 text-black font-bold whitespace-nowrap">CW1</span>' : ''}
               </div>
               <div class="w-full h-1 bg-slate-800 rounded overflow-hidden mt-0.5"><div class="bg-rose-500 h-full" style="width:${ceBarPct}%"></div></div>
             </td>
-            <td class="p-2 font-bold whitespace-nowrap ${(s.ce_chg_oi || 0) >= 0 ? 'text-rose-400' : 'text-emerald-400'} col-ce">${(s.ce_chg_oi || 0) >= 0 ? '+' : ''}${(s.ce_chg_oi || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2 text-slate-400 whitespace-nowrap col-ce"><span id="opt-ce-vol-${s.strike}">${(s.ce_vol || 0).toLocaleString('en-IN')}</span></td>
-            <td class="p-2 text-slate-300 whitespace-nowrap col-ce">${Number(s.ce_iv || 0).toFixed(1)}%</td>
-            <td class="p-2 whitespace-nowrap col-ce">
+            <td class="p-2 font-bold whitespace-nowrap ${(s.ce_chg_oi || 0) >= 0 ? 'text-rose-400' : 'text-emerald-400'} col-ce w-[95px] overflow-hidden text-ellipsis tabular-nums">${(s.ce_chg_oi || 0) >= 0 ? '+' : ''}${(s.ce_chg_oi || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 text-slate-400 whitespace-nowrap col-ce w-[85px] overflow-hidden text-ellipsis tabular-nums"><span id="opt-ce-vol-${s.strike}">${(s.ce_vol || 0).toLocaleString('en-IN')}</span></td>
+            <td class="p-2 text-slate-300 whitespace-nowrap col-ce w-[65px] overflow-hidden text-ellipsis tabular-nums">${Number(s.ce_iv || 0).toFixed(1)}%</td>
+            <td class="p-2 whitespace-nowrap col-ce w-[170px] overflow-hidden">
               <div class="flex items-center justify-between gap-1.5">
                 <div class="flex items-center gap-1 shrink-0">
                   <button onclick="openOptionDepthModal(${s.strike}, 'CE')" title="Level-2 5-Depth & Order Book Imbalance" class="px-1.5 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 text-[10px] font-bold border border-blue-500/30 transition">📊</button>
                   <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'BUY', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Buy ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition">+B</button>
                   <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'SELL', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Sell ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition">+S</button>
                 </div>
-                <span id="opt-ce-ltp-${s.strike}" data-prev-ltp="${s.ce_ltp || 0}" class="font-semibold text-white whitespace-nowrap transition-all duration-300">₹${Number(s.ce_ltp || 0).toFixed(2)} <span id="opt-ce-pchg-${s.strike}" class="text-[10px] ${(s.ce_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.ce_pchg || 0) >= 0 ? '+' : ''}${Number(s.ce_pchg || 0).toFixed(0)}%)</span></span>
+                <span id="opt-ce-ltp-${s.strike}" data-prev-ltp="${s.ce_ltp || 0}" class="font-semibold text-white whitespace-nowrap tabular-nums">₹${Number(s.ce_ltp || 0).toFixed(2)} <span id="opt-ce-pchg-${s.strike}" class="text-[10px] tabular-nums ${(s.ce_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.ce_pchg || 0) >= 0 ? '+' : ''}${Number(s.ce_pchg || 0).toFixed(0)}%)</span></span>
               </div>
             </td>
-            <td class="p-2 text-center bg-slate-900/95 border-x border-slate-800 font-extrabold whitespace-nowrap ${isAtm ? 'text-amber-300 text-sm' : 'text-white'} col-strike">
+            <td class="p-2 text-center bg-slate-900/95 border-x border-slate-800 font-extrabold whitespace-nowrap ${isAtm ? 'text-amber-300 text-sm' : 'text-white'} col-strike w-[80px] overflow-hidden tabular-nums">
               <div>${s.strike}</div>
               <div class="flex items-center justify-center gap-1">
                 ${isAtm ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[8px] bg-amber-500 text-black font-bold whitespace-nowrap">ATM</span>' : ''}
                 ${isMp ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[8px] bg-purple-500 text-white font-bold whitespace-nowrap">MP</span>' : ''}
               </div>
             </td>
-            <td class="p-2 whitespace-nowrap col-pe">
+            <td class="p-2 whitespace-nowrap col-pe w-[170px] overflow-hidden">
               <div class="flex items-center justify-between gap-1.5">
-                <span id="opt-pe-ltp-${s.strike}" data-prev-ltp="${s.pe_ltp || 0}" class="font-semibold text-white whitespace-nowrap transition-all duration-300">₹${Number(s.pe_ltp || 0).toFixed(2)} <span id="opt-pe-pchg-${s.strike}" class="text-[10px] ${(s.pe_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.pe_pchg || 0) >= 0 ? '+' : ''}${Number(s.pe_pchg || 0).toFixed(0)}%)</span></span>
+                <span id="opt-pe-ltp-${s.strike}" data-prev-ltp="${s.pe_ltp || 0}" class="font-semibold text-white whitespace-nowrap tabular-nums">₹${Number(s.pe_ltp || 0).toFixed(2)} <span id="opt-pe-pchg-${s.strike}" class="text-[10px] tabular-nums ${(s.pe_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.pe_pchg || 0) >= 0 ? '+' : ''}${Number(s.pe_pchg || 0).toFixed(0)}%)</span></span>
                 <div class="flex items-center gap-1 shrink-0">
                   <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'BUY', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Buy ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition">+B</button>
                   <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'SELL', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Sell ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition">+S</button>
@@ -13210,18 +13287,18 @@
                 </div>
               </div>
             </td>
-            <td class="p-2 text-slate-300 whitespace-nowrap col-pe">${Number(s.pe_iv || 0).toFixed(1)}%</td>
-            <td class="p-2 text-slate-400 whitespace-nowrap col-pe"><span id="opt-pe-vol-${s.strike}">${(s.pe_vol || 0).toLocaleString('en-IN')}</span></td>
-            <td class="p-2 font-bold whitespace-nowrap ${(s.pe_chg_oi || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'} col-pe">${(s.pe_chg_oi || 0) >= 0 ? '+' : ''}${(s.pe_chg_oi || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2 col-pe">
+            <td class="p-2 text-slate-300 whitespace-nowrap col-pe w-[65px] overflow-hidden text-ellipsis tabular-nums">${Number(s.pe_iv || 0).toFixed(1)}%</td>
+            <td class="p-2 text-slate-400 whitespace-nowrap col-pe w-[85px] overflow-hidden text-ellipsis tabular-nums"><span id="opt-pe-vol-${s.strike}">${(s.pe_vol || 0).toLocaleString('en-IN')}</span></td>
+            <td class="p-2 font-bold whitespace-nowrap ${(s.pe_chg_oi || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'} col-pe w-[95px] overflow-hidden text-ellipsis tabular-nums">${(s.pe_chg_oi || 0) >= 0 ? '+' : ''}${(s.pe_chg_oi || 0).toLocaleString('en-IN')}</td>
+            <td class="p-2 col-pe w-[115px] overflow-hidden">
               <div class="flex items-center justify-between gap-1">
-                <span id="opt-pe-oi-${s.strike}" class="font-bold text-white">${(s.pe_oi || 0).toLocaleString('en-IN')}</span>
+                <span id="opt-pe-oi-${s.strike}" class="font-bold text-white tabular-nums">${(s.pe_oi || 0).toLocaleString('en-IN')}</span>
                 ${isPw1 ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[9px] bg-emerald-500 text-black font-bold whitespace-nowrap">PW1</span>' : ''}
               </div>
               <div class="w-full h-1 bg-slate-800 rounded overflow-hidden mt-0.5"><div class="bg-emerald-500 h-full" style="width:${peBarPct}%"></div></div>
             </td>
-            <td class="p-2 whitespace-nowrap col-pe">${formatBuildupBadge(s.pe_buildup, false)}</td>
-            <td class="p-2 text-right font-bold whitespace-nowrap ${(s.strike_pcr || 0) >= 1.1 ? 'text-emerald-400' : ((s.strike_pcr || 0) <= 0.8 ? 'text-rose-400' : 'text-slate-300')} col-pcr">${Number(s.strike_pcr || 0).toFixed(2)}</td>
+            <td class="p-2 whitespace-nowrap col-pe w-[110px] overflow-hidden text-ellipsis">${formatBuildupBadge(s.pe_buildup, false)}</td>
+            <td class="p-2 text-right font-bold whitespace-nowrap ${(s.strike_pcr || 0) >= 1.1 ? 'text-emerald-400' : ((s.strike_pcr || 0) <= 0.8 ? 'text-rose-400' : 'text-slate-300')} col-pcr w-[75px] overflow-hidden text-ellipsis tabular-nums">${Number(s.strike_pcr || 0).toFixed(2)}</td>
           </tr>
         `;
         }).join('');
@@ -13652,20 +13729,20 @@
 
         return `
           <tr id="builder-chain-row-${s.strike}" class="transition ${rowBg}">
-            <td class="p-1 whitespace-nowrap">
-              <button onclick="addLegFromCompactChain(${s.strike}, 'CE', 'BUY', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCeBuy ? 'bg-emerald-500 text-black shadow font-extrabold' : 'bg-slate-800 hover:bg-emerald-950/60 text-emerald-400 border border-slate-700'} mr-1" title="Buy Call">+B</button>
-              <button onclick="addLegFromCompactChain(${s.strike}, 'CE', 'SELL', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCeSell ? 'bg-rose-500 text-white shadow font-extrabold' : 'bg-slate-800 hover:bg-rose-950/60 text-rose-400 border border-slate-700'}" title="Sell Call">+S</button>
+            <td class="p-1 whitespace-nowrap w-[85px] overflow-hidden">
+              <button onclick="addLegFromCompactChain(${s.strike}, 'CE', 'BUY', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCeBuy ? 'bg-emerald-500 text-black shadow' : 'bg-slate-800 hover:bg-emerald-950/60 text-emerald-400 border border-slate-700'} mr-1" title="Buy Call">+B</button>
+              <button onclick="addLegFromCompactChain(${s.strike}, 'CE', 'SELL', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCeSell ? 'bg-rose-500 text-white shadow' : 'bg-slate-800 hover:bg-rose-950/60 text-rose-400 border border-slate-700'}" title="Sell Call">+S</button>
             </td>
-            <td class="p-1 font-bold ${matchedCeLeg ? 'text-amber-300' : 'text-slate-200'}">₹${Number(s.ce_ltp || 0).toFixed(1)}</td>
-            <td class="p-1 text-slate-400 border-r border-slate-800">${formatCompactOi(s.ce_oi)}</td>
-            <td class="p-1 font-bold ${isAtm ? 'text-amber-400 bg-amber-950/30' : (isStrikeInLegs ? 'text-cyan-300 bg-cyan-950/30 font-extrabold' : 'text-white')} bg-slate-950/80">
+            <td id="builder-ce-ltp-${s.strike}" class="p-1 font-bold ${matchedCeLeg ? 'text-amber-300' : 'text-slate-200'} w-[100px] overflow-hidden tabular-nums">₹${Number(s.ce_ltp || 0).toFixed(1)}</td>
+            <td id="builder-ce-oi-${s.strike}" class="p-1 text-slate-400 border-r border-slate-800 w-[105px] overflow-hidden tabular-nums">${formatCompactOi(s.ce_oi)}</td>
+            <td class="p-1 font-bold ${isAtm ? 'text-amber-400 bg-amber-950/30' : (isStrikeInLegs ? 'text-cyan-300 bg-cyan-950/30 font-bold' : 'text-white')} bg-slate-950/80 w-[110px] overflow-hidden whitespace-nowrap">
               ${s.strike}${isAtm ? ' <span class="text-[8px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-normal">ATM</span>' : ''}
             </td>
-            <td class="p-1 text-slate-400 border-l border-slate-800">${formatCompactOi(s.pe_oi)}</td>
-            <td class="p-1 font-bold ${matchedPeLeg ? 'text-amber-300' : 'text-slate-200'}">₹${Number(s.pe_ltp || 0).toFixed(1)}</td>
-            <td class="p-1 whitespace-nowrap">
-              <button onclick="addLegFromCompactChain(${s.strike}, 'PE', 'BUY', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isPeBuy ? 'bg-emerald-500 text-black shadow font-extrabold' : 'bg-slate-800 hover:bg-emerald-950/60 text-emerald-400 border border-slate-700'} mr-1" title="Buy Put">+B</button>
-              <button onclick="addLegFromCompactChain(${s.strike}, 'PE', 'SELL', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isPeSell ? 'bg-rose-500 text-white shadow font-extrabold' : 'bg-slate-800 hover:bg-rose-950/60 text-rose-400 border border-slate-700'}" title="Sell Put">+S</button>
+            <td id="builder-pe-oi-${s.strike}" class="p-1 text-slate-400 border-l border-slate-800 w-[105px] overflow-hidden tabular-nums">${formatCompactOi(s.pe_oi)}</td>
+            <td id="builder-pe-ltp-${s.strike}" class="p-1 font-bold ${matchedPeLeg ? 'text-amber-300' : 'text-slate-200'} w-[100px] overflow-hidden tabular-nums">₹${Number(s.pe_ltp || 0).toFixed(1)}</td>
+            <td class="p-1 whitespace-nowrap w-[85px] overflow-hidden">
+              <button onclick="addLegFromCompactChain(${s.strike}, 'PE', 'BUY', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isPeBuy ? 'bg-emerald-500 text-black shadow' : 'bg-slate-800 hover:bg-emerald-950/60 text-emerald-400 border border-slate-700'} mr-1" title="Buy Put">+B</button>
+              <button onclick="addLegFromCompactChain(${s.strike}, 'PE', 'SELL', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isPeSell ? 'bg-rose-500 text-white shadow' : 'bg-slate-800 hover:bg-rose-950/60 text-rose-400 border border-slate-700'}" title="Sell Put">+S</button>
             </td>
           </tr>
         `;
@@ -19119,42 +19196,42 @@
 
         return `
           <tr id="pos-row-${p.symbol}" data-symbol="${p.symbol}" class="hover:bg-slate-800/30 transition">
-            <td class="p-3.5 font-bold text-white flex items-center gap-1.5">
+            <td class="p-3.5 font-bold text-white flex items-center gap-1.5 w-[110px] overflow-hidden whitespace-nowrap">
               <button onclick="openStockChartModal('${p.symbol}')" class="hover:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">${p.symbol}</button>
               <span class="text-[10px] px-1 rounded bg-slate-800 text-slate-400 font-normal">${p.sector || 'NSE'}</span>
             </td>
-            <td class="p-3.5 text-slate-300 text-[11px] font-mono">
+            <td class="p-3.5 text-slate-300 text-[11px] font-mono w-[110px] overflow-hidden whitespace-nowrap">
               <div>${p.entry_date || '-'}</div>
               <div id="pos-time-${p.symbol}" class="text-[10px] text-cyan-400/80">LTP @ ${ltpTime || 'Live'} IST</div>
             </td>
-            <td class="p-3.5">
+            <td class="p-3.5 w-[170px] overflow-hidden">
               <div class="text-slate-300">Entry: ₹${p.entry_price.toFixed(2)}</div>
-              <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                <span id="pos-ltp-${p.symbol}" data-prev-ltp="${ltp}" class="text-[11px] font-bold text-white transition-colors duration-300">LTP: ₹${ltp.toFixed(2)}</span>
-                <span id="pos-daychg-${p.symbol}" class="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dayChgClass}" title="Today's Session Change">
+              <div class="flex items-center gap-1.5 mt-0.5 flex-nowrap overflow-hidden">
+                <span id="pos-ltp-${p.symbol}" data-prev-ltp="${ltp}" class="text-[11px] font-bold text-white transition-colors duration-300 whitespace-nowrap">LTP: ₹${ltp.toFixed(2)}</span>
+                <span id="pos-daychg-${p.symbol}" class="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dayChgClass} whitespace-nowrap" title="Today's Session Change">
                   ${dayChgArrow} ${dayChgSign}${dayChg.toFixed(2)}%
                 </span>
               </div>
             </td>
-            <td class="p-3.5 text-rose-400 font-semibold">₹${p.stop_loss.toFixed(2)}</td>
-            <td class="p-3.5">
+            <td class="p-3.5 text-rose-400 font-semibold w-[85px] overflow-hidden whitespace-nowrap">₹${p.stop_loss.toFixed(2)}</td>
+            <td class="p-3.5 w-[100px] overflow-hidden whitespace-nowrap">
               <div class="text-amber-400">T1: ₹${p.target.toFixed(2)}</div>
               <div class="text-emerald-400 text-[11px]">T2: ₹${(p.target_2 || 0).toFixed(2)}</div>
             </td>
-            <td class="p-3.5">
+            <td class="p-3.5 w-[110px] overflow-hidden whitespace-nowrap">
               <div>${p.quantity} shs</div>
               <div id="pos-val-${p.symbol}" class="text-[11px] text-slate-400">₹${(p.quantity * ltp).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
             </td>
-            <td id="pos-pnl-cell-${p.symbol}" class="p-3.5 ${pnlClass} font-bold font-mono">
+            <td id="pos-pnl-cell-${p.symbol}" class="p-3.5 ${pnlClass} font-bold font-mono w-[120px] overflow-hidden whitespace-nowrap">
               <span id="pos-pnl-${p.symbol}">${pnlSign}₹${pnl.toFixed(2)}</span>
               <div id="pos-pnl-pct-${p.symbol}" class="text-[10px] font-normal">(${pnlSign}${(p.return_pct || 0).toFixed(2)}%)</div>
             </td>
-            <td id="pos-r-${p.symbol}" class="p-3.5 font-bold ${p.current_r >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+            <td id="pos-r-${p.symbol}" class="p-3.5 font-bold ${p.current_r >= 0 ? 'text-emerald-400' : 'text-rose-400'} w-[80px] overflow-hidden whitespace-nowrap">
               ${p.current_r >= 0 ? '+' : ''}${(p.current_r || 0).toFixed(2)} R
             </td>
-            <td class="p-3.5">${t1Badge}</td>
-            <td class="p-3.5 text-right space-x-1 whitespace-nowrap">
-              <button onclick="openStockChartModal('${p.symbol}')" class="px-2 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[11px] transition">📈 Chart & SL</button>
+            <td class="p-3.5 w-[110px] overflow-hidden whitespace-nowrap">${t1Badge}</td>
+            <td class="p-3.5 text-right space-x-1 whitespace-nowrap w-[100px] overflow-hidden">
+              <button onclick="openStockChartModal('${p.symbol}')" class="px-2 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[11px] transition">📈</button>
               <button onclick="closePositionModal('${p.symbol}', ${ltp})" class="px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] transition">Close</button>
             </td>
           </tr>
@@ -25427,8 +25504,8 @@
 
                     if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.05) {
                       const flashCls = newLtp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
-                      ltpEl.classList.add(...flashCls, 'rounded', 'px-1');
-                      setTimeout(() => ltpEl.classList.remove(...flashCls, 'rounded', 'px-1'), 800);
+                      ltpEl.classList.add(...flashCls);
+                      setTimeout(() => ltpEl.classList.remove(...flashCls), 800);
                     }
                   }
                 }
@@ -25439,6 +25516,16 @@
 
                 if (opt.volume !== undefined && opt.volume !== null) {
                   setSafeText(`opt-${type}-vol-${strike}`, Number(opt.volume).toLocaleString('en-IN'));
+                }
+
+                // Keep Strategy Builder Compact Chain perfectly in-sync with live ticks
+                const bLtpEl = document.getElementById(`builder-${type}-ltp-${strike}`);
+                if (bLtpEl && opt.ltp) {
+                  setSafeText(bLtpEl, `₹${Number(opt.ltp).toFixed(1)}`);
+                }
+                const bOiEl = document.getElementById(`builder-${type}-oi-${strike}`);
+                if (bOiEl && opt.oi !== undefined && typeof formatCompactOi === 'function') {
+                  setSafeText(bOiEl, formatCompactOi(opt.oi));
                 }
               });
             }
@@ -25459,9 +25546,9 @@
                   setSafeText(sigEl, `₹${ltp.toFixed(2)}`);
                   sigEl.setAttribute('data-prev-ltp', ltp);
                   if (oldLtp > 0 && Math.abs(ltp - oldLtp) > 0.01) {
-                    const flashCls = ltp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300', 'font-extrabold'] : ['bg-rose-500/30', 'text-rose-300', 'font-extrabold'];
-                    sigEl.classList.add(...flashCls, 'rounded', 'px-1');
-                    setTimeout(() => sigEl.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
+                    const flashCls = ltp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
+                    sigEl.classList.add(...flashCls);
+                    setTimeout(() => sigEl.classList.remove(...flashCls), 750);
                   }
                 }
               }
@@ -25474,8 +25561,8 @@
                   p3El.setAttribute('data-prev-ltp', ltp);
                   if (oldLtp > 0 && Math.abs(ltp - oldLtp) > 0.01) {
                     const flashCls = ltp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
-                    p3El.classList.add(...flashCls, 'rounded', 'px-1');
-                    setTimeout(() => p3El.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
+                    p3El.classList.add(...flashCls);
+                    setTimeout(() => p3El.classList.remove(...flashCls), 750);
                   }
                 }
               }
