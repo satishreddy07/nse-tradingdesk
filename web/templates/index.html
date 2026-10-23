@@ -15637,7 +15637,18 @@
         currentModalExpiryType = s.expiry_type || 'WEEKLY';
         currentModalLegs = s.legs || [];
         currentModalSpot = s.spot_at_entry || (niftyOptionsChainCache?.spot || (optionsPortfolioCache?.spot_price || 0));
-        modalMaxDte = Math.max(1, Math.round(dteDays));
+        let stratDteDays = (s.expiry_type === 'MONTHLY') ? 14 : 3;
+        if (s.expiry_date) {
+          try {
+            const parts = s.expiry_date.split('-');
+            if (parts.length === 3) {
+              const expDate = new Date(`${parts[1]} ${parts[0]}, ${parts[2]}`);
+              const diff = Math.ceil((expDate - new Date()) / (1000 * 60 * 60 * 24));
+              if (!isNaN(diff) && diff >= 0) stratDteDays = Math.max(0.5, diff);
+            }
+          } catch (err) {}
+        }
+        modalMaxDte = Math.max(1, Math.round(stratDteDays));
         modalPayoffTargetDateOffset = 0;
         modalPayoffIvShiftPct = 0;
         modalPayoffSpan = 'auto';
