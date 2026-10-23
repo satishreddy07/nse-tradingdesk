@@ -10294,20 +10294,21 @@
       const activeMode = data.interval_mode || currentIntradayInterval || '30m';
       updateIntradayIntervalHeaders(activeMode);
 
+      const isMarketOpen = data.is_market_open !== undefined ? Boolean(data.is_market_open) : false;
       const expBadge = document.getElementById('intra-expiry-badge');
       if (expBadge) {
         if (!isMarketOpen && (data.status === 'DATA_UNAVAILABLE' || data.status === 'EMPTY' || !data.latest_snapshot) && data.reason) {
-          expBadge.innerText = \u26a1 ;
+          expBadge.innerText = `⚡ ${data.reason}`;
         } else {
-          expBadge.innerText = \u26a1 Active Weekly Expiry:  \u2022  Slots Recorded Today;
+          expBadge.innerText = `⚡ Active Weekly Expiry: ${data.expiry_date || latest.expiry_date || '--'} • ${data.snapshots_count || 0} Slots Recorded Today`;
         }
       }
       const sessLbl = document.getElementById('intra-session-date-label');
       if (sessLbl) {
         if (!isMarketOpen && (data.status === 'DATA_UNAVAILABLE' || data.status === 'EMPTY' || !data.latest_snapshot) && data.reason) {
-          sessLbl.innerText = Session:  \u2022 ;
+          sessLbl.innerText = `Session: ${data.session_date || '--'} • ${data.reason}`;
         } else {
-          sessLbl.innerText = Session:  \u2022 Weekly Expiry: ;
+          sessLbl.innerText = `Session: ${data.session_date || '--'} • Weekly Expiry: ${data.expiry_date || '--'}`;
         }
       }
 
@@ -10357,8 +10358,8 @@
       const putWall = synced.put_wall || liveAn.put_wall || latest.put_wall || '--';
       const callWall = synced.call_wall || liveAn.call_wall || latest.call_wall || '--';
       const maxPain = synced.max_pain || liveAn.max_pain || latest.max_pain || '--';
-      if (wallsEl) wallsEl.innerText = ${putWall} PE /  CE;
-      if (mpEl) mpEl.innerText = Max Pain:  (Live);
+      if (wallsEl) wallsEl.innerText = `${putWall} PE / ${callWall} CE`;
+      if (mpEl) mpEl.innerText = `Max Pain: ${maxPain} (Live)`;
 
       const peChg = Number(synced.net_pe_oi_chg !== undefined ? synced.net_pe_oi_chg : (liveAn.net_pe_oi_chg !== undefined ? liveAn.net_pe_oi_chg : (latest.net_pe_oi_chg || 0)));
       const ceChg = Number(synced.net_ce_oi_chg !== undefined ? synced.net_ce_oi_chg : (liveAn.net_ce_oi_chg !== undefined ? liveAn.net_ce_oi_chg : (latest.net_ce_oi_chg || 0)));
