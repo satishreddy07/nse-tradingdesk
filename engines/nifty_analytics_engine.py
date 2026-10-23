@@ -6287,6 +6287,47 @@ class NiftyAnalyticsEngine:
             l["entry_price"] = round(px, 2)
             l["price"] = round(px, 2)
 
+            # Preserve & validate manual exit price, target, and stoploss per leg
+            if l.get("exit_price") is not None and str(l.get("exit_price")).strip() != "":
+                try:
+                    l["exit_price"] = round(float(l["exit_price"]), 2)
+                except (ValueError, TypeError):
+                    l["exit_price"] = None
+            else:
+                l["exit_price"] = None
+
+            if l.get("target_price") is not None and str(l.get("target_price")).strip() != "":
+                try:
+                    l["target_price"] = round(float(l["target_price"]), 2)
+                except (ValueError, TypeError):
+                    l["target_price"] = None
+            else:
+                l["target_price"] = None
+
+            if l.get("target_pct") is not None and str(l.get("target_pct")).strip() != "":
+                try:
+                    l["target_pct"] = round(float(l["target_pct"]), 1)
+                except (ValueError, TypeError):
+                    l["target_pct"] = None
+            else:
+                l["target_pct"] = None
+
+            if l.get("stoploss_price") is not None and str(l.get("stoploss_price")).strip() != "":
+                try:
+                    l["stoploss_price"] = round(float(l["stoploss_price"]), 2)
+                except (ValueError, TypeError):
+                    l["stoploss_price"] = None
+            else:
+                l["stoploss_price"] = None
+
+            if l.get("stoploss_pct") is not None and str(l.get("stoploss_pct")).strip() != "":
+                try:
+                    l["stoploss_pct"] = round(float(l["stoploss_pct"]), 1)
+                except (ValueError, TypeError):
+                    l["stoploss_pct"] = None
+            else:
+                l["stoploss_pct"] = None
+
         if spot_at_entry <= 0.0:
             try:
                 live_spot_res = self.get_live_nifty_spot()
@@ -6722,6 +6763,10 @@ class NiftyAnalyticsEngine:
 
         for leg in legs:
             try:
+                exit_px = leg.get("exit_price")
+                if exit_px is not None and str(exit_px).strip() != "" and float(exit_px) > 0.0:
+                    continue  # Exited leg is closed, 0 live Greeks
+
                 stk = float(leg.get("strike", spot))
                 opt_type = str(leg.get("type", "CE")).upper()
                 action = str(leg.get("action", "BUY")).upper()
@@ -6912,14 +6957,20 @@ class NiftyAnalyticsEngine:
                 if val is None:
                     val = fallback_map.get(stk_int, {}).get(opt_type) or fallback_map.get(stk, {}).get(opt_type)
 
-                leg_quote_available = (val is not None and float(val) > 0.0)
-                if leg_quote_available:
-                    current_px = float(val)
+                exit_px = leg.get("exit_price")
+                has_exited = exit_px is not None and str(exit_px).strip() != "" and float(exit_px) > 0.0
+                if has_exited:
+                    current_px = float(exit_px)
+                    leg_pnl = ((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty
                 else:
-                    strat_quote_available = False
-                    current_px = entry_px  # Preserve entry_px only as non-distorting placeholder
+                    leg_quote_available = (val is not None and float(val) > 0.0)
+                    if leg_quote_available:
+                        current_px = float(val)
+                    else:
+                        strat_quote_available = False
+                        current_px = entry_px  # Preserve entry_px only as non-distorting placeholder
 
-                leg_pnl = ((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty if leg_quote_available else 0.0
+                    leg_pnl = ((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty if leg_quote_available else 0.0
                 strat_unrealized += leg_pnl
 
                 iv_key = f"{opt_type}_IV"
