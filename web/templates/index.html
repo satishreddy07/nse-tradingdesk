@@ -4492,14 +4492,14 @@
           <span class="text-[11px] font-mono text-slate-400">Stored in Single Master File (data/swing_trades.db) • Synced to Telegram Cloud</span>
         </div>
         <div class="overflow-x-auto custom-scroll">
-          <table class="table-fixed w-full text-left text-xs text-slate-300 font-mono min-w-[1300px] tabular-nums">
+          <table class="table-fixed w-full text-left text-xs text-slate-300 font-mono min-w-[1480px] tabular-nums">
             <colgroup>
               <col class="w-[80px]">
               <col class="w-[110px]">
-              <col class="w-[90px]">
+              <col class="w-[125px]">
               <col class="w-[85px]">
               <col class="w-[120px]">
-              <col class="w-[90px]">
+              <col class="w-[100px]">
               <col class="w-[85px]">
               <col class="w-[110px]">
               <col class="w-[95px]">
@@ -4507,16 +4507,16 @@
               <col class="w-[80px]">
               <col class="w-[110px]">
               <col class="w-[95px]">
-              <col class="w-[130px]">
+              <col class="w-[175px]">
             </colgroup>
             <thead class="bg-slate-950/70 text-[10px] sm:text-[11px] uppercase text-slate-400 border-b border-slate-800">
               <tr>
                 <th id="intra-th-slot" class="p-3 w-[80px] overflow-hidden whitespace-nowrap">30m Slot</th>
                 <th class="p-3 w-[110px] overflow-hidden whitespace-nowrap">Captured Time (IST)</th>
-                <th class="p-3 w-[90px] overflow-hidden whitespace-nowrap">Nifty Spot</th>
+                <th class="p-3 w-[125px] overflow-hidden whitespace-nowrap">Nifty Spot (Velocity)</th>
                 <th class="p-3 w-[85px] overflow-hidden whitespace-nowrap">ATM Strike</th>
                 <th class="p-3 w-[120px] overflow-hidden whitespace-nowrap">ATM CE / PE</th>
-                <th class="p-3 w-[90px] overflow-hidden whitespace-nowrap">Straddle ₹</th>
+                <th class="p-3 w-[100px] overflow-hidden whitespace-nowrap">Straddle ₹</th>
                 <th class="p-3 w-[85px] overflow-hidden whitespace-nowrap">Near-ATM PCR</th>
                 <th class="p-3 w-[110px] overflow-hidden whitespace-nowrap">Overall / ATM PCR</th>
                 <th class="p-3 w-[95px] overflow-hidden whitespace-nowrap">Fresh ΔOI PCR</th>
@@ -4524,7 +4524,7 @@
                 <th class="p-3 w-[80px] overflow-hidden whitespace-nowrap">Max Pain</th>
                 <th class="p-3 w-[110px] overflow-hidden whitespace-nowrap">Net PE vs CE ΔOI</th>
                 <th class="p-3 w-[95px] overflow-hidden whitespace-nowrap">IV / Skew</th>
-                <th class="p-3 text-right w-[130px] overflow-hidden whitespace-nowrap">Intraday Regime</th>
+                <th class="p-3 text-right w-[175px] overflow-hidden whitespace-nowrap">Intraday Regime</th>
               </tr>
             </thead>
             <tbody id="intra-snapshots-tbody" class="divide-y divide-slate-800/60">
@@ -10904,24 +10904,66 @@
         if (snaps.length === 0) {
           setSafeHtml(tbody, `<tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">No ${currentIntradayInterval} snapshots recorded yet today. Click "Capture Slot Now".</td></tr>`);
         } else {
-          const snapsSig = snaps.map(s => `${s.slot_time}-${s.spot_price}-${s.straddle_premium}-${s.near_atm_pcr}`).join('|');
+          const snapsSig = snaps.map(s => `${s.slot_time}-${s.spot_price}-${s.straddle_premium}-${s.near_atm_pcr}-${s.market_state}`).join('|');
           if (tbody.getAttribute('data-snaps-sig') !== snapsSig) {
             tbody.setAttribute('data-snaps-sig', snapsSig);
             tbody.innerHTML = snaps.map(s => {
             let sm = {};
             try { sm = s.snapshot_json ? JSON.parse(s.snapshot_json) : {}; } catch (e) {}
-            const decay = Number(sm.straddle_decay_pct || 0);
+            const decay = Number(sm.straddle_decay_pct !== undefined ? sm.straddle_decay_pct : (s.straddle_decay_pct || 0));
             const npcr = Number(s.near_atm_pcr || 0);
             const pcrCol = npcr >= 1.1 ? 'text-emerald-400' : (npcr <= 0.9 ? 'text-rose-400' : 'text-amber-300');
             const netLakhs = ((Number(s.net_pe_oi_chg || 0) - Number(s.net_ce_oi_chg || 0)) / 100000.0);
+
+            // Dynamic 15m Velocity & Volatility-Normalized Z-Score
+            const deltaSpot = sm.delta_spot_15m !== undefined ? Number(sm.delta_spot_15m) : (s.delta_spot_15m !== undefined ? Number(s.delta_spot_15m) : 0);
+            const zVal = sm.z_15m !== undefined ? Number(sm.z_15m) : (s.z_15m !== undefined ? Number(s.z_15m) : 0);
+            let velBadge = '';
+            if (deltaSpot !== 0 || zVal !== 0) {
+              const vCol = deltaSpot >= 0 ? 'text-emerald-400' : 'text-rose-400';
+              const sign = deltaSpot >= 0 ? '+' : '';
+              const zSign = zVal >= 0 ? '+' : '';
+              velBadge = `<div class="text-[10px] ${vCol} font-mono font-medium">${deltaSpot >= 0 ? '▲' : '▼'} ${sign}${deltaSpot.toFixed(1)} (${zSign}${zVal.toFixed(1)}σ)</div>`;
+            }
+
+            // Dynamic State Badge Styling
+            const mState = s.market_state || '';
+            let badgeCls = 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+            let badgeLabel = mState.replace(/_/g, ' ');
+            if (mState === 'SHORT_COVERING_SQUEEZE') {
+              badgeCls = 'bg-emerald-500/25 text-emerald-300 border-emerald-500/50 shadow-sm shadow-emerald-500/20';
+              badgeLabel = '⚡ SHORT COVER SQUEEZE';
+            } else if (mState === 'LONG_UNWINDING_BREAKDOWN') {
+              badgeCls = 'bg-rose-500/25 text-rose-300 border-rose-500/50 shadow-sm shadow-rose-500/20';
+              badgeLabel = '⚠️ LONG UNWINDING';
+            } else if (mState === 'CONSOLIDATION_WITH_BEARISH_BIAS') {
+              badgeCls = 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+              badgeLabel = '⏸️ CONSOLIDATION (BEARISH)';
+            } else if (mState === 'CONSOLIDATION_WITH_BULLISH_BIAS') {
+              badgeCls = 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
+              badgeLabel = '⏸️ CONSOLIDATION (BULLISH)';
+            } else if (mState.includes('THETA') || mState.includes('STRADDLE') || mState.includes('RANGE_BOUND')) {
+              badgeCls = 'bg-purple-500/15 text-purple-300 border-purple-500/30';
+              badgeLabel = '⏳ ' + badgeLabel;
+            } else if (mState.includes('BULLISH')) {
+              badgeCls = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+              badgeLabel = '🟢 ' + badgeLabel;
+            } else if (mState.includes('BEARISH')) {
+              badgeCls = 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+              badgeLabel = '🔻 ' + badgeLabel;
+            }
+
             return `
               <tr class="hover:bg-slate-800/40 transition">
                 <td class="p-3 font-bold text-amber-300 w-[80px] overflow-hidden whitespace-nowrap">${s.slot_time} IST</td>
                 <td class="p-3 text-slate-400 text-[11px] w-[110px] overflow-hidden whitespace-nowrap">${s.timestamp_ist || '--'}</td>
-                <td class="p-3 font-bold text-white w-[90px] overflow-hidden whitespace-nowrap">₹${Number(s.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="p-3 font-bold text-white w-[125px] overflow-hidden whitespace-nowrap">
+                  <div>₹${Number(s.spot_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  ${velBadge}
+                </td>
                 <td class="p-3 font-bold text-cyan-300 w-[85px] overflow-hidden whitespace-nowrap">${s.atm_strike}</td>
                 <td class="p-3 text-slate-200 w-[120px] overflow-hidden whitespace-nowrap">${Number(s.atm_ce_ltp || 0).toFixed(1)}C / ${Number(s.atm_pe_ltp || 0).toFixed(1)}P</td>
-                <td class="p-3 font-bold text-cyan-300 w-[90px] overflow-hidden whitespace-nowrap">₹${Number(s.straddle_premium || 0).toFixed(2)} <span class="text-[10px] ${decay <= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${decay >= 0 ? '+' : ''}${decay.toFixed(1)}%)</span></td>
+                <td class="p-3 font-bold text-cyan-300 w-[100px] overflow-hidden whitespace-nowrap">₹${Number(s.straddle_premium || 0).toFixed(2)} <span class="text-[10px] ${decay <= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${decay >= 0 ? '+' : ''}${decay.toFixed(1)}%)</span></td>
                 <td class="p-3 font-bold ${pcrCol} w-[85px] overflow-hidden whitespace-nowrap">${npcr.toFixed(2)}</td>
                 <td class="p-3 text-slate-300 w-[110px] overflow-hidden whitespace-nowrap">${Number(s.overall_pcr || 0).toFixed(2)} / ${Number(s.atm_pcr || 0).toFixed(2)}</td>
                 <td class="p-3 font-bold ${Number(s.chg_oi_pcr || 1) >= 1.05 ? 'text-emerald-400' : 'text-rose-400'} w-[95px] overflow-hidden whitespace-nowrap">${Number(s.chg_oi_pcr || 0).toFixed(2)}</td>
@@ -10929,7 +10971,7 @@
                 <td class="p-3 text-purple-300 font-bold w-[80px] overflow-hidden whitespace-nowrap">${s.max_pain}</td>
                 <td class="p-3 font-bold ${netLakhs >= 0 ? 'text-emerald-400' : 'text-rose-400'} w-[110px] overflow-hidden whitespace-nowrap">${netLakhs >= 0 ? '+' : ''}${netLakhs.toFixed(2)}L</td>
                 <td class="p-3 text-slate-300 w-[95px] overflow-hidden whitespace-nowrap">${Number(s.atm_iv || 0).toFixed(1)}% (${Number(s.iv_skew || 0) >= 0 ? '+' : ''}${Number(s.iv_skew || 0).toFixed(2)})</td>
-                <td class="p-3 text-right w-[130px] overflow-hidden whitespace-nowrap"><span class="quant-badge px-2.5 py-1 rounded text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 whitespace-nowrap font-bold">${(s.market_state || '').replace(/_/g, ' ')}</span></td>
+                <td class="p-3 text-right w-[175px] overflow-hidden whitespace-nowrap"><span class="quant-badge px-2.5 py-1 rounded text-[10px] border whitespace-nowrap font-bold ${badgeCls}">${badgeLabel}</span></td>
               </tr>
             `;
           }).join('');
