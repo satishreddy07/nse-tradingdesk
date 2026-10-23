@@ -100,8 +100,20 @@ async def lifespan(app: FastAPI):
     except Exception as ke:
         logger.warning(f"Startup Kotak Neo auto-login notice: {ke}")
 
+    # Start Autonomous Execution & Risk Guardrails Daemon
+    try:
+        from engines.autonomous_execution_daemon import autonomous_execution_daemon
+        autonomous_execution_daemon.start_daemon(mode="PAPER")
+    except Exception as de:
+        logger.warning(f"Startup Autonomous Execution Daemon notice: {de}")
+
     yield
     logger.info("Shutting down Quant Trading Desk services...")
+    try:
+        from engines.autonomous_execution_daemon import autonomous_execution_daemon
+        autonomous_execution_daemon.stop_daemon()
+    except Exception:
+        pass
     shutdown_scheduler()
 
 
@@ -3434,3 +3446,85 @@ def square_off_commodity_strategy_endpoint(payload: Dict[str, Any] = Body(...)):
     strategy_id = payload.get("strategy_id", "")
     return commodities_engine.square_off_commodity_strategy(strategy_id)
 
+
+
+# ========================================================================================
+# INSTITUTIONAL EXPANSION SUITE: AUTONOMOUS DAEMON, OPTIONS EDGE & ORDER FLOW
+# ========================================================================================
+
+@app.get("/api/daemon/status")
+def get_daemon_status():
+    """Returns real-time telemetry of the server-side autonomous execution daemon."""
+    from engines.autonomous_execution_daemon import autonomous_execution_daemon
+    return autonomous_execution_daemon.get_status()
+
+
+@app.post("/api/daemon/mode")
+def set_daemon_mode(payload: Dict[str, Any] = Body(...)):
+    """Switches execution daemon mode between PAPER and LIVE_BROKER."""
+    from engines.autonomous_execution_daemon import autonomous_execution_daemon
+    mode = str(payload.get("mode", "PAPER"))
+    res = autonomous_execution_daemon.set_mode(mode)
+    return {"status": "OK", "mode": res}
+
+
+@app.post("/api/daemon/evaluate-now")
+def trigger_daemon_evaluation():
+    """Forces an immediate atomic evaluation pass of all legs and risk circuit breakers."""
+    from engines.autonomous_execution_daemon import autonomous_execution_daemon
+    return autonomous_execution_daemon.evaluate_once(is_market_open=True)
+
+
+@app.get("/api/options/edge/analytics")
+def get_options_edge_analytics(force_refresh: bool = False):
+    """Returns consolidated 15m strike OI pulse, straddle decay curve, IV rank, and strike GEX."""
+    from engines.options_edge_analytics_engine import options_edge_analytics_engine
+    return options_edge_analytics_engine.get_full_edge_analytics(force_refresh=force_refresh)
+
+
+@app.get("/api/options/edge/oi-pulse")
+def get_options_oi_pulse():
+    """Returns 15-minute strike-level incremental OI change & buildup classification."""
+    from engines.options_edge_analytics_engine import options_edge_analytics_engine
+    return options_edge_analytics_engine.compute_15m_strike_oi_pulse()
+
+
+@app.get("/api/options/edge/straddle-decay")
+def get_options_straddle_decay(session_date: Optional[str] = None):
+    """Returns today's 15-minute interval combined ATM straddle decay line chart data."""
+    from engines.options_edge_analytics_engine import options_edge_analytics_engine
+    from core.data_quality import now_ist
+    s_date = session_date or now_ist().strftime("%Y-%m-%d")
+    return options_edge_analytics_engine.compute_atm_straddle_decay_curve(s_date)
+
+
+@app.get("/api/options/edge/volatility-profile")
+def get_options_volatility_profile():
+    """Returns 90-day IV Rank (IVR), IV Percentile (IVP), and Strike GEX Profile."""
+    from engines.options_edge_analytics_engine import options_edge_analytics_engine
+    return {
+        "status": "OK",
+        "volatility_rank": options_edge_analytics_engine.compute_iv_rank_and_percentile(),
+        "strike_gex": options_edge_analytics_engine.compute_strike_gex_profile()
+    }
+
+
+@app.get("/api/intraday/order-flow")
+def get_intraday_order_flow_suite(force_refresh: bool = False):
+    """Returns full order flow suite: Volume Profile (POC/VAH/VAL), CVD, and Confluence."""
+    from engines.order_flow_structure_engine import order_flow_structure_engine
+    return order_flow_structure_engine.get_full_order_flow_suite(force_refresh=force_refresh)
+
+
+@app.get("/api/intraday/volume-profile")
+def get_intraday_volume_profile():
+    """Returns 25-point price bucket Volume Profile with POC and Value Area boundaries."""
+    from engines.order_flow_structure_engine import order_flow_structure_engine
+    return order_flow_structure_engine.compute_volume_profile()
+
+
+@app.get("/api/intraday/confluence")
+def get_intraday_confluence():
+    """Returns weighted Multi-Index & Heavyweight Confluence Score with divergence warnings."""
+    from engines.order_flow_structure_engine import order_flow_structure_engine
+    return order_flow_structure_engine.compute_multi_index_confluence()
