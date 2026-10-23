@@ -120,7 +120,44 @@ class OmniWatchdogEngine:
         # Market calendar helper
         self._calendar = NSEMarketCalendar()
 
+        # Start Autonomous Background Sentinel Worker
+        self._start_autonomous_watcher()
+
         logger.info("OmniWatchdogEngine initialized successfully.")
+
+    def _start_autonomous_watcher(self):
+        """Starts continuous daemon background watcher thread."""
+        def _watcher_loop():
+            logger.info("OmniWatchdog autonomous background thread started.")
+            time.sleep(5.0)
+            while True:
+                try:
+                    now_dt = now_ist()
+                    is_market_open, _ = NSEMarketCalendar.can_execute_trades(now_dt)
+                    sleep_sec = 45.0 if is_market_open else 120.0
+
+                    # Proactively run full system diagnostic probe
+                    res = self.probe_all_subsystems(force_active_probe=True)
+
+                    # Proactive Self-Healing if degraded or alert
+                    if res.get("overall_status") in ("CRITICAL_ALERT", "DEGRADED"):
+                        intra = res.get("subsystems", {}).get("intraday_desk", {})
+                        if intra.get("status") in ("ALERT", "DEGRADED"):
+                            for issue in intra.get("issues", []):
+                                if "sector" in issue.lower() or "breadth" in issue.lower():
+                                    self.execute_self_healing("sector_breadth")
+                                elif "ml" in issue.lower():
+                                    self.execute_self_healing("intraday_ml")
+                                elif "wall" in issue.lower():
+                                    self.execute_self_healing("option_walls")
+
+                    time.sleep(sleep_sec)
+                except Exception as e:
+                    logger.debug(f"OmniWatchdog watcher loop notice: {e}")
+                    time.sleep(60.0)
+
+        t = threading.Thread(target=_watcher_loop, daemon=True, name="OmniWatchdogAutonomousWatcher")
+        t.start()
 
     # =========================================================================
     # FUNCTION-LEVEL INTERCEPTION DECORATOR & RECORDING
@@ -378,31 +415,96 @@ class OmniWatchdogEngine:
         }
 
     def probe_subsystem_intraday(self) -> Dict[str, Any]:
-        """Probes Intraday Desk (Spot stream SLA, 15m/30m snapshots, GEX, and 15:15 MOC squareoff)."""
+        """
+        Probes Intraday Desk:
+        1. Spot Stream SLA & Freshness
+        2. 15m/30m/50m Snapshot capture count & cadence
+        3. Tactical Option Walls Corridor & Delta OI Flow
+        4. Real-time Sector & Market Breadth (NSE live indices feed)
+        5. Intraday ML Model Sentinel (probability sanity, regime, latency)
+        6. 15:15 MOC squareoff guarantee
+        """
         t0 = time.perf_counter()
         issues = []
         status = "HEALTHY"
         details = {}
 
         try:
+            now_dt = now_ist()
+            is_market_day = self._calendar.is_trading_day(now_dt)
+            is_market_open, _ = NSEMarketCalendar.can_execute_trades(now_dt)
+            curr_time_str = now_dt.strftime("%H:%M")
+
+            # 1. Database snapshots & active trades
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
-
-            # Check snapshot count and freshness
             cur.execute("SELECT count(*), max(timestamp_ist) FROM intraday_option_snapshots")
             snap_count, last_snap_time = cur.fetchone()
 
-            # Check for active intraday trades
             cur.execute("SELECT count(*) FROM intraday_options_trade_log WHERE status = 'ACTIVE'")
             active_intraday_trades = cur.fetchone()[0]
-
             conn.close()
 
-            # Verify 15:15 IST MOC squareoff guarantee
-            now_dt = now_ist()
-            is_market_day = self._calendar.is_trading_day(now_dt)
-            curr_time_str = now_dt.strftime("%H:%M")
+            # 2. Check Market Breadth & Sector Divergence
+            from execution.state_engine import state_engine
+            sec_data = state_engine.get_kv("latest_sectoral_divergence") or {}
+            sec_source = sec_data.get("source", "UNKNOWN")
+            sec_time = sec_data.get("fetched_at_ist", "")
+            mkt_breadth = sec_data.get("market_breadth") or {}
 
+            if is_market_open and sec_time:
+                try:
+                    sec_dt = datetime.strptime(sec_time[:19], "%Y-%m-%d %H:%M:%S")
+                    if (now_dt.replace(tzinfo=None) - sec_dt).total_seconds() > 300:
+                        issues.append("Sector Breadth snapshot is older than 5 minutes during market hours")
+                        if status == "HEALTHY":
+                            status = "DEGRADED"
+                except Exception:
+                    pass
+
+            if sec_source == "MASTER_DB_PERSISTED_SNAPSHOT" and is_market_open:
+                issues.append("Sector Breadth using persisted DB fallback rather than live exchange feed")
+                if status == "HEALTHY":
+                    status = "DEGRADED"
+
+            # 3. Check Intraday ML Sentinel
+            from engines.intraday_ml_engine import intraday_ml_engine
+            ml_data = intraday_ml_engine.train_and_predict(force_refresh=False)
+            ml_status = ml_data.get("status", "UNKNOWN")
+            probs = ml_data.get("probabilities") or {}
+            prob_sum = sum(v for v in probs.values() if v is not None)
+            ml_regime = ml_data.get("predicted_regime", "UNKNOWN")
+
+            if ml_status != "OK" and is_market_open:
+                issues.append(f"Intraday ML status: {ml_status} ({ml_data.get('reason', 'Unknown')})")
+                if status == "HEALTHY":
+                    status = "DEGRADED"
+            elif probs and not (0.95 <= prob_sum <= 1.05):
+                issues.append(f"Intraday ML probability distortion: sum={prob_sum:.2f}")
+                if status == "HEALTHY":
+                    status = "DEGRADED"
+
+            # 4. Check Tactical Walls & Delta OI Flow
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            intra_dash = nifty_analytics_engine.get_intraday_expiry_dashboard(interval_mode="15m", force_refresh=False)
+            live_an = intra_dash.get("live_analysis") or {}
+            put_wall = live_an.get("put_wall") or 0
+            call_wall = live_an.get("call_wall") or 0
+            net_pe_oi = live_an.get("net_pe_oi_chg") or 0
+            net_ce_oi = live_an.get("net_ce_oi_chg") or 0
+
+            wall_gap = call_wall - put_wall if (call_wall and put_wall) else 0
+            if wall_gap > 1200:
+                issues.append(f"Tactical option wall gap abnormally wide: {wall_gap} pts ({put_wall} PE / {call_wall} CE)")
+                if status == "HEALTHY":
+                    status = "DEGRADED"
+
+            if is_market_open and net_pe_oi == 0 and net_ce_oi == 0:
+                issues.append("Fresh intraday delta OI is zero across active strikes during market hours")
+                if status == "HEALTHY":
+                    status = "DEGRADED"
+
+            # 5. Verify 15:15 IST MOC squareoff guarantee
             if is_market_day and curr_time_str > "15:15" and curr_time_str < "23:59":
                 if active_intraday_trades > 0:
                     issues.append(
@@ -415,6 +517,12 @@ class OmniWatchdogEngine:
                 "last_snapshot_time": last_snap_time,
                 "active_intraday_trades": active_intraday_trades,
                 "moc_squareoff_enforced": active_intraday_trades == 0 if curr_time_str > "15:15" else True,
+                "tactical_walls": f"{put_wall} PE / {call_wall} CE (Gap: {wall_gap} pts)",
+                "delta_oi_flow": f"+{(net_pe_oi - net_ce_oi)/100000:.2f}L Net PE" if (net_pe_oi or net_ce_oi) else "0.00L",
+                "sector_breadth_pct": f"{sec_data.get('breadth_pct_green', 0)}% Green ({sec_source})",
+                "market_breadth_n500": f"{mkt_breadth.get('nifty500_advances', '--')} Adv / {mkt_breadth.get('nifty500_declines', '--')} Dec ({mkt_breadth.get('market_sentiment', 'NORMAL')})",
+                "intraday_ml_regime": f"{ml_regime} ({probs.get('p_up', 0)*100:.0f}% Up / {probs.get('p_flat', 0)*100:.0f}% Flat / {probs.get('p_down', 0)*100:.0f}% Down)",
+                "intraday_ml_slots": ml_data.get("model_metrics", {}).get("slots_trained_today", 0),
             }
         except Exception as e:
             status = "ALERT"
@@ -422,7 +530,7 @@ class OmniWatchdogEngine:
 
         latency_ms = (time.perf_counter() - t0) * 1000.0
         return {
-            "name": "Intraday Desk",
+            "name": "Intraday Desk & ML Sentinel",
             "status": status,
             "latency_ms": round(latency_ms, 2),
             "issues": issues,
@@ -846,7 +954,7 @@ class OmniWatchdogEngine:
 
             conn.close()
 
-            # 4. MODEL REGISTRY ARTIFACT INTEGRITY (5 HORIZONS)
+            # 4. MODEL REGISTRY ARTIFACT INTEGRITY (ACTIVE HORIZONS)
             horizons = ["intraday", "weekly", "monthly", "swing", "nifty_t+1", "nifty_t+5"]
             for h in horizons:
                 files = sorted(glob.glob(f"models/registry/{h}_*.bundle"))
@@ -893,6 +1001,21 @@ class OmniWatchdogEngine:
                         }
                         issues.append(f"Corrupted bundle for horizon {h}: {str(be)}")
                         status = "DEGRADED"
+
+            # 4B. Online Intraday ML Model Inspection
+            try:
+                from engines.intraday_ml_engine import intraday_ml_engine
+                online_ml = intraday_ml_engine.train_and_predict(force_refresh=False)
+                models_registry_health["intraday_online_calibrator"] = {
+                    "status": "HEALTHY" if online_ml.get("status") == "OK" else "DEGRADED",
+                    "regime": online_ml.get("predicted_regime"),
+                    "slots_today": online_ml.get("model_metrics", {}).get("slots_trained_today", 0),
+                    "accuracy_pct": round(online_ml.get("model_metrics", {}).get("accuracy", 0.0) * 100, 1),
+                    "model_type": online_ml.get("model_metrics", {}).get("model_type"),
+                    "latency_ms": online_ml.get("model_metrics", {}).get("latency_ms"),
+                }
+            except Exception as ome:
+                models_registry_health["intraday_online_calibrator"] = {"status": "DEGRADED", "error": str(ome)}
 
             # 5. CONCEPT DRIFT SENTINEL (PSI)
             # Evaluate feature stability across recent rows
@@ -1176,6 +1299,22 @@ class OmniWatchdogEngine:
                     daemon=True,
                 ).start()
                 actions_taken.append("Dispatched background multi-horizon ML retraining job")
+
+            elif domain in ("sector_breadth", "market_breadth"):
+                from engines.intraday_analytics_engine import intraday_analytics_engine
+                res = intraday_analytics_engine.compute_sectoral_divergence(force_refresh=True)
+                actions_taken.append(f"Refreshed Sector Breadth from live NSE feed ({res.get('source')}, {res.get('breadth_pct_green')}% Green)")
+
+            elif domain in ("intraday_ml", "ml_intraday"):
+                from engines.intraday_ml_engine import intraday_ml_engine
+                res = intraday_ml_engine.train_and_predict(force_refresh=True)
+                actions_taken.append(f"Re-trained Intraday ML Calibrator ({res.get('predicted_regime')}, Latency: {res.get('model_metrics', {}).get('latency_ms', 0)}ms)")
+
+            elif domain in ("option_walls", "intraday_expiry"):
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                res = nifty_analytics_engine.get_intraday_expiry_dashboard(interval_mode="15m", force_refresh=True)
+                live_an = res.get("live_analysis", {})
+                actions_taken.append(f"Re-calibrated tactical walls: {live_an.get('put_wall')} PE / {live_an.get('call_wall')} CE")
 
             else:
                 actions_taken.append(f"No dedicated self-healing script for domain: {domain}")

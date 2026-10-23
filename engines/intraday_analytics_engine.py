@@ -52,6 +52,8 @@ class IntradayAnalyticsEngine:
         self._cache: Dict[str, Any] = {}
         self._cache_ts: float = 0.0
         self._cache_ttl_sec: float = 120.0  # 2 minutes TTL
+        self._sectoral_cache: Dict[str, Any] = {}
+        self._sectoral_cache_ts: float = 0.0
         self._last_breach_alert_state: Dict[str, Any] = {"wall": None, "date": None}
         self._last_gamma_alert_state: Dict[str, Any] = {"wall": None, "ts": 0.0}
         self._depth_snapshots: List[Dict[str, Any]] = []
@@ -327,41 +329,82 @@ class IntradayAnalyticsEngine:
             "active_strikes_gex": sorted(sorted_by_k, key=lambda x: abs(x["strike"] - spot))[:10],
         }
 
-    def compute_sectoral_divergence(self) -> Dict[str, Any]:
+    def compute_sectoral_divergence(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
-        Computes sectoral breadth and inter-sectoral drag (Bank vs IT divergence)
-        directly from Kotak Neo live quotes/ticks with Master DB persistence fallback.
-        Zero calls to query1.finance.yahoo.com.
+        Computes real-time sectoral breadth, inter-sectoral drag, and broad market advances/declines.
+        Prioritizes live NSE India allIndices API directly from exchange, with Kotak Neo / Yahoo / DB fallback.
         """
-        # 1. Kotak Neo Live Quotes
-        kotak_quotes: Dict[str, float] = {}
-        try:
-            from engines.kotak_neo_engine import kotak_neo_engine
-            for tk, name, cat, w in NSE_SECTORS:
-                ltp = (
-                    kotak_neo_engine.get_live_price(name)
-                    or kotak_neo_engine.get_live_price(tk)
-                    or kotak_neo_engine.get_live_price(name.upper())
-                )
-                if ltp is not None and ltp > 0:
-                    kotak_quotes[tk] = ltp
-            if not kotak_quotes and kotak_neo_engine._is_authenticated:
-                sector_names = [name for _, name, _, _ in NSE_SECTORS]
-                rest_q = kotak_neo_engine.fetch_rest_quotes(sector_names)
-                for tk, name, cat, w in NSE_SECTORS:
-                    if name in rest_q and rest_q[name] > 0:
-                        kotak_quotes[tk] = rest_q[name]
-        except Exception:
-            pass
+        now_ts = time.time()
+        is_market_open, _ = NSEMarketCalendar.can_execute_trades(now_ist())
+        cache_ttl = 5.0 if is_market_open else 30.0
 
-        # 2. Check persisted snapshot in Master DB
+        if not force_refresh and self._sectoral_cache and (now_ts - self._sectoral_cache_ts) < cache_ttl:
+            return self._sectoral_cache
+
+        # 1. First Priority: Live NSE India allIndices API
+        nse_indices: Dict[str, Dict[str, Any]] = {}
+        market_breadth: Dict[str, Any] = {}
+        source = "MASTER_DB_PERSISTED_SNAPSHOT"
+
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            session = nifty_analytics_engine._get_nse_session()
+            r = session.get("https://www.nseindia.com/api/allIndices", timeout=6)
+            if r.status_code == 200:
+                raw_data = r.json().get("data", [])
+                for item in raw_data:
+                    idx_name = str(item.get("index", "")).strip().upper()
+                    if idx_name:
+                        nse_indices[idx_name] = item
+
+                # Extract Market-wide Breadth Metrics
+                n50 = nse_indices.get("NIFTY 50", {})
+                n500 = nse_indices.get("NIFTY 500", {})
+
+                n500_adv = int(n500.get("advances") or 0)
+                n500_dec = int(n500.get("declines") or 0)
+                n500_unch = int(n500.get("unchanged") or 0)
+                n500_tot = max(1, n500_adv + n500_dec + n500_unch)
+
+                market_breadth = {
+                    "nifty50_advances": int(n50.get("advances") or 0),
+                    "nifty50_declines": int(n50.get("declines") or 0),
+                    "nifty500_advances": n500_adv,
+                    "nifty500_declines": n500_dec,
+                    "nifty500_unchanged": n500_unch,
+                    "market_advance_ratio": round((n500_adv / n500_tot) * 100.0, 1),
+                    "market_sentiment": "BROAD_RALLY" if n500_adv >= 300 else ("BROAD_SELLOFF" if n500_dec >= 300 else "NEUTRAL_MIXED")
+                }
+                source = "NSE_INDIA_LIVE_ALL_INDICES"
+        except Exception as e:
+            logger.debug(f"NSE allIndices live fetch notice: {e}")
+
+        # 2. Secondary: Kotak Neo Live Quotes
+        kotak_quotes: Dict[str, float] = {}
+        if not nse_indices:
+            try:
+                from engines.kotak_neo_engine import kotak_neo_engine
+                for tk, name, cat, w in NSE_SECTORS:
+                    ltp = (
+                        kotak_neo_engine.get_live_price(name)
+                        or kotak_neo_engine.get_live_price(tk)
+                        or kotak_neo_engine.get_live_price(name.upper())
+                    )
+                    if ltp is not None and ltp > 0:
+                        kotak_quotes[tk] = ltp
+                if kotak_quotes:
+                    source = "KOTAK_NEO_STREAM"
+            except Exception:
+                pass
+
+        # 3. Check persisted snapshot in Master DB if all live calls failed
         persisted = state_engine.get_kv("latest_sectoral_divergence")
         if not persisted:
             suite = state_engine.get_kv("latest_intraday_suite")
             if suite and isinstance(suite, dict) and "sectoral_divergence" in suite:
                 persisted = suite["sectoral_divergence"]
 
-        if not kotak_quotes and persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
+        if not nse_indices and not kotak_quotes and persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
             persisted_copy = dict(persisted)
             persisted_copy["source"] = "MASTER_DB_PERSISTED_SNAPSHOT"
             return persisted_copy
@@ -369,25 +412,35 @@ class IntradayAnalyticsEngine:
         # Build sector rows
         results: List[Dict[str, Any]] = []
         for tk, name, cat, w in NSE_SECTORS:
-            p = float(kotak_quotes.get(tk, 0.0))
-            prev = p
-            chg_pct = 0.0
-            if persisted and "sectors" in persisted:
-                old_sec = next((s for s in persisted["sectors"] if s.get("ticker") == tk), None)
-                if old_sec:
-                    if p <= 0:
-                        p = float(old_sec.get("price") or 0.0)
-                    chg_pct = float(old_sec.get("change_pct") or 0.0)
-            if p > 0 and prev > 0 and p != prev:
-                chg_pct = round(((p - prev) / prev) * 100.0, 2)
+            idx_upper = name.upper()
+            nse_item = nse_indices.get(idx_upper)
+
+            if nse_item:
+                p = float(nse_item.get("last") or 0.0)
+                chg_pct = float(nse_item.get("percentChange") or 0.0)
+                prev_close = float(nse_item.get("previousClose") or p)
+            else:
+                p = float(kotak_quotes.get(tk, 0.0))
+                chg_pct = 0.0
+                prev_close = p
+                if persisted and "sectors" in persisted:
+                    old_sec = next((s for s in persisted["sectors"] if s.get("ticker") == tk), None)
+                    if old_sec:
+                        if p <= 0:
+                            p = float(old_sec.get("price") or 0.0)
+                        chg_pct = float(old_sec.get("change_pct") or 0.0)
+                        prev_close = float(old_sec.get("prev_close") or p)
+                if p > 0 and prev_close > 0 and p != prev_close:
+                    chg_pct = round(((p - prev_close) / prev_close) * 100.0, 2)
 
             results.append({
                 "ticker": tk,
                 "name": name,
                 "category": cat,
                 "weight": w,
-                "price": p,
-                "change_pct": chg_pct,
+                "price": round(p, 2),
+                "change_pct": round(chg_pct, 2),
+                "prev_close": round(prev_close, 2) if 'prev_close' in locals() else p,
                 "status": "GREEN" if chg_pct > 0.05 else ("RED" if chg_pct < -0.05 else "FLAT"),
             })
 
@@ -429,7 +482,7 @@ class IntradayAnalyticsEngine:
 
         payload = {
             "status": "OK",
-            "source": "KOTAK_NEO_STREAM" if kotak_quotes else "MASTER_DB_PERSISTED_SNAPSHOT",
+            "source": source,
             "breadth_pct_green": breadth_pct,
             "green_sectors": green_count,
             "total_sectors": total_count,
@@ -442,8 +495,11 @@ class IntradayAnalyticsEngine:
             "sector_verdict": sector_verdict,
             "alignment_score": alignment_score,
             "sectors": results,
+            "market_breadth": market_breadth,
             "fetched_at_ist": format_ist(),
         }
+        self._sectoral_cache = payload
+        self._sectoral_cache_ts = now_ts
         state_engine.set_kv("latest_sectoral_divergence", payload)
         return payload
 

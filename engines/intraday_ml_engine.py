@@ -120,9 +120,10 @@ class IntradayMLEngine:
             latest_curr = today_snaps.iloc[-1]
             x_live = self._extract_features(latest_prev, latest_curr)
         elif not today_snaps.empty:
-            # Only 1 slot today, compare with itself as neutral baseline
+            # Only 1 slot today: compare against the opening snapshot or previous available session slot
             latest_curr = today_snaps.iloc[-1]
-            x_live = self._extract_features(latest_curr, latest_curr)
+            prev_cand = df.iloc[-2] if len(df) >= 2 else latest_curr
+            x_live = self._extract_features(prev_cand, latest_curr)
         else:
             latest_curr = df.iloc[-1]
             latest_prev = df.iloc[-2] if len(df) >= 2 else latest_curr
@@ -133,6 +134,10 @@ class IntradayMLEngine:
             from engines.nifty_analytics_engine import nifty_analytics_engine
             live_spot = nifty_analytics_engine.get_live_nifty_spot(force_refresh=False)
             current_spot = float(live_spot.get("price") or latest_curr["spot_price"])
+            # Update live spot return in feature vector if live spot differs from slot spot
+            slot_spot = float(latest_curr["spot_price"])
+            if current_spot > 0 and slot_spot > 0 and x_live and len(x_live) >= 8:
+                x_live[0] = ((current_spot - slot_spot) / slot_spot) * 100.0
         except Exception:
             current_spot = float(latest_curr["spot_price"])
 
@@ -188,12 +193,16 @@ class IntradayMLEngine:
         band_1s = max(15.0, round(strad * 0.35, 1))
         expected_range_1s = [round(expected_next_spot - band_1s, 1), round(expected_next_spot + band_1s, 1)]
 
-        # Regime determination
-        if p_up >= 0.48 and p_up > p_down:
+        # Net Writer Dominance Score (-100 to +100)
+        writer_bias = (p_up - p_down) * 100.0
+        writer_bias = round(float(np.clip(writer_bias, -100.0, 100.0)), 1)
+
+        # Regime determination (Directional calibration for 3-class distribution)
+        if (p_up >= 0.40 and p_up > p_down) or (p_up > p_flat and p_up > p_down) or (writer_bias >= 18.0 and p_up > p_down):
             regime = "BULLISH_EXPANSION"
             regime_desc = "Put writers aggressively dominating; calls unwinding. Upward drift expected."
             strategy_rec = "BULL_PUT_SPREAD (Credit) or ATM_CALL_MOMENTUM"
-        elif p_down >= 0.48 and p_down > p_up:
+        elif (p_down >= 0.40 and p_down > p_up) or (p_down > p_flat and p_down > p_up) or (writer_bias <= -18.0 and p_down > p_up):
             regime = "BEARISH_BREAKDOWN"
             regime_desc = "Call writers pressing down; put unwinding detected. Downside vulnerability."
             strategy_rec = "BEAR_CALL_SPREAD (Credit) or ATM_PUT_MOMENTUM"
@@ -201,10 +210,6 @@ class IntradayMLEngine:
             regime = "PINNED_CONSOLIDATION"
             regime_desc = "Two-way writer pinning; theta decay active. High probability of range-bound pin."
             strategy_rec = "IRON_CONDOR or SHORT_STRADDLE / STRANGLE (Theta Harvesting)"
-
-        # Net Writer Dominance Score (-100 to +100)
-        writer_bias = (p_up - p_down) * 100.0
-        writer_bias = round(float(np.clip(writer_bias, -100.0, 100.0)), 1)
 
         latency_ms = round((time.time() - t0) * 1000.0, 1)
 
