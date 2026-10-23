@@ -19650,6 +19650,34 @@
               </div>
             </div>
           `;
+        } else if (w.status === 'STOPPED_OUT') {
+          statusHtml = `
+            <div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 inline-flex items-center gap-1">
+                <span>🛑 STOPPED OUT</span>
+              </span>
+              <div class="text-[10px] text-rose-400 font-mono mt-0.5">SL Hit & Liquidated</div>
+            </div>
+          `;
+          actionBtnHtml = `
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono text-rose-400 bg-rose-950/60 border border-rose-500/30">
+              Stopped
+            </span>
+          `;
+        } else if (w.status === 'CLOSED') {
+          statusHtml = `
+            <div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 inline-flex items-center gap-1">
+                <span>🏁 CLOSED</span>
+              </span>
+              <div class="text-[10px] text-slate-400 font-mono mt-0.5">Target/Exit Booked</div>
+            </div>
+          `;
+          actionBtnHtml = `
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-slate-900 border border-slate-700">
+              Closed
+            </span>
+          `;
         } else if (w.status === 'TRIGGERED') {
           statusHtml = `
             <div>

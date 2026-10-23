@@ -565,14 +565,20 @@ class Portfolio3StrategyEngine:
                 """).fetchall()
             else:
                 rows = conn.execute("""
-                SELECT * FROM p3_prebreakout_watchlist
-                WHERE status IN ('WATCHING', 'TRIGGERED')
-                AND id IN (
+                SELECT w.* FROM p3_prebreakout_watchlist w
+                WHERE (
+                    w.status = 'WATCHING'
+                    OR (w.status = 'TRIGGERED' AND EXISTS (
+                        SELECT 1 FROM active_positions a
+                        WHERE a.symbol = w.symbol AND a.portfolio_type = 'PORTFOLIO_3_PRE_BREAKOUT'
+                    ))
+                )
+                AND w.id IN (
                     SELECT MAX(id) FROM p3_prebreakout_watchlist
                     WHERE status IN ('WATCHING', 'TRIGGERED')
                     GROUP BY symbol
                 )
-                ORDER BY id DESC
+                ORDER BY w.id DESC
                 """).fetchall()
             items = [dict(r) for r in rows]
 
@@ -1136,6 +1142,11 @@ class Portfolio3StrategyEngine:
                             stop_exit_price, now_str, leg2_loss,
                             total_loss, net_ret, r_mult, now_str, sym
                         ))
+                        conn.execute("""
+                        UPDATE p3_prebreakout_watchlist
+                        SET status = 'STOPPED_OUT', updated_at = ?
+                        WHERE symbol = ? AND status = 'TRIGGERED'
+                        """, (now_str, sym))
                         conn.commit()
 
                     logger.info(f"🛑 [P3 Pre-Target Stop Hit] {sym} closed at Initial SL ₹{stop_exit_price:.2f} (Loss: ₹{total_loss:.2f}, -1.0R).")
@@ -1263,6 +1274,11 @@ class Portfolio3StrategyEngine:
                                 net_ret_pct = ?, r_multiple = ?, updated_at = ?
                             WHERE symbol = ? AND overall_status = 'PARTIAL_CLOSED'
                             """, (p2_exit_px, now_str, total_leg2_pnl, total_leg2_pnl, net_ret, r_mult, now_str, sym))
+                            conn.execute("""
+                            UPDATE p3_prebreakout_watchlist
+                            SET status = 'CLOSED', updated_at = ?
+                            WHERE symbol = ? AND status = 'TRIGGERED'
+                            """, (now_str, sym))
                             conn.commit()
 
                         logger.info(f"🏁 [P3 Runner Exited] {sym} closed @ ₹{p2_exit_px:.2f} ({exit_reason}, Net Ret: {net_ret}%, {r_mult}R).")

@@ -1837,6 +1837,17 @@ class StateEngine:
                 # Delete from active_positions strictly matching (symbol, portfolio_type) (F-30)
                 conn.execute("DELETE FROM active_positions WHERE symbol = ? AND portfolio_type = ?", (sym_clean, p_type))
 
+                # If portfolio_type is PORTFOLIO_3_PRE_BREAKOUT, synchronize watchlist status
+                if p_type == "PORTFOLIO_3_PRE_BREAKOUT":
+                    try:
+                        status_lbl = "STOPPED_OUT" if ("SL" in str(exit_reason).upper() or "STOP" in str(exit_reason).upper()) else "CLOSED"
+                        conn.execute(
+                            "UPDATE p3_prebreakout_watchlist SET status = ?, updated_at = ? WHERE symbol = ? AND status = 'TRIGGERED'",
+                            (status_lbl, now_str, sym_clean)
+                        )
+                    except Exception as p3_e:
+                        logger.warning(f"Failed to update p3_prebreakout_watchlist on close: {p3_e}")
+
                 # Clear signal only if no other portfolio has an active position for this symbol
                 remaining_active_any = conn.execute(
                     "SELECT COUNT(*) FROM active_positions WHERE symbol = ?",
