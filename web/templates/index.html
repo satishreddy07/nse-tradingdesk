@@ -25329,9 +25329,9 @@
                   ltpEl.setAttribute('data-prev-ltp', newLtp);
 
                   if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.05) {
-                    const flashCls = newLtp >= oldLtp ? 'bg-emerald-500/30 text-emerald-300' : 'bg-rose-500/30 text-rose-300';
-                    ltpEl.classList.add(flashCls, 'rounded', 'px-1');
-                    setTimeout(() => ltpEl.classList.remove(flashCls, 'rounded', 'px-1'), 800);
+                    const flashCls = newLtp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
+                    ltpEl.classList.add(...flashCls, 'rounded', 'px-1');
+                    setTimeout(() => ltpEl.classList.remove(...flashCls, 'rounded', 'px-1'), 800);
                   }
                 }
 
@@ -25362,9 +25362,9 @@
                 sigEl.innerText = `₹${ltp.toFixed(2)}`;
                 sigEl.setAttribute('data-prev-ltp', ltp);
                 if (oldLtp > 0 && Math.abs(ltp - oldLtp) > 0.01) {
-                  const flashCls = ltp >= oldLtp ? 'bg-emerald-500/30 text-emerald-300 font-extrabold' : 'bg-rose-500/30 text-rose-300 font-extrabold';
-                  sigEl.classList.add(flashCls, 'rounded', 'px-1');
-                  setTimeout(() => sigEl.classList.remove(flashCls, 'rounded', 'px-1'), 750);
+                  const flashCls = ltp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300', 'font-extrabold'] : ['bg-rose-500/30', 'text-rose-300', 'font-extrabold'];
+                  sigEl.classList.add(...flashCls, 'rounded', 'px-1');
+                  setTimeout(() => sigEl.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
                 }
               }
 
@@ -25374,9 +25374,9 @@
                 p3El.innerText = `₹${ltp.toFixed(2)}`;
                 p3El.setAttribute('data-prev-ltp', ltp);
                 if (oldLtp > 0 && Math.abs(ltp - oldLtp) > 0.01) {
-                  const flashCls = ltp >= oldLtp ? 'bg-emerald-500/30 text-emerald-300' : 'bg-rose-500/30 text-rose-300';
-                  p3El.classList.add(flashCls, 'rounded', 'px-1');
-                  setTimeout(() => p3El.classList.remove(flashCls, 'rounded', 'px-1'), 750);
+                  const flashCls = ltp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
+                  p3El.classList.add(...flashCls, 'rounded', 'px-1');
+                  setTimeout(() => p3El.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
                 }
               }
             });
@@ -25986,9 +25986,9 @@
           cardLtpEl.setAttribute('data-prev-ltp', newLtp);
 
           if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.01) {
-            const flashCls = newLtp >= oldLtp ? 'bg-emerald-500/30 text-emerald-300' : 'bg-rose-500/30 text-rose-300';
-            cardLtpEl.classList.add(flashCls, 'rounded', 'px-1');
-            setTimeout(() => cardLtpEl.classList.remove(flashCls, 'rounded', 'px-1'), 750);
+            const flashCls = newLtp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
+            cardLtpEl.classList.add(...flashCls, 'rounded', 'px-1');
+            setTimeout(() => cardLtpEl.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
           }
         }
 
@@ -26007,9 +26007,9 @@
           rowLtpEl.setAttribute('data-prev-ltp', newLtp);
 
           if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.01) {
-            const flashCls = newLtp >= oldLtp ? 'bg-emerald-500/30 text-emerald-300' : 'bg-rose-500/30 text-rose-300';
-            rowLtpEl.classList.add(flashCls, 'rounded', 'px-1');
-            setTimeout(() => rowLtpEl.classList.remove(flashCls, 'rounded', 'px-1'), 750);
+            const flashCls = newLtp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
+            rowLtpEl.classList.add(...flashCls, 'rounded', 'px-1');
+            setTimeout(() => rowLtpEl.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
           }
         }
 
