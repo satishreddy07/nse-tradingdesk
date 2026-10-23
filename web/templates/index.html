@@ -10316,7 +10316,6 @@
       const synced = data.live_synced_metrics || {};
       const liveSpot = data.live_spot || {};
       const spot = Number(synced.spot_price || liveSpot.price || latest.spot_price || 0);
-      const isMarketOpen = data.is_market_open !== undefined ? Boolean(data.is_market_open) : false;
       const isLive = Boolean(liveSpot.is_live && isMarketOpen);
       const spotDiff = liveSpot.change_pts !== undefined ? Number(liveSpot.change_pts) : Number(meta.spot_from_open || 0);
       const spotDiffPct = liveSpot.change_pct !== undefined ? Number(liveSpot.change_pct) : 0;
@@ -10375,7 +10374,6 @@
         oiFlowSub.innerText = `PE: ${(peChg / 100000).toFixed(1)}L vs CE: ${(ceChg / 100000).toFixed(1)}L`;
       }
 
-      const liveAn = data.live_analysis || {};
       const regEl = document.getElementById('intra-kpi-regime');
       const ivEl = document.getElementById('intra-kpi-iv');
       const activeState = liveAn.market_state || latest.market_state || 'BALANCED';
