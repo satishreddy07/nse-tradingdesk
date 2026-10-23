@@ -14915,6 +14915,9 @@
       if (typeof updateSmartExecutionEvaluation === 'function') {
         updateSmartExecutionEvaluation();
       }
+      if (typeof drawPayoffGraph === 'function') {
+        drawPayoffGraph();
+      }
     }
 
     function calculateSigmaLevels(spot, expiryType = 'WEEKLY', customDte = null, customIv = null) {
