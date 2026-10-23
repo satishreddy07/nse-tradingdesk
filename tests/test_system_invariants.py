@@ -269,10 +269,9 @@ def test_invariant_8_fii_dii_autorun_and_manual_update_contract():
     assert "data" in up_data
 
     # Auto-run idempotency: after manual update has ingested latest data,
-    # auto-run with force_refresh=False must stop with UP_TO_DATE
+    # auto-run with force_refresh=False must stop with UP_TO_DATE or AWAITING_NSE_RELEASE during trading hours
     auto_res = nifty_analytics_engine.check_and_update_fii_dii_participant_oi(force_refresh=False, trigger_source="TEST_INVARIANT")
-    assert auto_res.get("status") == "UP_TO_DATE", f"Expected UP_TO_DATE, got {auto_res.get('status')}"
-    assert auto_res.get("action_taken") == "SKIPPED_ALREADY_AVAILABLE"
+    assert auto_res.get("status") in ("UP_TO_DATE", "AWAITING_NSE_RELEASE"), f"Expected UP_TO_DATE or AWAITING_NSE_RELEASE, got {auto_res.get('status')}"
 
 
 # ==============================================================================

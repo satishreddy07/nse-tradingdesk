@@ -4119,35 +4119,47 @@
         </div>
 
         <!-- 6 Live Intraday Weekly Expiry KPI Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
-            <div class="text-[10px] font-mono uppercase text-amber-400">Nifty Spot & ATM</div>
-            <div id="intra-kpi-spot" class="text-base sm:text-xl font-mono font-bold text-white mt-1 flex items-center justify-between gap-1.5">--</div>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-4 items-stretch">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] font-mono uppercase text-amber-400">Nifty Spot & ATM</div>
+              <div id="intra-kpi-spot" class="text-base sm:text-xl font-mono font-bold text-white mt-1 flex items-center justify-between gap-1.5">--</div>
+            </div>
             <div id="intra-kpi-spot-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">ATM: -- | Exp: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
-            <div class="text-[10px] font-mono uppercase text-cyan-400">ATM Straddle Premium</div>
-            <div id="intra-kpi-straddle" class="text-base sm:text-xl font-mono font-bold text-cyan-300 mt-1">--</div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] font-mono uppercase text-cyan-400">ATM Straddle Premium</div>
+              <div id="intra-kpi-straddle" class="text-base sm:text-xl font-mono font-bold text-cyan-300 mt-1">--</div>
+            </div>
             <div id="intra-kpi-straddle-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">CE: -- | PE: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
-            <div class="text-[10px] font-mono uppercase text-emerald-400">Near-ATM / Overall PCR</div>
-            <div id="intra-kpi-pcr" class="text-base sm:text-xl font-mono font-bold text-emerald-400 mt-1">--</div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] font-mono uppercase text-emerald-400">Near-ATM / Overall PCR</div>
+              <div id="intra-kpi-pcr" class="text-base sm:text-xl font-mono font-bold text-emerald-400 mt-1">--</div>
+            </div>
             <div id="intra-kpi-pcr-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">ATM PCR: -- | ΔOI PCR: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
-            <div class="text-[10px] font-mono uppercase text-violet-400">Put Wall / Call Wall</div>
-            <div id="intra-kpi-walls" class="text-base sm:text-xl font-mono font-bold text-violet-300 mt-1">-- / --</div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] font-mono uppercase text-violet-400">Put Wall / Call Wall</div>
+              <div id="intra-kpi-walls" class="text-base sm:text-xl font-mono font-bold text-violet-300 mt-1">-- / --</div>
+            </div>
             <div id="intra-kpi-maxpain" class="text-[10px] text-slate-400 font-mono mt-0.5">Max Pain: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
-            <div class="text-[10px] font-mono uppercase text-blue-400">Fresh Intraday ΔOI (±8)</div>
-            <div id="intra-kpi-oiflow" class="text-base sm:text-xl font-mono font-bold text-white mt-1">--</div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] font-mono uppercase text-blue-400">Fresh Intraday ΔOI (±8)</div>
+              <div id="intra-kpi-oiflow" class="text-base sm:text-xl font-mono font-bold text-white mt-1">--</div>
+            </div>
             <div id="intra-kpi-oiflow-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">PE ΔOI vs CE ΔOI</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3">
-            <div class="text-[10px] font-mono uppercase text-rose-400">Regime & ATM IV / Skew</div>
-            <div id="intra-kpi-regime" class="text-xs sm:text-sm font-mono font-bold text-amber-300 mt-1 truncate">--</div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] font-mono uppercase text-rose-400">Regime & ATM IV / Skew</div>
+              <div id="intra-kpi-regime" class="text-xs sm:text-sm font-mono font-bold text-amber-300 mt-1 leading-snug break-words">--</div>
+            </div>
             <div id="intra-kpi-iv" class="text-[10px] text-slate-400 font-mono mt-0.5">ATM IV: -- | Skew: --</div>
           </div>
         </div>
@@ -10560,7 +10572,7 @@
         regEl.innerText = stateText;
         const isBullish = /BULLISH|SQUEEZE|ACCUMULATION/.test(activeState);
         const isBearish = /BEARISH|SUPPLY|UNWINDING/.test(activeState);
-        regEl.className = `text-base sm:text-lg font-mono font-bold mt-1 truncate ${isBullish ? 'text-emerald-400' : (isBearish ? 'text-rose-400' : 'text-amber-300')}`;
+        regEl.className = `text-xs sm:text-sm font-mono font-bold mt-1 leading-snug break-words ${isBullish ? 'text-emerald-400' : (isBearish ? 'text-rose-400' : 'text-amber-300')}`;
       }
       if (ivEl) ivEl.innerText = `ATM IV: ${(latest.atm_iv || 0).toFixed(2)}% | Skew: ${(latest.iv_skew || 0) >= 0 ? '+' : ''}${(latest.iv_skew || 0).toFixed(2)}%`;
 
@@ -25764,7 +25776,7 @@
                   regEl.innerText = intra.market_state.replace(/_/g, ' ');
                   const isBullish = /BULLISH|SQUEEZE|ACCUMULATION/.test(intra.market_state);
                   const isBearish = /BEARISH|SUPPLY|UNWINDING/.test(intra.market_state);
-                  regEl.className = `text-base sm:text-lg font-mono font-bold mt-1 truncate ${isBullish ? 'text-emerald-400' : (isBearish ? 'text-rose-400' : 'text-amber-300')}`;
+                  regEl.className = `text-xs sm:text-sm font-mono font-bold mt-1 leading-snug break-words ${isBullish ? 'text-emerald-400' : (isBearish ? 'text-rose-400' : 'text-amber-300')}`;
                 }
               }
 
