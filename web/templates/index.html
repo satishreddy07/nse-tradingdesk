@@ -5814,7 +5814,7 @@
                 <!-- Active Legs Container -->
                 <div id="strat-legs-list" class="space-y-2 max-h-[460px] overflow-y-auto custom-scroll pr-1 text-xs font-mono">
                   <div class="text-slate-500 py-8 text-center font-sans">
-                    No legs added yet. Pick any <b>Ready-Made Strategy</b> on the right or click <b>+B / +S</b> in the Option Chain below.
+                    No legs added yet. Click <b>+B / +S</b> on any strike in the Option Chain table below.
                   </div>
                 </div>
 
@@ -14049,7 +14049,55 @@
       renderBuilderCompactChain();
     }
 
-        function renderStrategyLegs() {
+    
+    function getNearbyStrikes(spot, curStrike) {
+      const center = (spot && spot > 10000) ? Math.round(spot / 50) * 50 : (curStrike || 22500);
+      const strikes = [];
+      for (let s = center - 1200; s <= center + 1200; s += 50) {
+        strikes.push(s);
+      }
+      if (curStrike && !strikes.includes(curStrike)) {
+        strikes.push(curStrike);
+        strikes.sort((a, b) => a - b);
+      }
+      return strikes;
+    }
+
+    function cycleStrategyLegStrike(id, dir) {
+      stepStrategyLegStrike(id, (dir || 1) * 50);
+    }
+
+    function toggleStrategyLegAction(id) {
+      const leg = strategyLegs.find(l => l.id === id);
+      if (leg) {
+        leg.action = (leg.action === 'BUY') ? 'SELL' : 'BUY';
+        renderStrategyLegs();
+        recalculateStrategyMetrics();
+        drawPayoffGraph();
+      }
+    }
+
+    function toggleStrategyLegType(id) {
+      const leg = strategyLegs.find(l => l.id === id);
+      if (leg) {
+        updateStrategyLeg(id, 'type', leg.type === 'CE' ? 'PE' : 'CE');
+        renderStrategyLegs();
+        recalculateStrategyMetrics();
+        drawPayoffGraph();
+      }
+    }
+
+    function toggleStrategyLegActive(id) {
+      const leg = strategyLegs.find(l => l.id === id);
+      if (leg) {
+        leg.active = (leg.active === false) ? true : false;
+        renderStrategyLegs();
+        recalculateStrategyMetrics();
+        drawPayoffGraph();
+      }
+    }
+
+    function renderStrategyLegs() {
       const activeLegsCount = strategyLegs.filter(l => l.active !== false).length;
       const countEl = document.getElementById('strat-legs-count');
       if (countEl) countEl.innerText = `${activeLegsCount}/${strategyLegs.length}`;
