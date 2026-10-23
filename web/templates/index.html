@@ -5706,7 +5706,10 @@
           <button onclick="applyStrategyPreset('LONG_STRADDLE')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 transition">Long Straddle</button>
           <button onclick="applyStrategyPreset('LONG_STRANGLE')" class="px-2 py-1 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 transition">Long Strangle</button>
           
-          <button onclick="clearStrategyBuilderLegs()" class="px-2 py-1 rounded-lg text-xs font-mono bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 transition ml-auto">Clear</button>
+          <div class="flex items-center gap-1.5 ml-auto">
+            <button onclick="flipAllStrategyLegs()" class="px-2 py-1 rounded-lg text-xs font-mono bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border border-amber-800/50 transition" title="Flip All Legs (Buy ↔ Sell)">⇄ Flip Strategy</button>
+            <button onclick="clearStrategyBuilderLegs()" class="px-2 py-1 rounded-lg text-xs font-mono bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 transition">Clear</button>
+          </div>
         </div>
 
         <!-- 8 Live Opstra / Sensibull Key Strategy Metrics -->
@@ -5783,8 +5786,8 @@
               <canvas id="opt-payoff-canvas" class="w-full h-full block cursor-crosshair"></canvas>
             </div>
 
-            <!-- Interactive Sliders: Target Date & IV Shift -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
+            <!-- Interactive Sliders: Target Date, IV Shift & Target Spot (Opstra Simulator) -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
               <div>
                 <div class="flex justify-between text-[11px] text-slate-300 mb-1">
                   <span>📅 Target Date: <b id="slider-target-days-lbl" class="text-cyan-300">Today (T+Now)</b></span>
@@ -5800,6 +5803,46 @@
                 </div>
                 <input type="range" id="slider-iv-shift" min="-20" max="20" value="0" step="1" oninput="onPayoffIvShiftSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-400">
               </div>
+
+              <div>
+                <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+                  <span class="flex items-center gap-1">
+                    <span>🎯 Target Spot:</span>
+                    <b id="slider-spot-shift-lbl" class="text-amber-300">0 pts (0.0%)</b>
+                  </span>
+                  <button onclick="resetPayoffSpotShift()" class="text-[10px] text-slate-400 hover:text-white px-1 py-0.5 rounded bg-slate-800 transition cursor-pointer" title="Reset Target Spot">↺</button>
+                </div>
+                <input type="range" id="slider-spot-shift" min="-1000" max="1000" value="0" step="25" oninput="onPayoffSpotShiftSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400">
+              </div>
+            </div>
+
+            <!-- Opstra-Style Spot vs PnL & Delta Matrix Table (Collapsible) -->
+            <div class="mt-3 pt-2 border-t border-slate-800/80">
+              <button onclick="togglePayoffMatrixTable()" class="w-full flex items-center justify-between text-[11px] font-mono font-bold text-slate-300 hover:text-white py-1 px-1 rounded hover:bg-slate-900 transition cursor-pointer">
+                <div class="flex items-center gap-1.5">
+                  <i data-lucide="table" class="w-3.5 h-3.5 text-cyan-400"></i>
+                  <span>Spot vs P&amp;L Matrix (Opstra Table)</span>
+                  <span class="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-normal">±100 pt intervals</span>
+                </div>
+                <span id="payoff-matrix-toggle-icon" class="text-xs text-cyan-400">▼ View Matrix</span>
+              </button>
+              <div id="payoff-matrix-container" class="hidden mt-2 max-h-56 overflow-y-auto custom-scroll border border-slate-800 rounded-lg">
+                <table class="w-full text-left border-collapse text-[11px] font-mono">
+                  <thead class="sticky top-0 bg-slate-900 text-slate-400 text-[10px] uppercase border-b border-slate-800 z-10">
+                    <tr>
+                      <th class="py-1.5 px-2">Spot Price</th>
+                      <th class="py-1.5 px-2 text-right">% Change</th>
+                      <th class="py-1.5 px-2 text-right">Expiry P&amp;L</th>
+                      <th class="py-1.5 px-2 text-right">T+Now P&amp;L</th>
+                      <th class="py-1.5 px-2 text-right">Net Delta</th>
+                      <th class="py-1.5 px-2 text-center">Probability Zone</th>
+                    </tr>
+                  </thead>
+                  <tbody id="payoff-matrix-tbody" class="divide-y divide-slate-800/50">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -5811,10 +5854,18 @@
                   <i data-lucide="layers" class="w-3.5 h-3.5 text-cyan-400"></i>
                   <span class="text-xs font-bold text-white uppercase">Strategy Legs (<span id="strat-legs-count">0</span>)</span>
                 </div>
-                <button onclick="addCustomStrategyLeg()" class="px-2 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold flex items-center gap-1 transition">
-                  <i data-lucide="plus" class="w-3 h-3"></i>
-                  <span>Add Leg</span>
-                </button>
+                <div class="flex items-center gap-1">
+                  <button onclick="toggleAllStrategyLegs()" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-[10px] font-mono font-bold transition" title="Toggle All Legs Active/Inactive">
+                    <span>☑ All</span>
+                  </button>
+                  <button onclick="flipAllStrategyLegs()" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 text-[10px] font-mono font-bold transition" title="Flip Buy ↔ Sell on all legs">
+                    <span>⇄ Flip</span>
+                  </button>
+                  <button onclick="addCustomStrategyLeg()" class="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-[10px] font-bold flex items-center gap-1 transition">
+                    <i data-lucide="plus" class="w-3 h-3"></i>
+                    <span>Add Leg</span>
+                  </button>
+                </div>
               </div>
 
               <!-- Strategy Adjustment Mode Alert Banner -->
@@ -13926,14 +13977,15 @@
     }
 
     function renderStrategyLegs() {
+      const activeLegsCount = strategyLegs.filter(l => l.active !== false).length;
       const countEl = document.getElementById('strat-legs-count');
-      if (countEl) countEl.innerText = strategyLegs.length;
+      if (countEl) countEl.innerText = `${activeLegsCount}/${strategyLegs.length}`;
 
       const subBadge = document.getElementById('opt-subtab-builder-badge');
-      if (subBadge) subBadge.innerText = strategyLegs.length;
+      if (subBadge) subBadge.innerText = activeLegsCount;
 
       const chainBadge = document.getElementById('opt-chain-builder-badge');
-      if (chainBadge) chainBadge.innerText = strategyLegs.length;
+      if (chainBadge) chainBadge.innerText = activeLegsCount;
 
       const container = document.getElementById('strat-legs-list');
       if (!container) return;
@@ -13947,42 +13999,78 @@
         return;
       }
 
+      const cache = window.niftyOptionsChainCache || (typeof niftyOptionsChainCache !== 'undefined' ? niftyOptionsChainCache : null);
+      const activeChain = (selectedOptionsExpiryType === 'monthly') ? (cache?.monthly || {}) : (cache?.weekly || {});
+      const spotVal = activeChain.spot_price || optionsPortfolioCache?.spot_price || cache?.spot_price || 0;
+      const exactDte = getExactDte(activeChain.expiry);
+      const baseDte = exactDte !== null ? Math.max(0.05, exactDte) : (selectedOptionsExpiryType === 'monthly' ? 25 : 4);
+      const targetDte = Math.max(0.01, baseDte - (typeof payoffTargetDteOffset !== 'undefined' ? payoffTargetDteOffset : 0));
+      const ivShift = typeof payoffIvShiftPct !== 'undefined' ? payoffIvShiftPct : 0;
+
       container.innerHTML = strategyLegs.map((l, idx) => {
+        const isActive = l.active !== false;
         const isBuy = l.action === 'BUY';
         const isCe = l.type === 'CE';
         const actBadge = isBuy
           ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
           : 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+
+        const bs = calculateBsOption(spotVal, l.strike, targetDte, Math.max(3, (Number(l.iv) || 14) + ivShift), l.type);
+        const sign = isBuy ? 1 : -1;
+        const legDelta = sign * bs.delta * (l.qty / NIFTY_LOT_SIZE);
+        const legTheta = sign * bs.theta * l.qty;
+        const legVega = sign * bs.vega * l.qty;
+
         return `
-          <div class="bg-slate-900 border border-slate-800 rounded-lg p-2 flex flex-wrap items-center justify-between gap-2">
-            <div class="flex items-center gap-1.5 min-w-0">
-              <span class="text-[10px] text-slate-500">#${idx + 1}</span>
-              <button onclick="updateStrategyLeg(${l.id}, 'action', '${isBuy ? 'SELL' : 'BUY'}'); renderStrategyLegs();" class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${actBadge} hover:opacity-80 transition">
-                ${l.action}
-              </button>
-              <button onclick="updateStrategyLeg(${l.id}, 'type', '${isCe ? 'PE' : 'CE'}'); renderStrategyLegs();" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCe ? 'bg-cyan-500/20 text-cyan-300' : 'bg-purple-500/20 text-purple-300'} hover:opacity-80 transition">
-                ${l.type}
-              </button>
-              <div class="flex items-center bg-slate-950 border border-slate-800 rounded px-1">
-                <button onclick="stepStrategyLegStrike(${l.id}, -50)" class="text-[10px] font-bold text-slate-400 hover:text-cyan-300 px-1 py-0.5 transition" title="Roll Down 50 pts">▼</button>
-                <span class="font-bold text-white text-xs px-1">${l.strike}</span>
-                <button onclick="stepStrategyLegStrike(${l.id}, 50)" class="text-[10px] font-bold text-slate-400 hover:text-cyan-300 px-1 py-0.5 transition" title="Roll Up 50 pts">▲</button>
+          <div class="bg-slate-900 border ${isActive ? 'border-slate-800' : 'border-slate-800/40 opacity-55'} rounded-lg p-2 transition">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleStrategyLegActive(${l.id})" class="w-3.5 h-3.5 rounded bg-slate-950 border-slate-700 text-cyan-500 focus:ring-0 cursor-pointer" title="${isActive ? 'Included in Strategy (Click to Inactivate)' : 'Inactive (Click to Include)'}">
+                <span class="text-[10px] text-slate-500">#${idx + 1}</span>
+                <button onclick="updateStrategyLeg(${l.id}, 'action', '${isBuy ? 'SELL' : 'BUY'}'); renderStrategyLegs();" class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${actBadge} hover:opacity-80 transition">
+                  ${l.action}
+                </button>
+                <button onclick="updateStrategyLeg(${l.id}, 'type', '${isCe ? 'PE' : 'CE'}'); renderStrategyLegs();" class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCe ? 'bg-cyan-500/20 text-cyan-300' : 'bg-purple-500/20 text-purple-300'} hover:opacity-80 transition">
+                  ${l.type}
+                </button>
+                <div class="flex items-center bg-slate-950 border border-slate-800 rounded px-1">
+                  <button onclick="stepStrategyLegStrike(${l.id}, -50)" class="text-[10px] font-bold text-slate-400 hover:text-cyan-300 px-1 py-0.5 transition" title="Roll Down 50 pts">▼</button>
+                  <span class="font-bold text-white text-xs px-1 ${!isActive ? 'line-through text-slate-500' : ''}">${l.strike}</span>
+                  <button onclick="stepStrategyLegStrike(${l.id}, 50)" class="text-[10px] font-bold text-slate-400 hover:text-cyan-300 px-1 py-0.5 transition" title="Roll Up 50 pts">▲</button>
+                </div>
+                <button onclick="flipStrategyLeg(${l.id})" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-amber-900/40 text-slate-400 hover:text-amber-300 border border-slate-700 transition" title="Flip Buy ↔ Sell">
+                  ⇄
+                </button>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <div class="flex items-center gap-1 text-[11px]">
+                  <span class="text-slate-400">₹</span>
+                  <input type="number" step="0.5" value="${l.price}" onchange="updateStrategyLeg(${l.id}, 'price', this.value)" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-white text-right">
+                </div>
+                <div class="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5">
+                  <button onclick="changeStrategyLegLots(${l.id}, -1)" class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs" title="Decrease 1 Lot">-</button>
+                  <span class="text-xs font-mono font-bold text-white px-1 whitespace-nowrap">${Math.round(l.qty / NIFTY_LOT_SIZE)}L <span class="text-[10px] text-slate-400 font-normal">(${l.qty})</span></span>
+                  <button onclick="changeStrategyLegLots(${l.id}, 1)" class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs" title="Increase 1 Lot">+</button>
+                </div>
+                <button onclick="deleteStrategyLeg(${l.id})" class="p-1 rounded bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 transition" title="Delete Leg">
+                  ✕
+                </button>
               </div>
             </div>
 
-            <div class="flex items-center gap-2">
-              <div class="flex items-center gap-1 text-[11px]">
-                <span class="text-slate-400">₹</span>
-                <input type="number" step="0.5" value="${l.price}" onchange="updateStrategyLeg(${l.id}, 'price', this.value)" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-white text-right">
+            <!-- Opstra Leg Greeks Sub-Row & IV Adjuster -->
+            <div class="w-full flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1 mt-1 border-t border-slate-800/60">
+              <div class="flex items-center gap-2">
+                <span>Δ: <b class="${legDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${legDelta >= 0 ? '+' : ''}${legDelta.toFixed(2)}</b></span>
+                <span>Θ: <b class="${legTheta >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${legTheta >= 0 ? '+' : ''}₹${Math.round(legTheta)}/d</b></span>
+                <span>V: <b class="text-cyan-400">₹${Math.round(legVega)}/%</b></span>
               </div>
-              <div class="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5">
-                <button onclick="changeStrategyLegLots(${l.id}, -1)" class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs" title="Decrease 1 Lot">-</button>
-                <span class="text-xs font-mono font-bold text-white px-1 whitespace-nowrap">${Math.round(l.qty / NIFTY_LOT_SIZE)}L <span class="text-[10px] text-slate-400 font-normal">(${l.qty})</span></span>
-                <button onclick="changeStrategyLegLots(${l.id}, 1)" class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs" title="Increase 1 Lot">+</button>
+              <div class="flex items-center gap-1">
+                <span>IV:</span>
+                <input type="number" step="0.5" min="1" max="100" value="${(Number(l.iv) || 14).toFixed(1)}" onchange="updateStrategyLegIv(${l.id}, this.value)" class="w-12 bg-slate-950 border border-slate-800 rounded px-1 py-0.2 text-[10px] text-white text-right" title="Tweak leg IV">
+                <span>%</span>
               </div>
-              <button onclick="deleteStrategyLeg(${l.id})" class="p-1 rounded bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 transition" title="Delete Leg">
-                ✕
-              </button>
             </div>
           </div>
         `;
@@ -14143,6 +14231,9 @@
       drawPayoffGraph();
     }
 
+    let payoffSpotShift = 0;
+    let latestMatrixRows = [];
+
     function onPayoffTargetDateSlider(val) {
       payoffTargetDteOffset = Number(val);
       const lbl1 = document.getElementById('slider-target-days-lbl');
@@ -14159,6 +14250,139 @@
       if (lbl) lbl.innerText = `${Number(val) >= 0 ? '+' : ''}${Number(val).toFixed(1)}%`;
       recalculateStrategyMetrics();
       drawPayoffGraph();
+    }
+
+    function onPayoffSpotShiftSlider(val) {
+      payoffSpotShift = Number(val);
+      const cache = window.niftyOptionsChainCache || (typeof niftyOptionsChainCache !== 'undefined' ? niftyOptionsChainCache : null);
+      const activeChain = (selectedOptionsExpiryType === 'monthly') ? (cache?.monthly || {}) : (cache?.weekly || {});
+      const spot = activeChain.spot_price || optionsPortfolioCache?.spot_price || cache?.spot_price || 24500;
+      const pct = spot > 0 ? ((payoffSpotShift / spot) * 100).toFixed(1) : '0.0';
+      const lbl = document.getElementById('slider-spot-shift-lbl');
+      if (lbl) lbl.innerText = `${payoffSpotShift >= 0 ? '+' : ''}${payoffSpotShift} pts (${payoffSpotShift >= 0 ? '+' : ''}${pct}%)`;
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+    }
+
+    function resetPayoffSpotShift() {
+      payoffSpotShift = 0;
+      const slider = document.getElementById('slider-spot-shift');
+      if (slider) slider.value = 0;
+      const lbl = document.getElementById('slider-spot-shift-lbl');
+      if (lbl) lbl.innerText = '0 pts (0.0%)';
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+    }
+
+    function toggleStrategyLegActive(id) {
+      const leg = strategyLegs.find(l => l.id === id);
+      if (leg) {
+        leg.active = (leg.active === false) ? true : false;
+        renderStrategyLegs();
+        recalculateStrategyMetrics();
+        drawPayoffGraph();
+      }
+    }
+
+    function flipStrategyLeg(id) {
+      const leg = strategyLegs.find(l => l.id === id);
+      if (leg) {
+        leg.action = leg.action === 'BUY' ? 'SELL' : 'BUY';
+        renderStrategyLegs();
+        recalculateStrategyMetrics();
+        drawPayoffGraph();
+      }
+    }
+
+    function flipAllStrategyLegs() {
+      if (!strategyLegs || strategyLegs.length === 0) {
+        showToast('No legs to flip', 'warning');
+        return;
+      }
+      strategyLegs.forEach(l => {
+        l.action = l.action === 'BUY' ? 'SELL' : 'BUY';
+      });
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+      showToast('Flipped strategy (Buy ↔ Sell on all legs)', 'info');
+    }
+
+    function toggleAllStrategyLegs() {
+      if (!strategyLegs || strategyLegs.length === 0) return;
+      const anyInactive = strategyLegs.some(l => l.active === false);
+      strategyLegs.forEach(l => {
+        l.active = anyInactive ? true : false;
+      });
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+      showToast(anyInactive ? 'Enabled all strategy legs' : 'Disabled all strategy legs', 'info');
+    }
+
+    function updateStrategyLegIv(id, val) {
+      const leg = strategyLegs.find(l => l.id === id);
+      if (leg) {
+        leg.iv = Math.max(1, parseFloat(val) || 14);
+        renderStrategyLegs();
+        recalculateStrategyMetrics();
+        drawPayoffGraph();
+      }
+    }
+
+    function togglePayoffMatrixTable() {
+      const container = document.getElementById('payoff-matrix-container');
+      const icon = document.getElementById('payoff-matrix-toggle-icon');
+      if (!container) return;
+      if (container.classList.contains('hidden')) {
+        container.classList.remove('hidden');
+        if (icon) icon.innerText = '▲ Hide Matrix';
+        renderPayoffMatrixTable();
+      } else {
+        container.classList.add('hidden');
+        if (icon) icon.innerText = '▼ View Matrix';
+      }
+    }
+
+    function renderPayoffMatrixTable() {
+      const tbody = document.getElementById('payoff-matrix-tbody');
+      if (!tbody) return;
+      if (!latestMatrixRows || latestMatrixRows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">No strategy legs active to compute matrix</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = latestMatrixRows.map(r => {
+        const rowBg = r.isTargetSpot
+          ? 'bg-amber-500/15 font-bold text-white'
+          : (r.isCurrentSpot ? 'bg-cyan-500/10 font-bold text-white' : 'hover:bg-slate-900/60 text-slate-300');
+        const expColor = r.expPnl > 0 ? 'text-emerald-400' : (r.expPnl < 0 ? 'text-rose-400' : 'text-slate-400');
+        const tgtColor = r.targetPnl > 0 ? 'text-emerald-400' : (r.targetPnl < 0 ? 'text-rose-400' : 'text-slate-400');
+        const dColor = Number(r.delta) >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        return `
+          <tr class="${rowBg} transition-colors">
+            <td class="py-1 px-2 whitespace-nowrap">
+              ${r.spot}
+              ${r.isCurrentSpot ? '<span class="ml-1 text-[9px] px-1 rounded bg-cyan-500/30 text-cyan-300">Spot</span>' : ''}
+              ${r.isTargetSpot ? '<span class="ml-1 text-[9px] px-1 rounded bg-amber-500/30 text-amber-300">Target</span>' : ''}
+            </td>
+            <td class="py-1 px-2 text-right ${r.pctChg > 0 ? 'text-emerald-400' : (r.pctChg < 0 ? 'text-rose-400' : 'text-slate-400')}">
+              ${r.pctChg > 0 ? '+' : ''}${r.pctChg.toFixed(1)}%
+            </td>
+            <td class="py-1 px-2 text-right font-bold ${expColor}">
+              ${r.expPnl >= 0 ? '+' : ''}₹${r.expPnl.toLocaleString('en-IN')}
+            </td>
+            <td class="py-1 px-2 text-right font-bold ${tgtColor}">
+              ${r.targetPnl >= 0 ? '+' : ''}₹${r.targetPnl.toLocaleString('en-IN')}
+            </td>
+            <td class="py-1 px-2 text-right ${dColor}">
+              ${r.delta}
+            </td>
+            <td class="py-1 px-2 text-center">
+              <span class="text-[9px] px-1.5 py-0.5 rounded border ${r.zoneBadge}">${r.zone}</span>
+            </td>
+          </tr>
+        `;
+      }).join('');
     }
 
     function detectStrategyNameFromLegs(legs) {
@@ -14219,9 +14443,11 @@
     }
 
     function recalculateStrategyMetrics() {
-      if (strategyLegs.length === 0) {
+      const activeLegs = strategyLegs.filter(l => l.active !== false);
+
+      if (strategyLegs.length === 0 || activeLegs.length === 0) {
         const nameInput = document.getElementById('strat-name-input');
-        if (nameInput && !nameInput.dataset.userEdited) {
+        if (nameInput && !nameInput.dataset.userEdited && strategyLegs.length === 0) {
           nameInput.value = '';
         }
         document.getElementById('strat-metric-maxprofit').innerText = '--';
@@ -14234,12 +14460,14 @@
         document.getElementById('strat-metric-greeks').innerText = 'Δ: 0 | Θ: ₹0';
         document.getElementById('strat-metric-greeks-sub').innerText = 'Γ: 0 | V: ₹0';
         latestPayoffCurveData = null;
+        latestMatrixRows = [];
+        renderPayoffMatrixTable();
         return;
       }
 
       const nameInput = document.getElementById('strat-name-input');
       if (nameInput && (!nameInput.value.trim() || !nameInput.dataset.userEdited)) {
-        const detected = detectStrategyNameFromLegs(strategyLegs);
+        const detected = detectStrategyNameFromLegs(activeLegs);
         if (detected) {
           nameInput.value = detected;
         }
@@ -14257,13 +14485,13 @@
       let spotMin, spotMax;
       if (typeof payoffGraphSpan !== 'undefined' && payoffGraphSpan !== 'auto') {
         const span = Number(payoffGraphSpan) || 1200;
-        const legMin = strategyLegs.length > 0 ? Math.min(...strategyLegs.map(l => l.strike)) : spot;
-        const legMax = strategyLegs.length > 0 ? Math.max(...strategyLegs.map(l => l.strike)) : spot;
+        const legMin = activeLegs.length > 0 ? Math.min(...activeLegs.map(l => l.strike)) : spot;
+        const legMax = activeLegs.length > 0 ? Math.max(...activeLegs.map(l => l.strike)) : spot;
         spotMin = Math.round(Math.min(legMin - 150, spot - span));
         spotMax = Math.round(Math.max(legMax + 150, spot + span));
       } else {
-        const minStrike = strategyLegs.length > 0 ? Math.min(...strategyLegs.map(l => l.strike)) : spot;
-        const maxStrike = strategyLegs.length > 0 ? Math.max(...strategyLegs.map(l => l.strike)) : spot;
+        const minStrike = activeLegs.length > 0 ? Math.min(...activeLegs.map(l => l.strike)) : spot;
+        const maxStrike = activeLegs.length > 0 ? Math.max(...activeLegs.map(l => l.strike)) : spot;
         const marginBuffer = Math.max(1200, (maxStrike - minStrike) * 0.7);
         const isMonthlyStrat = (builderCompactChainMode === 'monthly' || selectedOptionsExpiryType === 'monthly');
         const sigs = calculateSigmaLevels(spot, isMonthlyStrat ? 'MONTHLY' : 'WEEKLY');
@@ -14285,12 +14513,12 @@
         let expPnl = 0;
         let tPnl = 0;
 
-        strategyLegs.forEach(leg => {
+        activeLegs.forEach(leg => {
           const sign = leg.action === 'BUY' ? 1 : -1;
           const intrinsic = leg.type === 'CE' ? Math.max(0, s - leg.strike) : Math.max(0, leg.strike - s);
           expPnl += sign * (intrinsic - leg.price) * leg.qty;
 
-          const shiftedIv = Math.max(3, leg.iv + payoffIvShiftPct);
+          const shiftedIv = Math.max(3, (Number(leg.iv) || 14) + payoffIvShiftPct);
           const bs = calculateBsOption(s, leg.strike, targetDte, shiftedIv, leg.type);
           tPnl += sign * (bs.price - leg.price) * leg.qty;
         });
@@ -14349,7 +14577,7 @@
 
       // Net Premium
       let netPrem = 0;
-      strategyLegs.forEach(l => {
+      activeLegs.forEach(l => {
         const sign = l.action === 'SELL' ? 1 : -1;
         netPrem += sign * l.price * l.qty;
       });
@@ -14366,8 +14594,8 @@
       }
 
       // Est. Margin Proxy
-      const totalShortLots = strategyLegs.filter(l => l.action === 'SELL').reduce((acc, l) => acc + (l.qty / NIFTY_LOT_SIZE), 0);
-      const totalLongLots = strategyLegs.filter(l => l.action === 'BUY').reduce((acc, l) => acc + (l.qty / NIFTY_LOT_SIZE), 0);
+      const totalShortLots = activeLegs.filter(l => l.action === 'SELL').reduce((acc, l) => acc + (l.qty / NIFTY_LOT_SIZE), 0);
+      const totalLongLots = activeLegs.filter(l => l.action === 'BUY').reduce((acc, l) => acc + (l.qty / NIFTY_LOT_SIZE), 0);
       let estMargin = 0;
       if (totalShortLots > 0) {
         const unhedgedLots = Math.max(0, totalShortLots - totalLongLots);
@@ -14383,9 +14611,9 @@
       let netTheta = 0;
       let netGamma = 0;
       let netVega = 0;
-      strategyLegs.forEach(l => {
+      activeLegs.forEach(l => {
         const sign = l.action === 'BUY' ? 1 : -1;
-        const bs = calculateBsOption(spot, l.strike, targetDte, l.iv + payoffIvShiftPct, l.type);
+        const bs = calculateBsOption(spot, l.strike, targetDte, (Number(l.iv) || 14) + payoffIvShiftPct, l.type);
         netDelta += sign * bs.delta * (l.qty / NIFTY_LOT_SIZE);
         netTheta += sign * bs.theta * l.qty;
         netGamma += sign * bs.gamma * (l.qty / NIFTY_LOT_SIZE);
@@ -14401,8 +14629,8 @@
       } else if (minExp >= 0) {
         pop = 99.0;
       } else {
-        const stratIvPct = (strategyLegs.length > 0 && strategyLegs.some(l => Number(l.iv) > 0))
-          ? (strategyLegs.filter(l => Number(l.iv) > 0).reduce((s, l) => s + Number(l.iv), 0) / strategyLegs.filter(l => Number(l.iv) > 0).length)
+        const stratIvPct = (activeLegs.length > 0 && activeLegs.some(l => Number(l.iv) > 0))
+          ? (activeLegs.filter(l => Number(l.iv) > 0).reduce((s, l) => s + Number(l.iv), 0) / activeLegs.filter(l => Number(l.iv) > 0).length)
           : (getAtmIv(active) || 14.0);
         const actualSigma = Math.max(0.01, stratIvPct / 100.0);
         const T = Math.max(0.0001, targetDte / 365.0);
@@ -14418,7 +14646,7 @@
           const pInRange = Math.abs(normalCdf(dLog(b2)) - normalCdf(dLog(b1))) * 100;
           const midSpot = (b1 + b2) / 2;
           let midPnl = 0;
-          strategyLegs.forEach(leg => {
+          activeLegs.forEach(leg => {
             const sign = leg.action === 'BUY' ? 1 : -1;
             const intrinsic = leg.type === 'CE' ? Math.max(0, midSpot - leg.strike) : Math.max(0, leg.strike - midSpot);
             midPnl += sign * (intrinsic - leg.price) * leg.qty;
@@ -14455,6 +14683,61 @@
         spotMin: spotMin,
         spotMax: spotMax
       };
+
+      // Generate Opstra-Style Spot vs PnL & Delta Matrix (19 rows at 100 pt intervals)
+      const isMonthlyStrat = (builderCompactChainMode === 'monthly' || selectedOptionsExpiryType === 'monthly');
+      const sigs = calculateSigmaLevels(spot, isMonthlyStrat ? 'MONTHLY' : 'WEEKLY');
+      const mRows = [];
+      const centerSpot = Math.round(spot / 50) * 50;
+      for (let i = -9; i <= 9; i++) {
+        const rowSpot = centerSpot + (i * 100);
+        const pctChg = spot > 0 ? ((rowSpot - spot) / spot) * 100 : 0;
+        let rExpPnl = 0;
+        let rTgtPnl = 0;
+        let rDelta = 0;
+
+        activeLegs.forEach(leg => {
+          const sign = leg.action === 'BUY' ? 1 : -1;
+          const intrinsic = leg.type === 'CE' ? Math.max(0, rowSpot - leg.strike) : Math.max(0, leg.strike - rowSpot);
+          rExpPnl += sign * (intrinsic - leg.price) * leg.qty;
+
+          const bs = calculateBsOption(rowSpot, leg.strike, targetDte, Math.max(3, (Number(leg.iv) || 14) + payoffIvShiftPct), leg.type);
+          rTgtPnl += sign * (bs.price - leg.price) * leg.qty;
+          rDelta += sign * bs.delta * (leg.qty / NIFTY_LOT_SIZE);
+        });
+
+        let zone = 'Outside 2σ';
+        let zoneBadge = 'text-rose-400 bg-rose-500/10 border-rose-500/20';
+        if (rowSpot >= sigs.oneSigmaDown && rowSpot <= sigs.oneSigmaUp) {
+          zone = 'Inside 1σ (68%)';
+          zoneBadge = 'text-purple-300 bg-purple-500/15 border-purple-500/30';
+        } else if (rowSpot >= sigs.twoSigmaDown && rowSpot <= sigs.twoSigmaUp) {
+          zone = 'Inside 2σ (95%)';
+          zoneBadge = 'text-amber-300 bg-amber-500/15 border-amber-500/30';
+        }
+
+        const isCurrentSpot = Math.abs(rowSpot - spot) < 50;
+        const isTargetSpot = payoffSpotShift !== 0 && Math.abs(rowSpot - (spot + payoffSpotShift)) < 50;
+
+        mRows.push({
+          spot: rowSpot,
+          pctChg: pctChg,
+          expPnl: Math.round(rExpPnl),
+          targetPnl: Math.round(rTgtPnl),
+          delta: (rDelta >= 0 ? '+' : '') + rDelta.toFixed(2),
+          zone: zone,
+          zoneBadge: zoneBadge,
+          isCurrentSpot: isCurrentSpot,
+          isTargetSpot: isTargetSpot
+        });
+      }
+      latestMatrixRows = mRows;
+      renderPayoffMatrixTable();
+
+      if (typeof updateSmartExecutionEvaluation === 'function') {
+        updateSmartExecutionEvaluation();
+      }
+    }
 
       if (typeof updateSmartExecutionEvaluation === 'function') {
         updateSmartExecutionEvaluation();
@@ -14644,6 +14927,26 @@
         ctx.fillStyle = '#f59e0b';
         ctx.textAlign = 'center';
         ctx.fillText(`Spot ${Math.round(spot)}`, xSpot, padTop - 5);
+      }
+
+      // Target Spot Line (Opstra Spot Slider Simulator)
+      if (typeof payoffSpotShift !== 'undefined' && payoffSpotShift !== 0) {
+        const targetSpot = spot + payoffSpotShift;
+        const xTarget = xToCanvas(targetSpot);
+        if (xTarget >= padLeft && xTarget <= padLeft + plotWidth) {
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 1.8;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(xTarget, padTop);
+          ctx.lineTo(xTarget, padTop + plotHeight);
+          ctx.stroke();
+
+          ctx.fillStyle = '#38bdf8';
+          ctx.font = 'bold 10px JetBrains Mono, monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(`🎯 Target ${Math.round(targetSpot)}`, xTarget, padTop - 5);
+        }
       }
 
       // Breakevens (max 4 distinct zero-crossing points)
@@ -16160,6 +16463,26 @@
         ctx.fillStyle = '#f59e0b';
         ctx.textAlign = 'center';
         ctx.fillText(`Spot ${Math.round(spot)}`, xSpot, padTop - 5);
+      }
+
+      // Target Spot Line (Opstra Spot Slider Simulator)
+      if (typeof payoffSpotShift !== 'undefined' && payoffSpotShift !== 0) {
+        const targetSpot = spot + payoffSpotShift;
+        const xTarget = xToCanvas(targetSpot);
+        if (xTarget >= padLeft && xTarget <= padLeft + plotWidth) {
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 1.8;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(xTarget, padTop);
+          ctx.lineTo(xTarget, padTop + plotHeight);
+          ctx.stroke();
+
+          ctx.fillStyle = '#38bdf8';
+          ctx.font = 'bold 10px JetBrains Mono, monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(`🎯 Target ${Math.round(targetSpot)}`, xTarget, padTop - 5);
+        }
       }
 
       // Breakevens
