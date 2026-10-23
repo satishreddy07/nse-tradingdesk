@@ -9676,6 +9676,12 @@
             openOptionDepthModal(parseInt(depthK), urlParams.get('depth_type') || 'CE', urlParams.get('depth_expiry') || 'weekly');
           }, 350);
         }
+        const chartSym = urlParams.get('chart');
+        if (chartSym && typeof openStockChartModal === 'function') {
+          setTimeout(() => {
+            openStockChartModal(chartSym);
+          }, 350);
+        }
       } catch (e) {
         console.debug("URL param route notice:", e);
       }
