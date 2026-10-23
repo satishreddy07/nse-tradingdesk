@@ -11,18 +11,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="NSE Desk">
-  <script>
-    (function() {
-      try {
-        var saved = localStorage.getItem('tradingdesk_theme');
-        if (saved === 'light') {
-          document.documentElement.classList.remove('dark');
-        } else {
-          document.documentElement.classList.add('dark');
-        }
-      } catch(e) {}
-    })();
-  </script>
+  
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="application-name" content="NSE Desk">
 
@@ -202,48 +191,6 @@
       --sm-brand-subtle: rgba(59, 130, 246, 0.15);
     }
 
-    /* Light Mode Graceful Overrides (Comprehensive StockMojo Fintech Theme) */
-    html:not(.dark) body {
-      background-color: var(--sm-bg) !important;
-      color: var(--sm-text-primary) !important;
-    }
-    html:not(.dark) [class*="bg-[#070a13]"],
-    html:not(.dark) [class*="bg-[#0a0e17]"],
-    html:not(.dark) [class*="bg-[#050811]"],
-    html:not(.dark) [class*="bg-slate-950"] {
-      background-color: var(--sm-card-subtle) !important;
-      color: var(--sm-text-primary) !important;
-    }
-    html:not(.dark) [class*="bg-[#0b0f19]"],
-    html:not(.dark) [class*="bg-slate-900"],
-    html:not(.dark) [class*="bg-slate-850"] {
-      background-color: var(--sm-card) !important;
-      color: var(--sm-text-primary) !important;
-    }
-    html:not(.dark) [class*="border-slate-800"],
-    html:not(.dark) [class*="border-slate-700"] {
-      border-color: var(--sm-border) !important;
-    }
-    html:not(.dark) .text-slate-400,
-    html:not(.dark) .text-slate-500 {
-      color: var(--sm-text-secondary) !important;
-    }
-    html:not(.dark) .text-slate-300,
-    html:not(.dark) .text-slate-200,
-    html:not(.dark) .text-slate-100,
-    html:not(.dark) .text-white {
-      color: var(--sm-text-primary) !important;
-    }
-    html:not(.dark) .hover\:text-white:hover {
-      color: var(--sm-brand) !important;
-    }
-    html:not(.dark) input,
-    html:not(.dark) select {
-      background-color: var(--sm-card) !important;
-      color: var(--sm-text-primary) !important;
-      border-color: var(--sm-border) !important;
-    }
-
     /* StockMojo Active Nav Underline Effect */
     .sm-nav-link {
       position: relative;
@@ -305,14 +252,14 @@
 </head>
 <body class="bg-[#070a13] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black overflow-x-hidden">
 
-  <!-- TOP HEADER -->
+  <!-- TOP HEADER (Optimized 100% Fit, Zero Overflow) -->
   <header class="sticky top-0 z-40 bg-[#0b0f19]/95 backdrop-blur-md border-b border-slate-800/90 overflow-x-clip">
-    <div class="w-full max-w-[1920px] mx-auto px-2 sm:px-3 lg:px-4 h-13 sm:h-14 flex items-center justify-between gap-1 sm:gap-2">
+    <div class="w-full max-w-[1920px] mx-auto px-2 sm:px-3 h-12 flex items-center justify-between gap-1 sm:gap-2">
       
-      <!-- Brand Logo & Title (Ultra-Compact) -->
+      <!-- Brand Logo & Title -->
       <div class="flex items-center gap-1.5 shrink-0">
         <a href="#" onclick="switchModule('module-swing'); return false;" class="flex items-center gap-1.5 focus:outline-none">
-          <img src="/static/bull-logo.jpg" alt="QuantDesk Bull" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg object-cover border border-cyan-500/50 shadow-sm shrink-0">
+          <img src="/static/bull-logo.jpg" alt="QuantDesk Bull" class="w-6.5 h-6.5 sm:w-7 sm:h-7 rounded-lg object-cover border border-cyan-500/50 shadow-sm shrink-0">
           <div class="min-w-0">
             <span class="font-extrabold tracking-tight text-white text-sm sm:text-base leading-none">QUANT<span class="text-cyan-400">DESK</span></span>
           </div>
@@ -320,7 +267,7 @@
       </div>
 
       <!-- Desktop Primary Module Switcher (Streamlined Compact Segmented Control) -->
-      <div class="hidden lg:flex items-center bg-slate-900/95 p-0.5 rounded-lg border border-slate-800 gap-0.5 shrink-0 shadow-inner">
+      <div class="hidden lg:flex items-center bg-slate-900/95 p-0.5 rounded-lg border border-slate-800/80 gap-0.5 shrink-0 shadow-inner">
         <button onclick="switchModule('module-swing')" id="desk-mod-swing" class="mod-btn px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-all bg-cyan-500 text-black shadow-sm whitespace-nowrap">
           <i data-lucide="trending-up" class="w-3.5 h-3.5 stroke-[2.5]"></i>
           <span>Swing</span>
@@ -332,7 +279,8 @@
         </button>
         <button onclick="switchModule('module-predictions')" id="desk-mod-predictions" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="brain-circuit" class="w-3.5 h-3.5 text-purple-400"></i>
-          <span>Predictions</span>
+          <span class="hidden xl:inline">Predictions</span>
+          <span class="xl:hidden">Preds</span>
           <span class="hidden 2xl:inline-flex text-[9px] font-mono px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">ML</span>
         </button>
         <button onclick="switchModule('module-options')" id="desk-mod-options" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
@@ -342,8 +290,8 @@
         </button>
         <button onclick="switchModule('module-ml-performance')" id="desk-mod-ml-performance" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="gauge" class="w-3.5 h-3.5 text-rose-400"></i>
-          <span class="hidden 2xl:inline">ML Performance</span>
-          <span class="2xl:hidden">ML Perf</span>
+          <span class="hidden xl:inline">ML Performance</span>
+          <span class="xl:hidden">ML Perf</span>
         </button>
         <button onclick="switchModule('module-commodities')" id="desk-mod-commodities" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
           <i data-lucide="droplet" class="w-3.5 h-3.5 text-amber-400"></i>
@@ -351,19 +299,19 @@
         </button>
       </div>
 
-      <!-- Desktop Telemetry Pills (Ultra-Streamlined & Shrink-Safe) -->
-      <div class="hidden xl:flex items-center gap-1.5 text-[10px] shrink-0">
-        <button onclick="openWatchdogModal()" id="gatekeeper-nav-pill" class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200 transition cursor-pointer" title="Gatekeeper Telemetry: Live Feed Status">
+      <!-- Desktop Telemetry Pills (Compact & Always Fits) -->
+      <div class="hidden lg:flex items-center gap-1 text-[10px] shrink-0 font-mono">
+        <button onclick="openWatchdogModal()" id="gatekeeper-nav-pill" class="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200 transition cursor-pointer" title="Gatekeeper Telemetry: Live Feed Status">
           <span id="gatekeeper-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
           <span id="gatekeeper-text" class="font-mono font-bold text-emerald-400 truncate">4/4 LIVE</span>
         </button>
 
-        <div id="market-status-pill" class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 whitespace-nowrap max-w-[130px]" title="Market Status">
+        <div id="market-status-pill" class="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 whitespace-nowrap max-w-[120px]" title="Market Status">
           <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
           <span id="market-status-text" class="font-medium truncate">Checking...</span>
         </div>
 
-        <div class="hidden 2xl:flex px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 font-mono text-slate-400 whitespace-nowrap text-[10px]">
+        <div class="hidden xl:flex px-1.5 py-0.5 rounded-full bg-slate-900 border border-slate-800 font-mono text-slate-400 whitespace-nowrap text-[10px]">
           <span id="live-ist-clock">--:--:-- IST</span>
         </div>
       </div>
@@ -371,16 +319,16 @@
       <!-- Right Action Buttons (Compact & Always On-Screen) -->
       <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
 
-        <!-- Kotak Neo Status Button (Compact Pill on < 2xl, Full on 2xl) -->
+        <!-- Kotak Neo Status Button -->
         <button onclick="openKotakSetupModal()" id="btn-kotak-setup" class="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-cyan-500/40 text-cyan-300 font-bold text-xs transition-all active:scale-95 whitespace-nowrap shadow-sm cursor-pointer" title="Configure Kotak Neo API & Stream">
           <span id="kotak-header-dot" class="w-1.5 h-1.5 rounded-full bg-slate-500 shrink-0"></span>
-          <span class="hidden 2xl:inline font-mono">Kotak Neo</span>
-          <span class="2xl:hidden font-mono">Kotak</span>
+          <span class="hidden sm:inline font-mono">Kotak Neo</span>
+          <span class="sm:hidden font-mono">Kotak</span>
         </button>
 
         <!-- Quick Scan Trigger Dropdown -->
         <div class="relative">
-          <button id="btn-scan-menu" onclick="toggleScanMenu()" class="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-black font-bold text-xs transition-all shadow-sm active:scale-95 whitespace-nowrap">
+          <button id="btn-scan-menu" onclick="toggleScanMenu()" class="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-black font-bold text-xs transition-all shadow-sm active:scale-95 whitespace-nowrap cursor-pointer">
             <i data-lucide="zap" class="w-3.5 h-3.5 stroke-[2.5] shrink-0"></i>
             <span class="hidden sm:inline">Scan</span>
             <i data-lucide="chevron-down" class="w-3 h-3 shrink-0"></i>
@@ -421,23 +369,10 @@
           </div>
         </div>
 
-        <!-- Refresh Live Prices Button (Icon-Only on < 2xl) -->
-        <!-- Global Quick Symbol Search (StockMojo Style) -->
-        <div class="hidden 2xl:flex items-center gap-1 bg-slate-900/90 border border-slate-800 rounded-lg px-2 py-1 text-xs font-mono shrink-0">
-          <i data-lucide="search" class="w-3 h-3 text-slate-400"></i>
-          <input type="text" id="hdr-global-symbol-search" placeholder="Symbol (NIFTY...)" onkeydown="if(event.key==='Enter') quickSelectSymbol(this.value)" class="bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none w-28">
-          <button onclick="cycleSymbol(-1)" class="text-slate-400 hover:text-white px-0.5 text-xs font-bold" title="Previous Symbol">&lsaquo;</button>
-          <button onclick="cycleSymbol(1)" class="text-slate-400 hover:text-white px-0.5 text-xs font-bold" title="Next Symbol">&rsaquo;</button>
-        </div>
-
-        <!-- Theme Toggle Button (Light/Dark Mode) -->
-        <button id="btn-theme-toggle" onclick="toggleTheme()" class="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-amber-400 hover:border-amber-400/50 transition active:scale-95 shadow-sm shrink-0 cursor-pointer" aria-label="Toggle Theme" title="Toggle Light / Dark Mode">
-          <i data-lucide="sun" id="theme-toggle-icon" class="w-4 h-4 text-amber-400"></i>
-        </button>
-
-        <button id="btn-header-refresh-prices" onclick="refreshLivePrices(false)" class="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-semibold text-xs transition whitespace-nowrap shrink-0" title="Fetch Live Market Prices from Yahoo Finance for all stocks on page">
+        <!-- Refresh Live Prices Button -->
+        <button id="btn-header-refresh-prices" onclick="refreshLivePrices(false)" class="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-semibold text-xs transition whitespace-nowrap shrink-0 cursor-pointer" title="Fetch Live Market Prices from Yahoo Finance for all stocks on page">
           <i data-lucide="refresh-cw" class="w-3.5 h-3.5 shrink-0" id="refresh-icon"></i>
-          <span class="hidden 2xl:inline" id="btn-refresh-prices-text">Refresh</span>
+          <span class="hidden sm:inline" id="btn-refresh-prices-text">Refresh</span>
         </button>
 
         <!-- Hamburger Menu Button (Mobile & Tablet) -->
@@ -447,8 +382,9 @@
       </div>
 
     </div>
+  </header>
 
-    <!-- Compact Telemetry Strip (Shown on Mobile & Tablet < xl) -->
+  <!-- Compact Telemetry Strip (Shown on Mobile & Tablet < xl) -->
     <div class="xl:hidden flex items-center justify-between gap-2 px-3 sm:px-6 py-1 bg-slate-900/95 border-t border-slate-800/80 text-[10px] overflow-x-auto no-scrollbar whitespace-nowrap">
       <button onclick="openWatchdogModal()" id="mobile-gatekeeper-pill" class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-[10px] font-mono text-emerald-400 shrink-0">
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
@@ -15365,41 +15301,6 @@
       document.querySelectorAll('.sm-strategy-card').forEach(c => c.classList.remove('selected'));
       if (element) element.classList.add('selected');
       applyStrategyPreset(presetName);
-    }
-
-    function toggleTheme() {
-      const isDark = document.documentElement.classList.toggle('dark');
-      localStorage.setItem('tradingdesk_theme', isDark ? 'dark' : 'light');
-      updateThemeIcon(isDark);
-      if (typeof drawPayoffGraph === 'function') setTimeout(drawPayoffGraph, 100);
-      showToast(isDark ? '🌙 Dark Mode Activated' : '☀️ Light Mode Activated', 'info');
-    }
-
-    function updateThemeIcon(isDark) {
-      const icon = document.getElementById('theme-toggle-icon');
-      if (icon) {
-        icon.setAttribute('data-lucide', isDark ? 'sun' : 'moon');
-        if (window.lucide && typeof window.lucide.createIcons === 'function') {
-          window.lucide.createIcons();
-        }
-      }
-    }
-
-    const GLOBAL_SYMBOLS = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'RELIANCE', 'HDFCBANK', 'TCS', 'INFY'];
-    let globalSymbolIndex = 0;
-
-    function quickSelectSymbol(sym) {
-      if (!sym) return;
-      sym = sym.trim().toUpperCase();
-      const input = document.getElementById('hdr-global-symbol-search');
-      if (input) input.value = sym;
-      showToast(`⚡ Selected Symbol: ${sym}`, 'info');
-      if (typeof switchOptionsExpiryView === 'function') switchOptionsExpiryView('weekly');
-    }
-
-    function cycleSymbol(dir) {
-      globalSymbolIndex = (globalSymbolIndex + dir + GLOBAL_SYMBOLS.length) % GLOBAL_SYMBOLS.length;
-      quickSelectSymbol(GLOBAL_SYMBOLS[globalSymbolIndex]);
     }
 
     function drawPayoffGraph() {
