@@ -1455,6 +1455,7 @@ class ExitStrategyRequest(BaseModel):
 class AdjustStrategyRequest(BaseModel):
     strategy_id: str
     legs: list
+    realized_pnl: Optional[float] = None
     net_premium: Optional[float] = None
     max_profit: Optional[float] = None
     max_loss: Optional[float] = None

@@ -6461,8 +6461,9 @@ class NiftyAnalyticsEngine:
     def adjust_options_strategy(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Adjusts an active multi-leg option strategy:
-        updates constituent legs, recalculates net premium, max profit/loss, breakevens,
-        and margin requirements in SQLite, sends an adjustment Telegram alert, and syncs cloud vault.
+        updates constituent legs, validates and locks realized PnL on closed legs,
+        updates realized_pnl, net premium, max profit/loss, breakevens,
+        and margin requirements in SQLite, logs adjustment, sends Telegram alert, and syncs cloud vault.
         """
         strategy_id = data.get("strategy_id")
         if not strategy_id:
@@ -6482,10 +6483,70 @@ class NiftyAnalyticsEngine:
                 if current_strat.get("status") != "ACTIVE":
                     return {"status": "ERROR", "message": f"Cannot adjust non-active strategy '{strategy_id}' (status: {current_strat.get('status')})."}
 
-                # Recalculate Net Premium across adjusted legs
-                net_premium = float(data.get("net_premium") if data.get("net_premium") is not None else 0.0)
-                if net_premium == 0.0:
-                    net_premium = sum(((-1 if l.get("action") == "BUY" else 1) * float(l.get("entry_price", l.get("price", 0.0)))) * int(l.get("qty", NIFTY_LOT_SIZE)) for l in legs)
+                # Validate and clean constituent legs, preserving true initial entry_price
+                calc_realized_from_legs = 0.0
+                all_exited = True
+                cleaned_legs = []
+                for l in legs:
+                    act = str(l.get("action", "BUY")).upper()
+                    stk = int(round(float(l.get("strike", 0))))
+                    typ = str(l.get("type", "CE")).upper()
+                    qty = int(l.get("qty") or NIFTY_LOT_SIZE)
+                    ent_px = float(l.get("entry_price") or l.get("price") or 0.0)
+
+                    exit_px = l.get("exit_price")
+                    has_exit = exit_px is not None and str(exit_px).strip() != "" and float(exit_px) > 0.0
+                    if has_exit:
+                        ex_val = round(float(exit_px), 2)
+                        pnl = round(((ex_val - ent_px) if act == "BUY" else (ent_px - ex_val)) * qty, 2)
+                        calc_realized_from_legs += pnl
+                        cleaned_legs.append({
+                            **l,
+                            "strike": stk,
+                            "type": typ,
+                            "action": act,
+                            "qty": qty,
+                            "entry_price": round(ent_px, 2),
+                            "price": round(ent_px, 2),
+                            "exit_price": ex_val,
+                            "leg_pnl": pnl,
+                            "unrealized_pnl": 0.0,
+                            "state": "CLOSED",
+                            "status": "CLOSED"
+                        })
+                    else:
+                        all_exited = False
+                        cleaned_legs.append({
+                            **l,
+                            "strike": stk,
+                            "type": typ,
+                            "action": act,
+                            "qty": qty,
+                            "entry_price": round(ent_px, 2),
+                            "price": round(ent_px, 2),
+                            "exit_price": None,
+                            "state": l.get("state") or "ACTIVE",
+                            "status": "ACTIVE"
+                        })
+
+                # Calculate cumulative realized PnL
+                base_prev_realized = float(current_strat.get("realized_pnl") or 0.0)
+                strat_realized_pnl = float(data.get("realized_pnl") if data.get("realized_pnl") is not None else calc_realized_from_legs)
+                if data.get("realized_pnl") is None and base_prev_realized != 0.0 and calc_realized_from_legs == 0.0:
+                    strat_realized_pnl = base_prev_realized
+
+                # If all legs are exited, strategy becomes CLOSED
+                new_status = "CLOSED" if (all_exited and len(cleaned_legs) > 0) else "ACTIVE"
+                closed_at_val = format_ist() if new_status == "CLOSED" else current_strat.get("closed_at")
+                exit_reason_val = "ALL_LEGS_ADJUSTED_CLOSED" if new_status == "CLOSED" else current_strat.get("exit_reason")
+
+                # Recalculate Net Premium across active/open legs
+                open_legs = [l for l in cleaned_legs if not l.get("exit_price")]
+                if open_legs:
+                    calc_prem = sum(((-1 if l.get("action") == "BUY" else 1) * float(l.get("entry_price", 0.0))) * int(l.get("qty", NIFTY_LOT_SIZE)) for l in open_legs)
+                else:
+                    calc_prem = 0.0
+                net_premium = float(data.get("net_premium") if data.get("net_premium") is not None else calc_prem)
 
                 max_profit = data.get("max_profit", current_strat.get("max_profit"))
                 max_loss = data.get("max_loss", current_strat.get("max_loss"))
@@ -6499,34 +6560,72 @@ class NiftyAnalyticsEngine:
                 conn.execute("""
                     UPDATE options_strategies
                     SET legs_json = ?, net_premium = ?, max_profit = ?, max_loss = ?,
-                        breakevens = ?, est_margin = ?, target_pnl = ?, stoploss_pnl = ?
+                        breakevens = ?, est_margin = ?, target_pnl = ?, stoploss_pnl = ?,
+                        realized_pnl = ?, status = ?, closed_at = ?, exit_reason = ?
                     WHERE strategy_id = ?
                 """, (
-                    json.dumps(legs), net_premium, max_profit, max_loss,
+                    json.dumps(cleaned_legs), net_premium, max_profit, max_loss,
                     breakevens, est_margin, target_pnl, stoploss_pnl,
+                    strat_realized_pnl, new_status, closed_at_val, exit_reason_val,
                     strategy_id
                 ))
                 conn.commit()
 
+                # Also insert into options_strategy_adjustments_log
+                try:
+                    spot_val = float(current_strat.get("spot_at_entry") or 0.0)
+                    try:
+                        spot_res = self.get_live_nifty_spot()
+                        if spot_res and spot_res.get("price"):
+                            spot_val = float(spot_res["price"])
+                    except Exception:
+                        pass
+                    conn.execute("""
+                        INSERT INTO options_strategy_adjustments_log (
+                            strategy_id, adjustment_type, trigger_reason, spot_at_adjustment,
+                            old_legs_json, new_legs_json, credit_collected, timestamp_ist
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        strategy_id, "MANUAL_BUILDER_LEG_EXIT_AND_ADJUSTMENT", notes, spot_val,
+                        current_strat.get("legs_json"), json.dumps(cleaned_legs),
+                        round(net_premium - float(current_strat.get("net_premium") or 0.0), 2),
+                        format_ist()
+                    ))
+                    conn.commit()
+                except Exception as log_ex:
+                    logger.debug(f"Adjustments log insertion warning: {log_ex}")
+
+        # Invalidate portfolio cache
+        self._opt_portfolio_cache = None
+        self._opt_portfolio_cache_ts = 0.0
+        self.invalidate_equity_curves_cache()
+
         # Format Telegram Alert
         leg_bullets = []
-        for i, l in enumerate(legs, 1):
+        for i, l in enumerate(cleaned_legs, 1):
             act = l.get("action", "BUY")
             typ = l.get("type", "CE")
             stk = l.get("strike", 0)
             qty = l.get("qty", NIFTY_LOT_SIZE)
             px = l.get("entry_price", l.get("price", 0.0))
-            icon = "🟢" if act == "BUY" else "🔴"
-            leg_bullets.append(f"{icon} Leg {i}: {act} {stk} {typ} | {qty} Qty @ ₹{px:.2f}")
+            if l.get("exit_price"):
+                pnl = l.get("leg_pnl", 0.0)
+                icon = "🏁"
+                leg_bullets.append(f"{icon} Leg {i}: {act} {stk} {typ} | {qty} Qty @ Entry ₹{px:.2f} ➔ <b>EXITED @ ₹{l['exit_price']:.2f}</b> (Realized: {'+' if pnl >= 0 else ''}₹{pnl:,.2f})")
+            else:
+                icon = "🟢" if act == "BUY" else "🔴"
+                leg_bullets.append(f"{icon} Leg {i}: {act} {stk} {typ} | {qty} Qty @ Entry ₹{px:.2f} (Active)")
 
         telegram_msg = (
             f"🛠️ <b>OPTIONS STRATEGY ADJUSTED</b>\n\n"
             f"📊 <b>Strategy:</b> {current_strat.get('strategy_name')}\n"
             f"🆔 <b>ID:</b> <code>{strategy_id}</code>\n"
             f"⏳ <b>Expiry:</b> {current_strat.get('expiry_date')} ({current_strat.get('expiry_type')})\n"
-            f"💵 <b>Updated Premium:</b> ₹{net_premium:,.2f}\n"
+            f"💰 <b>Strategy Realized P&L:</b> {'+' if strat_realized_pnl >= 0 else ''}₹{strat_realized_pnl:,.2f}\n"
+            f"📊 <b>Status:</b> {new_status}\n"
+            f"💵 <b>Updated Active Premium:</b> ₹{net_premium:,.2f}\n"
             f"💼 <b>Est. Margin:</b> ₹{est_margin:,.0f}\n\n"
-            f"📋 <b>Adjusted Legs ({len(legs)}):</b>\n" + "\n".join(leg_bullets) + f"\n\n"
+            f"📋 <b>Adjusted Legs ({len(cleaned_legs)}):</b>\n" + "\n".join(leg_bullets) + f"\n\n"
             f"📝 <b>Notes:</b> {notes}\n"
             f"🕒 <b>Adjusted At:</b> {format_ist()}"
         )
@@ -6932,6 +7031,7 @@ class NiftyAnalyticsEngine:
             d["pricing_source"] = resolved_source
 
             strat_unrealized = 0.0
+            strat_closed_legs_realized = 0.0
             updated_legs = []
             strat_quote_available = True
 
@@ -6962,6 +7062,8 @@ class NiftyAnalyticsEngine:
                 if has_exited:
                     current_px = float(exit_px)
                     leg_pnl = ((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty
+                    strat_closed_legs_realized += leg_pnl
+                    leg_unrealized = 0.0
                 else:
                     leg_quote_available = (val is not None and float(val) > 0.0)
                     if leg_quote_available:
@@ -6971,7 +7073,8 @@ class NiftyAnalyticsEngine:
                         current_px = entry_px  # Preserve entry_px only as non-distorting placeholder
 
                     leg_pnl = ((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty if leg_quote_available else 0.0
-                strat_unrealized += leg_pnl
+                    strat_unrealized += leg_pnl
+                    leg_unrealized = leg_pnl
 
                 iv_key = f"{opt_type}_IV"
                 leg_iv = leg.get("iv")
@@ -6987,7 +7090,7 @@ class NiftyAnalyticsEngine:
                     "current_price": round(current_px, 2),
                     "iv": round(float(leg_iv), 2),
                     "leg_pnl": round(leg_pnl, 2),
-                    "unrealized_pnl": round(leg_pnl, 2),
+                    "unrealized_pnl": round(leg_unrealized, 2),
                     "pnl": round(leg_pnl, 2)
                 })
 
@@ -7003,10 +7106,17 @@ class NiftyAnalyticsEngine:
             strat_greeks = self._calc_strategy_greeks(spot_price, updated_legs, d.get("expiry_date", ""), base_iv)
             d["greeks"] = strat_greeks
 
+            strat_realized = float(d.get("realized_pnl") or 0.0)
+            if strat_realized == 0.0 and strat_closed_legs_realized != 0.0:
+                strat_realized = strat_closed_legs_realized
+
             if is_active:
+                d["realized_pnl"] = round(strat_realized, 2)
                 d["unrealized_pnl"] = round(strat_unrealized, 2)
-                d["roi_pct"] = round((strat_unrealized / max(1.0, capital_base)) * 100.0, 2)
+                d["net_pnl"] = round(strat_realized + strat_unrealized, 2)
+                d["roi_pct"] = round(((strat_realized + strat_unrealized) / max(1.0, capital_base)) * 100.0, 2)
                 d["current_spot"] = spot_price
+                total_realized_pnl += strat_realized
                 total_unrealized_pnl += strat_unrealized
                 active_strategies.append(d)
             else:

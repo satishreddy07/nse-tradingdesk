@@ -14006,6 +14006,7 @@
       const baseDte = exactDte !== null ? Math.max(0.05, exactDte) : (selectedOptionsExpiryType === 'monthly' ? 25 : 4);
       const targetDte = Math.max(0.01, baseDte - (typeof payoffTargetDteOffset !== 'undefined' ? payoffTargetDteOffset : 0));
       const ivShift = typeof payoffIvShiftPct !== 'undefined' ? payoffIvShiftPct : 0;
+      const chainStrikes = activeChain.all_strikes || activeChain.strikes || [];
 
       container.innerHTML = strategyLegs.map((l, idx) => {
         const isActive = l.active !== false;
@@ -14021,6 +14022,11 @@
         const legTheta = sign * bs.theta * l.qty;
         const legVega = sign * bs.vega * l.qty;
 
+        const chainRow = chainStrikes.find(s => Number(s.strike) === Number(l.strike));
+        const liveCmp = chainRow
+          ? (isCe ? Number(chainRow.ce_ltp || 0) : Number(chainRow.pe_ltp || 0))
+          : (Number(l.currentPrice) || Number(l.price) || 0);
+
         const hasExit = l.exitPrice !== null && l.exitPrice !== undefined && l.exitPrice !== '' && Number(l.exitPrice) > 0;
         const hasTgt = l.targetPrice !== null && l.targetPrice !== undefined && Number(l.targetPrice) > 0;
         const hasSl = l.slPrice !== null && l.slPrice !== undefined && Number(l.slPrice) > 0;
@@ -14032,8 +14038,9 @@
           const entPx = Number(l.price) || 0;
           const legPnl = (isBuy ? (exPx - entPx) : (entPx - exPx)) * l.qty;
           const legPct = entPx > 0 ? ((legPnl / (entPx * l.qty)) * 100) : 0;
-          const pnlColor = legPnl >= 0 ? 'text-emerald-300 bg-emerald-500/20 border-emerald-500/40' : 'text-rose-300 bg-rose-500/20 border-rose-500/40';
-          exitPnlBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${pnlColor}">Locked P&amp;L: ${legPnl >= 0 ? '+' : ''}₹${Math.round(legPnl).toLocaleString('en-IN')} (${legPct >= 0 ? '+' : ''}${legPct.toFixed(1)}%)</span>`;
+          const isProfit = legPnl >= 0;
+          const pnlColor = isProfit ? 'text-emerald-300 bg-emerald-500/20 border-emerald-500/40' : 'text-rose-300 bg-rose-500/20 border-rose-500/40';
+          exitPnlBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${pnlColor}">🏁 Realized ${isProfit ? 'Profit' : 'Loss'}: ${legPnl >= 0 ? '+' : ''}₹${Math.round(legPnl).toLocaleString('en-IN')} (${legPct >= 0 ? '+' : ''}${legPct.toFixed(1)}%)</span>`;
         }
 
         return `
@@ -14059,15 +14066,30 @@
               </div>
 
               <div class="flex items-center gap-2">
-                <div class="flex items-center gap-1 text-[11px]">
-                  <span class="text-slate-400">₹</span>
-                  <input type="number" step="0.5" value="${l.price}" onchange="updateStrategyLeg(${l.id}, 'price', this.value)" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-white text-right">
+                <div class="flex items-center gap-1 text-[11px]" title="Position Initial Entry Price">
+                  <span class="text-slate-400 font-bold">Entry: ₹</span>
+                  <input type="number" step="0.5" value="${l.price}" onchange="updateStrategyLeg(${l.id}, 'price', this.value)" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-xs text-white text-right font-bold">
                 </div>
+                ${liveCmp > 0 ? `
+                  <div class="hidden sm:flex items-center gap-1 text-[10px] font-mono text-slate-400" title="Live Market Price (LTP / CMP)">
+                    <span>CMP:</span>
+                    <b class="text-cyan-300">₹${liveCmp.toFixed(1)}</b>
+                  </div>
+                ` : ''}
                 <div class="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5">
                   <button onclick="changeStrategyLegLots(${l.id}, -1)" class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer" title="Decrease 1 Lot">-</button>
                   <span class="text-xs font-mono font-bold text-white px-1 whitespace-nowrap">${Math.round(l.qty / NIFTY_LOT_SIZE)}L <span class="text-[10px] text-slate-400 font-normal">(${l.qty})</span></span>
                   <button onclick="changeStrategyLegLots(${l.id}, 1)" class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer" title="Increase 1 Lot">+</button>
                 </div>
+                ${hasExit ? `
+                  <button onclick="updateLegExitPrice(${l.id}, '')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition cursor-pointer" title="Leg Exited. Click to Re-Open.">
+                    🏁 Exited @ ₹${l.exitPrice}
+                  </button>
+                ` : `
+                  <button onclick="quickExitLegAtCmp(${l.id})" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-rose-950/70 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-700/60 transition cursor-pointer" title="Square off / Exit leg at current market price (₹${liveCmp.toFixed(1)})">
+                    Exit Leg
+                  </button>
+                `}
                 <button onclick="toggleLegSlDrawer(${l.id})" class="px-2 py-0.5 rounded text-[10px] font-bold ${hasSlOrTarget ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700'} transition flex items-center gap-1 cursor-pointer" title="Configure Manual Exit Price, Stop Loss & Target">
                   <span>🎯 SL/Tgt</span>
                   ${hasExit ? '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>' : ''}
@@ -14097,13 +14119,16 @@
               <div class="mt-2 pt-2 border-t border-slate-800/80 bg-slate-950/70 rounded-lg p-2.5 space-y-2 text-[11px] font-mono">
                 <!-- Exit Price Manual Edit Row -->
                 <div class="flex flex-wrap items-center justify-between gap-1.5 bg-slate-900/90 border border-slate-800 rounded p-1.5">
-                  <div class="flex items-center gap-1.5">
+                  <div class="flex flex-wrap items-center gap-1.5">
                     <span class="text-[10px] font-bold text-amber-300 uppercase">Exit Price:</span>
                     <div class="flex items-center gap-0.5">
                       <span class="text-slate-400">₹</span>
                       <input type="number" step="0.5" placeholder="Open (₹0)" value="${hasExit ? l.exitPrice : ''}" onchange="updateLegExitPrice(${l.id}, this.value)" class="w-20 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-xs text-white text-right font-bold focus:border-cyan-400">
                     </div>
-                    ${hasExit ? `<button onclick="updateLegExitPrice(${l.id}, '')" class="text-[9px] text-rose-400 hover:underline px-1 cursor-pointer">Clear</button>` : ''}
+                    <button onclick="quickExitLegAtCmp(${l.id})" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition cursor-pointer" title="Auto-fill latest LTP / CMP as exit price">
+                      ⚡ Exit @ CMP (${liveCmp > 0 ? ('₹' + liveCmp.toFixed(1)) : 'Live'})
+                    </button>
+                    ${hasExit ? `<button onclick="updateLegExitPrice(${l.id}, '')" class="text-[9px] text-rose-400 hover:underline px-1 cursor-pointer" title="Re-open leg back to floating live market prices">↺ Re-open</button>` : ''}
                   </div>
                   <div>
                     ${exitPnlBadge}
@@ -14422,6 +14447,31 @@
         leg.showSlTarget = !leg.showSlTarget;
         renderStrategyLegs();
       }
+    }
+
+    function quickExitLegAtCmp(id) {
+      const leg = strategyLegs.find(l => l.id === id);
+      if (!leg) return;
+      const cache = window.niftyOptionsChainCache || (typeof niftyOptionsChainCache !== 'undefined' ? niftyOptionsChainCache : null);
+      const activeChain = (selectedOptionsExpiryType === 'monthly') ? (cache?.monthly || {}) : (cache?.weekly || {});
+      const chainStrikes = activeChain.all_strikes || activeChain.strikes || [];
+      const chainRow = chainStrikes.find(s => Number(s.strike) === Number(leg.strike));
+      let cmp = 0;
+      if (chainRow) {
+        cmp = leg.type === 'CE' ? Number(chainRow.ce_ltp || 0) : Number(chainRow.pe_ltp || 0);
+      }
+      if (cmp <= 0) {
+        cmp = Number(leg.currentPrice) || Number(leg.price) || 0.05;
+      }
+      leg.exitPrice = Number(cmp.toFixed(2));
+      leg.showSlTarget = true;
+      renderStrategyLegs();
+      recalculateStrategyMetrics();
+      drawPayoffGraph();
+      const ent = Number(leg.price) || 0;
+      const legPnl = (leg.action === 'BUY' ? (cmp - ent) : (ent - cmp)) * leg.qty;
+      const isLoss = legPnl < 0;
+      showToast(`🏁 Leg #${id} ${leg.strike} ${leg.type} squared off at CMP ₹${cmp.toFixed(2)} (${isLoss ? 'Realized Loss' : 'Realized Profit'}: ${legPnl >= 0 ? '+' : ''}₹${Math.round(legPnl).toLocaleString('en-IN')})! Click "Save & Apply Adjustment" to persist.`, isLoss ? "warning" : "success");
     }
 
     function updateLegExitPrice(id, val) {
@@ -15383,43 +15433,62 @@
           pop_pct: popVal,
           target_pnl: Math.abs(targetPnlVal),
           stoploss_pnl: -Math.abs(slPnlVal),
-          legs: strategyLegs.map(l => {
-            let px = Number(l.price || 0);
-            if (px <= 0 && window.niftyOptionsChainCache) {
-              const chainActive = isMonthlyStrat
-                ? (niftyOptionsChainCache?.monthly || {})
-                : (niftyOptionsChainCache?.weekly || {});
-              const allStrikes = chainActive.all_strikes || chainActive.strikes || [];
-              const stkRow = allStrikes.find(s => Number(s.strike) === Number(l.strike));
-              if (stkRow) {
-                px = l.type === 'CE' ? Number(stkRow.ce_ltp || 0) : Number(stkRow.pe_ltp || 0);
-              }
-            }
-            return {
-              strike: Number(l.strike),
-              type: l.type,
-              action: l.action,
-              qty: Number(l.qty),
-              entry_price: Number(px > 0 ? px : 0.05),
-              price: Number(px > 0 ? px : 0.05),
-              premium: Number(px > 0 ? px : 0.05),
-              exit_price: (l.exitPrice !== null && l.exitPrice !== undefined && l.exitPrice !== '' && Number(l.exitPrice) > 0) ? Number(l.exitPrice) : null,
-              target_price: (l.targetPrice !== null && l.targetPrice !== undefined && Number(l.targetPrice) > 0) ? Number(l.targetPrice) : null,
-              target_pct: (l.targetPct !== null && l.targetPct !== undefined && !isNaN(l.targetPct)) ? Number(l.targetPct) : null,
-              stoploss_price: (l.slPrice !== null && l.slPrice !== undefined && Number(l.slPrice) > 0) ? Number(l.slPrice) : null,
-              stoploss_pct: (l.slPct !== null && l.slPct !== undefined && !isNaN(l.slPct)) ? Number(l.slPct) : null,
-              iv: Number(l.iv || 13.5),
-              expiry_type: expiryType,
-              expiry_date: expiryDate
-            };
-          }),
+          legs: [], // populated below
           notes: `Deployed from Sensibull Builder (${strategyLegs.length} legs)`
         };
+
+        let totalRealized = 0;
+        const mappedLegs = strategyLegs.map(l => {
+          let px = Number(l.entryPrice || l.price || 0);
+          if (px <= 0 && window.niftyOptionsChainCache) {
+            const chainActive = isMonthlyStrat
+              ? (niftyOptionsChainCache?.monthly || {})
+              : (niftyOptionsChainCache?.weekly || {});
+            const allStrikes = chainActive.all_strikes || chainActive.strikes || [];
+            const stkRow = allStrikes.find(s => Number(s.strike) === Number(l.strike));
+            if (stkRow) {
+              px = l.type === 'CE' ? Number(stkRow.ce_ltp || 0) : Number(stkRow.pe_ltp || 0);
+            }
+          }
+          const entPx = Number(px > 0 ? px : 0.05);
+          const hasExited = (l.exitPrice !== null && l.exitPrice !== undefined && l.exitPrice !== '' && Number(l.exitPrice) > 0);
+          const exitPx = hasExited ? Number(l.exitPrice) : null;
+          let legPnl = 0;
+          if (hasExited) {
+            legPnl = Number(((l.action === 'BUY' ? (exitPx - entPx) : (entPx - exitPx)) * l.qty).toFixed(2));
+            totalRealized += legPnl;
+          }
+          return {
+            strike: Number(l.strike),
+            type: l.type,
+            action: l.action,
+            qty: Number(l.qty),
+            entry_price: entPx,
+            price: entPx,
+            premium: entPx,
+            exit_price: exitPx,
+            leg_pnl: legPnl,
+            unrealized_pnl: hasExited ? 0.0 : null,
+            state: hasExited ? "CLOSED" : (l.state || "ACTIVE"),
+            status: hasExited ? "CLOSED" : (l.status || "ACTIVE"),
+            target_price: (l.targetPrice !== null && l.targetPrice !== undefined && Number(l.targetPrice) > 0) ? Number(l.targetPrice) : null,
+            target_pct: (l.targetPct !== null && l.targetPct !== undefined && !isNaN(l.targetPct)) ? Number(l.targetPct) : null,
+            stoploss_price: (l.slPrice !== null && l.slPrice !== undefined && Number(l.slPrice) > 0) ? Number(l.slPrice) : null,
+            stoploss_pct: (l.slPct !== null && l.slPct !== undefined && !isNaN(l.slPct)) ? Number(l.slPct) : null,
+            iv: Number(l.iv || 13.5),
+            expiry_type: expiryType,
+            expiry_date: expiryDate
+          };
+        });
+
+        payload.legs = mappedLegs;
+        payload.realized_pnl = Number(totalRealized.toFixed(2));
 
         let res;
         if (isAdjustment) {
           payload.strategy_id = activeAdjustmentStrategyId;
-          payload.notes = `Adjusted via Sensibull Builder (${strategyLegs.length} legs)`;
+          payload.realized_pnl = Number(totalRealized.toFixed(2));
+          payload.notes = `Adjusted via Sensibull Builder (${strategyLegs.length} legs, Realized: ₹${totalRealized.toFixed(2)})`;
           res = await fetch('/api/options/adjust-strategy', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -15436,7 +15505,8 @@
         const data = await res.json();
         if (res.ok && data.status === 'OK') {
           if (isAdjustment) {
-            showToast(`🛠️ Strategy "${stratName}" adjusted successfully & synced to Telegram Cloud!`, "success");
+            const pnlStr = (totalRealized >= 0 ? '+' : '') + '₹' + Math.round(totalRealized).toLocaleString('en-IN');
+            showToast(`🛠️ Strategy "${stratName}" adjusted successfully! Realized P&L: ${pnlStr} saved & synced to Telegram Cloud!`, "success");
             cancelStrategyAdjustment();
           } else {
             showToast(`🚀 Strategy "${stratName}" deployed to Options Portfolio & backed up to Telegram Cloud!`, "success");
@@ -15539,7 +15609,10 @@
           `;
         } else {
           activeContainer.innerHTML = activeList.map(st => {
-            const isProfit = (st.unrealized_pnl || 0) >= 0;
+            const stratRealized = Number(st.realized_pnl || 0);
+            const stratUnrealized = Number(st.unrealized_pnl || 0);
+            const stratNetPnl = Number(st.net_pnl !== undefined ? st.net_pnl : (stratRealized + stratUnrealized));
+            const isProfit = stratNetPnl >= 0;
             const pnlClass = isProfit ? 'text-emerald-400' : 'text-rose-400';
             const legs = st.legs || [];
             let g = st.greeks;
@@ -15587,9 +15660,10 @@
                   <div class="flex items-center gap-2">
                     <div class="text-right">
                       <div class="text-sm sm:text-base font-extrabold font-mono ${pnlClass}">
-                        ${isProfit ? '+' : ''}₹${(st.unrealized_pnl || 0).toLocaleString('en-IN')}
+                        ${stratNetPnl >= 0 ? '+' : ''}₹${Math.round(stratNetPnl).toLocaleString('en-IN')}
                       </div>
                       <div class="text-[10px] font-mono text-slate-400">
+                        ${stratRealized !== 0 ? `<span class="mr-1">Realized: <b class="${stratRealized >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${stratRealized >= 0 ? '+' : ''}₹${Math.round(stratRealized).toLocaleString('en-IN')}</b> |</span>` : ''}
                         ROI: <b class="${pnlClass}">${(st.roi_pct || 0) >= 0 ? '+' : ''}${Number(st.roi_pct || 0).toFixed(2)}%</b>
                       </div>
                     </div>
@@ -15634,14 +15708,14 @@
                     <tbody class="divide-y divide-slate-800/40">
                       ${legs.map(lg => {
                         const isLegBuy = lg.action === 'BUY';
-                        const legPnl = lg.unrealized_pnl || 0;
-                        const legPnlCls = legPnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
                         const hasLgExit = lg.exit_price !== null && lg.exit_price !== undefined && lg.exit_price !== '' && Number(lg.exit_price) > 0;
+                        const legPnl = hasLgExit ? Number(lg.leg_pnl !== undefined ? lg.leg_pnl : (lg.unrealized_pnl || 0)) : Number(lg.unrealized_pnl || 0);
+                        const legPnlCls = legPnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
                         const hasLgTgt = lg.target_price !== null && lg.target_price !== undefined && Number(lg.target_price) > 0;
                         const hasLgSl = lg.stoploss_price !== null && lg.stoploss_price !== undefined && Number(lg.stoploss_price) > 0;
                         let tgtSlBadge = '<span class="text-slate-600">--</span>';
                         if (hasLgExit) {
-                          tgtSlBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">Exited @ ₹${Number(lg.exit_price).toFixed(2)}</span>`;
+                          tgtSlBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">🏁 Exited @ ₹${Number(lg.exit_price).toFixed(2)}</span>`;
                         } else if (hasLgTgt || hasLgSl) {
                           tgtSlBadge = `<div class="flex items-center gap-1.5 text-[10px]">
                             ${hasLgTgt ? `<span class="text-emerald-400 font-bold" title="Target">🎯 ₹${Number(lg.target_price).toFixed(2)}${lg.target_pct ? ` (${lg.target_pct}%)` : ''}</span>` : ''}
@@ -15655,8 +15729,11 @@
                             <td class="p-1.5 text-slate-300">${lg.qty} <span class="text-slate-500">(${Math.round(lg.qty / NIFTY_LOT_SIZE)}L)</span></td>
                             <td class="p-1.5 text-slate-300">₹${Number(lg.entry_price || 0).toFixed(2)}</td>
                             <td class="p-1.5">${tgtSlBadge}</td>
-                            <td class="p-1.5 text-white font-semibold">₹${Number(lg.current_price || lg.entry_price || 0).toFixed(2)}</td>
-                            <td class="p-1.5 text-right font-bold ${legPnlCls}">${legPnl >= 0 ? '+' : ''}₹${Number(legPnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td class="p-1.5 ${hasLgExit ? 'text-slate-500 line-through' : 'text-white font-semibold'}">₹${Number(hasLgExit ? lg.exit_price : (lg.current_price || lg.entry_price || 0)).toFixed(2)}</td>
+                            <td class="p-1.5 text-right font-bold ${legPnlCls}">
+                              ${legPnl >= 0 ? '+' : ''}₹${Number(legPnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              ${hasLgExit ? '<span class="text-[9px] text-amber-300 font-normal ml-0.5">(Realized)</span>' : ''}
+                            </td>
                           </tr>
                         `;
                       }).join('')}
@@ -16969,20 +17046,28 @@
         nameInput.dataset.userEdited = 'true';
       }
 
-      strategyLegs = (s.legs || []).map((l, idx) => ({
-        id: idx + 1,
-        strike: Number(l.strike),
-        type: l.type,
-        action: l.action,
-        qty: Number(l.qty || NIFTY_LOT_SIZE),
-        price: Number(l.current_price || l.entry_price || l.price || 0.05),
-        iv: Number(l.iv || 13.5),
-        exitPrice: (l.exit_price !== null && l.exit_price !== undefined && l.exit_price !== '') ? Number(l.exit_price) : null,
-        targetPrice: (l.target_price !== null && l.target_price !== undefined) ? Number(l.target_price) : null,
-        targetPct: (l.target_pct !== null && l.target_pct !== undefined) ? Number(l.target_pct) : null,
-        slPrice: (l.stoploss_price !== null && l.stoploss_price !== undefined) ? Number(l.stoploss_price) : null,
-        slPct: (l.stoploss_pct !== null && l.stoploss_pct !== undefined) ? Number(l.stoploss_pct) : null
-      }));
+      strategyLegs = (s.legs || []).map((l, idx) => {
+        const entPx = Number(l.entry_price ?? l.price ?? l.premium ?? 0.05);
+        const currPx = Number(l.current_price || l.price || entPx);
+        const hasExited = (l.exit_price !== null && l.exit_price !== undefined && l.exit_price !== '' && Number(l.exit_price) > 0);
+        return {
+          id: idx + 1,
+          strike: Number(l.strike),
+          type: l.type,
+          action: l.action,
+          qty: Number(l.qty || NIFTY_LOT_SIZE),
+          price: entPx,
+          entryPrice: entPx,
+          currentPrice: currPx,
+          iv: Number(l.iv || 13.5),
+          exitPrice: hasExited ? Number(l.exit_price) : null,
+          targetPrice: (l.target_price !== null && l.target_price !== undefined) ? Number(l.target_price) : null,
+          targetPct: (l.target_pct !== null && l.target_pct !== undefined) ? Number(l.target_pct) : null,
+          slPrice: (l.stoploss_price !== null && l.stoploss_price !== undefined) ? Number(l.stoploss_price) : null,
+          slPct: (l.stoploss_pct !== null && l.stoploss_pct !== undefined) ? Number(l.stoploss_pct) : null,
+          showSlTarget: hasExited || (l.target_price > 0) || (l.stoploss_price > 0)
+        };
+      });
 
       updateAdjustmentUI();
       renderStrategyLegs();
