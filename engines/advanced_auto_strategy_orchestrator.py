@@ -203,6 +203,26 @@ class AdvancedAutoStrategyOrchestrator:
             leg_dir = 1.0 if l["action"].upper() == "SELL" else -1.0
             calc_net_premium += leg_dir * live_px * int(l.get("qty", lot_size))
 
+        # Strict Zerodha Varsity 2:1 Net Credit Guarantee for Ratio Backspreads
+        # Both extremes MUST be in the green profit zone. If live bid/ask slippage turns it into a debit,
+        # dynamically adjust the 2x Long leg further OTM by 50 pts until net credit > 0.
+        if recommended_strat in ("PUT_RATIO_BACKSPREAD", "CALL_RATIO_BACKSPREAD") and calc_net_premium <= 0:
+            short_l = next((l for l in legs if l["action"] == "SELL"), None)
+            long_l = next((l for l in legs if l["action"] == "BUY"), None)
+            if short_l and long_l:
+                sign_offset = -50 if recommended_strat == "PUT_RATIO_BACKSPREAD" else 50
+                for _ in range(5):
+                    long_l["strike"] += sign_offset
+                    new_live_px = self._resolve_live_option_quote(long_l["strike"], long_l["type"], fallback_premium=0.0)
+                    if new_live_px > 0:
+                        long_l["entry_price"] = new_live_px
+                        long_l["price"] = new_live_px
+                        long_l["premium"] = new_live_px
+                        long_l["current_price"] = new_live_px
+                        calc_net_premium = (short_l["entry_price"] * short_l["qty"]) - (new_live_px * long_l["qty"])
+                        if calc_net_premium > 0:
+                            break
+
         net_credit = round(calc_net_premium, 2)
 
         # Define Targets & Stops

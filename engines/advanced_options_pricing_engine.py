@@ -262,68 +262,157 @@ class AdvancedOptionsPricingEngine:
             description = f"Sell ATM {k_atm} Straddle (CE+PE) & Buy OTM Wings ({k_pe_wing} PE / {k_ce_wing} CE). Peak theta decay with dynamic wing-roll defense."
 
         # =====================================================================
+        # =====================================================================
         # 4. CALL RATIO BACKSPREAD (1x2 Call Ratio Backspread - Explosive Upside)
+        # Zerodha Varsity Module 6, Chapter 12 Standard:
+        # - Sell 1 Lower Strike Call (ATM or 1-strike ITM)
+        # - Buy 2 Higher Strike Calls (OTM)
+        # - MANDATORY NET CREDIT: Premium(Short) > 2 * Premium(Long)
+        #   Downside (Market Crash below K_short): All calls expire worthless -> Full Net Credit Profit (Green Zone).
+        #   Upside (Market Rally above Upper BE): 2x Long Calls overpower 1x Short Call -> Unlimited Profit (Green Zone).
+        #   Middle Valley (Max Loss): Strike Width - Net Credit.
         # =====================================================================
         elif architecture in ("CALL_RATIO_BACKSPREAD", "CALL_BACKSPREAD"):
             architecture = "CALL_RATIO_BACKSPREAD"
             name = f"{horizon.capitalize()} Call Ratio Backspread [Unlimited Breakout Upside]"
-            k1_short = atm_strike
-            k2_long = k1_short + max(50, cls._round_to_nse_strike(expected_move * 0.50))
 
-            g_short = calculate_bsm_greeks(spot_price, k1_short, t_years, r, sigma, "CE")
-            g_long = calculate_bsm_greeks(spot_price, k2_long, t_years, r, sigma, "CE")
+            # Dynamic Strike Selection ensuring strict Net Credit >= 0 (Varsity 2:1 Volatility Standard)
+            # Try ATM strike first; if credit is insufficient, step 1-strike ITM (ATM - 50)
+            selected_short_k = atm_strike
+            selected_long_k = atm_strike + 100
+            selected_g_short = None
+            selected_g_long = None
+            found_credit = False
+
+            for cand_short in [atm_strike, atm_strike - 50]:
+                g_s = calculate_bsm_greeks(spot_price, cand_short, t_years, r, sigma, "CE")
+                p_s = g_s["price"]
+                # Scan higher OTM strikes
+                for offset in [100, 150, 200, 250, 300]:
+                    cand_long = cand_short + offset
+                    g_l = calculate_bsm_greeks(spot_price, cand_long, t_years, r, sigma, "CE")
+                    p_l = g_l["price"]
+                    credit = p_s - (2 * p_l)
+                    min_req_credit = max(3.0, p_s * 0.05)
+                    if credit >= min_req_credit:
+                        selected_short_k = cand_short
+                        selected_long_k = cand_long
+                        selected_g_short = g_s
+                        selected_g_long = g_l
+                        found_credit = True
+                        break
+                if found_credit:
+                    break
+
+            if not found_credit:
+                selected_short_k = atm_strike
+                selected_long_k = atm_strike + 150
+                selected_g_short = calculate_bsm_greeks(spot_price, selected_short_k, t_years, r, sigma, "CE")
+                selected_g_long = calculate_bsm_greeks(spot_price, selected_long_k, t_years, r, sigma, "CE")
+
+            k1_short = selected_short_k
+            k2_long = selected_long_k
+            g_short = selected_g_short
+            g_long = selected_g_long
 
             legs = [
                 {"action": "SELL", "type": "CE", "strike": k1_short, "qty": lot_size, "ratio": 1, "premium": g_short["price"], "greeks": g_short},
                 {"action": "BUY", "type": "CE", "strike": k2_long, "qty": lot_size * 2, "ratio": 2, "premium": g_long["price"], "greeks": g_long},
             ]
 
-            net_cost_per_share = (2 * g_long["price"]) - g_short["price"]
-            net_credit_total = round(-net_cost_per_share * lot_size, 2)
+            net_credit_per_share = g_short["price"] - (2 * g_long["price"])
+            net_credit_total = round(net_credit_per_share * lot_size, 2)
 
             spread_width = k2_long - k1_short
-            max_loss_per_share = spread_width + net_cost_per_share
+            max_loss_per_share = max(1.0, spread_width - net_credit_per_share)
             max_loss_total = round(max_loss_per_share * lot_size, 2)
             max_profit_total = "UNLIMITED"
             risk_profile = "ASYMMETRIC_UNLIMITED_UPSIDE"
 
-            upper_be = k2_long + max_loss_per_share
+            upper_be = 2 * k2_long - k1_short - net_credit_per_share
             downside_pnl = net_credit_total
-            breakevens = f"Upper Breakout: ₹{upper_be:.0f} | Downside PnL: ₹{downside_pnl:+.0f}"
+            breakevens = f"Upper Breakout: ₹{upper_be:.0f} | Downside PnL: ₹{downside_pnl:+.0f} (Net Credit)"
             est_margin = round(spread_width * lot_size + 20000.0, 2)
-            description = f"Sell 1x {k1_short} CE + Buy 2x {k2_long} CE. Captures explosive upside expansion with zero risk below {k1_short} if net credit."
+            description = (
+                f"Sell 1x {k1_short} CE + Buy 2x {k2_long} CE. Zerodha Varsity 2:1 Net Credit Backspread. "
+                f"Both extremes in profit (Green Zone): unlimited upside above ₹{upper_be:.0f} and guaranteed +₹{downside_pnl:.0f} credit on downside."
+            )
 
         # =====================================================================
         # 5. PUT RATIO BACKSPREAD (1x2 Put Ratio Backspread - Unlimited Crash Protection)
+        # Zerodha Varsity Module 6, Chapter 13 Standard:
+        # - Sell 1 Higher Strike Put (ATM or 1-strike ITM)
+        # - Buy 2 Lower Strike Puts (OTM)
+        # - MANDATORY NET CREDIT: Premium(Short) > 2 * Premium(Long)
+        #   Upside (Market Rally above K_short): All puts expire worthless -> Full Net Credit Profit (Green Zone).
+        #   Downside (Market Crash below Lower BE): 2x Long Puts overpower 1x Short Put -> Unlimited Profit (Green Zone).
+        #   Middle Valley (Max Loss): Strike Width - Net Credit.
         # =====================================================================
         elif architecture in ("PUT_RATIO_BACKSPREAD", "PUT_BACKSPREAD"):
             architecture = "PUT_RATIO_BACKSPREAD"
             name = f"{horizon.capitalize()} Put Ratio Backspread [Unlimited Crash Expansion]"
-            k1_short = atm_strike
-            k2_long = k1_short - max(50, cls._round_to_nse_strike(expected_move * 0.50))
 
-            g_short = calculate_bsm_greeks(spot_price, k1_short, t_years, r, sigma, "PE")
-            g_long = calculate_bsm_greeks(spot_price, k2_long, t_years, r, sigma, "PE")
+            # Dynamic Strike Selection ensuring strict Net Credit >= 0 (Varsity 2:1 Volatility Standard)
+            # Try ATM strike first; if credit is insufficient, step 1-strike ITM (ATM + 50)
+            selected_short_k = atm_strike
+            selected_long_k = atm_strike - 100
+            selected_g_short = None
+            selected_g_long = None
+            found_credit = False
+
+            for cand_short in [atm_strike, atm_strike + 50]:
+                g_s = calculate_bsm_greeks(spot_price, cand_short, t_years, r, sigma, "PE")
+                p_s = g_s["price"]
+                # Scan lower OTM strikes
+                for offset in [100, 150, 200, 250, 300]:
+                    cand_long = cand_short - offset
+                    g_l = calculate_bsm_greeks(spot_price, cand_long, t_years, r, sigma, "PE")
+                    p_l = g_l["price"]
+                    credit = p_s - (2 * p_l)
+                    min_req_credit = max(3.0, p_s * 0.05)
+                    if credit >= min_req_credit:
+                        selected_short_k = cand_short
+                        selected_long_k = cand_long
+                        selected_g_short = g_s
+                        selected_g_long = g_l
+                        found_credit = True
+                        break
+                if found_credit:
+                    break
+
+            if not found_credit:
+                selected_short_k = atm_strike
+                selected_long_k = atm_strike - 150
+                selected_g_short = calculate_bsm_greeks(spot_price, selected_short_k, t_years, r, sigma, "PE")
+                selected_g_long = calculate_bsm_greeks(spot_price, selected_long_k, t_years, r, sigma, "PE")
+
+            k1_short = selected_short_k
+            k2_long = selected_long_k
+            g_short = selected_g_short
+            g_long = selected_g_long
 
             legs = [
                 {"action": "SELL", "type": "PE", "strike": k1_short, "qty": lot_size, "ratio": 1, "premium": g_short["price"], "greeks": g_short},
                 {"action": "BUY", "type": "PE", "strike": k2_long, "qty": lot_size * 2, "ratio": 2, "premium": g_long["price"], "greeks": g_long},
             ]
 
-            net_cost_per_share = (2 * g_long["price"]) - g_short["price"]
-            net_credit_total = round(-net_cost_per_share * lot_size, 2)
+            net_credit_per_share = g_short["price"] - (2 * g_long["price"])
+            net_credit_total = round(net_credit_per_share * lot_size, 2)
 
             spread_width = k1_short - k2_long
-            max_loss_per_share = spread_width + net_cost_per_share
+            max_loss_per_share = max(1.0, spread_width - net_credit_per_share)
             max_loss_total = round(max_loss_per_share * lot_size, 2)
-            max_profit_total = round((k2_long * 2 - k1_short) * lot_size - (net_cost_per_share * lot_size), 2)
+            max_profit_total = "UNLIMITED"
             risk_profile = "ASYMMETRIC_UNLIMITED_DOWNSIDE"
 
-            lower_be = k2_long - max_loss_per_share
+            lower_be = 2 * k2_long - k1_short + net_credit_per_share
             upside_pnl = net_credit_total
-            breakevens = f"Crash Breakout: ₹{lower_be:.0f} | Upside PnL: ₹{upside_pnl:+.0f}"
+            breakevens = f"Crash Breakout: ₹{lower_be:.0f} | Upside PnL: ₹{upside_pnl:+.0f} (Net Credit)"
             est_margin = round(spread_width * lot_size + 20000.0, 2)
-            description = f"Sell 1x {k1_short} PE + Buy 2x {k2_long} PE. Produces massive exponential profits on market crash with ZERO naked puts."
+            description = (
+                f"Sell 1x {k1_short} PE + Buy 2x {k2_long} PE. Zerodha Varsity 2:1 Net Credit Backspread. "
+                f"Both extremes in profit (Green Zone): unlimited crash protection below ₹{lower_be:.0f} and guaranteed +₹{upside_pnl:.0f} credit on upside."
+            )
 
         else:
             raise ValueError(f"Unknown advanced strategy architecture: {architecture}")

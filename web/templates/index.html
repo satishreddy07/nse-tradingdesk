@@ -8216,19 +8216,95 @@
           </table>
         </div>
 
-        <!-- Strategy Full Payoff Structure Canvas Container -->
-        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 sm:p-4">
-          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-            <div class="flex items-center gap-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
-              <span class="text-xs font-bold text-white font-mono uppercase">Full Strategy Payoff Analysis</span>
-              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Expiry Curve</span>
-              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">Breakevens & Max Profit/Loss</span>
+        <!-- Strategy Full Advanced Dual-Curve Payoff Structure Canvas Container -->
+        <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4 space-y-3">
+          <!-- Canvas Top Header & Controls -->
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs font-bold text-white font-mono uppercase flex items-center gap-1.5">
+                <i data-lucide="line-chart" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span>Advanced Payoff Graph</span>
+              </span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                <span class="w-2 h-0.5 bg-emerald-400 inline-block"></span>
+                <span>Solid: Expiry</span>
+              </span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                <span class="w-2 h-0.5 border-t border-dashed border-cyan-300 inline-block"></span>
+                <span>Dashed: T+Now (Live Greeks)</span>
+              </span>
+              <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[10px] font-mono">
+                <span class="text-slate-500 px-1 py-0.5">Span:</span>
+                <button onclick="setModalPayoffGraphSpan(600)" id="btn-modal-payoff-span-600" class="modal-payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±600 pts from Spot">±600</button>
+                <button onclick="setModalPayoffGraphSpan(1000)" id="btn-modal-payoff-span-1000" class="modal-payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±1000 pts from Spot">±1000</button>
+                <button onclick="setModalPayoffGraphSpan(1200)" id="btn-modal-payoff-span-1200" class="modal-payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±1200 pts from Spot">±1200</button>
+                <button onclick="setModalPayoffGraphSpan('auto')" id="btn-modal-payoff-span-auto" class="modal-payoff-span-btn px-1.5 py-0.5 rounded bg-cyan-500 text-black font-bold transition cursor-pointer" title="Auto Scale to Legs">Auto</button>
+              </div>
             </div>
+            <!-- Live Hover HUD -->
             <div id="modal-payoff-hud" class="text-[11px] font-mono text-cyan-300">Hover payoff curve to inspect P&L at spot</div>
           </div>
-          <div class="relative w-full h-60 sm:h-72 bg-[#050811] rounded-lg overflow-hidden border border-slate-800">
+
+          <!-- Dual-Curve Canvas Container -->
+          <div class="relative w-full h-64 sm:h-72 bg-[#050811] rounded-lg overflow-hidden border border-slate-800">
             <canvas id="modal-strat-payoff-canvas" class="w-full h-full block cursor-crosshair"></canvas>
+          </div>
+
+          <!-- Interactive Sliders: Target Date (T+Now to Expiry) & IV Shift -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80 text-xs font-mono">
+            <div>
+              <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+                <span>📅 Target Date: <b id="modal-slider-target-days-lbl" class="text-cyan-300">Today (T+Now)</b></span>
+                <span id="modal-slider-target-dte-lbl" class="text-slate-500">0 days elapsed</span>
+              </div>
+              <input type="range" id="modal-slider-target-date" min="0" max="7" value="0" step="1" oninput="onModalPayoffTargetDateSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400">
+            </div>
+
+            <div>
+              <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+                <span>⚡ IV Shift: <b id="modal-slider-iv-shift-lbl" class="text-purple-300">0.0%</b></span>
+                <span class="text-slate-500">Vega Impact</span>
+              </div>
+              <input type="range" id="modal-slider-iv-shift" min="-20" max="20" value="0" step="1" oninput="onModalPayoffIvShiftSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-400">
+            </div>
+          </div>
+
+          <!-- Advanced Real-Time Payoff Metrics Bar -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 pt-2 border-t border-slate-800/80 text-center font-mono">
+            <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+              <div class="text-[9px] uppercase text-slate-400 font-bold">Max Profit</div>
+              <div id="modal-metric-maxprofit" class="text-xs sm:text-sm font-extrabold text-emerald-400 mt-0.5">--</div>
+            </div>
+            <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+              <div class="text-[9px] uppercase text-slate-400 font-bold">Max Loss</div>
+              <div id="modal-metric-maxloss" class="text-xs sm:text-sm font-extrabold text-rose-400 mt-0.5">--</div>
+            </div>
+            <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+              <div class="text-[9px] uppercase text-slate-400 font-bold">Breakevens</div>
+              <div id="modal-metric-breakevens" class="text-xs font-bold text-cyan-300 mt-0.5 truncate">--</div>
+            </div>
+            <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+              <div class="text-[9px] uppercase text-slate-400 font-bold">Risk : Reward</div>
+              <div id="modal-metric-rr" class="text-xs sm:text-sm font-extrabold text-amber-300 mt-0.5">--</div>
+            </div>
+            <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+              <div class="text-[9px] uppercase text-slate-400 font-bold">Net Premium</div>
+              <div id="modal-metric-netprem" class="text-xs font-extrabold text-white mt-0.5">--</div>
+              <div id="modal-metric-netprem-sub" class="text-[8px] text-slate-500">--</div>
+            </div>
+            <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+              <div class="text-[9px] uppercase text-slate-400 font-bold">Est Margin</div>
+              <div id="modal-metric-margin" class="text-xs font-extrabold text-white mt-0.5">--</div>
+            </div>
+            <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800 col-span-2 sm:col-span-1 lg:col-span-1">
+              <div class="text-[9px] uppercase text-slate-400 font-bold">Greeks</div>
+              <div id="modal-metric-greeks" class="text-[10px] font-bold text-purple-300 mt-0.5">Δ 0 | Θ 0</div>
+              <div id="modal-metric-greeks-sub" class="text-[8px] text-slate-500">Γ 0 | V 0</div>
+            </div>
+            <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+              <div class="text-[9px] uppercase text-slate-400 font-bold">Prob of Profit</div>
+              <div id="modal-metric-pop" class="text-xs sm:text-sm font-black text-emerald-400 mt-0.5">--%</div>
+            </div>
           </div>
         </div>
 
@@ -14945,8 +15021,9 @@
                         ROI: <b class="${pnlClass}">${(st.roi_pct || 0) >= 0 ? '+' : ''}${Number(st.roi_pct || 0).toFixed(2)}%</b>
                       </div>
                     </div>
-                    <button onclick="openStrategyDetailModal('${st.strategy_id}')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-mono font-bold border border-slate-700 transition" title="Inspect Full Analytics">
-                      Analytics
+                    <button onclick="openStrategyDetailModal('${st.strategy_id}')" class="px-2.5 py-1.5 rounded-lg bg-cyan-950/60 hover:bg-cyan-900 text-cyan-300 text-xs font-mono font-bold border border-cyan-700/60 transition flex items-center gap-1" title="Analyse Strategy (Advanced Dual-Curve Payoff & Greeks)">
+                      <span>📊</span>
+                      <span>Analyse Strategy</span>
                     </button>
                     <button onclick="startStrategyAdjustment('${st.strategy_id}')" class="px-2.5 py-1.5 rounded-lg bg-amber-950/70 hover:bg-amber-900 text-amber-300 text-xs font-mono font-bold border border-amber-700/60 transition" title="Adjust / Roll Legs in Strategy Builder">
                       🛠️ Adjust
@@ -15560,6 +15637,27 @@
         currentModalExpiryType = s.expiry_type || 'WEEKLY';
         currentModalLegs = s.legs || [];
         currentModalSpot = s.spot_at_entry || (niftyOptionsChainCache?.spot || (optionsPortfolioCache?.spot_price || 0));
+        modalMaxDte = Math.max(1, Math.round(dteDays));
+        modalPayoffTargetDateOffset = 0;
+        modalPayoffIvShiftPct = 0;
+        modalPayoffSpan = 'auto';
+
+        const sTargetDate = document.getElementById('modal-slider-target-date');
+        if (sTargetDate) {
+          sTargetDate.max = modalMaxDte;
+          sTargetDate.value = 0;
+        }
+        const sTargetDaysLbl = document.getElementById('modal-slider-target-days-lbl');
+        if (sTargetDaysLbl) sTargetDaysLbl.innerText = 'Today (T+Now)';
+        const sTargetDteLbl = document.getElementById('modal-slider-target-dte-lbl');
+        if (sTargetDteLbl) sTargetDteLbl.innerText = `${modalMaxDte}d to expiry`;
+        const sIvShift = document.getElementById('modal-slider-iv-shift');
+        if (sIvShift) sIvShift.value = 0;
+        const sIvShiftLbl = document.getElementById('modal-slider-iv-shift-lbl');
+        if (sIvShiftLbl) sIvShiftLbl.innerText = '0.0%';
+
+        updateModalSpanButtonStyles();
+
         setTimeout(() => {
           setupModalPayoffListeners();
           if (s.legs && s.legs.length > 0) {
@@ -15586,6 +15684,49 @@
     let currentModalSpot = 0;
     let currentModalStrategyId = null;
     let currentModalExpiryType = 'WEEKLY';
+    let modalMaxDte = 3;
+    let modalPayoffTargetDateOffset = 0;
+    let modalPayoffIvShiftPct = 0;
+    let modalPayoffSpan = 'auto';
+
+    function onModalPayoffTargetDateSlider(val) {
+      modalPayoffTargetDateOffset = Number(val);
+      const remainingDte = Math.max(0, modalMaxDte - modalPayoffTargetDateOffset);
+      const lbl1 = document.getElementById('modal-slider-target-days-lbl');
+      const lbl2 = document.getElementById('modal-slider-target-dte-lbl');
+      if (lbl1) lbl1.innerText = (val === '0' || val === 0) ? 'Today (T+Now)' : `T+${val} Days`;
+      if (lbl2) lbl2.innerText = `${remainingDte.toFixed(1)}d to expiry`;
+      if (currentModalLegs && currentModalLegs.length > 0) {
+        drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, modalPayoffHoverX, currentModalExpiryType);
+      }
+    }
+
+    function onModalPayoffIvShiftSlider(val) {
+      modalPayoffIvShiftPct = Number(val);
+      const lbl = document.getElementById('modal-slider-iv-shift-lbl');
+      if (lbl) lbl.innerText = `${Number(val) >= 0 ? '+' : ''}${Number(val).toFixed(1)}%`;
+      if (currentModalLegs && currentModalLegs.length > 0) {
+        drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, modalPayoffHoverX, currentModalExpiryType);
+      }
+    }
+
+    function setModalPayoffGraphSpan(span) {
+      modalPayoffSpan = span;
+      updateModalSpanButtonStyles();
+      if (currentModalLegs && currentModalLegs.length > 0) {
+        drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, modalPayoffHoverX, currentModalExpiryType);
+      }
+    }
+
+    function updateModalSpanButtonStyles() {
+      document.querySelectorAll('.modal-payoff-span-btn').forEach(btn => {
+        btn.className = "modal-payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer";
+      });
+      const activeBtn = document.getElementById(`btn-modal-payoff-span-${modalPayoffSpan}`);
+      if (activeBtn) {
+        activeBtn.className = "modal-payoff-span-btn px-1.5 py-0.5 rounded bg-cyan-500 text-black font-bold transition cursor-pointer";
+      }
+    }
 
     function setupModalPayoffListeners() {
       const canvas = document.getElementById('modal-strat-payoff-canvas');
@@ -15634,213 +15775,438 @@
       canvas.height = rect.height * dpr;
       const ctx = canvas.getContext('2d');
       ctx.scale(dpr, dpr);
-      const w = rect.width;
-      const h = rect.height;
-      ctx.clearRect(0, 0, w, h);
+      const width = rect.width;
+      const height = rect.height;
+      ctx.clearRect(0, 0, width, height);
 
-      if (!legs || legs.length === 0) return;
+      if (!legs || legs.length === 0) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '12px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('No strategy legs found to render payoff graph', width / 2, height / 2);
+        return;
+      }
+
       const sigmas = calculateSigmaLevels(spot, expiryType);
+      const strikes = legs.map(l => Number(l.strike));
+      const minK = Math.min(...strikes, spot);
+      const maxK = Math.max(...strikes, spot);
 
-      const strikes = legs.map(l => l.strike);
-      const minK = Math.min(...strikes, spot, sigmas.twoSigmaDown);
-      const maxK = Math.max(...strikes, spot, sigmas.twoSigmaUp);
-      const buf = Math.max(650, (maxK - minK) * 0.5);
-      const sMin = minK - buf;
-      const sMax = maxK + buf;
-      const steps = 140;
-      const step = (sMax - sMin) / steps;
+      let spotMin, spotMax;
+      if (modalPayoffSpan && modalPayoffSpan !== 'auto') {
+        const spanVal = Number(modalPayoffSpan);
+        spotMin = Math.round(spot - spanVal);
+        spotMax = Math.round(spot + spanVal);
+      } else {
+        const marginBuffer = Math.max(350, (maxK - minK) * 0.45);
+        spotMin = Math.round(Math.min(minK - marginBuffer, spot * 0.94, sigmas.twoSigmaDown - 150));
+        spotMax = Math.round(Math.max(maxK + marginBuffer, spot * 1.06, sigmas.twoSigmaUp + 150));
+      }
+
+      const stepCount = 160;
+      const step = (spotMax - spotMin) / stepCount;
 
       const spots = [];
-      const pnls = [];
-      for (let i = 0; i <= steps; i++) {
-        const s = sMin + i * step;
+      const expiryPnls = [];
+      const targetPnls = [];
+
+      const targetDte = Math.max(0.001, modalMaxDte - modalPayoffTargetDateOffset);
+
+      for (let i = 0; i <= stepCount; i++) {
+        const s = spotMin + i * step;
         spots.push(s);
-        let pnl = 0;
-        legs.forEach(l => {
-          const sign = l.action === 'BUY' ? 1 : -1;
-          const intr = l.type === 'CE' ? Math.max(0, s - l.strike) : Math.max(0, l.strike - s);
-          pnl += sign * (intr - (l.entry_price || 0)) * l.qty;
+
+        let expPnl = 0;
+        let tPnl = 0;
+
+        legs.forEach(leg => {
+          const sign = leg.action === 'BUY' ? 1 : -1;
+          const intrinsic = leg.type === 'CE' ? Math.max(0, s - leg.strike) : Math.max(0, leg.strike - s);
+          const entryPx = Number(leg.entry_price || leg.price || 0);
+          const qty = Number(leg.qty || (leg.lots ? leg.lots * NIFTY_LOT_SIZE : NIFTY_LOT_SIZE));
+          expPnl += sign * (intrinsic - entryPx) * qty;
+
+          const shiftedIv = Math.max(3, (Number(leg.iv) || sigmas.iv || 13.5) + modalPayoffIvShiftPct);
+          const bs = calculateBsOption(s, leg.strike, targetDte, shiftedIv, leg.type);
+          tPnl += sign * (bs.price - entryPx) * qty;
         });
-        pnls.push(pnl);
+
+        expiryPnls.push(expPnl);
+        targetPnls.push(tPnl);
       }
 
-      const maxAbs = Math.max(500, Math.max(...pnls.map(Math.abs)));
-      const yZero = h / 2;
-      const xToC = (s) => ((s - sMin) / (sMax - sMin)) * w;
-      const yToC = (p) => (h / 2) - (p / maxAbs) * (h * 0.42);
+      // Max Profit / Max Loss
+      const minExp = Math.min(...expiryPnls);
+      const maxExp = Math.max(...expiryPnls);
+      const leftExpSlope = expiryPnls[1] - expiryPnls[0];
+      const rightExpSlope = expiryPnls[stepCount] - expiryPnls[stepCount - 1];
 
-      // Shaded 2-Sigma Corridor (95.4% confidence)
-      const x2D = Math.max(0, Math.min(w, xToC(sigmas.twoSigmaDown)));
-      const x2U = Math.max(0, Math.min(w, xToC(sigmas.twoSigmaUp)));
+      const isLeftUnlProfit = leftExpSlope < -0.1;
+      const isRightUnlProfit = rightExpSlope > 0.1;
+      const isLeftUnlLoss = leftExpSlope > 0.1;
+      const isRightUnlLoss = rightExpSlope < -0.1;
+
+      const maxProfitText = (isLeftUnlProfit || isRightUnlProfit) ? 'Unlimited' : `+₹${Math.round(maxExp).toLocaleString('en-IN')}`;
+      const maxLossText = (isLeftUnlLoss || isRightUnlLoss) ? 'Unlimited' : `-₹${Math.abs(Math.round(minExp)).toLocaleString('en-IN')}`;
+
+      // Breakevens
+      const bes = [];
+      for (let i = 0; i < stepCount; i++) {
+        const p1 = expiryPnls[i];
+        const p2 = expiryPnls[i + 1];
+        if ((p1 <= 0 && p2 > 0) || (p1 >= 0 && p2 < 0)) {
+          const denom = Math.abs(p1) + Math.abs(p2);
+          const fraction = denom > 0 ? (Math.abs(p1) / denom) : 0;
+          const beSpot = Math.round(spots[i] + fraction * step);
+          if (!bes.some(b => Math.abs(b - beSpot) < 35)) {
+            bes.push(beSpot);
+          }
+        }
+      }
+      bes.sort((a, b) => a - b);
+      const beStr = bes.length > 0 ? bes.join(', ') : 'None';
+
+      // Risk : Reward
+      let rrText = '1 : 1';
+      if (maxProfitText === 'Unlimited' && maxLossText !== 'Unlimited') {
+        rrText = '1 : High';
+      } else if (maxLossText === 'Unlimited') {
+        rrText = 'High Risk';
+      } else if (Math.abs(minExp) > 0) {
+        const ratio = (maxExp / Math.abs(minExp)).toFixed(2);
+        rrText = `1 : ${ratio}`;
+      }
+
+      // Net Premium
+      let netPrem = 0;
+      legs.forEach(l => {
+        const sign = l.action === 'SELL' ? 1 : -1;
+        const entryPx = Number(l.entry_price || l.price || 0);
+        const qty = Number(l.qty || (l.lots ? l.lots * NIFTY_LOT_SIZE : NIFTY_LOT_SIZE));
+        netPrem += sign * entryPx * qty;
+      });
+
+      // Est Margin
+      const totalShortLots = legs.filter(l => l.action === 'SELL').reduce((acc, l) => acc + (Number(l.qty || NIFTY_LOT_SIZE) / NIFTY_LOT_SIZE), 0);
+      const totalLongLots = legs.filter(l => l.action === 'BUY').reduce((acc, l) => acc + (Number(l.qty || NIFTY_LOT_SIZE) / NIFTY_LOT_SIZE), 0);
+      let estMargin = 0;
+      if (totalShortLots > 0) {
+        const unhedgedLots = Math.max(0, totalShortLots - totalLongLots);
+        const hedgedLots = Math.min(totalShortLots, totalLongLots);
+        estMargin = (unhedgedLots * 128000) + (hedgedLots * 38000);
+      } else {
+        estMargin = Math.max(0, -netPrem);
+      }
+
+      // Portfolio Greeks at Current Spot
+      let netDelta = 0, netTheta = 0, netGamma = 0, netVega = 0;
+      legs.forEach(l => {
+        const sign = l.action === 'BUY' ? 1 : -1;
+        const shiftedIv = Math.max(3, (Number(l.iv) || sigmas.iv || 13.5) + modalPayoffIvShiftPct);
+        const bs = calculateBsOption(spot, l.strike, targetDte, shiftedIv, l.type);
+        const lots = Number(l.qty || NIFTY_LOT_SIZE) / NIFTY_LOT_SIZE;
+        netDelta += sign * bs.delta * lots;
+        netTheta += sign * bs.theta * Number(l.qty || NIFTY_LOT_SIZE);
+        netGamma += sign * bs.gamma * lots;
+        netVega += sign * bs.vega * Number(l.qty || NIFTY_LOT_SIZE);
+      });
+
+      // Real Analytical POP %
+      let pop = 50.0;
+      if (maxExp <= 0) {
+        pop = 0.0;
+      } else if (minExp >= 0) {
+        pop = 99.0;
+      } else {
+        const actualSigma = Math.max(0.01, (sigmas.iv || 13.5) / 100.0);
+        const T = Math.max(0.0001, targetDte / 365.0);
+        const r = 0.07;
+        const drift = (r - 0.5 * actualSigma * actualSigma) * T;
+        const volSqrtT = actualSigma * Math.sqrt(T);
+        const dLog = (sVal) => (Math.log(Math.max(1, sVal) / spot) - drift) / volSqrtT;
+
+        if (bes.length === 2) {
+          const b1 = Math.min(...bes);
+          const b2 = Math.max(...bes);
+          const pInRange = Math.abs(normalCdf(dLog(b2)) - normalCdf(dLog(b1))) * 100;
+          const midSpot = (b1 + b2) / 2;
+          let midPnl = 0;
+          legs.forEach(l => {
+            const sign = l.action === 'BUY' ? 1 : -1;
+            const intr = l.type === 'CE' ? Math.max(0, midSpot - l.strike) : Math.max(0, l.strike - midSpot);
+            midPnl += sign * (intr - (l.entry_price || 0)) * l.qty;
+          });
+          pop = midPnl >= 0 ? pInRange : (100.0 - pInRange);
+        } else if (bes.length === 1) {
+          const be = bes[0];
+          const isBullish = expiryPnls[stepCount] > 0;
+          pop = isBullish ? ((1.0 - normalCdf(dLog(be))) * 100) : (normalCdf(dLog(be)) * 100);
+        } else {
+          let profitableProb = 0;
+          for (let i = 0; i < stepCount; i++) {
+            const avgPnl = (expiryPnls[i] + expiryPnls[i + 1]) / 2;
+            if (avgPnl > 0) {
+              const pLower = normalCdf(dLog(spots[i]));
+              const pUpper = normalCdf(dLog(spots[i + 1]));
+              profitableProb += Math.max(0, pUpper - pLower);
+            }
+          }
+          pop = profitableProb * 100.0;
+        }
+        pop = Math.min(99.0, Math.max(1.0, pop));
+      }
+
+      // Update All 8 Modal KPI Metric Cards
+      const mpEl = document.getElementById('modal-metric-maxprofit');
+      if (mpEl) mpEl.innerText = maxProfitText;
+      const mlEl = document.getElementById('modal-metric-maxloss');
+      if (mlEl) mlEl.innerText = maxLossText;
+      const beEl = document.getElementById('modal-metric-breakevens');
+      if (beEl) { beEl.innerText = beStr; beEl.title = beStr; }
+      const rrEl = document.getElementById('modal-metric-rr');
+      if (rrEl) rrEl.innerText = rrText;
+      const npEl = document.getElementById('modal-metric-netprem');
+      const npSub = document.getElementById('modal-metric-netprem-sub');
+      if (npEl) {
+        npEl.innerText = `${netPrem >= 0 ? '+' : ''}₹${Math.round(netPrem).toLocaleString('en-IN')}`;
+        npEl.className = `text-xs font-extrabold ${netPrem >= 0 ? 'text-emerald-400' : 'text-rose-400'} mt-0.5`;
+        if (npSub) npSub.innerText = netPrem >= 0 ? 'Credit Received' : 'Debit Paid';
+      }
+      const mgEl = document.getElementById('modal-metric-margin');
+      if (mgEl) mgEl.innerText = `₹${Math.round(estMargin).toLocaleString('en-IN')}`;
+      const gkEl = document.getElementById('modal-metric-greeks');
+      const gkSub = document.getElementById('modal-metric-greeks-sub');
+      if (gkEl) gkEl.innerText = `Δ: ${netDelta >= 0 ? '+' : ''}${netDelta.toFixed(2)} | Θ: ${netTheta >= 0 ? '+' : ''}₹${Math.round(netTheta).toLocaleString('en-IN')}/d`;
+      if (gkSub) gkSub.innerText = `Γ: ${netGamma.toFixed(4)} | V: ${netVega >= 0 ? '+' : ''}₹${Math.round(netVega).toLocaleString('en-IN')}/%`;
+      const popEl = document.getElementById('modal-metric-pop');
+      if (popEl) popEl.innerText = `${Math.round(pop)}%`;
+
+      // CANVAS PLOTTING
+      const absMaxPnl = Math.max(Math.abs(minExp), Math.abs(maxExp), 500);
+      const pnlMinY = -absMaxPnl * 1.15;
+      const pnlMaxY = absMaxPnl * 1.15;
+
+      const padLeft = 55;
+      const padRight = 20;
+      const padTop = 20;
+      const padBottom = 28;
+      const plotWidth = width - padLeft - padRight;
+      const plotHeight = height - padTop - padBottom;
+
+      const xToCanvas = (s) => padLeft + ((s - spotMin) / (spotMax - spotMin)) * plotWidth;
+      const yToCanvas = (p) => padTop + plotHeight - ((p - pnlMinY) / (pnlMaxY - pnlMinY)) * plotHeight;
+
+      // Shaded 2-Sigma Corridor (95.4% probability)
+      const x2D = Math.max(padLeft, Math.min(padLeft + plotWidth, xToCanvas(sigmas.twoSigmaDown)));
+      const x2U = Math.max(padLeft, Math.min(padLeft + plotWidth, xToCanvas(sigmas.twoSigmaUp)));
       if (x2U > x2D) {
         ctx.fillStyle = 'rgba(245, 158, 11, 0.04)';
-        ctx.fillRect(x2D, 0, x2U - x2D, h);
+        ctx.fillRect(x2D, padTop, x2U - x2D, plotHeight);
       }
 
-      // Shaded 1-Sigma Corridor (68.2% confidence)
-      const x1D = Math.max(0, Math.min(w, xToC(sigmas.oneSigmaDown)));
-      const x1U = Math.max(0, Math.min(w, xToC(sigmas.oneSigmaUp)));
+      // Shaded 1-Sigma Corridor (68.2% probability)
+      const x1D = Math.max(padLeft, Math.min(padLeft + plotWidth, xToCanvas(sigmas.oneSigmaDown)));
+      const x1U = Math.max(padLeft, Math.min(padLeft + plotWidth, xToCanvas(sigmas.oneSigmaUp)));
       if (x1U > x1D) {
         ctx.fillStyle = 'rgba(168, 85, 247, 0.08)';
-        ctx.fillRect(x1D, 0, x1U - x1D, h);
+        ctx.fillRect(x1D, padTop, x1U - x1D, plotHeight);
       }
 
-      // Zero line
-      ctx.strokeStyle = '#334155';
-      ctx.lineWidth = 1;
+      // Zero Axis Line
+      const yZero = yToCanvas(0);
       ctx.beginPath();
-      ctx.moveTo(0, yZero);
-      ctx.lineTo(w, yZero);
+      ctx.moveTo(padLeft, yZero);
+      ctx.lineTo(padLeft + plotWidth, yZero);
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([]);
       ctx.stroke();
 
-      // Shaded area
-      ctx.beginPath();
-      ctx.moveTo(xToC(spots[0]), yZero);
-      for (let i = 0; i < spots.length; i++) {
-        ctx.lineTo(xToC(spots[i]), yToC(pnls[i]));
-      }
-      ctx.lineTo(xToC(spots[spots.length - 1]), yZero);
-      ctx.closePath();
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, 'rgba(16, 185, 129, 0.25)');
-      grad.addColorStop(1, 'rgba(244, 63, 94, 0.25)');
-      ctx.fillStyle = grad;
-      ctx.fill();
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '10px JetBrains Mono, monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('₹0', padLeft - 6, yZero + 3);
 
-      // Curve line
-      ctx.beginPath();
-      for (let i = 0; i < spots.length; i++) {
-        const x = xToC(spots[i]);
-        const y = yToC(pnls[i]);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.strokeStyle = '#10b981';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      const tickTop = Math.round(absMaxPnl * 0.7);
+      const tickBottom = -tickTop;
+      [tickTop, tickBottom].forEach(tp => {
+        const y = yToCanvas(tp);
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, y);
+        ctx.lineTo(padLeft + plotWidth, y);
+        ctx.stroke();
+        ctx.fillStyle = tp >= 0 ? '#34d399' : '#f87171';
+        ctx.fillText(`${tp >= 0 ? '+' : ''}₹${(tp / 1000).toFixed(0)}k`, padLeft - 6, y + 3);
+      });
 
-      // 2-Sigma vertical lines (Amber)
+      // 2-Sigma vertical lines (Amber, 95.4%)
       [sigmas.twoSigmaDown, sigmas.twoSigmaUp].forEach((lvl, idx) => {
-        const x = xToC(lvl);
-        if (x >= 0 && x <= w) {
+        const x = xToCanvas(lvl);
+        if (x >= padLeft && x <= padLeft + plotWidth) {
           ctx.strokeStyle = '#f59e0b';
-          ctx.lineWidth = 1;
-          ctx.setLineDash([3, 3]);
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([4, 4]);
           ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, h);
+          ctx.moveTo(x, padTop);
+          ctx.lineTo(x, padTop + plotHeight);
           ctx.stroke();
+
           ctx.fillStyle = '#fbbf24';
-          ctx.font = '9px monospace';
+          ctx.font = '9px JetBrains Mono, monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(idx === 0 ? `-2σ (${lvl})` : `+2σ (${lvl})`, x, 22);
+          ctx.fillText(idx === 0 ? `-2σ (${lvl})` : `+2σ (${lvl})`, x, padTop + 20);
         }
       });
 
-      // 1-Sigma vertical lines (Purple)
+      // 1-Sigma vertical lines (Purple, 68.2%)
       [sigmas.oneSigmaDown, sigmas.oneSigmaUp].forEach((lvl, idx) => {
-        const x = xToC(lvl);
-        if (x >= 0 && x <= w) {
+        const x = xToCanvas(lvl);
+        if (x >= padLeft && x <= padLeft + plotWidth) {
           ctx.strokeStyle = '#c084fc';
-          ctx.lineWidth = 1.2;
-          ctx.setLineDash([2, 2]);
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 3]);
           ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, h);
+          ctx.moveTo(x, padTop);
+          ctx.lineTo(x, padTop + plotHeight);
           ctx.stroke();
+
           ctx.fillStyle = '#c084fc';
-          ctx.font = '9px monospace';
+          ctx.font = '9px JetBrains Mono, monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(idx === 0 ? `-1σ (${lvl})` : `+1σ (${lvl})`, x, 11);
+          ctx.fillText(idx === 0 ? `-1σ (${lvl})` : `+1σ (${lvl})`, x, padTop + 10);
         }
       });
       ctx.setLineDash([]);
 
-      // Breakevens
-      const bes = [];
-      for (let i = 0; i < steps; i++) {
-        if ((pnls[i] < -5 && pnls[i + 1] > 5) || (pnls[i] > 5 && pnls[i + 1] < -5)) {
-          const frac = Math.abs(pnls[i]) / (Math.abs(pnls[i]) + Math.abs(pnls[i + 1]) || 1);
-          bes.push(Math.round(spots[i] + frac * step));
-        }
+      // Spot Line
+      const xSpot = xToCanvas(spot);
+      if (xSpot >= padLeft && xSpot <= padLeft + plotWidth) {
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(xSpot, padTop);
+        ctx.lineTo(xSpot, padTop + plotHeight);
+        ctx.stroke();
+
+        ctx.fillStyle = '#f59e0b';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Spot ${Math.round(spot)}`, xSpot, padTop - 5);
       }
-      bes.forEach(be => {
-        const xBe = xToC(be);
-        if (xBe >= 0 && xBe <= w) {
+
+      // Breakevens
+      bes.slice(0, 4).forEach(be => {
+        const xBe = xToCanvas(be);
+        if (xBe >= padLeft && xBe <= padLeft + plotWidth) {
           ctx.strokeStyle = '#06b6d4';
           ctx.lineWidth = 1;
           ctx.setLineDash([2, 2]);
           ctx.beginPath();
-          ctx.moveTo(xBe, 0);
-          ctx.lineTo(xBe, h);
+          ctx.moveTo(xBe, padTop + 10);
+          ctx.lineTo(xBe, padTop + plotHeight);
           ctx.stroke();
-          ctx.setLineDash([]);
+
           ctx.fillStyle = '#06b6d4';
-          ctx.font = '9px monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(`BE ${be}`, xBe, h - 4);
+          ctx.fillText(`BE ${be}`, xBe, padTop + plotHeight + 14);
         }
       });
 
-      // Spot line
-      const xSpot = xToC(spot);
-      if (xSpot >= 0 && xSpot <= w) {
-        ctx.strokeStyle = '#f59e0b';
+      // Shaded Profit/Loss Area
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(padLeft, padTop, plotWidth, plotHeight);
+      ctx.clip();
+
+      ctx.beginPath();
+      ctx.moveTo(xToCanvas(spots[0]), yZero);
+      for (let i = 0; i < spots.length; i++) {
+        ctx.lineTo(xToCanvas(spots[i]), yToCanvas(expiryPnls[i]));
+      }
+      ctx.lineTo(xToCanvas(spots[spots.length - 1]), yZero);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotHeight);
+      grad.addColorStop(0, 'rgba(16, 185, 129, 0.25)');
+      grad.addColorStop(0.5, 'rgba(16, 185, 129, 0.05)');
+      grad.addColorStop(0.51, 'rgba(244, 63, 94, 0.05)');
+      grad.addColorStop(1, 'rgba(244, 63, 94, 0.25)');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Expiry Curve (Solid Green)
+      ctx.beginPath();
+      for (let i = 0; i < spots.length; i++) {
+        const x = xToCanvas(spots[i]);
+        const y = yToCanvas(expiryPnls[i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([]);
+      ctx.stroke();
+
+      // T+Now Curve (Dashed Cyan / Blue Line)
+      ctx.beginPath();
+      for (let i = 0; i < spots.length; i++) {
+        const x = xToCanvas(spots[i]);
+        const y = yToCanvas(targetPnls[i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 2.0;
+      ctx.setLineDash([5, 4]);
+      ctx.stroke();
+
+      // Interactive Hover Crosshair
+      if (hoverX !== null && hoverX >= padLeft && hoverX <= padLeft + plotWidth) {
+        const frac = (hoverX - padLeft) / plotWidth;
+        const hoverSpot = spotMin + frac * (spotMax - spotMin);
+        const idx = Math.min(spots.length - 1, Math.max(0, Math.round(frac * (spots.length - 1))));
+        const expPnl = expiryPnls[idx];
+        const tPnl = targetPnls[idx];
+
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 1;
         ctx.setLineDash([2, 2]);
         ctx.beginPath();
-        ctx.moveTo(xSpot, 0);
-        ctx.lineTo(xSpot, h);
+        ctx.moveTo(hoverX, padTop);
+        ctx.lineTo(hoverX, padTop + plotHeight);
         ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = '#f59e0b';
-        ctx.font = '10px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(`Spot ${Math.round(spot)}`, xSpot, 12);
-      }
 
-      // Interactive Crosshair & HUD
-      if (hoverX !== null && hoverX >= 0 && hoverX <= w) {
-        const hoverSpot = sMin + (hoverX / w) * (sMax - sMin);
-        let hoverPnl = 0;
-        legs.forEach(l => {
-          const sign = l.action === 'BUY' ? 1 : -1;
-          const intr = l.type === 'CE' ? Math.max(0, hoverSpot - l.strike) : Math.max(0, l.strike - hoverSpot);
-          hoverPnl += sign * (intr - (l.entry_price || 0)) * l.qty;
-        });
+        const yExp = yToCanvas(expPnl);
+        const yTnow = yToCanvas(tPnl);
 
-        const yHover = yToC(hoverPnl);
-
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
+        ctx.fillStyle = '#10b981';
         ctx.beginPath();
-        ctx.moveTo(hoverX, 0);
-        ctx.lineTo(hoverX, h);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        ctx.fillStyle = hoverPnl >= 0 ? '#10b981' : '#f43f5e';
-        ctx.beginPath();
-        ctx.arc(hoverX, yHover, 4.5, 0, Math.PI * 2);
+        ctx.arc(hoverX, yExp, 4, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
 
-        let zoneStr = '';
+        ctx.fillStyle = '#06b6d4';
+        ctx.beginPath();
+        ctx.arc(hoverX, yTnow, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        let zoneText = '';
         if (hoverSpot >= sigmas.oneSigmaDown && hoverSpot <= sigmas.oneSigmaUp) {
-          zoneStr = '<span class="text-purple-300 font-bold">Within 1σ Range (68.2%)</span>';
+          zoneText = `<span class="text-purple-300 font-bold px-1 rounded bg-purple-500/20">Inside 1σ (68.2%)</span>`;
         } else if (hoverSpot >= sigmas.twoSigmaDown && hoverSpot <= sigmas.twoSigmaUp) {
-          zoneStr = '<span class="text-amber-300 font-bold">Within 2σ Range (95.4%)</span>';
+          zoneText = `<span class="text-amber-300 font-bold px-1 rounded bg-amber-500/20">Inside 2σ (95.4%)</span>`;
         } else {
-          zoneStr = '<span class="text-rose-400 font-bold">Outside 2σ Wing (&gt;95%)</span>';
+          zoneText = `<span class="text-rose-400 font-bold px-1 rounded bg-rose-500/20">Outside 2σ Tail (&gt;95%)</span>`;
         }
 
         const hud = document.getElementById('modal-payoff-hud');
         if (hud) {
-          hud.innerHTML = `Spot: <b class="text-white">₹${Math.round(hoverSpot).toLocaleString('en-IN')}</b> | Payoff: <b class="${hoverPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${hoverPnl >= 0 ? '+' : ''}₹${Math.round(hoverPnl).toLocaleString('en-IN')}</b> | [${sigmas.expiryType}] ${zoneStr}`;
+          hud.innerHTML = `Nifty: <b class="text-white">₹${Math.round(hoverSpot).toLocaleString('en-IN')}</b> • Expiry: <b class="${expPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${expPnl >= 0 ? '+' : ''}₹${Math.round(expPnl).toLocaleString('en-IN')}</b> • T+Now: <b class="${tPnl >= 0 ? 'text-cyan-300' : 'text-rose-400'}">${tPnl >= 0 ? '+' : ''}₹${Math.round(tPnl).toLocaleString('en-IN')}</b> • [${sigmas.expiryType}] ${zoneText}`;
         }
       }
+
+      ctx.restore();
     }
 
     async function renderModalOptionChains(legs = []) {
