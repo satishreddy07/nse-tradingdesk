@@ -9642,6 +9642,10 @@
           if (modTarget === 'module-options' && typeof loadOptionsChainDesk === 'function') loadOptionsChainDesk(false);
           else if (modTarget === 'module-intraday' && typeof loadIntradayExpiryDesk === 'function') loadIntradayExpiryDesk(false);
           else if (modTarget === 'module-ml-performance' && typeof loadMLPerformanceData === 'function') loadMLPerformanceData(false);
+          setTimeout(() => {
+            switchModule(modTarget);
+            if (modTarget === 'module-intraday' && typeof loadIntradayExpiryDesk === 'function') loadIntradayExpiryDesk(false);
+          }, 350);
         }
         if (urlParams.get('modal') === 'watchdog' && typeof openWatchdogModal === 'function') {
           setTimeout(openWatchdogModal, 200);
