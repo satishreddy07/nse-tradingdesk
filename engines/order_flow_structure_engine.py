@@ -273,12 +273,42 @@ class OrderFlowStructureEngine:
             ltp = 0.0
             chg_pct = 0.0
             if kotak_neo_engine:
-                tick = kotak_neo_engine.get_live_tick(sym)
+                tick = (
+                    kotak_neo_engine.get_live_tick(sym)
+                    or (kotak_neo_engine.get_live_tick("NIFTY") if sym == "NIFTY 50" else None)
+                    or (kotak_neo_engine.get_live_tick("BANKNIFTY") if sym == "NIFTY BANK" else None)
+                    or (kotak_neo_engine.get_live_tick("^NSEBANK") if sym == "NIFTY BANK" else None)
+                )
                 if tick:
                     ltp = float(tick.get("ltp") or 0.0)
                     chg_pct = float(tick.get("change_pct") or 0.0)
                 else:
                     ltp = float(kotak_neo_engine.get_live_price(sym) or 0.0)
+
+            # Fallback for NIFTY 50 if tick cache is unprimed or post-market
+            if sym == "NIFTY 50" and (ltp == 0.0 or chg_pct == 0.0):
+                try:
+                    from engines.nifty_analytics_engine import nifty_analytics_engine
+                    n_spot = nifty_analytics_engine.get_live_nifty_spot()
+                    if n_spot and float(n_spot.get("price") or 0.0) > 0:
+                        ltp = float(n_spot["price"])
+                        chg_pct = float(n_spot.get("change_pct") or 0.0)
+                except Exception:
+                    pass
+
+            # Fallback for NIFTY BANK if tick cache is unprimed or post-market
+            if sym == "NIFTY BANK" and (ltp == 0.0 or chg_pct == 0.0):
+                try:
+                    from engines.intraday_analytics_engine import intraday_analytics_engine
+                    suite = intraday_analytics_engine.get_full_intraday_suite()
+                    sec_div = suite.get("sectoral_divergence", {})
+                    for s in sec_div.get("sectors", []):
+                        if s.get("ticker") in ("^NSEBANK", "BANKNIFTY") or "BANK" in s.get("name", "").upper():
+                            ltp = float(s.get("price") or 0.0)
+                            chg_pct = float(s.get("change_pct") or 0.0)
+                            break
+                except Exception:
+                    pass
 
             w = weights.get(sym, 0.1)
             # Contribution: scaled -100 to +100 based on % change (e.g. +1.0% = +50 pts)

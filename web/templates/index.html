@@ -13631,13 +13631,16 @@
 
         if (pillsContainer && conf.constituents) {
           pillsContainer.innerHTML = conf.constituents.map(c => {
-            const chg = c.change_pct || 0;
-            const sign = chg >= 0 ? '+' : '';
-            const color = chg >= 0 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25' : 'text-rose-400 bg-rose-500/10 border-rose-500/25';
+            const chg = Number(c.change_pct || 0);
+            const sign = chg > 0 ? '+' : '';
+            const color = chg > 0 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25'
+                        : (chg < 0 ? 'text-rose-400 bg-rose-500/10 border-rose-500/25'
+                        : 'text-slate-400 bg-slate-800/40 border-slate-700/40');
+            const symDisplay = c.symbol === 'NIFTY 50' ? 'NIFTY 50' : (c.symbol === 'NIFTY BANK' ? 'BANKNIFTY' : c.symbol);
             return `
-              <div class="px-2 py-1 rounded-lg border ${color} flex items-center justify-between">
-                <span class="font-bold truncate">${c.symbol.replace('NIFTY ', '')}</span>
-                <span class="font-bold">${sign}${chg.toFixed(1)}%</span>
+              <div class="px-2 py-1 rounded-lg border ${color} flex items-center justify-between gap-1">
+                <span class="font-bold truncate text-[11px]">${symDisplay}</span>
+                <span class="font-bold font-mono text-[11px]">${sign}${chg.toFixed(2)}%</span>
               </div>
             `;
           }).join('');
