@@ -5593,37 +5593,37 @@
           </div>
         </div>
         <div class="overflow-x-auto custom-scroll">
-          <table id="opt-chain-table" class="table-fixed w-full text-left text-[11px] sm:text-xs text-slate-300 font-mono min-w-[1380px] tabular-nums">
+          <table id="opt-chain-table" class="table-fixed w-full text-left text-[11px] sm:text-xs text-slate-300 font-mono min-w-[1635px] tabular-nums">
             <colgroup>
               <col class="w-[110px]">
-              <col class="w-[115px]">
+              <col class="w-[125px]">
               <col class="w-[95px]">
-              <col class="w-[85px]">
+              <col class="w-[105px]">
               <col class="w-[65px]">
-              <col class="w-[170px]">
+              <col class="w-[240px]">
               <col class="w-[80px]">
-              <col class="w-[170px]">
+              <col class="w-[240px]">
               <col class="w-[65px]">
-              <col class="w-[85px]">
+              <col class="w-[105px]">
               <col class="w-[95px]">
-              <col class="w-[115px]">
+              <col class="w-[125px]">
               <col class="w-[110px]">
               <col class="w-[75px]">
             </colgroup>
             <thead class="bg-slate-950/80 text-[10px] uppercase text-slate-400 border-b border-slate-800">
               <tr id="opt-chain-thead-tr">
                 <th class="p-2.5 text-rose-300 col-ce w-[110px] overflow-hidden whitespace-nowrap">CE Buildup</th>
-                <th class="p-2.5 text-rose-300 col-ce w-[115px] overflow-hidden whitespace-nowrap">CE OI (Contracts)</th>
+                <th class="p-2.5 text-rose-300 col-ce w-[125px] overflow-hidden whitespace-nowrap">CE OI (Contracts)</th>
                 <th class="p-2.5 text-rose-300 col-ce w-[95px] overflow-hidden whitespace-nowrap">CE ΔOI</th>
-                <th class="p-2.5 text-rose-300 col-ce w-[85px] overflow-hidden whitespace-nowrap">CE Vol</th>
+                <th class="p-2.5 text-rose-300 col-ce w-[105px] overflow-hidden whitespace-nowrap">CE Vol</th>
                 <th class="p-2.5 text-rose-300 col-ce w-[65px] overflow-hidden whitespace-nowrap">CE IV</th>
-                <th class="p-2.5 text-rose-300 col-ce w-[170px] overflow-hidden whitespace-nowrap">CE LTP (Chg%)</th>
+                <th class="p-2.5 text-rose-300 col-ce w-[240px] overflow-hidden whitespace-nowrap">CE LTP (Chg%)</th>
                 <th class="p-2.5 text-center bg-slate-900 text-amber-300 font-bold border-x border-slate-800 col-strike w-[80px] overflow-hidden whitespace-nowrap">STRIKE</th>
-                <th class="p-2.5 text-emerald-300 col-pe w-[170px] overflow-hidden whitespace-nowrap">PE LTP (Chg%)</th>
+                <th class="p-2.5 text-emerald-300 col-pe w-[240px] overflow-hidden whitespace-nowrap">PE LTP (Chg%)</th>
                 <th class="p-2.5 text-emerald-300 col-pe w-[65px] overflow-hidden whitespace-nowrap">PE IV</th>
-                <th class="p-2.5 text-emerald-300 col-pe w-[85px] overflow-hidden whitespace-nowrap">PE Vol</th>
+                <th class="p-2.5 text-emerald-300 col-pe w-[105px] overflow-hidden whitespace-nowrap">PE Vol</th>
                 <th class="p-2.5 text-emerald-300 col-pe w-[95px] overflow-hidden whitespace-nowrap">PE ΔOI</th>
-                <th class="p-2.5 text-emerald-300 col-pe w-[115px] overflow-hidden whitespace-nowrap">PE OI (Contracts)</th>
+                <th class="p-2.5 text-emerald-300 col-pe w-[125px] overflow-hidden whitespace-nowrap">PE OI (Contracts)</th>
                 <th class="p-2.5 text-emerald-300 col-pe w-[110px] overflow-hidden whitespace-nowrap">PE Buildup</th>
                 <th class="p-2.5 text-right col-pcr w-[75px] overflow-hidden whitespace-nowrap">Strike PCR</th>
               </tr>
@@ -13326,7 +13326,7 @@
         return `
           <tr class="${rowBg} transition">
             <td class="p-2 whitespace-nowrap col-ce w-[110px] overflow-hidden text-ellipsis">${formatBuildupBadge(s.ce_buildup, true)}</td>
-            <td class="p-2 col-ce w-[115px] overflow-hidden">
+            <td class="p-2 col-ce w-[125px] overflow-hidden">
               <div class="flex items-center justify-between gap-1">
                 <span id="opt-ce-oi-${s.strike}" class="font-bold text-white tabular-nums">${(s.ce_oi || 0).toLocaleString('en-IN')}</span>
                 ${isCw1 ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[9px] bg-rose-500 text-black font-bold whitespace-nowrap">CW1</span>' : ''}
@@ -13334,16 +13334,16 @@
               <div class="w-full h-1 bg-slate-800 rounded overflow-hidden mt-0.5"><div class="bg-rose-500 h-full" style="width:${ceBarPct}%"></div></div>
             </td>
             <td class="p-2 font-bold whitespace-nowrap ${(s.ce_chg_oi || 0) >= 0 ? 'text-rose-400' : 'text-emerald-400'} col-ce w-[95px] overflow-hidden text-ellipsis tabular-nums">${(s.ce_chg_oi || 0) >= 0 ? '+' : ''}${(s.ce_chg_oi || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2 text-slate-400 whitespace-nowrap col-ce w-[85px] overflow-hidden text-ellipsis tabular-nums"><span id="opt-ce-vol-${s.strike}">${(s.ce_vol || 0).toLocaleString('en-IN')}</span></td>
+            <td class="p-2 text-slate-400 whitespace-nowrap col-ce w-[105px] overflow-hidden text-ellipsis tabular-nums"><span id="opt-ce-vol-${s.strike}">${(s.ce_vol || 0).toLocaleString('en-IN')}</span></td>
             <td class="p-2 text-slate-300 whitespace-nowrap col-ce w-[65px] overflow-hidden text-ellipsis tabular-nums">${Number(s.ce_iv || 0).toFixed(1)}%</td>
-            <td class="p-2 whitespace-nowrap col-ce w-[170px] overflow-hidden">
-              <div class="flex items-center justify-between gap-1.5">
+            <td class="p-2 whitespace-nowrap col-ce w-[240px] overflow-hidden">
+              <div class="flex items-center justify-between gap-2">
                 <div class="flex items-center gap-1 shrink-0">
-                  <button onclick="openOptionDepthModal(${s.strike}, 'CE')" title="Level-2 5-Depth & Order Book Imbalance" class="px-1.5 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 text-[10px] font-bold border border-blue-500/30 transition">📊</button>
-                  <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'BUY', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Buy ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition">+B</button>
-                  <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'SELL', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Sell ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition">+S</button>
+                  <button onclick="openOptionDepthModal(${s.strike}, 'CE')" title="Level-2 5-Depth & Order Book Imbalance" class="px-1.5 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 text-[10px] font-bold border border-blue-500/30 transition cursor-pointer active:scale-95">📊</button>
+                  <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'BUY', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Buy ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition cursor-pointer active:scale-95">+B</button>
+                  <button onclick="addStrategyLegQuick(${s.strike}, 'CE', 'SELL', ${s.ce_ltp || 0}, ${s.ce_iv || 13.5})" title="Sell ${s.strike} CE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition cursor-pointer active:scale-95">+S</button>
                 </div>
-                <span id="opt-ce-ltp-${s.strike}" data-prev-ltp="${s.ce_ltp || 0}" class="font-semibold text-white whitespace-nowrap tabular-nums">₹${Number(s.ce_ltp || 0).toFixed(2)} <span id="opt-ce-pchg-${s.strike}" class="text-[10px] tabular-nums ${(s.ce_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.ce_pchg || 0) >= 0 ? '+' : ''}${Number(s.ce_pchg || 0).toFixed(0)}%)</span></span>
+                <span id="opt-ce-ltp-${s.strike}" data-prev-ltp="${s.ce_ltp || 0}" class="font-semibold text-white whitespace-nowrap tabular-nums text-right">₹${Number(s.ce_ltp || 0).toFixed(2)} <span id="opt-ce-pchg-${s.strike}" class="text-[10px] tabular-nums ${(s.ce_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.ce_pchg || 0) >= 0 ? '+' : ''}${Number(s.ce_pchg || 0).toFixed(0)}%)</span></span>
               </div>
             </td>
             <td class="p-2 text-center bg-slate-900/95 border-x border-slate-800 font-extrabold whitespace-nowrap ${isAtm ? 'text-amber-300 text-sm' : 'text-white'} col-strike w-[80px] overflow-hidden tabular-nums">
@@ -13353,20 +13353,20 @@
                 ${isMp ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[8px] bg-purple-500 text-white font-bold whitespace-nowrap">MP</span>' : ''}
               </div>
             </td>
-            <td class="p-2 whitespace-nowrap col-pe w-[170px] overflow-hidden">
-              <div class="flex items-center justify-between gap-1.5">
-                <span id="opt-pe-ltp-${s.strike}" data-prev-ltp="${s.pe_ltp || 0}" class="font-semibold text-white whitespace-nowrap tabular-nums">₹${Number(s.pe_ltp || 0).toFixed(2)} <span id="opt-pe-pchg-${s.strike}" class="text-[10px] tabular-nums ${(s.pe_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.pe_pchg || 0) >= 0 ? '+' : ''}${Number(s.pe_pchg || 0).toFixed(0)}%)</span></span>
+            <td class="p-2 whitespace-nowrap col-pe w-[240px] overflow-hidden">
+              <div class="flex items-center justify-between gap-2">
+                <span id="opt-pe-ltp-${s.strike}" data-prev-ltp="${s.pe_ltp || 0}" class="font-semibold text-white whitespace-nowrap tabular-nums text-left">₹${Number(s.pe_ltp || 0).toFixed(2)} <span id="opt-pe-pchg-${s.strike}" class="text-[10px] tabular-nums ${(s.pe_pchg || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">(${(s.pe_pchg || 0) >= 0 ? '+' : ''}${Number(s.pe_pchg || 0).toFixed(0)}%)</span></span>
                 <div class="flex items-center gap-1 shrink-0">
-                  <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'BUY', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Buy ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition">+B</button>
-                  <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'SELL', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Sell ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition">+S</button>
-                  <button onclick="openOptionDepthModal(${s.strike}, 'PE')" title="Level-2 5-Depth & Order Book Imbalance" class="px-1.5 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 text-[10px] font-bold border border-blue-500/30 transition">📊</button>
+                  <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'BUY', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Buy ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition cursor-pointer active:scale-95">+B</button>
+                  <button onclick="addStrategyLegQuick(${s.strike}, 'PE', 'SELL', ${s.pe_ltp || 0}, ${s.pe_iv || 13.5})" title="Sell ${s.strike} PE (Sensibull Builder)" class="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold border border-rose-500/30 transition cursor-pointer active:scale-95">+S</button>
+                  <button onclick="openOptionDepthModal(${s.strike}, 'PE')" title="Level-2 5-Depth & Order Book Imbalance" class="px-1.5 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 text-[10px] font-bold border border-blue-500/30 transition cursor-pointer active:scale-95">📊</button>
                 </div>
               </div>
             </td>
             <td class="p-2 text-slate-300 whitespace-nowrap col-pe w-[65px] overflow-hidden text-ellipsis tabular-nums">${Number(s.pe_iv || 0).toFixed(1)}%</td>
-            <td class="p-2 text-slate-400 whitespace-nowrap col-pe w-[85px] overflow-hidden text-ellipsis tabular-nums"><span id="opt-pe-vol-${s.strike}">${(s.pe_vol || 0).toLocaleString('en-IN')}</span></td>
+            <td class="p-2 text-slate-400 whitespace-nowrap col-pe w-[105px] overflow-hidden text-ellipsis tabular-nums"><span id="opt-pe-vol-${s.strike}">${(s.pe_vol || 0).toLocaleString('en-IN')}</span></td>
             <td class="p-2 font-bold whitespace-nowrap ${(s.pe_chg_oi || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'} col-pe w-[95px] overflow-hidden text-ellipsis tabular-nums">${(s.pe_chg_oi || 0) >= 0 ? '+' : ''}${(s.pe_chg_oi || 0).toLocaleString('en-IN')}</td>
-            <td class="p-2 col-pe w-[115px] overflow-hidden">
+            <td class="p-2 col-pe w-[125px] overflow-hidden">
               <div class="flex items-center justify-between gap-1">
                 <span id="opt-pe-oi-${s.strike}" class="font-bold text-white tabular-nums">${(s.pe_oi || 0).toLocaleString('en-IN')}</span>
                 ${isPw1 ? '<span class="quant-badge inline-flex items-center px-1 rounded text-[9px] bg-emerald-500 text-black font-bold whitespace-nowrap">PW1</span>' : ''}
