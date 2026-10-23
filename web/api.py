@@ -3184,6 +3184,14 @@ def get_continuous_live_stream_endpoint(strike_range: Optional[int] = None, expi
     )
     cur_atm = int(round(nifty_spot / 50.0) * 50) if nifty_spot > 0 else 0
 
+    nifty_prev_close = 0.0
+    try:
+        nifty_prev_close = float(nifty_analytics_engine.get_nifty_prev_close() or 0.0)
+    except Exception:
+        pass
+    change_pts = round(nifty_spot - nifty_prev_close, 2) if (nifty_spot > 0 and nifty_prev_close > 0) else 0.0
+    change_pct = round((change_pts / nifty_prev_close) * 100.0, 2) if (nifty_prev_close > 0) else 0.0
+
     dash_live = {}
     try:
         dash_data = nifty_analytics_engine.get_intraday_expiry_dashboard(interval_mode="15m", force_refresh=False)
@@ -3223,6 +3231,9 @@ def get_continuous_live_stream_endpoint(strike_range: Optional[int] = None, expi
         "is_authenticated": kotak_neo_engine._is_authenticated,
         "ticks_total": stream_status.get("ticks_received_total", len(all_ticks)),
         "timestamp_ist": format_ist(),
+        "prev_close": nifty_prev_close,
+        "change_pts": change_pts,
+        "change_pct": change_pct,
         "swing": {
             "positions_count": len(positions_summary),
             "total_unrealized_pnl": round(total_unrealized_pnl, 2),
@@ -3235,6 +3246,9 @@ def get_continuous_live_stream_endpoint(strike_range: Optional[int] = None, expi
         "intraday": {
             "nifty_spot": nifty_spot,
             "banknifty_spot": banknifty_spot,
+            "prev_close": nifty_prev_close,
+            "change_pts": change_pts,
+            "change_pct": change_pct,
             "atm_strike": cur_atm or dash_live.get("atm_strike"),
             "straddle_premium": float(dash_live.get("straddle_premium") or 0.0),
             "atm_ce_ltp": float(dash_live.get("atm_ce_ltp") or 0.0),

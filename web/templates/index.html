@@ -9588,22 +9588,24 @@
           }
         }, 60000);
 
-        // 1. High-frequency 4-Second Live Spot Tick Streamer
+        // 1. High-frequency 4-Second Live Spot Tick Streamer (Harmonized with Kotak Neo continuous stream)
         setInterval(() => {
           if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
-            pollLiveSpotTick();
+            if (!window.isKotakStreamActive) {
+              pollLiveSpotTick();
+            }
           }
         }, 4000);
 
-        // 2. 15-Second Options & Intraday Streamer
+        // 2. 15-Second Options & Intraday Streamer (Runs only if continuous live stream is not active)
         setInterval(() => {
           if (!document.hidden && isKeepaliveWindowActive && isClientInMarketKeepaliveWindow()) {
             const optMod = document.getElementById('module-options');
             const intraMod = document.getElementById('module-intraday');
             if (optMod && !optMod.classList.contains('hidden')) {
-              loadOptionsChainDesk(false);
+              if (!window.isKotakStreamActive) loadOptionsChainDesk(false);
             } else if (intraMod && !intraMod.classList.contains('hidden')) {
-              loadIntradayExpiryProgression(false);
+              if (!window.isKotakStreamActive) loadIntradayExpiryDesk(false);
             }
           }
         }, 15000);
@@ -9730,6 +9732,29 @@
         streamTextEl.innerText = `● MARKET CLOSED: Spot ${formatted}`;
       }
     }
+
+    // High-performance DOM reconciliation helpers (Zero layout thrashing or flicker)
+    window.setSafeText = function(idOrEl, text) {
+      if (!idOrEl || text === undefined || text === null) return;
+      const el = (typeof idOrEl === 'string') ? document.getElementById(idOrEl) : idOrEl;
+      if (el && el.innerText !== String(text)) {
+        el.innerText = String(text);
+      }
+    };
+    window.setSafeHtml = function(idOrEl, html) {
+      if (!idOrEl || html === undefined || html === null) return;
+      const el = (typeof idOrEl === 'string') ? document.getElementById(idOrEl) : idOrEl;
+      if (el && el.innerHTML !== String(html)) {
+        el.innerHTML = String(html);
+      }
+    };
+    window.setSafeClass = function(idOrEl, cls) {
+      if (!idOrEl || cls === undefined || cls === null) return;
+      const el = (typeof idOrEl === 'string') ? document.getElementById(idOrEl) : idOrEl;
+      if (el && el.className !== String(cls)) {
+        el.className = String(cls);
+      }
+    };
 
     // Unified Nifty Spot / ATM Strike State Tracker (Guarantees zero flicker or jitter)
     window._latestSpotAtmState = { spot: null, atmStrike: null, expiry: null, diffStr: '', prevClose: null };
@@ -10595,7 +10620,10 @@
         }
 
         if (dLadderTbody && Array.isArray(depthData.near_atm_strikes) && depthData.near_atm_strikes.length > 0) {
-          dLadderTbody.innerHTML = depthData.near_atm_strikes.map(row => {
+          const depthSig = depthData.near_atm_strikes.map(r => `${r.strike}-${r.ce?.ltp}-${r.pe?.ltp}-${r.ce?.total_buy}-${r.pe?.total_buy}`).join('|');
+          if (dLadderTbody.getAttribute('data-depth-sig') !== depthSig) {
+            dLadderTbody.setAttribute('data-depth-sig', depthSig);
+            dLadderTbody.innerHTML = depthData.near_atm_strikes.map(row => {
             const isAtm = row.is_atm;
             const ce = row.ce || {};
             const pe = row.pe || {};
@@ -10627,6 +10655,7 @@
               </tr>
             `;
           }).join('');
+          }
         }
       } else {
         if (dRegBadge) dRegBadge.innerText = 'DATA UNAVAILABLE';
@@ -10720,9 +10749,12 @@
       const snaps = data.snapshots || [];
       if (tbody) {
         if (snaps.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">No ${currentIntradayInterval} snapshots recorded yet today. Click "Capture Slot Now".</td></tr>`;
+          setSafeHtml(tbody, `<tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">No ${currentIntradayInterval} snapshots recorded yet today. Click "Capture Slot Now".</td></tr>`);
         } else {
-          tbody.innerHTML = snaps.map(s => {
+          const snapsSig = snaps.map(s => `${s.slot_time}-${s.spot_price}-${s.straddle_premium}-${s.near_atm_pcr}`).join('|');
+          if (tbody.getAttribute('data-snaps-sig') !== snapsSig) {
+            tbody.setAttribute('data-snaps-sig', snapsSig);
+            tbody.innerHTML = snaps.map(s => {
             let sm = {};
             try { sm = s.snapshot_json ? JSON.parse(s.snapshot_json) : {}; } catch (e) {}
             const decay = Number(sm.straddle_decay_pct || 0);
@@ -10748,6 +10780,7 @@
               </tr>
             `;
           }).join('');
+          }
         }
       }
     }
@@ -13066,14 +13099,13 @@
       const tbody = document.getElementById('opt-chain-tbody');
       if (!tbody) return;
       if (strikes.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">No strike rows available in selected range.</td></tr>`;
+        setSafeHtml(tbody, `<tr><td colspan="14" class="p-8 text-center text-slate-500 font-sans">No strike rows available in selected range.</td></tr>`);
         return;
       }
 
       const maxOi = Math.max(1, ...strikes.map(s => Math.max(s.ce_oi || 0, s.pe_oi || 0)));
       const formatBuildupBadge = (b, isCall) => {
         if (b === 'SHORT_BUILDUP') {
-          // Option Writing (Resistance on Call side, Support on Put side)
           const cls = isCall ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
           const lbl = isCall ? 'CALL WRITING' : 'PUT WRITING';
           return `<span class="quant-badge inline-flex items-center px-1.5 py-0.5 rounded text-[9px] border ${cls} font-bold whitespace-nowrap">${lbl}</span>`;
@@ -13092,7 +13124,44 @@
         return `<span class="quant-badge inline-flex items-center text-[9px] text-slate-500 whitespace-nowrap">NEUTRAL</span>`;
       };
 
-      tbody.innerHTML = strikes.map(s => {
+      const chainRenderKey = `${selectedOptionsExpiryType}-${optChainStrikeRange}-${strikes.length}`;
+      const prevKey = tbody.getAttribute('data-chain-key');
+      const tableHasMatchingRows = (prevKey === chainRenderKey) && (tbody.children.length === strikes.length);
+
+      if (tableHasMatchingRows) {
+        // Fast in-place cell updates without wiping DOM tree (Eliminates table blinking)
+        strikes.forEach(s => {
+          setSafeText(`opt-ce-oi-${s.strike}`, (s.ce_oi || 0).toLocaleString('en-IN'));
+          setSafeText(`opt-ce-vol-${s.strike}`, (s.ce_vol || 0).toLocaleString('en-IN'));
+          setSafeText(`opt-pe-vol-${s.strike}`, (s.pe_vol || 0).toLocaleString('en-IN'));
+          setSafeText(`opt-pe-oi-${s.strike}`, (s.pe_oi || 0).toLocaleString('en-IN'));
+          const ceLtpEl = document.getElementById(`opt-ce-ltp-${s.strike}`);
+          if (ceLtpEl) {
+            const oldLtp = parseFloat(ceLtpEl.getAttribute('data-prev-ltp') || '0');
+            const newLtp = Number(s.ce_ltp || 0);
+            if (oldLtp === 0 || Math.abs(newLtp - oldLtp) >= 0.01) {
+              const pchg = s.ce_pchg || 0;
+              const sign = pchg >= 0 ? '+' : '';
+              const pchgCls = pchg >= 0 ? 'text-emerald-400' : 'text-rose-400';
+              ceLtpEl.innerHTML = `₹${newLtp.toFixed(2)} <span id="opt-ce-pchg-${s.strike}" class="text-[10px] ${pchgCls}">(${sign}${Number(pchg).toFixed(0)}%)</span>`;
+              ceLtpEl.setAttribute('data-prev-ltp', newLtp);
+            }
+          }
+          const peLtpEl = document.getElementById(`opt-pe-ltp-${s.strike}`);
+          if (peLtpEl) {
+            const oldLtp = parseFloat(peLtpEl.getAttribute('data-prev-ltp') || '0');
+            const newLtp = Number(s.pe_ltp || 0);
+            if (oldLtp === 0 || Math.abs(newLtp - oldLtp) >= 0.01) {
+              const pchg = s.pe_pchg || 0;
+              const sign = pchg >= 0 ? '+' : '';
+              const pchgCls = pchg >= 0 ? 'text-emerald-400' : 'text-rose-400';
+              peLtpEl.innerHTML = `₹${newLtp.toFixed(2)} <span id="opt-pe-pchg-${s.strike}" class="text-[10px] ${pchgCls}">(${sign}${Number(pchg).toFixed(0)}%)</span>`;
+              peLtpEl.setAttribute('data-prev-ltp', newLtp);
+            }
+          }
+        });
+      } else {
+        tbody.innerHTML = strikes.map(s => {
         const isAtm = s.strike === active.atm_strike;
         const isMp = s.strike === walls.max_pain;
         const isCw1 = s.strike === walls.call_wall_1;
@@ -13155,14 +13224,21 @@
             <td class="p-2 text-right font-bold whitespace-nowrap ${(s.strike_pcr || 0) >= 1.1 ? 'text-emerald-400' : ((s.strike_pcr || 0) <= 0.8 ? 'text-rose-400' : 'text-slate-300')} col-pcr">${Number(s.strike_pcr || 0).toFixed(2)}</td>
           </tr>
         `;
-      }).join('');
-
-      // Synchronize strategy builder state without overwriting reset/cleared builder
-      if (typeof renderBuilderCompactChain === 'function') {
-        renderBuilderCompactChain();
+        }).join('');
+        tbody.setAttribute('data-chain-key', chainRenderKey);
+        if (optContainerEl && optPrevScrollTop > 0) {
+          optContainerEl.scrollTop = optPrevScrollTop;
+        }
       }
-      recalculateStrategyMetrics();
-      drawPayoffGraph();
+
+      // Synchronize strategy builder state only if builder has legs
+      if (typeof strategyLegs !== 'undefined' && strategyLegs && strategyLegs.length > 0) {
+        if (typeof renderBuilderCompactChain === 'function') {
+          renderBuilderCompactChain();
+        }
+        recalculateStrategyMetrics();
+        drawPayoffGraph();
+      }
     }
 
     // Strike Range Controls (User Configurable Strike Range: ±1200 pts default)
@@ -25106,17 +25182,32 @@
             if (intra.nifty_spot > 0) {
               const spot = Number(intra.nifty_spot);
               const formatted = '₹' + spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-              updateNiftySpotAtmCard(spot, null, null, null);
+              const prevClose = Number(intra.prev_close || data.prev_close || 0);
+              const chgPts = Number(intra.change_pts !== undefined ? intra.change_pts : (data.change_pts || 0));
+              const chgPct = Number(intra.change_pct !== undefined ? intra.change_pct : (data.change_pct || 0));
+              let diffStr = '';
+              const diffVal = (chgPts !== 0 || chgPct !== 0) ? chgPts : (prevClose > 0 ? (spot - prevClose) : 0);
+              const diffPctVal = (chgPts !== 0 || chgPct !== 0) ? chgPct : (prevClose > 0 ? ((diffVal / prevClose) * 100) : 0);
+              if (diffVal !== 0 || diffPctVal !== 0) {
+                const sign = diffVal >= 0 ? '+' : '';
+                const cls = diffVal >= 0 ? 'text-emerald-400' : 'text-rose-400';
+                diffStr = `<span class="${cls} font-bold">${sign}${diffVal.toFixed(1)} (${sign}${diffPctVal.toFixed(2)}%)</span>`;
+              }
+              updateNiftySpotAtmCard(spot, intra.atm_strike, (niftyOptionsChainCache?.weekly?.expiry), diffStr, prevClose);
               const intraBadge = document.getElementById('intraday-spot-badge');
-              if (intraBadge) intraBadge.innerText = `NIFTY: ${formatted}`;
+              if (intraBadge) {
+                const newBadgeHtml = `NIFTY: ${formatted} ${diffStr}`;
+                setSafeHtml(intraBadge, newBadgeHtml);
+              }
 
               updateOptionsDeskStreamIndicator(spot, data.is_market_open, 'KOTAK_NEO_STREAM', tickCount);
 
               // Live Intraday Desk Top KPIs & Analysis Synchronization via unified non-flickering controller
               const isMarketOpen = Boolean(data.is_market_open);
               const isLiveStreaming = Boolean(data.is_streaming && isMarketOpen);
+              window.isKotakStreamActive = isLiveStreaming;
               const curAtm = intra.atm_strike || Math.round(spot / 50) * 50;
-              updateIntradaySpotAtmCard(spot, curAtm, isLiveStreaming, null, null);
+              updateIntradaySpotAtmCard(spot, curAtm, isLiveStreaming, diffStr, null);
 
               if (intra.straddle_premium > 0) {
                 const stradEl = document.getElementById('intra-kpi-straddle');
@@ -25249,25 +25340,27 @@
                 if (ltpEl && pos.ltp) {
                   const oldLtp = parseFloat(ltpEl.getAttribute('data-prev-ltp') || '0');
                   const newLtp = Number(pos.ltp);
-                  ltpEl.innerText = `LTP: ₹${newLtp.toFixed(2)}`;
-                  ltpEl.setAttribute('data-prev-ltp', newLtp);
+                  if (oldLtp === 0 || Math.abs(newLtp - oldLtp) >= 0.01) {
+                    setSafeText(ltpEl, `LTP: ₹${newLtp.toFixed(2)}`);
+                    ltpEl.setAttribute('data-prev-ltp', newLtp);
 
-                  if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.01) {
-                    const flashCls = newLtp >= oldLtp ? 'text-emerald-400 font-extrabold' : 'text-rose-400 font-extrabold';
-                    ltpEl.className = `text-[11px] ${flashCls}`;
-                    if (pnlCell) {
-                      const pnlBg = newLtp >= oldLtp ? 'bg-emerald-500/20' : 'bg-rose-500/20';
-                      pnlCell.classList.add(pnlBg);
-                      setTimeout(() => pnlCell.classList.remove(pnlBg), 900);
+                    if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.01) {
+                      const flashCls = newLtp >= oldLtp ? 'text-emerald-400 font-extrabold' : 'text-rose-400 font-extrabold';
+                      ltpEl.className = `text-[11px] ${flashCls}`;
+                      if (pnlCell) {
+                        const pnlBg = newLtp >= oldLtp ? 'bg-emerald-500/20' : 'bg-rose-500/20';
+                        pnlCell.classList.add(pnlBg);
+                        setTimeout(() => pnlCell.classList.remove(pnlBg), 900);
+                      }
+                      setTimeout(() => {
+                        ltpEl.className = 'text-[11px] font-bold text-white';
+                      }, 900);
                     }
-                    setTimeout(() => {
-                      ltpEl.className = 'text-[11px] font-bold text-white';
-                    }, 900);
                   }
                 }
 
                 if (valEl && pos.position_value) {
-                  valEl.innerText = `₹${Math.round(pos.position_value).toLocaleString('en-IN')}`;
+                  setSafeText(valEl, `₹${Math.round(pos.position_value).toLocaleString('en-IN')}`);
                 }
 
                 const pnl = pos.unrealized_pnl || 0;
@@ -25276,30 +25369,30 @@
                 const sign = isPos ? '+' : '';
 
                 if (pnlCell) {
-                  pnlCell.className = `p-3.5 ${isPos ? 'text-emerald-400' : 'text-rose-400'} font-bold font-mono transition-colors duration-300`;
+                  setSafeClass(pnlCell, `p-3.5 ${isPos ? 'text-emerald-400' : 'text-rose-400'} font-bold font-mono transition-colors duration-300`);
                 }
                 if (pnlEl) {
-                  pnlEl.innerText = `${sign}₹${pnl.toFixed(2)}`;
+                  setSafeText(pnlEl, `${sign}₹${pnl.toFixed(2)}`);
                 }
                 if (pnlPctEl) {
-                  pnlPctEl.innerText = `(${sign}${pnlPct.toFixed(2)}%)`;
+                  setSafeText(pnlPctEl, `(${sign}${pnlPct.toFixed(2)}%)`);
                 }
                 if (rEl && pos.current_r !== undefined) {
                   const rVal = Number(pos.current_r || 0);
-                  rEl.className = `p-3.5 font-bold ${rVal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
-                  rEl.innerText = `${rVal >= 0 ? '+' : ''}${rVal.toFixed(2)} R`;
+                  setSafeClass(rEl, `p-3.5 font-bold ${rVal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`);
+                  setSafeText(rEl, `${rVal >= 0 ? '+' : ''}${rVal.toFixed(2)} R`);
                 }
                 if (timeEl && pos.updated_at) {
                   const tStr = String(pos.updated_at).slice(11, 19);
-                  timeEl.innerText = `LTP @ ${tStr || 'Live'} IST`;
+                  setSafeText(timeEl, `LTP @ ${tStr || 'Live'} IST`);
                 }
                 if (dayChgEl && pos.day_change_pct !== null && pos.day_change_pct !== undefined) {
                   const dc = Number(pos.day_change_pct);
                   const dcSign = dc >= 0 ? '+' : '';
                   const dcArr = dc >= 0 ? '▲' : '▼';
                   const dcCls = dc >= 0 ? 'text-emerald-400 bg-emerald-950/70 border-emerald-500/30' : 'text-rose-400 bg-rose-950/70 border-rose-500/30';
-                  dayChgEl.className = `text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dcCls}`;
-                  dayChgEl.innerText = `${dcArr} ${dcSign}${dc.toFixed(2)}%`;
+                  setSafeClass(dayChgEl, `text-[10px] font-bold font-mono px-1.5 py-0.2 rounded border ${dcCls}`);
+                  setSafeText(dayChgEl, `${dcArr} ${dcSign}${dc.toFixed(2)}%`);
                 }
               });
             }
@@ -25325,27 +25418,27 @@
                 if (ltpEl && opt.ltp) {
                   const oldLtp = parseFloat(ltpEl.getAttribute('data-prev-ltp') || '0');
                   const newLtp = Number(opt.ltp);
-                  const pchg = opt.change_pct !== undefined ? opt.change_pct : 0;
-                  const sign = pchg >= 0 ? '+' : '';
-                  const pchgCls = pchg >= 0 ? 'text-emerald-400' : 'text-rose-400';
-                  ltpEl.innerHTML = `₹${newLtp.toFixed(2)} <span id="opt-${type}-pchg-${strike}" class="text-[10px] ${pchgCls}">(${sign}${Number(pchg).toFixed(0)}%)</span>`;
-                  ltpEl.setAttribute('data-prev-ltp', newLtp);
+                  if (oldLtp === 0 || Math.abs(newLtp - oldLtp) >= 0.01) {
+                    const pchg = opt.change_pct !== undefined ? opt.change_pct : 0;
+                    const sign = pchg >= 0 ? '+' : '';
+                    const pchgCls = pchg >= 0 ? 'text-emerald-400' : 'text-rose-400';
+                    ltpEl.innerHTML = `₹${newLtp.toFixed(2)} <span id="opt-${type}-pchg-${strike}" class="text-[10px] ${pchgCls}">(${sign}${Number(pchg).toFixed(0)}%)</span>`;
+                    ltpEl.setAttribute('data-prev-ltp', newLtp);
 
-                  if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.05) {
-                    const flashCls = newLtp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
-                    ltpEl.classList.add(...flashCls, 'rounded', 'px-1');
-                    setTimeout(() => ltpEl.classList.remove(...flashCls, 'rounded', 'px-1'), 800);
+                    if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.05) {
+                      const flashCls = newLtp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
+                      ltpEl.classList.add(...flashCls, 'rounded', 'px-1');
+                      setTimeout(() => ltpEl.classList.remove(...flashCls, 'rounded', 'px-1'), 800);
+                    }
                   }
                 }
 
-                const oiEl = document.getElementById(`opt-${type}-oi-${strike}`);
-                if (oiEl && opt.oi !== undefined && opt.oi !== null) {
-                  oiEl.innerText = Number(opt.oi).toLocaleString('en-IN');
+                if (opt.oi !== undefined && opt.oi !== null) {
+                  setSafeText(`opt-${type}-oi-${strike}`, Number(opt.oi).toLocaleString('en-IN'));
                 }
 
-                const volEl = document.getElementById(`opt-${type}-vol-${strike}`);
-                if (volEl && opt.volume !== undefined && opt.volume !== null) {
-                  volEl.innerText = Number(opt.volume).toLocaleString('en-IN');
+                if (opt.volume !== undefined && opt.volume !== null) {
+                  setSafeText(`opt-${type}-vol-${strike}`, Number(opt.volume).toLocaleString('en-IN'));
                 }
               });
             }
@@ -25362,24 +25455,28 @@
               const sigEl = document.getElementById(`sig-ltp-${sym}`);
               if (sigEl) {
                 const oldLtp = parseFloat(sigEl.getAttribute('data-prev-ltp') || '0');
-                sigEl.innerText = `₹${ltp.toFixed(2)}`;
-                sigEl.setAttribute('data-prev-ltp', ltp);
-                if (oldLtp > 0 && Math.abs(ltp - oldLtp) > 0.01) {
-                  const flashCls = ltp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300', 'font-extrabold'] : ['bg-rose-500/30', 'text-rose-300', 'font-extrabold'];
-                  sigEl.classList.add(...flashCls, 'rounded', 'px-1');
-                  setTimeout(() => sigEl.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
+                if (oldLtp === 0 || Math.abs(ltp - oldLtp) >= 0.01) {
+                  setSafeText(sigEl, `₹${ltp.toFixed(2)}`);
+                  sigEl.setAttribute('data-prev-ltp', ltp);
+                  if (oldLtp > 0 && Math.abs(ltp - oldLtp) > 0.01) {
+                    const flashCls = ltp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300', 'font-extrabold'] : ['bg-rose-500/30', 'text-rose-300', 'font-extrabold'];
+                    sigEl.classList.add(...flashCls, 'rounded', 'px-1');
+                    setTimeout(() => sigEl.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
+                  }
                 }
               }
 
               const p3El = document.getElementById(`p3-ltp-${sym}`);
               if (p3El) {
                 const oldLtp = parseFloat(p3El.getAttribute('data-prev-ltp') || '0');
-                p3El.innerText = `₹${ltp.toFixed(2)}`;
-                p3El.setAttribute('data-prev-ltp', ltp);
-                if (oldLtp > 0 && Math.abs(ltp - oldLtp) > 0.01) {
-                  const flashCls = ltp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
-                  p3El.classList.add(...flashCls, 'rounded', 'px-1');
-                  setTimeout(() => p3El.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
+                if (oldLtp === 0 || Math.abs(ltp - oldLtp) >= 0.01) {
+                  setSafeText(p3El, `₹${ltp.toFixed(2)}`);
+                  p3El.setAttribute('data-prev-ltp', ltp);
+                  if (oldLtp > 0 && Math.abs(ltp - oldLtp) > 0.01) {
+                    const flashCls = ltp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
+                    p3El.classList.add(...flashCls, 'rounded', 'px-1');
+                    setTimeout(() => p3El.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
+                  }
                 }
               }
             });
@@ -25981,46 +26078,50 @@
         const sign = isUp ? '+' : '';
         const chgCls = isUp ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30' : 'text-rose-400 bg-rose-500/15 border-rose-500/30';
 
-        // Update Card LTP with visual flash
+        // Update Card LTP with visual flash (equality guarded)
         const cardLtpEl = document.getElementById(`comm-card-ltp-${baseSym}`);
         if (cardLtpEl) {
           const oldLtp = parseFloat(cardLtpEl.getAttribute('data-prev-ltp') || '0');
-          cardLtpEl.innerText = `₹${newLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-          cardLtpEl.setAttribute('data-prev-ltp', newLtp);
+          if (oldLtp === 0 || Math.abs(newLtp - oldLtp) >= 0.01) {
+            setSafeText(cardLtpEl, `₹${newLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+            cardLtpEl.setAttribute('data-prev-ltp', newLtp);
 
-          if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.01) {
-            const flashCls = newLtp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
-            cardLtpEl.classList.add(...flashCls, 'rounded', 'px-1');
-            setTimeout(() => cardLtpEl.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
+            if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.01) {
+              const flashCls = newLtp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
+              cardLtpEl.classList.add(...flashCls, 'rounded', 'px-1');
+              setTimeout(() => cardLtpEl.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
+            }
           }
         }
 
         // Update Card Change Badge
         const cardChgEl = document.getElementById(`comm-card-chg-${baseSym}`);
         if (cardChgEl) {
-          cardChgEl.className = `inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-mono font-bold border ${chgCls}`;
-          cardChgEl.innerHTML = `<span>${sign}${chgPct.toFixed(2)}%</span><span class="text-[10px] opacity-80">(${sign}${chg.toFixed(2)})</span>`;
+          setSafeClass(cardChgEl, `inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-mono font-bold border ${chgCls}`);
+          setSafeHtml(cardChgEl, `<span>${sign}${chgPct.toFixed(2)}%</span><span class="text-[10px] opacity-80">(${sign}${chg.toFixed(2)})</span>`);
         }
 
         // Update Table Row LTP with visual flash
         const rowLtpEl = document.getElementById(`comm-row-ltp-${baseSym}`);
         if (rowLtpEl) {
           const oldLtp = parseFloat(rowLtpEl.getAttribute('data-prev-ltp') || '0');
-          rowLtpEl.innerText = `₹${newLtp.toFixed(2)}`;
-          rowLtpEl.setAttribute('data-prev-ltp', newLtp);
+          if (oldLtp === 0 || Math.abs(newLtp - oldLtp) >= 0.01) {
+            setSafeText(rowLtpEl, `₹${newLtp.toFixed(2)}`);
+            rowLtpEl.setAttribute('data-prev-ltp', newLtp);
 
-          if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.01) {
-            const flashCls = newLtp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
-            rowLtpEl.classList.add(...flashCls, 'rounded', 'px-1');
-            setTimeout(() => rowLtpEl.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
+            if (oldLtp > 0 && Math.abs(newLtp - oldLtp) > 0.01) {
+              const flashCls = newLtp >= oldLtp ? ['bg-emerald-500/30', 'text-emerald-300'] : ['bg-rose-500/30', 'text-rose-300'];
+              rowLtpEl.classList.add(...flashCls, 'rounded', 'px-1');
+              setTimeout(() => rowLtpEl.classList.remove(...flashCls, 'rounded', 'px-1'), 750);
+            }
           }
         }
 
         // Update Table Row Change Cell
         const rowChgEl = document.getElementById(`comm-row-chg-${baseSym}`);
         if (rowChgEl) {
-          rowChgEl.className = `py-2.5 px-3 text-right ${isUp ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}`;
-          rowChgEl.innerText = `${sign}${chgPct.toFixed(2)}%`;
+          setSafeClass(rowChgEl, `py-2.5 px-3 text-right ${isUp ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}`);
+          setSafeText(rowChgEl, `${sign}${chgPct.toFixed(2)}%`);
         }
 
         // Update Option Chain Spot if current contract is selected (with standard/mini cross-link)
@@ -26041,14 +26142,9 @@
         }
 
         // Update Volume and Range Meter
-        const volEl = document.getElementById(`comm-card-vol-${baseSym}`);
-        if (volEl) volEl.innerText = Number(q.volume || 0).toLocaleString();
-
-        const rowVolEl = document.getElementById(`comm-row-vol-${baseSym}`);
-        if (rowVolEl) rowVolEl.innerText = Number(q.volume || 0).toLocaleString();
-
-        const rowOiEl = document.getElementById(`comm-row-oi-${baseSym}`);
-        if (rowOiEl) rowOiEl.innerText = Number(q.open_interest || 0).toLocaleString();
+        setSafeText(`comm-card-vol-${baseSym}`, Number(q.volume || 0).toLocaleString());
+        setSafeText(`comm-row-vol-${baseSym}`, Number(q.volume || 0).toLocaleString());
+        setSafeText(`comm-row-oi-${baseSym}`, Number(q.open_interest || 0).toLocaleString());
 
         const barEl = document.getElementById(`comm-card-bar-${baseSym}`);
         if (barEl) {
