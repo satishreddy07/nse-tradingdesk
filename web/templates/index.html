@@ -14739,11 +14739,6 @@
       }
     }
 
-      if (typeof updateSmartExecutionEvaluation === 'function') {
-        updateSmartExecutionEvaluation();
-      }
-    }
-
     function calculateSigmaLevels(spot, expiryType = 'WEEKLY', customDte = null, customIv = null) {
       const isMonthly = String(expiryType).toUpperCase() === 'MONTHLY';
       const cache = window.niftyOptionsChainCache || (typeof niftyOptionsChainCache !== 'undefined' ? niftyOptionsChainCache : null);
