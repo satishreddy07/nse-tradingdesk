@@ -742,12 +742,17 @@ class StateEngine:
             if existing_df is None:
                 existing_df, _ = self.get_ohlcv_df(sym)
             if existing_df is not None and not existing_df.empty and len(existing_df) > len(df):
-                if existing_df.index.tz is not None and df.index.tz is None:
-                    df.index = df.index.tz_localize(IST)
-                elif existing_df.index.tz is None and df.index.tz is not None:
-                    df.index = df.index.tz_localize(None)
+                if not isinstance(existing_df.index, pd.DatetimeIndex):
+                    existing_df.index = pd.to_datetime(existing_df.index, utc=True)
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    df.index = pd.to_datetime(df.index, utc=True)
+                if existing_df.index.tz is not None:
+                    existing_df.index = existing_df.index.tz_convert(IST).tz_localize(None)
+                if df.index.tz is not None:
+                    df.index = df.index.tz_convert(IST).tz_localize(None)
                 df = pd.concat([existing_df, df]).sort_index()
-                df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+                dates_s = pd.Series(pd.to_datetime(df.index).date)
+                df = df[~dates_s.duplicated(keep="last").values]
 
         try:
             meta, blob = self._compute_df_summary_and_blob(df)
@@ -810,12 +815,17 @@ class StateEngine:
                 if existing_df is None:
                     existing_df, _ = self.get_ohlcv_df(sym)
                 if existing_df is not None and not existing_df.empty and len(existing_df) > len(df):
-                    if existing_df.index.tz is not None and df.index.tz is None:
-                        df.index = df.index.tz_localize(IST)
-                    elif existing_df.index.tz is None and df.index.tz is not None:
-                        df.index = df.index.tz_localize(None)
+                    if not isinstance(existing_df.index, pd.DatetimeIndex):
+                        existing_df.index = pd.to_datetime(existing_df.index, utc=True)
+                    if not isinstance(df.index, pd.DatetimeIndex):
+                        df.index = pd.to_datetime(df.index, utc=True)
+                    if existing_df.index.tz is not None:
+                        existing_df.index = existing_df.index.tz_convert(IST).tz_localize(None)
+                    if df.index.tz is not None:
+                        df.index = df.index.tz_convert(IST).tz_localize(None)
                     df = pd.concat([existing_df, df]).sort_index()
-                    df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+                    dates_s = pd.Series(pd.to_datetime(df.index).date)
+                    df = df[~dates_s.duplicated(keep="last").values]
 
             self._ohlcv_mem_cache[sym] = (df, now_dt)
             valid_items.append((sym, df))
@@ -1011,13 +1021,18 @@ class StateEngine:
                         if k_vol > 0:
                             df.loc[df.index[-1], "Volume"] = k_vol
                     else:
+                        new_ts = pd.to_datetime(now_ist())
+                        if hasattr(df.index, 'tz') and df.index.tz is not None:
+                            new_ts = new_ts.tz_convert(df.index.tz)
+                        else:
+                            new_ts = new_ts.tz_localize(None) if new_ts.tz is not None else new_ts
                         new_row = pd.DataFrame([{
                             "Open": float(k_tick.get("open") or k_ltp),
                             "High": k_high,
                             "Low": k_low,
                             "Close": k_ltp,
                             "Volume": k_vol
-                        }], index=pd.DatetimeIndex([pd.to_datetime(now_ist())]))
+                        }], index=pd.DatetimeIndex([new_ts]))
                         df = pd.concat([df, new_row])
                     kotak_handled = True
         except Exception as e:
@@ -1067,8 +1082,21 @@ class StateEngine:
         if df is None or df.empty:
             return {"status": "NOT_FOUND", "symbol": sym, "message": f"No OHLCV data in Master File for {sym}"}
 
+        # Safe DatetimeIndex normalization and calendar-day deduplication
+        try:
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index, utc=True)
+            if df.index.tz is not None:
+                df.index = df.index.tz_convert(IST).tz_localize(None)
+        except Exception:
+            try:
+                df.index = pd.to_datetime(df.index).tz_localize(None)
+            except Exception:
+                pass
+
         df = df.sort_index()
-        df = df[~pd.Series(df.index.date).duplicated(keep="last").values]
+        dates_s = pd.Series(pd.to_datetime(df.index).date)
+        df = df[~dates_s.duplicated(keep="last").values]
 
         closes = df["Close"].astype(float)
         highs = df["High"].astype(float)
@@ -1100,6 +1128,8 @@ class StateEngine:
 
         def _clean_flt(v, default=0.0):
             try:
+                if isinstance(v, (pd.Series, np.ndarray, list)):
+                    v = v.iloc[-1] if hasattr(v, "iloc") else v[-1]
                 f = float(v)
                 if math.isnan(f) or math.isinf(f):
                     return default
