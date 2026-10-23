@@ -106,9 +106,19 @@ class StrategyAdjustmentEngine:
             horizon = str(row["expiry_type"] or "WEEKLY").upper()
             strat_name = row["strategy_name"]
             legs_str = row["legs_json"] or "[]"
-            target_pnl = float(row["target_pnl"] or 10000.0)
-            stoploss_pnl = float(row["stoploss_pnl"] or -5000.0)
-            trailing_stop_pnl = float(row["trailing_stop_pnl"] or stoploss_pnl)
+            target_pnl = abs(float(row["target_pnl"] or 10000.0))
+            raw_sl = float(row["stoploss_pnl"] or -5000.0)
+            # Invariant: Stop Loss PnL threshold MUST ALWAYS be strictly negative
+            stoploss_pnl = -abs(raw_sl) if raw_sl != 0.0 else -5000.0
+            raw_trailing = row["trailing_stop_pnl"]
+            trailing_status = str(row["trailing_status"] or "INACTIVE") if "trailing_status" in row.keys() else "INACTIVE"
+            if raw_trailing is None or trailing_status == "INACTIVE":
+                trailing_stop_pnl = stoploss_pnl
+            else:
+                # Sanitize trailing stop: if positive before Milestone 1 (40% target), clamp to stoploss_pnl
+                trailing_stop_pnl = float(raw_trailing)
+                if trailing_stop_pnl > 0.0 and float(row["highest_pnl_reached"] or 0.0) < (target_pnl * 0.40):
+                    trailing_stop_pnl = stoploss_pnl
             highest_pnl = float(row["highest_pnl_reached"] or 0.0)
             created_at = row["created_at"]
 
@@ -140,7 +150,8 @@ class StrategyAdjustmentEngine:
             # -----------------------------------------------------------------
             # LAYER 1: FIXED STOP-LOSS HIT
             # -----------------------------------------------------------------
-            if current_pnl <= stoploss_pnl:
+            # Enforce that stoploss_pnl is strictly negative and PnL breached it
+            if stoploss_pnl < 0.0 and current_pnl <= stoploss_pnl:
                 self._execute_exit(
                     strategy_id=strat_id,
                     exit_reason="STOPLOSS_EXITED",
@@ -269,6 +280,37 @@ class StrategyAdjustmentEngine:
 
         return round(total_pnl, 2), updated
 
+    def _get_option_quote(self, strike: int, opt_type: str, spot_price: float) -> float:
+        """Attempts to get live option LTP from Kotak ticks or active chain, falling back to 0.0."""
+        try:
+            from engines.kotak_neo_engine import kotak_neo_engine
+            live_ticks = kotak_neo_engine.get_near_atm_option_ticks(strike_range=30)
+            tick_key = f"{int(strike)}_{opt_type.upper()}"
+            if tick_key in live_ticks:
+                ltp = float(live_ticks[tick_key].get("ltp") or 0.0)
+                if ltp > 0.0:
+                    return ltp
+        except Exception:
+            pass
+
+        try:
+            from engines.nifty_analytics_engine import nifty_analytics_engine
+            chain_data = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
+            strikes = (
+                chain_data.get("weekly", {}).get("strikes")
+                or chain_data.get("weekly", {}).get("all_strikes", [])
+            )
+            for s in strikes:
+                if int(s.get("strike", 0)) == int(strike):
+                    ltp_key = "ce_ltp" if opt_type.upper() == "CE" else "pe_ltp"
+                    ltp = float(s.get(ltp_key) or 0.0)
+                    if ltp > 0.0:
+                        return ltp
+        except Exception:
+            pass
+
+        return 0.0
+
     def _check_and_apply_adjustments(
         self,
         strategy_id: str,
@@ -324,20 +366,29 @@ class StrategyAdjustmentEngine:
                     new_ce_strike = atm_strike - 50
                     atm_ce["strike"] = new_ce_strike
                     atm_ce["state"] = "ADJUSTED_ROLLED"
-                    # Analytical Greeks update
+                    # Analytical Greeks update & quote retrieval
                     g = calculate_bsm_greeks(spot_price, new_ce_strike, 1.0 / 365.0, 0.07, 0.135, "CE")
-                    atm_ce["premium"] = g["price"]
+                    px_atm = self._get_option_quote(new_ce_strike, "CE", spot_price)
+                    if px_atm <= 0.0: px_atm = float(g["price"])
+                    atm_ce["entry_price"] = round(px_atm, 2)
+                    atm_ce["price"] = round(px_atm, 2)
+                    atm_ce["premium"] = round(px_atm, 2)
                     atm_ce["greeks"] = g
 
                     if wing_ce:
-                        wing_ce["strike"] = wing_ce["strike"] - 50
-                        gw = calculate_bsm_greeks(spot_price, wing_ce["strike"], 1.0 / 365.0, 0.07, 0.135, "CE")
-                        wing_ce["premium"] = gw["price"]
+                        new_w_k = wing_ce["strike"] - 50
+                        wing_ce["strike"] = new_w_k
+                        gw = calculate_bsm_greeks(spot_price, new_w_k, 1.0 / 365.0, 0.07, 0.135, "CE")
+                        px_w = self._get_option_quote(new_w_k, "CE", spot_price)
+                        if px_w <= 0.0: px_w = float(gw["price"])
+                        wing_ce["entry_price"] = round(px_w, 2)
+                        wing_ce["price"] = round(px_w, 2)
+                        wing_ce["premium"] = round(px_w, 2)
                         wing_ce["greeks"] = gw
 
                     adj_note = f"Auto-Adjustment [{horizon}]: Rolled untested Call wing down to {new_ce_strike} CE (Drift: {drift:.1f} pts) to expand lower breakeven."
                     logger.info(f"⚙️ [{strategy_id}] {adj_note}")
-                    self._record_adjustment(strategy_id, "IRON_FLY_WING_ROLL_DOWN", adj_note, spot_price, old_legs, legs, credit_collected=g["price"])
+                    self._record_adjustment(strategy_id, "IRON_FLY_WING_ROLL_DOWN", adj_note, spot_price, old_legs, legs, credit_collected=px_atm)
                     return True, legs, adj_note
 
                 # Drift Up: Put side decayed -> Roll Put wing up 50 pts
@@ -346,18 +397,27 @@ class StrategyAdjustmentEngine:
                     atm_pe["strike"] = new_pe_strike
                     atm_pe["state"] = "ADJUSTED_ROLLED"
                     g = calculate_bsm_greeks(spot_price, new_pe_strike, 1.0 / 365.0, 0.07, 0.135, "PE")
-                    atm_pe["premium"] = g["price"]
+                    px_atm = self._get_option_quote(new_pe_strike, "PE", spot_price)
+                    if px_atm <= 0.0: px_atm = float(g["price"])
+                    atm_pe["entry_price"] = round(px_atm, 2)
+                    atm_pe["price"] = round(px_atm, 2)
+                    atm_pe["premium"] = round(px_atm, 2)
                     atm_pe["greeks"] = g
 
                     if wing_pe:
-                        wing_pe["strike"] = wing_pe["strike"] + 50
-                        gw = calculate_bsm_greeks(spot_price, wing_pe["strike"], 1.0 / 365.0, 0.07, 0.135, "PE")
-                        wing_pe["premium"] = gw["price"]
+                        new_w_k = wing_pe["strike"] + 50
+                        wing_pe["strike"] = new_w_k
+                        gw = calculate_bsm_greeks(spot_price, new_w_k, 1.0 / 365.0, 0.07, 0.135, "PE")
+                        px_w = self._get_option_quote(new_w_k, "PE", spot_price)
+                        if px_w <= 0.0: px_w = float(gw["price"])
+                        wing_pe["entry_price"] = round(px_w, 2)
+                        wing_pe["price"] = round(px_w, 2)
+                        wing_pe["premium"] = round(px_w, 2)
                         wing_pe["greeks"] = gw
 
                     adj_note = f"Auto-Adjustment [{horizon}]: Rolled untested Put wing up to {new_pe_strike} PE (Drift: {drift:+.1f} pts) to expand upper breakeven."
                     logger.info(f"⚙️ [{strategy_id}] {adj_note}")
-                    self._record_adjustment(strategy_id, "IRON_FLY_WING_ROLL_UP", adj_note, spot_price, old_legs, legs, credit_collected=g["price"])
+                    self._record_adjustment(strategy_id, "IRON_FLY_WING_ROLL_UP", adj_note, spot_price, old_legs, legs, credit_collected=px_atm)
                     return True, legs, adj_note
 
         # ---------------------------------------------------------------------
@@ -376,7 +436,11 @@ class StrategyAdjustmentEngine:
                     long_pe_k3["strike"] = new_k3
                     long_pe_k3["state"] = "ADJUSTED_TIGHTENED"
                     g = calculate_bsm_greeks(spot_price, new_k3, 1.0 / 365.0, 0.07, 0.135, "PE")
-                    long_pe_k3["premium"] = g["price"]
+                    px = self._get_option_quote(new_k3, "PE", spot_price)
+                    if px <= 0.0: px = float(g["price"])
+                    long_pe_k3["entry_price"] = round(px, 2)
+                    long_pe_k3["price"] = round(px, 2)
+                    long_pe_k3["premium"] = round(px, 2)
                     long_pe_k3["greeks"] = g
 
                     adj_note = f"Auto-Adjustment [{horizon}]: Tightened broken put wing from {old_k3} to {new_k3} PE. Neutralized downside gap risk."
@@ -400,7 +464,11 @@ class StrategyAdjustmentEngine:
                     long_ce_k3["strike"] = new_k3
                     long_ce_k3["state"] = "ADJUSTED_TIGHTENED"
                     g = calculate_bsm_greeks(spot_price, new_k3, 1.0 / 365.0, 0.07, 0.135, "CE")
-                    long_ce_k3["premium"] = g["price"]
+                    px = self._get_option_quote(new_k3, "CE", spot_price)
+                    if px <= 0.0: px = float(g["price"])
+                    long_ce_k3["entry_price"] = round(px, 2)
+                    long_ce_k3["price"] = round(px, 2)
+                    long_ce_k3["premium"] = round(px, 2)
                     long_ce_k3["greeks"] = g
 
                     adj_note = f"Auto-Adjustment [{horizon}]: Tightened broken call wing from {old_k3} to {new_k3} CE. Neutralized upside breakout risk."
@@ -425,10 +493,39 @@ class StrategyAdjustmentEngine:
                     hedge_long_k = k1 - 150
                     g_hs = calculate_bsm_greeks(spot_price, hedge_short_k, 1.0 / 365.0, 0.07, 0.135, "PE")
                     g_hl = calculate_bsm_greeks(spot_price, hedge_long_k, 1.0 / 365.0, 0.07, 0.135, "PE")
-                    credit_got = round((g_hs["price"] - g_hl["price"]) * NIFTY_LOT_SIZE, 2)
+                    px_short = self._get_option_quote(hedge_short_k, "PE", spot_price)
+                    px_long = self._get_option_quote(hedge_long_k, "PE", spot_price)
+                    if px_short <= 0.0: px_short = float(g_hs["price"])
+                    if px_long <= 0.0: px_long = float(g_hl["price"])
 
-                    legs.append({"action": "SELL", "type": "PE", "strike": hedge_short_k, "qty": NIFTY_LOT_SIZE, "ratio": 1, "premium": g_hs["price"], "greeks": g_hs, "state": "HEDGE_LEG"})
-                    legs.append({"action": "BUY", "type": "PE", "strike": hedge_long_k, "qty": NIFTY_LOT_SIZE, "ratio": 1, "premium": g_hl["price"], "greeks": g_hl, "state": "HEDGE_LEG"})
+                    credit_got = round((px_short - px_long) * NIFTY_LOT_SIZE, 2)
+
+                    legs.append({
+                        "action": "SELL",
+                        "type": "PE",
+                        "strike": hedge_short_k,
+                        "qty": NIFTY_LOT_SIZE,
+                        "ratio": 1,
+                        "entry_price": round(px_short, 2),
+                        "price": round(px_short, 2),
+                        "premium": round(px_short, 2),
+                        "current_price": round(px_short, 2),
+                        "greeks": g_hs,
+                        "state": "HEDGE_LEG"
+                    })
+                    legs.append({
+                        "action": "BUY",
+                        "type": "PE",
+                        "strike": hedge_long_k,
+                        "qty": NIFTY_LOT_SIZE,
+                        "ratio": 1,
+                        "entry_price": round(px_long, 2),
+                        "price": round(px_long, 2),
+                        "premium": round(px_long, 2),
+                        "current_price": round(px_long, 2),
+                        "greeks": g_hl,
+                        "state": "HEDGE_LEG"
+                    })
                     short_ce["state"] = "ADJUSTED_VALLEY_FINANCED"
 
                     adj_note = f"Auto-Adjustment [{horizon}]: Deployed Put Credit Spread ({hedge_short_k}/{hedge_long_k} PE, Credit: ₹{credit_got:.0f}) to finance Valley of Death stall at {k1}-{k2}."
@@ -453,10 +550,39 @@ class StrategyAdjustmentEngine:
                     hedge_long_k = k1 + 150
                     g_hs = calculate_bsm_greeks(spot_price, hedge_short_k, 1.0 / 365.0, 0.07, 0.135, "CE")
                     g_hl = calculate_bsm_greeks(spot_price, hedge_long_k, 1.0 / 365.0, 0.07, 0.135, "CE")
-                    credit_got = round((g_hs["price"] - g_hl["price"]) * NIFTY_LOT_SIZE, 2)
+                    px_short = self._get_option_quote(hedge_short_k, "CE", spot_price)
+                    px_long = self._get_option_quote(hedge_long_k, "CE", spot_price)
+                    if px_short <= 0.0: px_short = float(g_hs["price"])
+                    if px_long <= 0.0: px_long = float(g_hl["price"])
 
-                    legs.append({"action": "SELL", "type": "CE", "strike": hedge_short_k, "qty": NIFTY_LOT_SIZE, "ratio": 1, "premium": g_hs["price"], "greeks": g_hs, "state": "HEDGE_LEG"})
-                    legs.append({"action": "BUY", "type": "CE", "strike": hedge_long_k, "qty": NIFTY_LOT_SIZE, "ratio": 1, "premium": g_hl["price"], "greeks": g_hl, "state": "HEDGE_LEG"})
+                    credit_got = round((px_short - px_long) * NIFTY_LOT_SIZE, 2)
+
+                    legs.append({
+                        "action": "SELL",
+                        "type": "CE",
+                        "strike": hedge_short_k,
+                        "qty": NIFTY_LOT_SIZE,
+                        "ratio": 1,
+                        "entry_price": round(px_short, 2),
+                        "price": round(px_short, 2),
+                        "premium": round(px_short, 2),
+                        "current_price": round(px_short, 2),
+                        "greeks": g_hs,
+                        "state": "HEDGE_LEG"
+                    })
+                    legs.append({
+                        "action": "BUY",
+                        "type": "CE",
+                        "strike": hedge_long_k,
+                        "qty": NIFTY_LOT_SIZE,
+                        "ratio": 1,
+                        "entry_price": round(px_long, 2),
+                        "price": round(px_long, 2),
+                        "premium": round(px_long, 2),
+                        "current_price": round(px_long, 2),
+                        "greeks": g_hl,
+                        "state": "HEDGE_LEG"
+                    })
                     short_pe["state"] = "ADJUSTED_VALLEY_FINANCED"
 
                     adj_note = f"Auto-Adjustment [{horizon}]: Deployed Call Credit Spread ({hedge_short_k}/{hedge_long_k} CE, Credit: ₹{credit_got:.0f}) to finance Valley of Death stall at {k2}-{k1}."

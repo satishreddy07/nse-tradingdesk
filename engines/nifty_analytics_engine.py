@@ -341,6 +341,8 @@ class NiftyAnalyticsEngine:
         with self._lock:
             self._equity_curves_cache = None
             self._equity_curves_cache_ts = 0.0
+            self._opt_portfolio_cache = None
+            self._opt_portfolio_cache_ts = 0.0
 
     def _ensure_tables(self) -> None:
         """Creates SQLite tables inside `data/swing_trades.db` for intraday option snapshots and T+1/T+5 predictions."""
@@ -6066,11 +6068,15 @@ class NiftyAnalyticsEngine:
         calc_premium = sum(((-1 if l["action"] == "BUY" else 1) * float(l["entry_price"])) * int(l["qty"]) for l in legs)
         net_premium = round(calc_premium, 2)
 
-        if target_pnl == 0.0:
+        target_pnl = abs(float(target_pnl or 0.0))
+        if target_pnl <= 0.0:
             target_pnl = round(0.50 * (net_premium if net_premium > 0 else abs(net_premium)), 2)
 
-        if stoploss_pnl == 0.0:
+        raw_sl = float(stoploss_pnl or 0.0)
+        if raw_sl == 0.0:
             stoploss_pnl = round(-1.0 * (net_premium if net_premium > 0 else 0.5 * abs(net_premium)), 2)
+        else:
+            stoploss_pnl = round(-abs(raw_sl), 2)
 
         has_short = any(l["action"] == "SELL" for l in legs)
         if has_short:
@@ -6214,8 +6220,9 @@ class NiftyAnalyticsEngine:
                 max_loss = data.get("max_loss", current_strat.get("max_loss"))
                 breakevens = json.dumps(data.get("breakevens") or []) if isinstance(data.get("breakevens"), list) else str(data.get("breakevens") or current_strat.get("breakevens") or "[]")
                 est_margin = float(data.get("est_margin") or current_strat.get("est_margin") or 0.0)
-                target_pnl = float(data.get("target_pnl") or current_strat.get("target_pnl") or 0.0)
-                stoploss_pnl = float(data.get("stoploss_pnl") or current_strat.get("stoploss_pnl") or 0.0)
+                target_pnl = abs(float(data.get("target_pnl") or current_strat.get("target_pnl") or 0.0))
+                raw_sl = float(data.get("stoploss_pnl") or current_strat.get("stoploss_pnl") or 0.0)
+                stoploss_pnl = -abs(raw_sl) if raw_sl != 0.0 else 0.0
                 notes = data.get("notes") or "Strategy adjusted with updated legs"
 
                 conn.execute("""
@@ -6522,7 +6529,7 @@ class NiftyAnalyticsEngine:
             "vega": round(net_vega, 1)
         }
 
-    def get_options_portfolio(self) -> Dict[str, Any]:
+    def get_options_portfolio(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Retrieves all active and closed option strategies from SQLite.
         For active strategies, recalculates live leg CMPs from the option chain
@@ -6531,7 +6538,7 @@ class NiftyAnalyticsEngine:
         """
         now_ts = time.time()
         cached = getattr(self, "_opt_portfolio_cache", None)
-        if cached and (now_ts - getattr(self, "_opt_portfolio_cache_ts", 0.0) < 4.0):
+        if not force_refresh and cached and (now_ts - getattr(self, "_opt_portfolio_cache_ts", 0.0) < 4.0):
             return cached
 
         with state_engine._lock:
@@ -6658,12 +6665,16 @@ class NiftyAnalyticsEngine:
                 opt_type = leg.get("type", "CE")
                 action = leg.get("action", "BUY")
                 qty = leg.get("qty", NIFTY_LOT_SIZE)
-                entry_px = float(leg.get("entry_price", leg.get("price", 0.0)))
+                entry_px = float(leg.get("entry_price") or leg.get("price") or leg.get("premium") or 0.0)
 
                 try:
                     stk_int = int(round(float(stk)))
                 except (ValueError, TypeError):
                     stk_int = stk
+
+                if entry_px <= 0.0:
+                    val_entry = primary_map.get(stk_int, {}).get(opt_type) or fallback_map.get(stk_int, {}).get(opt_type)
+                    entry_px = float(val_entry) if val_entry and float(val_entry) > 0 else 0.05
 
                 val = primary_map.get(stk_int, {}).get(opt_type)
                 if val is None:
@@ -6689,7 +6700,9 @@ class NiftyAnalyticsEngine:
                 updated_legs.append({
                     **leg,
                     "strike": stk_int,
-                    "entry_price": entry_px,
+                    "entry_price": round(entry_px, 2),
+                    "price": round(entry_px, 2),
+                    "premium": round(entry_px, 2),
                     "current_price": round(current_px, 2),
                     "iv": round(float(leg_iv), 2),
                     "leg_pnl": round(leg_pnl, 2),
@@ -7542,14 +7555,17 @@ class NiftyAnalyticsEngine:
             d = dict(r)
             strat_id = d["strategy_id"]
             strat_name = d.get("strategy_name", "")
-            target_pnl = float(d.get("target_pnl") or 0.0)
-            stoploss_pnl = float(d.get("stoploss_pnl") or 0.0)
+            target_pnl = abs(float(d.get("target_pnl") or 0.0))
+            raw_sl = float(d.get("stoploss_pnl") or 0.0)
+            stoploss_pnl = -abs(raw_sl) if raw_sl != 0.0 else 0.0
             trailing_status = str(d.get("trailing_status") or "INACTIVE")
-            # If trailing status is INACTIVE, stop-loss is the initial stoploss_pnl
-            if trailing_status == "INACTIVE":
+            raw_trailing = d.get("trailing_stop_pnl")
+            if trailing_status == "INACTIVE" or raw_trailing is None:
                 trailing_stop_pnl = stoploss_pnl
             else:
-                trailing_stop_pnl = float(d.get("trailing_stop_pnl") if d.get("trailing_stop_pnl") is not None else stoploss_pnl)
+                trailing_stop_pnl = float(raw_trailing)
+                if trailing_stop_pnl > 0.0 and float(d.get("highest_pnl_reached") or 0.0) < (target_pnl * 0.40):
+                    trailing_stop_pnl = stoploss_pnl
             highest_pnl = float(d.get("highest_pnl_reached") or 0.0)
             mode = str(d.get("auto_trade_mode") or "MANUAL").upper()
 

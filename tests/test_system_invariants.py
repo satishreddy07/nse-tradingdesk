@@ -549,5 +549,133 @@ def test_invariant_12_omni_watchdog_and_ml_sentinel_integrity():
     assert isinstance(gate_msg, str) and len(gate_msg) > 0
 
 
+# ==============================================================================
+# INVARIANT 13: OPTIONS STOP-LOSS NEGATIVITY & DYNAMIC LEG PRICING INTEGRITY
+# ==============================================================================
+def test_invariant_13_options_sl_and_hedge_pricing():
+    """
+    INVARIANT 13: Options Strategy Safety & Invariant Integrity.
+    1. Stop-Loss PnL threshold MUST strictly be negative (-abs(...)). If positive magnitude
+       is provided (e.g. +7377.50), it must be stored as negative (-7377.50).
+    2. Zero mark-to-market PnL at strategy inception MUST NEVER trigger STOPLOSS_EXITED.
+    3. Dynamic adjustment legs appended by StrategyAdjustmentEngine MUST have entry_price, price,
+       premium, and current_price all populated (> 0.0).
+    4. Options portfolio view MUST NEVER display ₹0.00 entry price for any active leg.
+    """
+    import json
+    from engines.nifty_analytics_engine import nifty_analytics_engine
+    from engines.strategy_adjustment_engine import strategy_adjustment_engine
+
+    # 1. Test strategy creation with positive SL magnitude
+    strat_payload = {
+        "strategy_name": "Test Invariant 13 Ratio Spread",
+        "symbol": "NIFTY",
+        "expiry_date": "29-OCT-2026",
+        "expiry_type": "WEEKLY",
+        "spot_at_entry": 22600.0,
+        "net_premium": 500.0,
+        "max_profit": 5000.0,
+        "max_loss": 7377.5,
+        "target_pnl": 3500.0,
+        "stoploss_pnl": 7377.5, # Positive magnitude passed from frontend
+        "auto_trade_mode": "MANUAL",
+        "legs": [
+            {"action": "SELL", "type": "CE", "strike": 22600, "qty": 65, "entry_price": 100.0, "price": 100.0},
+            {"action": "BUY", "type": "CE", "strike": 22700, "qty": 65, "entry_price": 40.0, "price": 40.0}
+        ]
+    }
+
+    add_res = nifty_analytics_engine.deploy_options_strategy(strat_payload)
+    assert add_res["status"] == "OK"
+    test_strat_id = add_res["strategy_id"]
+
+    try:
+        # Check database record
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                row = conn.execute(
+                    "SELECT target_pnl, stoploss_pnl, trailing_stop_pnl, status FROM options_strategies WHERE strategy_id = ?",
+                    (test_strat_id,)
+                ).fetchone()
+                assert row is not None
+                assert row["target_pnl"] == 3500.0
+                assert row["stoploss_pnl"] == -7377.5, f"Expected stoploss_pnl to be strictly negative (-7377.5), got {row['stoploss_pnl']}"
+                assert row["trailing_stop_pnl"] == -7377.5, f"Expected trailing_stop_pnl to be negative (-7377.5), got {row['trailing_stop_pnl']}"
+
+        # 2. Evaluate adjustment engine: PnL at 0.0 must NOT exit trade
+        adj_res = strategy_adjustment_engine.tick_watchdog(force_execution=True)
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                row_after = conn.execute(
+                    "SELECT status, exit_reason FROM options_strategies WHERE strategy_id = ?",
+                    (test_strat_id,)
+                ).fetchone()
+                assert row_after["status"] == "ACTIVE", f"Strategy exited prematurely with status {row_after['status']}, reason: {row_after['exit_reason']}"
+
+        # 3. Dynamic hedge adjustment leg verification
+        # Simulate Put Ratio Backspread Valley of Death adjustment
+        test_legs = [
+            {"action": "SELL", "type": "PE", "strike": 22500, "qty": 65, "entry_price": 80.0, "state": "ACTIVE"},
+            {"action": "BUY", "type": "PE", "strike": 22400, "qty": 65, "entry_price": 40.0, "state": "ACTIVE"}
+        ]
+        adjusted, adj_legs, note = strategy_adjustment_engine._check_and_apply_adjustments(
+            strategy_id="TEST-VALLEY-001",
+            strat_name="Put Ratio Backspread",
+            legs=test_legs,
+            spot_price=22450.0, # Stalls in valley (22400 <= 22450 <= 22500)
+            horizon="INTRADAY"
+        )
+        assert adjusted is True
+        assert len(adj_legs) == 4
+        hedge_legs = [l for l in adj_legs if l.get("state") == "HEDGE_LEG"]
+        assert len(hedge_legs) == 2
+        for hl in hedge_legs:
+            assert hl["entry_price"] > 0.0, f"Hedge leg entry_price must be > 0.0, got {hl['entry_price']}"
+            assert hl["price"] > 0.0, f"Hedge leg price must be > 0.0, got {hl['price']}"
+            assert hl["premium"] > 0.0, f"Hedge leg premium must be > 0.0, got {hl['premium']}"
+            assert hl["current_price"] > 0.0, f"Hedge leg current_price must be > 0.0, got {hl['current_price']}"
+
+        # 4. Verify get_options_portfolio repairs legs where entry_price was missing or zero
+        corrupted_strat = {
+            "strategy_name": "Test Corrupted Legs",
+            "symbol": "NIFTY",
+            "expiry_date": "29-OCT-2026",
+            "expiry_type": "WEEKLY",
+            "spot_at_entry": 22600.0,
+            "net_premium": 0.0,
+            "max_profit": 5000.0,
+            "max_loss": -5000.0,
+            "target_pnl": 3000.0,
+            "stoploss_pnl": -3000.0,
+            "auto_trade_mode": "MANUAL",
+            "legs": [
+                {"action": "SELL", "type": "CE", "strike": 22800, "qty": 65, "premium": 20.77, "state": "HEDGE_LEG"}
+            ]
+        }
+        res_corrupt = nifty_analytics_engine.deploy_options_strategy(corrupted_strat)
+        test_corrupt_id = res_corrupt["strategy_id"]
+        # Directly remove entry_price from DB to simulate the old buggy state
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                conn.execute(
+                    "UPDATE options_strategies SET legs_json = ? WHERE strategy_id = ?",
+                    (json.dumps([{"action": "SELL", "type": "CE", "strike": 22800, "qty": 65, "premium": 20.77, "state": "HEDGE_LEG"}]), test_corrupt_id)
+                )
+                conn.commit()
+
+        port = nifty_analytics_engine.get_options_portfolio(force_refresh=True)
+        corrupted_in_port = next((s for s in port["active_strategies"] if s["strategy_id"] == test_corrupt_id), None)
+        assert corrupted_in_port is not None
+        rep_leg = corrupted_in_port["legs"][0]
+        assert rep_leg["entry_price"] == 20.77, f"Expected entry_price to fallback to premium 20.77, got {rep_leg['entry_price']}"
+
+    finally:
+        # Cleanup test strategies
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                conn.execute("DELETE FROM options_strategies WHERE strategy_id IN (?, ?)", (test_strat_id, test_corrupt_id if 'test_corrupt_id' in locals() else ''))
+                conn.commit()
+
+
 
 

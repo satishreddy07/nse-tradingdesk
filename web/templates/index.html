@@ -14587,8 +14587,8 @@
           risk_reward: rrText,
           est_margin: estMargin,
           pop_pct: popVal,
-          target_pnl: targetPnlVal,
-          stoploss_pnl: slPnlVal,
+          target_pnl: Math.abs(targetPnlVal),
+          stoploss_pnl: -Math.abs(slPnlVal),
           legs: strategyLegs.map(l => {
             let px = Number(l.price || 0);
             if (px <= 0 && window.niftyOptionsChainCache) {
@@ -14607,6 +14607,8 @@
               action: l.action,
               qty: Number(l.qty),
               entry_price: Number(px > 0 ? px : 0.05),
+              price: Number(px > 0 ? px : 0.05),
+              premium: Number(px > 0 ? px : 0.05),
               iv: Number(l.iv || 13.5),
               expiry_type: expiryType,
               expiry_date: expiryDate
