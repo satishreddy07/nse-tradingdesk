@@ -127,6 +127,9 @@ class StrategyAdjustmentEngine:
             except Exception:
                 legs = []
 
+            # Compute current mark-to-market P&L across all legs
+            current_pnl, updated_legs = self._calculate_current_pnl(legs, spot_price, horizon)
+
             # -----------------------------------------------------------------
             # MOC AUTO-SQUAREOFF FOR INTRADAY AT 15:15 IST
             # -----------------------------------------------------------------
@@ -136,13 +139,10 @@ class StrategyAdjustmentEngine:
                     exit_reason="MOC_AUTO_CLOSED",
                     exit_note="15:15 IST Market-On-Close Rule: Intraday options positions automatically closed to eliminate overnight gap risk.",
                     spot_exit=spot_price,
-                    realized_pnl=highest_pnl * 0.90 # Realistic closing fill
+                    realized_pnl=current_pnl
                 )
                 exited_count += 1
                 continue
-
-            # Compute current mark-to-market P&L across all legs
-            current_pnl, updated_legs = self._calculate_current_pnl(legs, spot_price, horizon)
 
             if current_pnl > highest_pnl:
                 highest_pnl = current_pnl

@@ -174,9 +174,16 @@ class IntradayMLEngine:
                 classes = list(clf_model.classes_)
                 probs = clf_model.predict_proba(x_live_scaled)[0]
                 prob_map = {c: p for c, p in zip(classes, probs)}
-                p_down = round(float(prob_map.get(-1, 0.2)), 3)
-                p_flat = round(float(prob_map.get(0, 0.4)), 3)
-                p_up = round(float(prob_map.get(1, 0.4)), 3)
+                raw_down = float(prob_map.get(-1, 0.0))
+                raw_flat = float(prob_map.get(0, 0.0))
+                raw_up = float(prob_map.get(1, 0.0))
+                tot = raw_down + raw_flat + raw_up
+                if tot > 0:
+                    p_down = round(raw_down / tot, 3)
+                    p_flat = round(raw_flat / tot, 3)
+                    p_up = round(raw_up / tot, 3)
+                else:
+                    p_down, p_flat, p_up = 0.33, 0.34, 0.33
             except Exception as me:
                 logger.debug(f"Intraday ML fitting notice: {me}")
                 pred_ret_pct, p_up, p_flat, p_down = self._analytical_bayesian_fallback(x_live)
@@ -188,9 +195,12 @@ class IntradayMLEngine:
         pred_pts_delta = round((pred_ret_pct / 100.0) * current_spot, 1)
         expected_next_spot = round(current_spot + pred_pts_delta, 1)
 
-        # Intraday 1-sigma uncertainty band based on straddle premium decay rate
+        # Intraday 1-sigma expected move band derived from Bachelier ATM straddle model:
+        # E[|Delta S|] = Straddle * sqrt(2/pi) * sqrt(delta_t / session_t)
+        # For a 1-hour forward expectation (60m / 375m trading session):
         strad = float(latest_curr.get("straddle_premium") or 110.0)
-        band_1s = max(15.0, round(strad * 0.35, 1))
+        bachelier_factor = math.sqrt(2.0 / math.pi) * math.sqrt(60.0 / 375.0)  # ~0.3191
+        band_1s = max(15.0, round(strad * bachelier_factor, 1))
         expected_range_1s = [round(expected_next_spot - band_1s, 1), round(expected_next_spot + band_1s, 1)]
 
         # Net Writer Dominance Score (-100 to +100)

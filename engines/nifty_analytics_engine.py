@@ -2152,8 +2152,10 @@ class NiftyAnalyticsEngine:
                         pcr = round(base_pcr, 2)
 
                     atm_strike = int(round(spot / 50.0) * 50)
-                    ce_ltp = round(strad * 0.48, 2)
-                    pe_ltp = round(strad * 0.52, 2)
+                    # Pure Put-Call Parity: C - P = Spot - Strike, C + P = Straddle
+                    parity_delta = spot - atm_strike
+                    ce_ltp = max(0.05, round((strad + parity_delta) / 2.0, 2))
+                    pe_ltp = max(0.05, round((strad - parity_delta) / 2.0, 2))
                     ts_ist = f"{target_date} {slot_code}:00 IST"
 
                     dynamic_iv = 0.0

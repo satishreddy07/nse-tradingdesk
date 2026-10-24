@@ -90,20 +90,22 @@ class OptionsEdgeAnalyticsEngine:
         for s in near_strikes:
             stk = float(s.get("strike", 0))
             ce_oi = int(s.get("ce_oi", 0) or 0)
-            ce_oic = int(s.get("ce_change_oi", 0) or 0)
+            ce_oic = int(s.get("ce_change_oi", 0) or s.get("ce_chg_oi", 0) or 0)
             ce_ltp = float(s.get("ce_ltp", 0.0) or 0.0)
+            ce_chg = float(s.get("ce_change", 0.0) or s.get("ce_chg", 0.0) or 0.0)
 
             pe_oi = int(s.get("pe_oi", 0) or 0)
-            pe_oic = int(s.get("pe_change_oi", 0) or 0)
+            pe_oic = int(s.get("pe_change_oi", 0) or s.get("pe_chg_oi", 0) or 0)
             pe_ltp = float(s.get("pe_ltp", 0.0) or 0.0)
+            pe_chg = float(s.get("pe_change", 0.0) or s.get("pe_chg", 0.0) or 0.0)
 
-            # Classify CE
-            # CE Price Up & CE OI Up -> Long Call Buying (Bullish)
-            # CE Price Down & CE OI Up -> Short Call Writing (Bearish Resistance)
-            # CE Price Up & CE OI Down -> Short Covering (Bullish Momentum)
-            # CE Price Down & CE OI Down -> Long Unwinding (Bearish Drag)
-            ce_buildup = self._classify_buildup(ce_oic, ce_ltp)
-            pe_buildup = self._classify_buildup(pe_oic, pe_ltp)
+            # Classify CE and PE using price change and OI change:
+            # Price Up & OI Up -> Long Call Buying / Long Put Buying (Long Buildup)
+            # Price Down & OI Up -> Short Call Writing / Short Put Writing (Short Buildup)
+            # Price Up & OI Down -> Short Covering (Momentum Squeeze)
+            # Price Down & OI Down -> Long Unwinding (Position Liquidation)
+            ce_buildup = self._classify_buildup(ce_oic, ce_chg)
+            pe_buildup = self._classify_buildup(pe_oic, pe_chg)
 
             if ce_buildup:
                 regime_counts[ce_buildup] = regime_counts.get(ce_buildup, 0) + 1
@@ -138,11 +140,23 @@ class OptionsEdgeAnalyticsEngine:
             "regime_summary": regime_counts
         }
 
-    def _classify_buildup(self, delta_oi: int, ltp: float) -> str:
-        if delta_oi > 0:
-            return "LONG_BUILDUP" if ltp > 50 else "SHORT_BUILDUP"
-        elif delta_oi < 0:
-            return "SHORT_COVERING" if ltp > 50 else "LONG_UNWINDING"
+    def _classify_buildup(self, delta_oi: int, price_chg: float) -> str:
+        """
+        Authentic derivatives buildup classification based on price delta and OI delta:
+        - Price UP + OI UP   -> Long Buildup (Aggressive buying)
+        - Price DOWN + OI UP -> Short Buildup (Aggressive writing / supply addition)
+        - Price UP + OI DOWN -> Short Covering (Bear squeeze / profit taking)
+        - Price DOWN + OI DOWN -> Long Unwinding (Long liquidation / capitulation)
+        Zero hardcoded price level thresholds.
+        """
+        if delta_oi > 0 and price_chg > 0:
+            return "LONG_BUILDUP"
+        elif delta_oi > 0 and price_chg <= 0:
+            return "SHORT_BUILDUP"
+        elif delta_oi < 0 and price_chg > 0:
+            return "SHORT_COVERING"
+        elif delta_oi < 0 and price_chg <= 0:
+            return "LONG_UNWINDING"
         return "NEUTRAL"
 
     def _buildup_color(self, buildup: str) -> str:
@@ -196,12 +210,18 @@ class OptionsEdgeAnalyticsEngine:
         open_prem = float(rows[0]["straddle_premium"] or 0.0)
         curr_prem = float(rows[-1]["straddle_premium"] or 0.0)
 
-        # Theoretical Theta baseline: linear erosion from open_prem down to ~75% of open_prem at 15:30
+        # Theoretical Theta baseline: authentic Black-Scholes square-root intraday theta decay
+        # Variance and ATM straddle premium decay scales with sqrt(remaining time).
+        cal_expiries = NSEMarketCalendar.get_active_options_expiries()
+        dte_days = max(1, int(cal_expiries.get("dte_weekly", 4)))
+        daily_theta_fraction = 1.0 / (2.0 * dte_days)
         total_slots = 26  # 09:15 to 15:30 has 26 15-minute intervals
         for idx, r in enumerate(rows):
             slot_time = str(r["slot_time"])
             prem = float(r["straddle_premium"] or 0.0)
-            baseline = round(open_prem * (1.0 - (0.25 * (idx / max(1, total_slots - 1)))), 2)
+            t_elapsed = idx / max(1, total_slots - 1)
+            decay_factor = 1.0 - (daily_theta_fraction * (1.0 - math.sqrt(max(0.01, 1.0 - t_elapsed * 0.90))))
+            baseline = round(open_prem * decay_factor, 2)
 
             slots_data.append({
                 "slot_time": slot_time,
@@ -331,6 +351,11 @@ class OptionsEdgeAnalyticsEngine:
         flip_strike = None
         prev_sign = None
 
+        # Dynamic calendar DTE: zero hardcoded 4-day assumption
+        cal_expiries = NSEMarketCalendar.get_active_options_expiries()
+        dte_val = max(1, int(cal_expiries.get("dte_weekly", 4)))
+        dte_years = max(0.002, float(dte_val) / 365.0)
+
         # Standard Black-Scholes Gamma approximation
         for s in near_strikes:
             stk = float(s.get("strike", 0))
@@ -338,8 +363,7 @@ class OptionsEdgeAnalyticsEngine:
             pe_oi = int(s.get("pe_oi", 0) or 0)
             ce_iv = max(5.0, float(s.get("ce_iv", 14.0) or 14.0)) / 100.0
             
-            # Simple BS Gamma
-            dte_years = max(0.01, 4.0 / 365.0)
+            # Pure BS Gamma
             d1 = (math.log(spot / stk) + 0.5 * (ce_iv ** 2) * dte_years) / (ce_iv * math.sqrt(dte_years))
             gamma = (math.exp(-0.5 * d1 * d1) / (math.sqrt(2 * math.pi))) / (spot * ce_iv * math.sqrt(dte_years))
 

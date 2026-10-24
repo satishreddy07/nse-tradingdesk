@@ -873,7 +873,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             spread_credit = (p_sell - p_buy) * lot_size
             spread_width = (s_1s_pe - s_1_5s_pe) * lot_size
             spread_max_loss = max(100.0, spread_width - spread_credit)
-            p_win_spread = float(np.clip(round((pop_eff + 0.05) * dir_align * 100.0, 1), 35.0, 95.0))
+            p_win_spread = float(np.clip(round(pop_eff * dir_align * 100.0, 1), 35.0, 95.0))
             exp_spread = round((p_win_spread / 100.0 * spread_credit) - ((100.0 - p_win_spread) / 100.0 * (spread_credit * default_sl_pct)), 1)
             pf_spread = round((p_win_spread / 100.0 * spread_credit) / max(1.0, (100.0 - p_win_spread) / 100.0 * (spread_credit * default_sl_pct)), 2)
             candidates.append({
@@ -902,7 +902,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             p_ce_2s = _black_scholes_price(spot, s_2s_ce, t_years, r, sig, "CE")
             pop_ce_2s = _calc_pop(s_2s_ce, "CE")
             asym_credit = (p_sell + p_ce_2s) * lot_size
-            asym_pop = (pop_raw * pop_ce_2s * 0.85 + 0.12)
+            asym_pop = max(0.20, pop_raw + pop_ce_2s - 1.0)
             p_win_asym = float(np.clip(round(asym_pop * dir_align * 100.0, 1), 30.0, 93.0))
             asym_sl = asym_credit * default_sl_pct
             exp_asym = round((p_win_asym / 100.0 * asym_credit) - ((100.0 - p_win_asym) / 100.0 * asym_sl), 1)
@@ -994,7 +994,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             spread_credit = (p_sell - p_buy) * lot_size
             spread_width = (s_1_5s_ce - s_1s_ce) * lot_size
             spread_max_loss = max(100.0, spread_width - spread_credit)
-            p_win_spread = float(np.clip(round((pop_eff + 0.05) * dir_align * 100.0, 1), 35.0, 95.0))
+            p_win_spread = float(np.clip(round(pop_eff * dir_align * 100.0, 1), 35.0, 95.0))
             exp_spread = round((p_win_spread / 100.0 * spread_credit) - ((100.0 - p_win_spread) / 100.0 * (spread_credit * default_sl_pct)), 1)
             pf_spread = round((p_win_spread / 100.0 * spread_credit) / max(1.0, (100.0 - p_win_spread) / 100.0 * (spread_credit * default_sl_pct)), 2)
             candidates.append({
@@ -1023,7 +1023,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             p_pe_2s = _black_scholes_price(spot, s_2s_pe, t_years, r, sig, "PE")
             pop_pe_2s = _calc_pop(s_2s_pe, "PE")
             asym_credit = (p_sell + p_pe_2s) * lot_size
-            asym_pop = (pop_raw * pop_pe_2s * 0.85 + 0.12)
+            asym_pop = max(0.20, pop_raw + pop_pe_2s - 1.0)
             p_win_asym = float(np.clip(round(asym_pop * dir_align * 100.0, 1), 30.0, 93.0))
             asym_sl = asym_credit * default_sl_pct
             exp_asym = round((p_win_asym / 100.0 * asym_credit) - ((100.0 - p_win_asym) / 100.0 * asym_sl), 1)
@@ -1121,7 +1121,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             condor_credit = ((p_ce_1s - p_ce_15) + (p_pe_1s - p_pe_15)) * lot_size
             condor_width = (s_1_5s_ce - s_1s_ce) * lot_size
             condor_max_loss = max(100.0, condor_width - condor_credit)
-            p_win_condor = float(np.clip(round((pop_eff + 0.04) * dir_align * 100.0, 1), 35.0, 94.0))
+            p_win_condor = float(np.clip(round(pop_eff * dir_align * 100.0, 1), 35.0, 94.0))
             exp_condor = round((p_win_condor / 100.0 * condor_credit) - ((100.0 - p_win_condor) / 100.0 * (condor_credit * default_sl_pct)), 1)
             pf_condor = round((p_win_condor / 100.0 * condor_credit) / max(1.0, (100.0 - p_win_condor) / 100.0 * (condor_credit * default_sl_pct)), 2)
             candidates.append({
@@ -2065,8 +2065,8 @@ class WeeklyMonthlyOptionsStrategyEngine:
                     stk_int = stk
                 ce_ltp = float(s.get("ce_ltp") or 0.0)
                 pe_ltp = float(s.get("pe_ltp") or 0.0)
-                quotes_map[(stk_int, "CE")] = {"bid": s.get("ce_bid", ce_ltp * 0.99), "ask": s.get("ce_ask", ce_ltp * 1.01), "ltp": ce_ltp}
-                quotes_map[(stk_int, "PE")] = {"bid": s.get("pe_bid", pe_ltp * 0.99), "ask": s.get("pe_ask", pe_ltp * 1.01), "ltp": pe_ltp}
+                quotes_map[(stk_int, "CE")] = {"bid": float(s.get("ce_bid") or ce_ltp), "ask": float(s.get("ce_ask") or ce_ltp), "ltp": ce_ltp}
+                quotes_map[(stk_int, "PE")] = {"bid": float(s.get("pe_bid") or pe_ltp), "ask": float(s.get("pe_ask") or pe_ltp), "ltp": pe_ltp}
                 quotes_map[(str(stk_int), "CE")] = quotes_map[(stk_int, "CE")]
                 quotes_map[(str(stk_int), "PE")] = quotes_map[(stk_int, "PE")]
 
@@ -2426,7 +2426,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
                                 close_p = float(r["actual_t5_close"] if r["actual_t5_close"] is not None else (s_spot * (1.0 + ret_p / 100.0)))
                                 v_raw = str(r["t5_verdict"] or r["t1_verdict"] or "RANGE BOUND")
                             else:
-                                ret_p = float(r["t5_actual_return_pct"] or 0.0) * 1.5
+                                ret_p = float(r["t5_actual_return_pct"] or 0.0)
                                 close_p = float(s_spot * (1.0 + ret_p / 100.0))
                                 v_raw = str(r["t5_verdict"] or "RANGE BOUND")
 
