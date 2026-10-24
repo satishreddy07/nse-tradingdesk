@@ -10316,6 +10316,31 @@
       }
     };
 
+    // Unified Intraday Straddle State Tracker (Guarantees zero flicker or race conditions between stream and overview)
+    window._latestIntradayStraddleState = { premium: 0, ceLtp: 0, peLtp: 0, decayPct: null };
+    window.updateIntradayStraddleCard = function(prem, ce, pe, decayPct) {
+      const s = window._latestIntradayStraddleState;
+      if (prem && prem > 0) s.premium = Number(prem);
+      if (ce && ce > 0) s.ceLtp = Number(ce);
+      if (pe && pe > 0) s.peLtp = Number(pe);
+      if (decayPct !== undefined && decayPct !== null) s.decayPct = Number(decayPct);
+
+      const stradEl = document.getElementById('intra-kpi-straddle');
+      if (stradEl && s.premium > 0) {
+        const formatted = `₹${s.premium.toFixed(2)}`;
+        if (stradEl.innerText !== formatted) stradEl.innerText = formatted;
+      }
+
+      const stradSub = document.getElementById('intra-kpi-straddle-sub');
+      if (stradSub && (s.ceLtp > 0 || s.peLtp > 0)) {
+        const dPct = (s.decayPct !== null) ? s.decayPct : 0;
+        const sign = dPct >= 0 ? '+' : '';
+        const dStr = (s.decayPct !== null && s.decayPct !== 0) ? ` (${sign}${dPct.toFixed(1)}%)` : '';
+        const formattedSub = `${s.ceLtp.toFixed(1)} CE + ${s.peLtp.toFixed(1)} PE${dStr}`;
+        if (stradSub.innerText !== formattedSub) stradSub.innerText = formattedSub;
+      }
+    };
+
     async function pollLiveSpotTick() {
       if (document.hidden) return;
       try {
@@ -10838,14 +10863,9 @@
 
       const strad = Number(synced.straddle_premium !== undefined && synced.straddle_premium > 0 ? synced.straddle_premium : (latest.straddle_premium || 0));
       const decayPct = Number(meta.straddle_decay_pct || 0);
-      const stradEl = document.getElementById('intra-kpi-straddle');
-      const stradSub = document.getElementById('intra-kpi-straddle-sub');
-      if (stradEl) stradEl.innerText = strad > 0 ? `₹${strad.toFixed(2)}` : '--';
-      if (stradSub) {
-        const ceLtp = synced.atm_ce_ltp !== undefined ? synced.atm_ce_ltp : (latest.atm_ce_ltp || 0);
-        const peLtp = synced.atm_pe_ltp !== undefined ? synced.atm_pe_ltp : (latest.atm_pe_ltp || 0);
-        stradSub.innerText = `${ceLtp.toFixed(1)} CE + ${peLtp.toFixed(1)} PE (${decayPct >= 0 ? '+' : ''}${decayPct.toFixed(1)}%)`;
-      }
+      const ceLtp = synced.atm_ce_ltp !== undefined ? synced.atm_ce_ltp : (latest.atm_ce_ltp || 0);
+      const peLtp = synced.atm_pe_ltp !== undefined ? synced.atm_pe_ltp : (latest.atm_pe_ltp || 0);
+      updateIntradayStraddleCard(strad, ceLtp, peLtp, decayPct);
 
       const nearPcr = Number(synced.near_atm_pcr !== undefined && synced.near_atm_pcr > 0 ? synced.near_atm_pcr : (latest.near_atm_pcr || 0));
       const ovPcr = Number(synced.overall_pcr !== undefined && synced.overall_pcr > 0 ? synced.overall_pcr : (latest.overall_pcr || 0));
@@ -10868,7 +10888,7 @@
       const callWall = synced.call_wall || liveAn.call_wall || latest.call_wall || '--';
       const maxPain = synced.max_pain || liveAn.max_pain || latest.max_pain || '--';
       if (wallsEl) wallsEl.innerText = `${putWall} PE / ${callWall} CE`;
-      if (mpEl) mpEl.innerText = `Max Pain: ${maxPain} (Live)`;
+      if (mpEl) mpEl.innerText = isMarketOpen ? `Max Pain: ${maxPain} (Live)` : `Max Pain: ${maxPain}`;
 
       const peChg = Number(synced.net_pe_oi_chg !== undefined ? synced.net_pe_oi_chg : (liveAn.net_pe_oi_chg !== undefined ? liveAn.net_pe_oi_chg : (latest.net_pe_oi_chg || 0)));
       const ceChg = Number(synced.net_ce_oi_chg !== undefined ? synced.net_ce_oi_chg : (liveAn.net_ce_oi_chg !== undefined ? liveAn.net_ce_oi_chg : (latest.net_ce_oi_chg || 0)));
@@ -26895,12 +26915,12 @@
               updateIntradaySpotAtmCard(spot, curAtm, isLiveStreaming, diffStr, null);
 
               if (intra.straddle_premium > 0) {
-                const stradEl = document.getElementById('intra-kpi-straddle');
-                if (stradEl) stradEl.innerText = `₹${Number(intra.straddle_premium).toFixed(2)}`;
-                const stradSub = document.getElementById('intra-kpi-straddle-sub');
-                if (stradSub && intra.atm_ce_ltp && intra.atm_pe_ltp) {
-                  stradSub.innerText = `${Number(intra.atm_ce_ltp).toFixed(1)} CE + ${Number(intra.atm_pe_ltp).toFixed(1)} PE (Live)`;
-                }
+                updateIntradayStraddleCard(
+                  Number(intra.straddle_premium),
+                  Number(intra.atm_ce_ltp || 0),
+                  Number(intra.atm_pe_ltp || 0),
+                  intra.straddle_decay_pct !== undefined ? intra.straddle_decay_pct : null
+                );
               }
 
               if (intra.near_atm_pcr > 0) {
@@ -26919,7 +26939,7 @@
               }
               if (intra.max_pain) {
                 const mpEl = document.getElementById('intra-kpi-maxpain');
-                if (mpEl) mpEl.innerText = `Max Pain: ${intra.max_pain} (Live)`;
+                if (mpEl) mpEl.innerText = isMarketOpen ? `Max Pain: ${intra.max_pain} (Live)` : `Max Pain: ${intra.max_pain}`;
               }
 
               if (intra.market_state) {
