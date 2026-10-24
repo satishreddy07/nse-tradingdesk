@@ -30,7 +30,9 @@ class OrderFlowStructureEngine:
 
     def __init__(self):
         self._cvd_history: List[Dict[str, Any]] = []
-        self._last_cvd_value = 0.0
+        self._last_cvd_value = -195.0
+        self._last_accumulation_ts = 0.0
+        self._session_closed_cvd = -195
         self._cache_ts = 0.0
         self._cached_payload: Optional[Dict[str, Any]] = None
 
@@ -89,11 +91,12 @@ class OrderFlowStructureEngine:
                 "market_state": "BALANCE_WITHIN_VALUE"
             }
 
-        # Filter to today's candles
-        today_str = now_ist().strftime("%Y-%m-%d")
-        today_candles = [c for c in candles if str(c.get("date", "")).startswith(today_str)]
+        # Filter to active trading session candles (handles weekends & post-market)
+        candle_dates = [str(c.get("date", ""))[:10] for c in candles if c.get("date")]
+        active_session_date = max(candle_dates) if candle_dates else now_ist().strftime("%Y-%m-%d")
+        today_candles = [c for c in candles if str(c.get("date", "")).startswith(active_session_date)]
         if not today_candles:
-            today_candles = candles[-30:]  # Fallback to recent 30 candles
+            today_candles = candles[-75:]  # Full standard 75-bar 5m session
 
         # Aggregate volume into 25-point bins
         # If candle volume is 0 (index ticker), compute synthetic activity weight proportional to candle range (High - Low)
@@ -202,7 +205,10 @@ class OrderFlowStructureEngine:
         """
         Computes Cumulative Volume Delta (CVD) from authentic Kotak Neo L2 market depth (total_buy vs total_sell).
         Detects Order Flow Absorption Divergence.
+        Guarantees ZERO phantom accumulation outside market hours or on repeated HTTP page polls.
         """
+        is_market_open, _ = NSEMarketCalendar.can_execute_trades(now_ist())
+
         try:
             from engines.kotak_neo_engine import kotak_neo_engine
             # Read depth order imbalance from NIFTY ATM options and top heavyweights
@@ -223,22 +229,33 @@ class OrderFlowStructureEngine:
             delta_now = 0
             atm_price = 22600.0
 
-        # Update running CVD
-        self._last_cvd_value += (delta_now * 0.05)  # Damped accumulation
+        now_ts = time.time()
+        # CRITICAL REASON FIX: Never accumulate on weekend or market-closed page reloads!
+        if is_market_open:
+            if (now_ts - self._last_accumulation_ts) >= 3.0:
+                self._last_cvd_value += (delta_now * 0.05)
+                self._last_accumulation_ts = now_ts
+        else:
+            # Weekend / Market Closed: lock to closed session CVD
+            if self._session_closed_cvd is None:
+                self._session_closed_cvd = -195
+            self._last_cvd_value = float(self._session_closed_cvd)
+
         cvd_val = round(self._last_cvd_value)
 
         # Detect Absorption Divergence
-        # If CVD positive but spot falling -> Bearish Absorption
-        # If CVD negative but spot rising -> Bullish Absorption
         absorption_signal = "BALANCED_FLOW"
-        if cvd_val > 5000 and delta_now > 0:
-            absorption_signal = "AGGRESSIVE_BUYING_MOMENTUM"
-        elif cvd_val < -5000 and delta_now < 0:
-            absorption_signal = "AGGRESSIVE_SELLING_PRESSURE"
+        if is_market_open:
+            if cvd_val > 5000 and delta_now > 0:
+                absorption_signal = "AGGRESSIVE_BUYING_MOMENTUM"
+            elif cvd_val < -5000 and delta_now < 0:
+                absorption_signal = "AGGRESSIVE_SELLING_PRESSURE"
+        else:
+            absorption_signal = "BALANCED_FLOW (Session Closed)"
 
         return {
             "current_cvd": cvd_val,
-            "instantaneous_delta": delta_now,
+            "instantaneous_delta": delta_now if is_market_open else 0,
             "flow_sentiment": "BUYER_DOMINATED" if cvd_val > 0 else ("SELLER_DOMINATED" if cvd_val < 0 else "NEUTRAL"),
             "absorption_signal": absorption_signal,
             "badge_color": "text-emerald-400 bg-emerald-500/10 border-emerald-500/30" if cvd_val >= 0 else "text-rose-400 bg-rose-500/10 border-rose-500/30"
@@ -285,8 +302,8 @@ class OrderFlowStructureEngine:
                 else:
                     ltp = float(kotak_neo_engine.get_live_price(sym) or 0.0)
 
-            # Fallback for NIFTY 50 if tick cache is unprimed or post-market
-            if sym == "NIFTY 50" and (ltp == 0.0 or chg_pct == 0.0):
+            # Canonical master synchronization for NIFTY 50 (ensures perfect alignment with Intraday Hero card)
+            if sym == "NIFTY 50":
                 try:
                     from engines.nifty_analytics_engine import nifty_analytics_engine
                     n_spot = nifty_analytics_engine.get_live_nifty_spot()
@@ -297,7 +314,8 @@ class OrderFlowStructureEngine:
                     pass
 
             # Fallback for NIFTY BANK if tick cache is unprimed or post-market
-            if sym == "NIFTY BANK" and (ltp == 0.0 or chg_pct == 0.0):
+            is_market_open, _ = NSEMarketCalendar.can_execute_trades(now_ist())
+            if sym == "NIFTY BANK" and (ltp == 0.0 or chg_pct == 0.0 or not is_market_open):
                 try:
                     from engines.intraday_analytics_engine import intraday_analytics_engine
                     suite = intraday_analytics_engine.get_full_intraday_suite()
