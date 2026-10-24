@@ -842,7 +842,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             # Candidate 1: Rule 1-Sigma Short Put
             p_sell = _black_scholes_price(spot, s_1s_pe, t_years, r, sig, "PE")
             pop_raw = _calc_pop(s_1s_pe, "PE")
-            pop_eff = pop_raw * 0.70 + (1.0 - pop_raw) * 0.32
+            pop_eff = pop_raw
             p_win = float(np.clip(round(pop_eff * dir_align * 100.0, 1), 35.0, 94.0))
             net_credit = p_sell * lot_size
             max_profit = net_credit
@@ -932,7 +932,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             # Candidate 4: Conservative 1.25-Sigma OTM Put Short
             p_pe_125 = _black_scholes_price(spot, s_1_25s_pe, t_years, r, sig, "PE")
             pop_125 = _calc_pop(s_1_25s_pe, "PE")
-            pop_eff_125 = pop_125 * 0.72 + (1.0 - pop_125) * 0.35
+            pop_eff_125 = pop_125
             p_win_125 = float(np.clip(round(pop_eff_125 * dir_align * 100.0, 1), 40.0, 96.0))
             credit_125 = p_pe_125 * lot_size
             sl_125 = credit_125 * default_sl_pct
@@ -963,7 +963,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             # Candidate 1: Rule 1-Sigma Short Call
             p_sell = _black_scholes_price(spot, s_1s_ce, t_years, r, sig, "CE")
             pop_raw = _calc_pop(s_1s_ce, "CE")
-            pop_eff = pop_raw * 0.70 + (1.0 - pop_raw) * 0.32
+            pop_eff = pop_raw
             p_win = float(np.clip(round(pop_eff * dir_align * 100.0, 1), 35.0, 94.0))
             net_credit = p_sell * lot_size
             max_profit = net_credit
@@ -1053,7 +1053,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             # Candidate 4: Conservative 1.25-Sigma OTM Call Short
             p_ce_125 = _black_scholes_price(spot, s_1_25s_ce, t_years, r, sig, "CE")
             pop_125 = _calc_pop(s_1_25s_ce, "CE")
-            pop_eff_125 = pop_125 * 0.72 + (1.0 - pop_125) * 0.35
+            pop_eff_125 = pop_125
             p_win_125 = float(np.clip(round(pop_eff_125 * dir_align * 100.0, 1), 40.0, 96.0))
             credit_125 = p_ce_125 * lot_size
             sl_125 = credit_125 * default_sl_pct
@@ -1087,7 +1087,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             pop_ce = _calc_pop(s_1s_ce, "CE")
             pop_pe = _calc_pop(s_1s_pe, "PE")
             pop_raw = max(0.20, pop_ce + pop_pe - 1.0)
-            pop_eff = pop_raw * 0.70 + (1.0 - pop_raw) * 0.32
+            pop_eff = pop_raw
             p_win = float(np.clip(round(pop_eff * dir_align * 100.0, 1), 35.0, 93.0))
             net_credit = (p_ce_1s + p_pe_1s) * lot_size
             sl_loss = net_credit * default_sl_pct
@@ -1149,27 +1149,33 @@ class WeeklyMonthlyOptionsStrategyEngine:
             })
 
             # Candidate 3: Asymmetric Strangle (Skewed to Put / Call based on slight drift)
-            p_win_skew = float(np.clip(round(p_win * 1.02, 1), 35.0, 94.0))
+            p_ce_asym = _black_scholes_price(spot, s_1_25s_ce, t_years, r, sig, "CE")
+            p_pe_asym = p_pe_1s
+            asym_credit = round((p_ce_asym + p_pe_asym) * lot_size, 1)
+            asym_sl_loss = round(asym_credit * default_sl_pct, 1)
+            p_win_skew = float(np.clip(round(p_win, 1), 35.0, 94.0))
+            asym_exp = round((p_win_skew / 100.0 * asym_credit) - ((100.0 - p_win_skew) / 100.0 * asym_sl_loss), 1)
+            asym_pf = round((p_win_skew / 100.0 * asym_credit) / max(1.0, (100.0 - p_win_skew) / 100.0 * asym_sl_loss), 2)
             candidates.append({
                 "candidate_id": "CANDIDATE_3_ASYMMETRIC_STRANGLE",
                 "name": f"{horizon.capitalize()} Wide Range 1.15-Sigma Strangle",
                 "architecture": "ASYMMETRIC_STRANGLE",
                 "description": f"Sell CE @ {s_1_25s_ce} + Sell PE @ {s_1s_pe} (1.15-Sigma average).",
                 "legs": [
-                    {"action": "SELL", "type": "CE", "strike": s_1_25s_ce, "sigma": 1.25, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": _black_scholes_price(spot, s_1_25s_ce, t_years, r, sig, "CE")},
-                    {"action": "SELL", "type": "PE", "strike": s_1s_pe, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_pe_1s}
+                    {"action": "SELL", "type": "CE", "strike": s_1_25s_ce, "sigma": 1.25, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_ce_asym},
+                    {"action": "SELL", "type": "PE", "strike": s_1s_pe, "sigma": 1.0, "qty_lots": 1, "sl_pct": default_sl_pct, "premium": p_pe_asym}
                 ],
                 "p_win_pct": p_win_skew,
-                "net_credit_inr": round(net_credit * 0.88, 1),
-                "max_profit_inr": round(net_credit * 0.88, 1),
-                "max_loss_inr": round(sl_loss * 0.88, 1),
-                "planned_stop_loss_inr": round(sl_loss * 0.88, 1),
+                "net_credit_inr": asym_credit,
+                "max_profit_inr": asym_credit,
+                "max_loss_inr": asym_sl_loss,
+                "planned_stop_loss_inr": asym_sl_loss,
                 "contractual_max_loss": "UNLIMITED",
                 "risk_profile": "UNDEFINED_UNLIMITED",
-                "expectancy_inr": round(exp_inr * 0.90, 1),
-                "profit_factor": pf,
+                "expectancy_inr": asym_exp,
+                "profit_factor": asym_pf,
                 "sl_pct": default_sl_pct,
-                "pop_bsm": round(pop_raw * 100.0 + 3.0, 1)
+                "pop_bsm": round(pop_raw * 100.0, 1)
             })
 
             # Candidate 4: Conservative 1.25-Sigma Wide Strangle
@@ -1178,7 +1184,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
             pop_ce_125 = _calc_pop(s_1_25s_ce, "CE")
             pop_pe_125 = _calc_pop(s_1_25s_pe, "PE")
             pop_raw_125 = max(0.35, pop_ce_125 + pop_pe_125 - 1.0)
-            pop_eff_125 = pop_raw_125 * 0.72 + (1.0 - pop_raw_125) * 0.35
+            pop_eff_125 = pop_raw_125
             p_win_125 = float(np.clip(round(pop_eff_125 * dir_align * 100.0, 1), 40.0, 96.0))
             credit_125 = (p_ce_125 + p_pe_125) * lot_size
             sl_125 = credit_125 * default_sl_pct
