@@ -102,17 +102,68 @@ class NiftyForecastLearningEngine:
         closes = [float(v) for v in c_flat]
         n_bars = len(closes)
 
+        # Ingest authentic macro & external market series from State Engine / Master DB
+        sp_df = state_engine.get_ohlcv("^GSPC")
+        oil_df = state_engine.get_ohlcv("BZ=F")
+        vix_df = state_engine.get_ohlcv("^INDIAVIX")
+
+        sp_closes = {}
+        if sp_df is not None and not sp_df.empty and "Close" in sp_df:
+            for dt, val in sp_df["Close"].dropna().items():
+                sp_closes[str(dt)[:10]] = float(val)
+
+        oil_closes = {}
+        if oil_df is not None and not oil_df.empty and "Close" in oil_df:
+            for dt, val in oil_df["Close"].dropna().items():
+                oil_closes[str(dt)[:10]] = float(val)
+
+        vix_closes = {}
+        if vix_df is not None and not vix_df.empty and "Close" in vix_df:
+            for dt, val in vix_df["Close"].dropna().items():
+                vix_closes[str(dt)[:10]] = float(val)
+
+        # Ingest authentic derivatives & FII participant history from DB
+        pcr_map = {}
+        fii_map = {}
+        try:
+            with state_engine._lock:
+                with state_engine._get_connection() as conn:
+                    cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+                    if "data_source" in cols:
+                        pcr_rows = conn.execute(
+                            "SELECT session_date, near_atm_pcr, chg_oi_pcr FROM intraday_option_snapshots "
+                            "WHERE near_atm_pcr > 0 AND data_source = 'LIVE' "
+                            "  AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%\"gapfilled\": true%'))"
+                        ).fetchall()
+                    else:
+                        pcr_rows = []
+                    for pr in pcr_rows:
+                        s_dt = str(pr["session_date"])[:10]
+                        if s_dt not in pcr_map:
+                            pcr_map[s_dt] = (float(pr["near_atm_pcr"]), float(pr["chg_oi_pcr"] or pr["near_atm_pcr"]))
+
+                    fii_rows = conn.execute(
+                        "SELECT trade_date, fii_fut_long_pct FROM fao_participant_oi_history WHERE fii_fut_long_pct > 0"
+                    ).fetchall()
+                    for fr in fii_rows:
+                        f_dt = str(fr["trade_date"])[:10]
+                        fii_map[f_dt] = float(fr["fii_fut_long_pct"])
+        except Exception as e:
+            logger.debug(f"Derivatives / FII historical lookup notice: {e}")
+
         # Forward shift: 1 bar for T+1, 5 bars for T+5
         fwd_shift = 1 if horizon == "T+1" else 5
         dir_threshold = 0.08 if horizon == "T+1" else 0.25
 
         rows: List[Dict[str, Any]] = []
         for i in range(30, n_bars - fwd_shift):
+            d_curr = dates[i]
+            d_prev = dates[i - 1]
             s0 = closes[i]
             s_fwd = closes[i + fwd_shift]
             ret_fwd = ((s_fwd - s0) / max(1.0, s0)) * 100.0
 
-            # Historical feature calculations (Strictly using data up to bar i)
+            # Historical feature calculations (Strictly using authentic data up to bar i)
             c_win = closes[:i + 1]
             e20 = float(pd.Series(c_win).ewm(span=20).mean().iloc[-1])
             e50 = float(pd.Series(c_win).ewm(span=50).mean().iloc[-1])
@@ -120,16 +171,59 @@ class NiftyForecastLearningEngine:
             dist_e20 = ((s0 - e20) / e20) * 100.0
             dist_e50 = ((s0 - e50) / e50) * 100.0
 
-            s_tech = (15.0 if s0 > e20 else -15.0) + (10.0 if e20 > e50 else -10.0) + np.clip(ret5 * 4.0, -15.0, 15.0)
-            s_breadth = s_tech * 0.85
-            s_sec = s_tech * 0.75
-            s_glob = ret5 * 2.5
-            s_macro = -ret5 * 1.5
-            s_news = 10.0 if ret5 > 0 else -10.0
-            s_inst = 15.0 if ret5 > 0 else -15.0
+            # Authentic macro returns from observed historical data
+            sp_c0 = sp_closes.get(d_curr)
+            sp_cprev = sp_closes.get(d_prev)
+            if sp_c0 and sp_cprev and sp_cprev > 0:
+                sp_ret_1d = round(((sp_c0 - sp_cprev) / sp_cprev) * 100.0, 2)
+            else:
+                sp_ret_1d = 0.0
 
-            comp_score = 0.25 * s_tech + 0.20 * s_breadth + 0.18 * s_sec + 0.15 * s_glob + 0.12 * s_macro + 0.10 * s_inst
-            comp_score_t5 = 0.30 * s_tech + 0.25 * s_breadth + 0.20 * s_sec + 0.15 * s_glob + 0.10 * s_macro
+            oil_c0 = oil_closes.get(d_curr)
+            oil_cprev = oil_closes.get(d_prev)
+            oil_c5 = oil_closes.get(dates[max(0, i - 5)])
+            if oil_c0 and oil_cprev and oil_cprev > 0:
+                oil_ret_1d = round(((oil_c0 - oil_cprev) / oil_cprev) * 100.0, 2)
+            else:
+                oil_ret_1d = 0.0
+            if oil_c0 and oil_c5 and oil_c5 > 0:
+                oil_ret_5d = round(((oil_c0 - oil_c5) / oil_c5) * 100.0, 2)
+            else:
+                oil_ret_5d = 0.0
+
+            # Authentic India VIX observation (or historical realized volatility fallback)
+            if d_curr in vix_closes:
+                vix_spot_val = round(vix_closes[d_curr], 1)
+            elif len(c_win) >= 21:
+                c_arr21 = np.array(c_win[-21:], dtype=np.float64)
+                vix_spot_val = round(float(np.clip(np.std(np.diff(c_arr21) / (c_arr21[:-1] + 1e-9)) * math.sqrt(252) * 100.0, 9.0, 45.0)), 1)
+            else:
+                vix_spot_val = 14.0
+
+            # Authentic derivatives and institutional features: neutral baseline when unobserved, never fabricated multipliers
+            if d_curr in pcr_map:
+                near_atm_pcr = pcr_map[d_curr][0]
+                chg_oi_pcr = pcr_map[d_curr][1]
+            else:
+                near_atm_pcr = 1.0  # Put-call parity baseline
+                chg_oi_pcr = 1.0
+
+            if d_curr in fii_map:
+                fii_fut_long_pct = fii_map[d_curr]
+            else:
+                fii_fut_long_pct = 50.0  # Balanced baseline
+
+            # Authentic pillar scores: zero arbitrary scalar multipliers of s_tech
+            s_tech = (15.0 if s0 > e20 else -15.0) + (10.0 if e20 > e50 else -10.0) + float(np.clip(ret5 * 4.0, -15.0, 15.0))
+            s_glob = float(np.clip(sp_ret_1d * 20.0, -30.0, 30.0))
+            s_macro = float(np.clip(-oil_ret_1d * 5.0, -30.0, 30.0))
+            s_breadth = 0.0
+            s_sec = 0.0
+            s_news = 0.0
+            s_inst = float(np.clip((fii_fut_long_pct - 50.0) * 1.5, -30.0, 30.0)) if d_curr in fii_map else 0.0
+
+            comp_score = 0.35 * s_tech + 0.35 * s_glob + 0.30 * s_macro
+            comp_score_t5 = 0.40 * s_tech + 0.30 * s_glob + 0.30 * s_macro
 
             if ret_fwd >= dir_threshold:
                 target_class = 1  # BULLISH
@@ -140,14 +234,9 @@ class NiftyForecastLearningEngine:
             else:
                 target_class = 0  # FLAT
                 direction_label = "FLAT"
-            if len(c_win) >= 21:
-                c_arr21 = np.array(c_win[-21:], dtype=np.float64)
-                vix_spot_val = round(float(np.clip(np.std(np.diff(c_arr21) / (c_arr21[:-1] + 1e-9)) * math.sqrt(252) * 100.0, 9.0, 45.0)), 1)
-            else:
-                vix_spot_val = 14.0
 
             rows.append({
-                "prediction_date": dates[i],
+                "prediction_date": d_curr,
                 "spot_price": s0,
                 "composite_score": round(float(comp_score), 1),
                 "composite_score_t5": round(float(comp_score_t5), 1),
@@ -159,14 +248,14 @@ class NiftyForecastLearningEngine:
                 "news_and_deriv_score": round(float(s_news), 1),
                 "institutional_score": round(float(s_inst), 1),
                 "vix_spot": vix_spot_val,
-                "near_atm_pcr": round(float(np.clip(1.0 + (ret5 * 0.05), 0.70, 1.45)), 2),
-                "chg_oi_pcr": round(float(np.clip(1.0 + (ret5 * 0.03), 0.75, 1.35)), 2),
+                "near_atm_pcr": near_atm_pcr,
+                "chg_oi_pcr": chg_oi_pcr,
                 "dist_to_ema20_pct": round(dist_e20, 2),
                 "dist_to_ema50_pct": round(dist_e50, 2),
-                "crude_oil_ret_1d": round(float(np.clip(-ret5 * 0.1, -3.0, 3.0)), 2),
-                "crude_oil_ret_5d": round(float(np.clip(-ret5 * 0.25, -6.0, 6.0)), 2),
-                "fii_fut_long_pct": round(float(np.clip(50.0 + (ret5 * 1.5), 20.0, 80.0)), 1),
-                "sp500_ret_1d": round(float(np.clip(ret5 * 0.15, -2.5, 2.5)), 2),
+                "crude_oil_ret_1d": oil_ret_1d,
+                "crude_oil_ret_5d": oil_ret_5d,
+                "fii_fut_long_pct": fii_fut_long_pct,
+                "sp500_ret_1d": sp_ret_1d,
                 "nifty_ret_5d": round(ret5, 2),
                 "actual_return_pct": round(ret_fwd, 2),
                 "target_class": target_class,

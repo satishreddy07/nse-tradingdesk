@@ -22,11 +22,12 @@ Active Position Watchdog, Profit Locking, High-Water Mark Trailing & Auto-Adjust
 
 import json
 import logging
+import math
 from typing import Dict, Any, List, Optional, Tuple
 
 from core.data_quality import now_ist, format_ist
 from core.market_calendar import NSEMarketCalendar
-from core.config import NIFTY_LOT_SIZE
+from core.config import NIFTY_LOT_SIZE, resolve_nifty_lot_size
 from execution.state_engine import state_engine
 
 logger = logging.getLogger("StrategyAdjustmentEngine")
@@ -257,7 +258,20 @@ class StrategyAdjustmentEngine:
             opt_type = l.get("type", "CE").upper()
             strike = int(l.get("strike", 0))
             entry_p = float(l.get("entry_price") or l.get("premium") or 0.0)
-            qty = int(l.get("qty") or NIFTY_LOT_SIZE)
+            leg_ls = l.get("lot_size")
+            if not leg_ls or int(leg_ls) <= 0:
+                try:
+                    leg_ls = resolve_nifty_lot_size(
+                        expiry_date=l.get("expiry_date"),
+                        contract_metadata=l,
+                        contract_type=l.get("contract_type") or l.get("expiry_type"),
+                        symbol="NIFTY",
+                        strict=True
+                    )
+                except Exception as ex:
+                    raise ValueError(f"Cannot calculate current P&L: unable to resolve authoritative lot size for leg {strike} {opt_type}: {ex}")
+            leg_ls = int(leg_ls)
+            qty = int(l.get("qty") or (int(l.get("lots", 1)) * leg_ls))
 
             # Try live tick quote
             tick_key = f"{strike}_{opt_type}"
@@ -280,19 +294,39 @@ class StrategyAdjustmentEngine:
 
         return round(total_pnl, 2), updated
 
-    def _get_option_quote(self, strike: int, opt_type: str, spot_price: float) -> float:
-        """Attempts to get live option LTP from Kotak ticks or active chain, falling back to 0.0."""
+    def _get_option_quote(self, strike: int, opt_type: str, spot_price: float) -> Optional[float]:
+        """
+        Attempts to get authentic market LTP from Kotak ticks or active chain.
+        Returns positive finite float if valid market quote found, else None.
+        Never falls back to theoretical BSM calculations.
+        """
+        if strike is None or opt_type is None:
+            return None
+
+        try:
+            strike_int = int(strike)
+            opt_type_str = str(opt_type).strip().upper()
+        except (ValueError, TypeError):
+            return None
+
+        if opt_type_str not in ("CE", "PE"):
+            return None
+
+        # 1. Try Kotak Neo live ticks
         try:
             from engines.kotak_neo_engine import kotak_neo_engine
             live_ticks = kotak_neo_engine.get_near_atm_option_ticks(strike_range=30)
-            tick_key = f"{int(strike)}_{opt_type.upper()}"
+            tick_key = f"{strike_int}_{opt_type_str}"
             if tick_key in live_ticks:
-                ltp = float(live_ticks[tick_key].get("ltp") or 0.0)
-                if ltp > 0.0:
-                    return ltp
+                raw_ltp = live_ticks[tick_key].get("ltp")
+                if raw_ltp is not None:
+                    ltp = float(raw_ltp)
+                    if math.isfinite(ltp) and ltp > 0.0:
+                        return round(ltp, 2)
         except Exception:
             pass
 
+        # 2. Try active option chain from nifty_analytics_engine
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
             chain_data = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
@@ -301,15 +335,17 @@ class StrategyAdjustmentEngine:
                 or chain_data.get("weekly", {}).get("all_strikes", [])
             )
             for s in strikes:
-                if int(s.get("strike", 0)) == int(strike):
-                    ltp_key = "ce_ltp" if opt_type.upper() == "CE" else "pe_ltp"
-                    ltp = float(s.get(ltp_key) or 0.0)
-                    if ltp > 0.0:
-                        return ltp
+                if int(s.get("strike", 0)) == strike_int:
+                    ltp_key = "ce_ltp" if opt_type_str == "CE" else "pe_ltp"
+                    raw_ltp = s.get(ltp_key)
+                    if raw_ltp is not None:
+                        ltp = float(raw_ltp)
+                        if math.isfinite(ltp) and ltp > 0.0:
+                            return round(ltp, 2)
         except Exception:
             pass
 
-        return 0.0
+        return None
 
     def _check_and_apply_adjustments(
         self,
@@ -364,26 +400,40 @@ class StrategyAdjustmentEngine:
                 # Drift Down: Call side decayed -> Roll Call wing down 50 pts
                 if drift <= -drift_threshold and atm_ce.get("state") != "ADJUSTED_ROLLED":
                     new_ce_strike = atm_strike - 50
+                    new_w_k = (wing_ce["strike"] - 50) if wing_ce else None
+
+                    # Market quote verification: Fail-closed before modifying position legs
+                    px_atm = self._get_option_quote(new_ce_strike, "CE", spot_price)
+                    px_w = self._get_option_quote(new_w_k, "CE", spot_price) if wing_ce else None
+
+                    missing = []
+                    if px_atm is None or px_atm <= 0.0:
+                        missing.append(f"{new_ce_strike} CE (ATM roll)")
+                    if wing_ce and (px_w is None or px_w <= 0.0):
+                        missing.append(f"{new_w_k} CE (wing roll)")
+
+                    if missing:
+                        defer_note = f"Adjustment deferred [{horizon}]: Missing authentic market quote for {', '.join(missing)}. Cannot execute on theoretical BSM prices."
+                        logger.warning(f"⚠️ [{strategy_id}] {defer_note}")
+                        return False, legs, defer_note
+
+                    # Analytical Greeks update & quote assignment
+                    g = calculate_bsm_greeks(spot_price, new_ce_strike, 1.0 / 365.0, 0.07, 0.135, "CE")
                     atm_ce["strike"] = new_ce_strike
                     atm_ce["state"] = "ADJUSTED_ROLLED"
-                    # Analytical Greeks update & quote retrieval
-                    g = calculate_bsm_greeks(spot_price, new_ce_strike, 1.0 / 365.0, 0.07, 0.135, "CE")
-                    px_atm = self._get_option_quote(new_ce_strike, "CE", spot_price)
-                    if px_atm <= 0.0: px_atm = float(g["price"])
                     atm_ce["entry_price"] = round(px_atm, 2)
                     atm_ce["price"] = round(px_atm, 2)
                     atm_ce["premium"] = round(px_atm, 2)
+                    atm_ce["quote_source"] = "LIVE_MARKET_QUOTE"
                     atm_ce["greeks"] = g
 
-                    if wing_ce:
-                        new_w_k = wing_ce["strike"] - 50
-                        wing_ce["strike"] = new_w_k
+                    if wing_ce and px_w is not None:
                         gw = calculate_bsm_greeks(spot_price, new_w_k, 1.0 / 365.0, 0.07, 0.135, "CE")
-                        px_w = self._get_option_quote(new_w_k, "CE", spot_price)
-                        if px_w <= 0.0: px_w = float(gw["price"])
+                        wing_ce["strike"] = new_w_k
                         wing_ce["entry_price"] = round(px_w, 2)
                         wing_ce["price"] = round(px_w, 2)
                         wing_ce["premium"] = round(px_w, 2)
+                        wing_ce["quote_source"] = "LIVE_MARKET_QUOTE"
                         wing_ce["greeks"] = gw
 
                     adj_note = f"Auto-Adjustment [{horizon}]: Rolled untested Call wing down to {new_ce_strike} CE (Drift: {drift:.1f} pts) to expand lower breakeven."
@@ -394,25 +444,39 @@ class StrategyAdjustmentEngine:
                 # Drift Up: Put side decayed -> Roll Put wing up 50 pts
                 elif drift >= drift_threshold and atm_pe.get("state") != "ADJUSTED_ROLLED":
                     new_pe_strike = atm_strike + 50
+                    new_w_k = (wing_pe["strike"] + 50) if wing_pe else None
+
+                    # Market quote verification: Fail-closed before modifying position legs
+                    px_atm = self._get_option_quote(new_pe_strike, "PE", spot_price)
+                    px_w = self._get_option_quote(new_w_k, "PE", spot_price) if wing_pe else None
+
+                    missing = []
+                    if px_atm is None or px_atm <= 0.0:
+                        missing.append(f"{new_pe_strike} PE (ATM roll)")
+                    if wing_pe and (px_w is None or px_w <= 0.0):
+                        missing.append(f"{new_w_k} PE (wing roll)")
+
+                    if missing:
+                        defer_note = f"Adjustment deferred [{horizon}]: Missing authentic market quote for {', '.join(missing)}. Cannot execute on theoretical BSM prices."
+                        logger.warning(f"⚠️ [{strategy_id}] {defer_note}")
+                        return False, legs, defer_note
+
+                    g = calculate_bsm_greeks(spot_price, new_pe_strike, 1.0 / 365.0, 0.07, 0.135, "PE")
                     atm_pe["strike"] = new_pe_strike
                     atm_pe["state"] = "ADJUSTED_ROLLED"
-                    g = calculate_bsm_greeks(spot_price, new_pe_strike, 1.0 / 365.0, 0.07, 0.135, "PE")
-                    px_atm = self._get_option_quote(new_pe_strike, "PE", spot_price)
-                    if px_atm <= 0.0: px_atm = float(g["price"])
                     atm_pe["entry_price"] = round(px_atm, 2)
                     atm_pe["price"] = round(px_atm, 2)
                     atm_pe["premium"] = round(px_atm, 2)
+                    atm_pe["quote_source"] = "LIVE_MARKET_QUOTE"
                     atm_pe["greeks"] = g
 
-                    if wing_pe:
-                        new_w_k = wing_pe["strike"] + 50
-                        wing_pe["strike"] = new_w_k
+                    if wing_pe and px_w is not None:
                         gw = calculate_bsm_greeks(spot_price, new_w_k, 1.0 / 365.0, 0.07, 0.135, "PE")
-                        px_w = self._get_option_quote(new_w_k, "PE", spot_price)
-                        if px_w <= 0.0: px_w = float(gw["price"])
+                        wing_pe["strike"] = new_w_k
                         wing_pe["entry_price"] = round(px_w, 2)
                         wing_pe["price"] = round(px_w, 2)
                         wing_pe["premium"] = round(px_w, 2)
+                        wing_pe["quote_source"] = "LIVE_MARKET_QUOTE"
                         wing_pe["greeks"] = gw
 
                     adj_note = f"Auto-Adjustment [{horizon}]: Rolled untested Put wing up to {new_pe_strike} PE (Drift: {drift:+.1f} pts) to expand upper breakeven."
@@ -433,14 +497,19 @@ class StrategyAdjustmentEngine:
                 if spot_price <= threat_threshold and long_pe_k3 and long_pe_k3.get("state") != "ADJUSTED_TIGHTENED":
                     old_k3 = long_pe_k3["strike"]
                     new_k3 = old_k3 + 50
+                    px = self._get_option_quote(new_k3, "PE", spot_price)
+                    if px is None or px <= 0.0:
+                        defer_note = f"Adjustment deferred [{horizon}]: Missing authentic market quote for {new_k3} PE. Cannot execute on theoretical BSM prices."
+                        logger.warning(f"⚠️ [{strategy_id}] {defer_note}")
+                        return False, legs, defer_note
+
                     long_pe_k3["strike"] = new_k3
                     long_pe_k3["state"] = "ADJUSTED_TIGHTENED"
                     g = calculate_bsm_greeks(spot_price, new_k3, 1.0 / 365.0, 0.07, 0.135, "PE")
-                    px = self._get_option_quote(new_k3, "PE", spot_price)
-                    if px <= 0.0: px = float(g["price"])
                     long_pe_k3["entry_price"] = round(px, 2)
                     long_pe_k3["price"] = round(px, 2)
                     long_pe_k3["premium"] = round(px, 2)
+                    long_pe_k3["quote_source"] = "LIVE_MARKET_QUOTE"
                     long_pe_k3["greeks"] = g
 
                     adj_note = f"Auto-Adjustment [{horizon}]: Tightened broken put wing from {old_k3} to {new_k3} PE. Neutralized downside gap risk."
@@ -461,14 +530,19 @@ class StrategyAdjustmentEngine:
                 if spot_price >= threat_threshold and long_ce_k3 and long_ce_k3.get("state") != "ADJUSTED_TIGHTENED":
                     old_k3 = long_ce_k3["strike"]
                     new_k3 = old_k3 - 50
+                    px = self._get_option_quote(new_k3, "CE", spot_price)
+                    if px is None or px <= 0.0:
+                        defer_note = f"Adjustment deferred [{horizon}]: Missing authentic market quote for {new_k3} CE. Cannot execute on theoretical BSM prices."
+                        logger.warning(f"⚠️ [{strategy_id}] {defer_note}")
+                        return False, legs, defer_note
+
                     long_ce_k3["strike"] = new_k3
                     long_ce_k3["state"] = "ADJUSTED_TIGHTENED"
                     g = calculate_bsm_greeks(spot_price, new_k3, 1.0 / 365.0, 0.07, 0.135, "CE")
-                    px = self._get_option_quote(new_k3, "CE", spot_price)
-                    if px <= 0.0: px = float(g["price"])
                     long_ce_k3["entry_price"] = round(px, 2)
                     long_ce_k3["price"] = round(px, 2)
                     long_ce_k3["premium"] = round(px, 2)
+                    long_ce_k3["quote_source"] = "LIVE_MARKET_QUOTE"
                     long_ce_k3["greeks"] = g
 
                     adj_note = f"Auto-Adjustment [{horizon}]: Tightened broken call wing from {old_k3} to {new_k3} CE. Neutralized upside breakout risk."
@@ -491,25 +565,66 @@ class StrategyAdjustmentEngine:
                     # Sell OTM Put Credit Spread (K1 - 100 / K1 - 150) to finance valley drag
                     hedge_short_k = k1 - 100
                     hedge_long_k = k1 - 150
-                    g_hs = calculate_bsm_greeks(spot_price, hedge_short_k, 1.0 / 365.0, 0.07, 0.135, "PE")
-                    g_hl = calculate_bsm_greeks(spot_price, hedge_long_k, 1.0 / 365.0, 0.07, 0.135, "PE")
                     px_short = self._get_option_quote(hedge_short_k, "PE", spot_price)
                     px_long = self._get_option_quote(hedge_long_k, "PE", spot_price)
-                    if px_short <= 0.0: px_short = float(g_hs["price"])
-                    if px_long <= 0.0: px_long = float(g_hl["price"])
 
-                    credit_got = round((px_short - px_long) * NIFTY_LOT_SIZE, 2)
+                    missing = []
+                    if px_short is None or px_short <= 0.0:
+                        missing.append(f"{hedge_short_k} PE (short hedge)")
+                    if px_long is None or px_long <= 0.0:
+                        missing.append(f"{hedge_long_k} PE (long hedge)")
+
+                    if missing:
+                        defer_note = f"Adjustment deferred [{horizon}]: Missing authentic market quote for {', '.join(missing)}. Cannot execute on theoretical BSM prices."
+                        logger.warning(f"⚠️ [{strategy_id}] {defer_note}")
+                        return False, legs, defer_note
+
+                    g_hs = calculate_bsm_greeks(spot_price, hedge_short_k, 1.0 / 365.0, 0.07, 0.135, "PE")
+                    g_hl = calculate_bsm_greeks(spot_price, hedge_long_k, 1.0 / 365.0, 0.07, 0.135, "PE")
+
+                    strat_ls = next((int(l["lot_size"]) for l in legs if l.get("lot_size") and int(l["lot_size"]) > 0), None)
+                    if not strat_ls and legs:
+                        for l in legs:
+                            if l.get("qty") and int(l["qty"]) > 0:
+                                q = int(l["qty"])
+                                num_l = int(l.get("lots") or 1)
+                                if num_l > 0 and q % num_l == 0:
+                                    cand_ls = q // num_l
+                                    if cand_ls in (25, 50, 65, 75):
+                                        strat_ls = cand_ls
+                                        break
+                    if not strat_ls:
+                        exp = next((l.get("expiry_date") for l in legs if l.get("expiry_date")), None)
+                        if exp:
+                            try:
+                                strat_ls = resolve_nifty_lot_size(
+                                    expiry_date=exp,
+                                    contract_type=horizon,
+                                    symbol="NIFTY",
+                                    strict=True
+                                )
+                            except Exception as ex:
+                                defer_note = f"Adjustment deferred [{horizon}]: Cannot resolve authoritative lot size for hedge legs: {ex}"
+                                logger.error(f"🛑 [{strategy_id}] {defer_note}")
+                                return False, legs, defer_note
+                        else:
+                            strat_ls = resolve_nifty_lot_size(strict=False)
+
+                    credit_got = round((px_short - px_long) * strat_ls, 2)
 
                     legs.append({
                         "action": "SELL",
                         "type": "PE",
                         "strike": hedge_short_k,
-                        "qty": NIFTY_LOT_SIZE,
+                        "qty": strat_ls,
+                        "lots": 1,
+                        "lot_size": strat_ls,
                         "ratio": 1,
                         "entry_price": round(px_short, 2),
                         "price": round(px_short, 2),
                         "premium": round(px_short, 2),
                         "current_price": round(px_short, 2),
+                        "quote_source": "LIVE_MARKET_QUOTE",
                         "greeks": g_hs,
                         "state": "HEDGE_LEG"
                     })
@@ -517,12 +632,15 @@ class StrategyAdjustmentEngine:
                         "action": "BUY",
                         "type": "PE",
                         "strike": hedge_long_k,
-                        "qty": NIFTY_LOT_SIZE,
+                        "qty": strat_ls,
+                        "lots": 1,
+                        "lot_size": strat_ls,
                         "ratio": 1,
                         "entry_price": round(px_long, 2),
                         "price": round(px_long, 2),
                         "premium": round(px_long, 2),
                         "current_price": round(px_long, 2),
+                        "quote_source": "LIVE_MARKET_QUOTE",
                         "greeks": g_hl,
                         "state": "HEDGE_LEG"
                     })
@@ -548,25 +666,66 @@ class StrategyAdjustmentEngine:
                     # Sell OTM Call Credit Spread (K1 + 100 / K1 + 150) to finance valley drag
                     hedge_short_k = k1 + 100
                     hedge_long_k = k1 + 150
-                    g_hs = calculate_bsm_greeks(spot_price, hedge_short_k, 1.0 / 365.0, 0.07, 0.135, "CE")
-                    g_hl = calculate_bsm_greeks(spot_price, hedge_long_k, 1.0 / 365.0, 0.07, 0.135, "CE")
                     px_short = self._get_option_quote(hedge_short_k, "CE", spot_price)
                     px_long = self._get_option_quote(hedge_long_k, "CE", spot_price)
-                    if px_short <= 0.0: px_short = float(g_hs["price"])
-                    if px_long <= 0.0: px_long = float(g_hl["price"])
 
-                    credit_got = round((px_short - px_long) * NIFTY_LOT_SIZE, 2)
+                    missing = []
+                    if px_short is None or px_short <= 0.0:
+                        missing.append(f"{hedge_short_k} CE (short hedge)")
+                    if px_long is None or px_long <= 0.0:
+                        missing.append(f"{hedge_long_k} CE (long hedge)")
+
+                    if missing:
+                        defer_note = f"Adjustment deferred [{horizon}]: Missing authentic market quote for {', '.join(missing)}. Cannot execute on theoretical BSM prices."
+                        logger.warning(f"⚠️ [{strategy_id}] {defer_note}")
+                        return False, legs, defer_note
+
+                    g_hs = calculate_bsm_greeks(spot_price, hedge_short_k, 1.0 / 365.0, 0.07, 0.135, "CE")
+                    g_hl = calculate_bsm_greeks(spot_price, hedge_long_k, 1.0 / 365.0, 0.07, 0.135, "CE")
+
+                    strat_ls = next((int(l["lot_size"]) for l in legs if l.get("lot_size") and int(l["lot_size"]) > 0), None)
+                    if not strat_ls and legs:
+                        for l in legs:
+                            if l.get("qty") and int(l["qty"]) > 0:
+                                q = int(l["qty"])
+                                num_l = int(l.get("lots") or 1)
+                                if num_l > 0 and q % num_l == 0:
+                                    cand_ls = q // num_l
+                                    if cand_ls in (25, 50, 65, 75):
+                                        strat_ls = cand_ls
+                                        break
+                    if not strat_ls:
+                        exp = next((l.get("expiry_date") for l in legs if l.get("expiry_date")), None)
+                        if exp:
+                            try:
+                                strat_ls = resolve_nifty_lot_size(
+                                    expiry_date=exp,
+                                    contract_type=horizon,
+                                    symbol="NIFTY",
+                                    strict=True
+                                )
+                            except Exception as ex:
+                                defer_note = f"Adjustment deferred [{horizon}]: Cannot resolve authoritative lot size for hedge legs: {ex}"
+                                logger.error(f"🛑 [{strategy_id}] {defer_note}")
+                                return False, legs, defer_note
+                        else:
+                            strat_ls = resolve_nifty_lot_size(strict=False)
+
+                    credit_got = round((px_short - px_long) * strat_ls, 2)
 
                     legs.append({
                         "action": "SELL",
                         "type": "CE",
                         "strike": hedge_short_k,
-                        "qty": NIFTY_LOT_SIZE,
+                        "qty": strat_ls,
+                        "lots": 1,
+                        "lot_size": strat_ls,
                         "ratio": 1,
                         "entry_price": round(px_short, 2),
                         "price": round(px_short, 2),
                         "premium": round(px_short, 2),
                         "current_price": round(px_short, 2),
+                        "quote_source": "LIVE_MARKET_QUOTE",
                         "greeks": g_hs,
                         "state": "HEDGE_LEG"
                     })
@@ -574,12 +733,15 @@ class StrategyAdjustmentEngine:
                         "action": "BUY",
                         "type": "CE",
                         "strike": hedge_long_k,
-                        "qty": NIFTY_LOT_SIZE,
+                        "qty": strat_ls,
+                        "lots": 1,
+                        "lot_size": strat_ls,
                         "ratio": 1,
                         "entry_price": round(px_long, 2),
                         "price": round(px_long, 2),
                         "premium": round(px_long, 2),
                         "current_price": round(px_long, 2),
+                        "quote_source": "LIVE_MARKET_QUOTE",
                         "greeks": g_hl,
                         "state": "HEDGE_LEG"
                     })

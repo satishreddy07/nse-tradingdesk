@@ -303,8 +303,51 @@ class HorizonLearningOrchestrator:
         base_profit_factor = round(total_base_gross_win / total_base_gross_loss, 2) if total_base_gross_loss > 0 else (round(total_base_gross_win, 2) if total_base_gross_win > 0 else 0.0)
         reentry_profit_factor = round(total_reentry_gross_win / total_reentry_gross_loss, 2) if total_reentry_gross_loss > 0 else (round(total_reentry_gross_win, 2) if total_reentry_gross_win > 0 else 0.0)
 
+        # Query authentic empirical trade outcomes from unified_trade_learning_dataset
+        empirical_records = []
+        try:
+            with state_engine._lock:
+                with state_engine._get_connection() as conn:
+                    rows = conn.execute(
+                        "SELECT net_pnl, is_winner, re_entry_count, exit_reason FROM unified_trade_learning_dataset WHERE trading_horizon = ? AND status LIKE 'RESOLVED%'",
+                        (horizon,)
+                    ).fetchall()
+                    empirical_records = [dict(r) for r in rows]
+        except Exception as e:
+            logger.debug(f"Empirical trade query notice: {e}")
+
+        if len(empirical_records) >= 5:
+            emp_wins = sum(1 for r in empirical_records if int(r.get("is_winner") or 0) == 1)
+            emp_total = len(empirical_records)
+            emp_pnl = sum(float(r.get("net_pnl") or 0.0) for r in empirical_records)
+            emp_reentries = sum(1 for r in empirical_records if int(r.get("re_entry_count") or 0) > 0)
+            emp_reentry_wins = sum(1 for r in empirical_records if int(r.get("re_entry_count") or 0) > 0 and int(r.get("is_winner") or 0) == 1)
+            empirical_perf = {
+                "status": "AUTHENTIC_EMPIRICAL_DATA",
+                "sample_size": emp_total,
+                "win_rate_pct": round((emp_wins / emp_total) * 100.0, 1),
+                "net_pnl_inr": round(emp_pnl, 2),
+                "total_reentry_triggers": emp_reentries,
+                "successful_recoveries": emp_reentry_wins,
+                "recovery_rate_pct": round((emp_reentry_wins / max(1, emp_reentries)) * 100.0, 1) if emp_reentries > 0 else 0.0,
+                "data_source": "unified_trade_learning_dataset"
+            }
+        else:
+            empirical_perf = {
+                "status": "INSUFFICIENT_DATA",
+                "sample_size": len(empirical_records),
+                "message": f"Only {len(empirical_records)} empirical trades recorded for {horizon} horizon (minimum 5 required for historical performance).",
+                "win_rate_pct": None,
+                "net_pnl_inr": round(sum(float(r.get("net_pnl") or 0.0) for r in empirical_records), 2) if empirical_records else 0.0,
+                "data_source": "unified_trade_learning_dataset"
+            }
+
         comparison = {
             "evaluation_type": "SCENARIO_SIMULATION_GRID",
+            "is_simulated": True,
+            "is_empirical": False,
+            "simulation_disclaimer": "Scenario simulation grid is a theoretical stress-test model and must NOT be interpreted as actual historical trading performance.",
+            "empirical_performance": empirical_perf,
             "horizon": horizon,
             "configured_sl_pct": f"{int(sl_pct * 100)}%",
             "re_entry_policy": "1-Time Price-Triggered Re-entry at Original Entry Premium",
@@ -313,7 +356,8 @@ class HorizonLearningOrchestrator:
                 "net_pnl_inr": round(total_base_pnl, 2),
                 "win_rate_pct": round((total_base_wins / total_samples) * 100.0, 1),
                 "expectancy_per_trade_inr": round(total_base_pnl / total_samples, 2),
-                "profit_factor": base_profit_factor
+                "profit_factor": base_profit_factor,
+                "is_simulated": True
             },
             "reentry_strategy": {
                 "net_pnl_inr": round(total_reentry_pnl, 2),
@@ -322,7 +366,8 @@ class HorizonLearningOrchestrator:
                 "profit_factor": reentry_profit_factor,
                 "total_reentry_triggers": reentry_triggers_count,
                 "successful_recoveries": reentry_successful_recoveries,
-                "recovery_rate_pct": round((reentry_successful_recoveries / max(1, reentry_triggers_count)) * 100.0, 1)
+                "recovery_rate_pct": round((reentry_successful_recoveries / max(1, reentry_triggers_count)) * 100.0, 1),
+                "is_simulated": True
             },
             "verdict": "RE_ENTRY_SUPERIOR" if total_reentry_pnl > total_base_pnl else "BASE_SUPERIOR",
             "results_by_regime": results_by_regime,

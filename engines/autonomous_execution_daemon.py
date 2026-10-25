@@ -263,31 +263,62 @@ class AutonomousExecutionDaemon:
 
                 if target_hit or sl_hit:
                     trigger_type = "TARGET_HIT" if target_hit else "STOPLOSS_HIT"
-                    leg_pnl = round(((live_cmp - entry_price) if action == "BUY" else (entry_price - live_cmp)) * qty, 2)
-                    pnl_pct = round(((live_cmp - entry_price) / entry_price * 100) if action == "BUY" else ((entry_price - live_cmp) / entry_price * 100), 2)
+                    close_action = "SELL" if action == "BUY" else "BUY"
 
-                    # Update leg state
-                    leg["exit_price"] = live_cmp
-                    leg["state"] = "CLOSED"
-                    leg["status"] = "CLOSED"
-                    leg["leg_pnl"] = leg_pnl
-                    leg["unrealized_pnl"] = 0.0
-                    leg["closed_at"] = format_ist()
-                    leg["exit_reason"] = f"AUTONOMOUS_{trigger_type} (CMP: ₹{live_cmp:.2f} | Entry: ₹{entry_price:.2f} | PnL: ₹{leg_pnl:+.2f})"
-
-                    # Execute order routing (PAPER or LIVE_BROKER)
-                    self._dispatch_leg_order(
+                    # 1. Authoritative order dispatch BEFORE mutating leg state
+                    dispatch_result = self._dispatch_leg_order(
                         strat_id=strat_id,
                         strike=strike,
                         opt_type=opt_type,
-                        close_action="SELL" if action == "BUY" else "BUY",
+                        close_action=close_action,
                         qty=qty,
                         exit_price=live_cmp,
                         reason=trigger_type
                     )
 
+                    # 2. Gatekeeper: Only confirmed broker executions (or explicit paper simulations) may close a leg
+                    if not dispatch_result.get("confirmed"):
+                        fail_reason = dispatch_result.get("message", "Execution unconfirmed")
+                        action_msg = (
+                            f"⚠️ [{self._mode}] {trigger_type} on Leg #{idx+1} "
+                            f"({action} {strike} {opt_type}) unconfirmed: {fail_reason}. "
+                            f"Leg remains OPEN."
+                        )
+                        actions.append(action_msg)
+                        logger.warning(action_msg)
+                        leg["last_unconfirmed_attempt"] = {
+                            "trigger_type": trigger_type,
+                            "trigger_price": live_cmp,
+                            "status": dispatch_result.get("status"),
+                            "reason": fail_reason,
+                            "attempted_at": format_ist()
+                        }
+                        # Do NOT mark closed, do NOT calculate realized PnL, do NOT update SQLite
+                        continue
+
+                    # 3. Execution confirmed: update leg state
+                    exec_price = float(dispatch_result.get("executed_price") or live_cmp)
+                    exec_qty = int(dispatch_result.get("filled_qty") or qty)
+                    is_sim = (dispatch_result.get("status") == "SIMULATED")
+
+                    leg_pnl = round(((exec_price - entry_price) if action == "BUY" else (entry_price - exec_price)) * exec_qty, 2)
+                    pnl_pct = round(((exec_price - entry_price) / entry_price * 100) if action == "BUY" else ((entry_price - exec_price) / entry_price * 100), 2)
+
+                    leg["exit_price"] = exec_price
+                    leg["state"] = "CLOSED"
+                    leg["status"] = "CLOSED"
+                    leg["leg_pnl"] = leg_pnl
+                    leg["unrealized_pnl"] = 0.0
+                    leg["closed_at"] = format_ist()
+                    leg["execution_mode"] = "PAPER_SIMULATION" if is_sim else "LIVE_BROKER_CONFIRMED"
+                    if dispatch_result.get("order_id"):
+                        leg["broker_order_id"] = dispatch_result["order_id"]
+
+                    mode_tag = "SIMULATED" if is_sim else "LIVE_BROKER"
+                    leg["exit_reason"] = f"AUTONOMOUS_{mode_tag}_{trigger_type} (CMP: ₹{exec_price:.2f} | Entry: ₹{entry_price:.2f} | PnL: ₹{leg_pnl:+.2f})"
+
                     strategy_modified = True
-                    action_msg = f"⚡ [{self._mode}] {trigger_type} on Leg #{idx+1} ({action} {strike} {opt_type}) @ ₹{live_cmp:.2f} -> Locked PnL: ₹{leg_pnl:+.2f} ({pnl_pct:+.1f}%)"
+                    action_msg = f"⚡ [{self._mode}] {trigger_type} on Leg #{idx+1} ({action} {strike} {opt_type}) @ ₹{exec_price:.2f} -> Locked PnL: ₹{leg_pnl:+.2f} ({pnl_pct:+.1f}%)"
                     actions.append(action_msg)
                     logger.info(action_msg)
 
@@ -347,26 +378,203 @@ class AutonomousExecutionDaemon:
         qty: int,
         exit_price: float,
         reason: str
-    ):
-        """Dispatches leg exit order to Kotak Neo Broker API or logs Paper simulation."""
+    ) -> Dict[str, Any]:
+        """
+        Dispatches leg exit order to Kotak Neo Broker API or logs Paper simulation.
+        Returns a standardized execution response dictionary:
+        {
+            "confirmed": bool,
+            "status": str,
+            "mode": str,
+            "filled_qty": int,
+            "executed_price": float,
+            "order_id": Optional[str],
+            "message": str
+        }
+        """
         if self._mode == "LIVE_BROKER":
             try:
                 from engines.kotak_neo_engine import kotak_neo_engine
-                # Resolve token and route limit order
-                token = kotak_neo_engine._option_contract_to_token.get((int(strike), opt_type.upper(), None))
-                if token and hasattr(kotak_neo_engine, "place_order"):
-                    logger.info(f"⚡ [LIVE_BROKER] Routing real square-off order: {close_action} {qty}x {strike} {opt_type} (Token: {token}) @ ₹{exit_price:.2f}")
-                    kotak_neo_engine.place_order(
-                        trading_symbol=f"NIFTY{int(strike)}{opt_type}",
-                        transaction_type=close_action,
-                        quantity=qty,
-                        price=exit_price,
-                        order_type="LIMIT"
-                    )
+            except ImportError:
+                kotak_neo_engine = None
+
+            if not kotak_neo_engine:
+                logger.error("❌ [LIVE_BROKER] KotakNeoEngine is not available.")
+                return {
+                    "confirmed": False,
+                    "status": "INTERFACE_UNAVAILABLE",
+                    "mode": "LIVE_BROKER",
+                    "filled_qty": 0,
+                    "executed_price": 0.0,
+                    "order_id": None,
+                    "message": "KotakNeoEngine is not available."
+                }
+
+            # Check if order-placement interface is implemented
+            if not hasattr(kotak_neo_engine, "place_order") or not callable(getattr(kotak_neo_engine, "place_order")):
+                logger.error("❌ [LIVE_BROKER] Broker order placement method 'place_order' is not implemented on KotakNeoEngine.")
+                return {
+                    "confirmed": False,
+                    "status": "INTERFACE_UNAVAILABLE",
+                    "mode": "LIVE_BROKER",
+                    "filled_qty": 0,
+                    "executed_price": 0.0,
+                    "order_id": None,
+                    "message": "Broker order interface 'place_order' not implemented on KotakNeoEngine."
+                }
+
+            token_map = getattr(kotak_neo_engine, "_option_contract_to_token", {})
+            token = token_map.get((int(strike), opt_type.upper(), None))
+            if not token:
+                logger.error(f"❌ [LIVE_BROKER] Cannot resolve broker token for strike {strike} {opt_type}.")
+                return {
+                    "confirmed": False,
+                    "status": "TOKEN_UNRESOLVED",
+                    "mode": "LIVE_BROKER",
+                    "filled_qty": 0,
+                    "executed_price": 0.0,
+                    "order_id": None,
+                    "message": f"Instrument token for {strike} {opt_type} not found."
+                }
+
+            try:
+                logger.info(f"⚡ [LIVE_BROKER] Routing real square-off order: {close_action} {qty}x {strike} {opt_type} (Token: {token}) @ ₹{exit_price:.2f}")
+                resp = kotak_neo_engine.place_order(
+                    trading_symbol=f"NIFTY{int(strike)}{opt_type}",
+                    transaction_type=close_action,
+                    quantity=qty,
+                    price=exit_price,
+                    order_type="LIMIT"
+                )
+            except TimeoutError as te:
+                logger.error(f"❌ [LIVE_BROKER] Order placement timed out: {te}")
+                return {
+                    "confirmed": False,
+                    "status": "TIMEOUT",
+                    "mode": "LIVE_BROKER",
+                    "filled_qty": 0,
+                    "executed_price": 0.0,
+                    "order_id": None,
+                    "message": f"Order placement timed out: {te}"
+                }
             except Exception as e:
-                logger.error(f"Failed routing live broker order: {e}", exc_info=True)
+                logger.error(f"❌ [LIVE_BROKER] Order placement raised exception: {e}", exc_info=True)
+                return {
+                    "confirmed": False,
+                    "status": "ERROR",
+                    "mode": "LIVE_BROKER",
+                    "filled_qty": 0,
+                    "executed_price": 0.0,
+                    "order_id": None,
+                    "message": f"Broker order placement raised exception: {e}"
+                }
+
+            if not isinstance(resp, dict):
+                logger.error(f"❌ [LIVE_BROKER] Ambiguous/invalid broker response type: {type(resp)}")
+                return {
+                    "confirmed": False,
+                    "status": "AMBIGUOUS",
+                    "mode": "LIVE_BROKER",
+                    "filled_qty": 0,
+                    "executed_price": 0.0,
+                    "order_id": None,
+                    "message": f"Ambiguous broker response: {resp}"
+                }
+
+            # Check for broker rejection or error payload
+            if resp.get("Error") or resp.get("error") or resp.get("stat") == "Not_Ok":
+                err_msg = str(resp.get("Error") or resp.get("error") or resp.get("errMsg") or "Broker order rejected")
+                logger.error(f"❌ [LIVE_BROKER] Order rejected by broker: {err_msg}")
+                return {
+                    "confirmed": False,
+                    "status": "REJECTED",
+                    "mode": "LIVE_BROKER",
+                    "filled_qty": 0,
+                    "executed_price": 0.0,
+                    "order_id": None,
+                    "message": err_msg
+                }
+
+            order_status = str(resp.get("order_status") or resp.get("status") or "").upper()
+            order_id = str(resp.get("order_id") or resp.get("nOrdNo") or resp.get("orderId") or "")
+            filled_qty = int(resp.get("filled_qty") or resp.get("filled_quantity") or resp.get("traded_qty") or 0)
+            exec_price = float(resp.get("price") or resp.get("avg_price") or exit_price)
+
+            if order_status in ("REJECTED", "CANCELLED"):
+                logger.error(f"❌ [LIVE_BROKER] Order {order_id} reported {order_status}")
+                return {
+                    "confirmed": False,
+                    "status": "REJECTED",
+                    "mode": "LIVE_BROKER",
+                    "filled_qty": 0,
+                    "executed_price": 0.0,
+                    "order_id": order_id,
+                    "message": f"Order {order_id} {order_status}: {resp.get('reason', '')}"
+                }
+
+            # Check for partial fills
+            if 0 < filled_qty < qty:
+                logger.warning(f"⚠️ [LIVE_BROKER] Order {order_id} partial fill: {filled_qty}/{qty} executed @ ₹{exec_price:.2f}")
+                return {
+                    "confirmed": False,
+                    "status": "PARTIAL_FILL",
+                    "mode": "LIVE_BROKER",
+                    "filled_qty": filled_qty,
+                    "executed_price": exec_price,
+                    "order_id": order_id,
+                    "message": f"Order {order_id} partially filled: {filled_qty}/{qty} executed"
+                }
+
+            # Authoritative fill confirmation
+            if order_status in ("COMPLETE", "TRAD", "FILLED") and (filled_qty == qty or filled_qty == 0):
+                logger.info(f"✅ [LIVE_BROKER] Order {order_id} confirmed executed: {qty}x @ ₹{exec_price:.2f}")
+                return {
+                    "confirmed": True,
+                    "status": "FILLED",
+                    "mode": "LIVE_BROKER",
+                    "filled_qty": qty,
+                    "executed_price": exec_price,
+                    "order_id": order_id,
+                    "message": f"Order {order_id} executed @ ₹{exec_price:.2f}"
+                }
+
+            # If acknowledged/pending or ambiguous
+            if order_status in ("OPEN", "PENDING", "TRIGGER_PENDING", "SUBMITTED", "ACCEPTED") or order_id:
+                logger.warning(f"⏳ [LIVE_BROKER] Order {order_id} acknowledged/pending ({order_status}). Execution unconfirmed.")
+                return {
+                    "confirmed": False,
+                    "status": "PENDING_UNCONFIRMED",
+                    "mode": "LIVE_BROKER",
+                    "filled_qty": 0,
+                    "executed_price": 0.0,
+                    "order_id": order_id,
+                    "message": f"Order {order_id} pending ({order_status}), fill unconfirmed."
+                }
+
+            logger.error(f"❌ [LIVE_BROKER] Ambiguous order response from broker: {resp}")
+            return {
+                "confirmed": False,
+                "status": "AMBIGUOUS",
+                "mode": "LIVE_BROKER",
+                "filled_qty": 0,
+                "executed_price": 0.0,
+                "order_id": order_id,
+                "message": f"Ambiguous response from broker: {resp}"
+            }
+
         else:
+            # PAPER simulation mode
+            sim_id = f"SIM_{int(time.time() * 1000)}"
             logger.info(f"📝 [PAPER_EXECUTION] Simulated Fill: {close_action} {qty}x {strike} {opt_type} @ ₹{exit_price:.2f} ({reason})")
+            return {
+                "confirmed": True,
+                "status": "SIMULATED",
+                "mode": "PAPER",
+                "filled_qty": qty,
+                "executed_price": exit_price,
+                "order_id": sim_id,
+                "message": f"Simulated paper fill @ ₹{exit_price:.2f}"
+            }
 
     def evaluate_account_drawdown_killswitch(self) -> Dict[str, Any]:
         """

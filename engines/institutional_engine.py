@@ -1192,21 +1192,19 @@ class ExecutionEngine:
         capital: float = P1_BASE_CAPITAL,
         base_risk_pct: float = P1_BASE_RISK_PCT
     ) -> Dict[str, Any]:
-        entry = float(row.get('close', 0.0) or 0.0)
-        if pd.isna(entry) or entry <= 0:
+        entry_raw = row.get('close', 0.0)
+        try:
+            entry = float(entry_raw if entry_raw is not None else 0.0)
+        except (ValueError, TypeError):
+            entry = 0.0
+
+        if pd.isna(entry) or not math.isfinite(entry) or entry <= 0:
             return {
                 "entry": 0.0, "sl": 0.0, "t1": 0.0, "t2": 0.0, "rr": 0.0,
                 "shares": 0, "capital_at_risk": 0.0, "risk_pct": 0.0,
-                "atr_pct": 0.0, "tier": "REJECT", "entry_type": "REJECT"
+                "atr_pct": 0.0, "tier": "REJECT", "entry_type": "REJECT",
+                "status": "DATA_UNAVAILABLE", "reason": "INVALID_ENTRY_PRICE"
             }
-
-        atr14 = float(row.get('atr14', 0.0) or 0.0)
-        if pd.isna(atr14) or atr14 <= 0:
-            atr14 = entry * 0.03
-
-        low_20d = float(row.get('low', 0.0) or 0.0)
-        if pd.isna(low_20d) or low_20d <= 0:
-            low_20d = entry - 1.5 * atr14
 
         score = float(row.get('score', 0.0) or 0.0)
         conf = int(row.get('confidence', 3) or 3)
@@ -1228,22 +1226,77 @@ class ExecutionEngine:
             tier = "B+"
 
         if entry_type == "ACCUMULATION_COIL":
+            if pd.isna(dist_ema20) or not math.isfinite(dist_ema20):
+                return {
+                    "entry": entry, "sl": 0.0, "t1": 0.0, "t2": 0.0, "rr": 0.0,
+                    "shares": 0, "capital_at_risk": 0.0, "risk_pct": 0.0,
+                    "atr_pct": 0.0, "tier": "REJECT", "entry_type": "REJECT",
+                    "status": "DATA_UNAVAILABLE", "reason": "EMA_DATA_INCOMPLETE"
+                }
             # Tight structural stop placed directly below 20 EMA (typically 2.0% - 2.8% risk)
             sl_dist_pct = max(2.0, abs(dist_ema20) + 1.2)
             sl = round(entry * (1.0 - (sl_dist_pct / 100.0)), 2)
             risk_per_share = entry - sl
+            if risk_per_share <= 0 or not math.isfinite(risk_per_share):
+                return {
+                    "entry": entry, "sl": 0.0, "t1": 0.0, "t2": 0.0, "rr": 0.0,
+                    "shares": 0, "capital_at_risk": 0.0, "risk_pct": 0.0,
+                    "atr_pct": 0.0, "tier": "REJECT", "entry_type": "REJECT",
+                    "status": "DATA_UNAVAILABLE", "reason": "INVALID_RISK_PER_SHARE"
+                }
             r = max(0.01, risk_per_share)
             t1 = round(entry + 2.5 * r, 2)
             t2 = round(entry + 4.5 * r, 2)
             rr = round((t2 - entry) / r, 2)
         else:
+            # BREAKOUT_SURGE requires authentic ATR14 and authentic structural low
+            atr14_val = row.get('atr14')
+            atr14 = None
+            if atr14_val is not None and not pd.isna(atr14_val):
+                try:
+                    atr_f = float(atr14_val)
+                    if math.isfinite(atr_f) and atr_f > 0:
+                        atr14 = atr_f
+                except (ValueError, TypeError):
+                    atr14 = None
+
+            if atr14 is None:
+                return {
+                    "entry": entry, "sl": 0.0, "t1": 0.0, "t2": 0.0, "rr": 0.0,
+                    "shares": 0, "capital_at_risk": 0.0, "risk_pct": 0.0,
+                    "atr_pct": 0.0, "tier": "REJECT", "entry_type": "REJECT",
+                    "status": "DATA_UNAVAILABLE", "reason": "VOLATILITY_DATA_INCOMPLETE"
+                }
+
+            low_val = row.get('low')
+            low_20d = None
+            if low_val is not None and not pd.isna(low_val):
+                try:
+                    low_f = float(low_val)
+                    if math.isfinite(low_f) and low_f > 0:
+                        low_20d = low_f
+                except (ValueError, TypeError):
+                    low_20d = None
+
+            if low_20d is None:
+                return {
+                    "entry": entry, "sl": 0.0, "t1": 0.0, "t2": 0.0, "rr": 0.0,
+                    "shares": 0, "capital_at_risk": 0.0, "risk_pct": 0.0,
+                    "atr_pct": 0.0, "tier": "REJECT", "entry_type": "REJECT",
+                    "status": "DATA_UNAVAILABLE", "reason": "PRICE_DATA_INCOMPLETE"
+                }
+
             structure_sl = min(low_20d, entry - 1.5 * atr14)
             hard_sl = entry * 0.92
             sl = round(max(structure_sl, hard_sl), 2)
             risk_per_share = entry - sl
-            if risk_per_share <= 0:
-                sl = round(entry * 0.95, 2)
-                risk_per_share = entry - sl
+            if risk_per_share <= 0 or not math.isfinite(risk_per_share):
+                return {
+                    "entry": entry, "sl": 0.0, "t1": 0.0, "t2": 0.0, "rr": 0.0,
+                    "shares": 0, "capital_at_risk": 0.0, "risk_pct": 0.0,
+                    "atr_pct": 0.0, "tier": "REJECT", "entry_type": "REJECT",
+                    "status": "DATA_UNAVAILABLE", "reason": "INVALID_RISK_PER_SHARE"
+                }
             r = max(0.01, risk_per_share)
             t1 = round(entry + 1.5 * r, 2)
             t2 = round(entry + 3.0 * r, 2)
@@ -1401,18 +1454,24 @@ def reconcile_open_institutional_positions(ohlcv_dict: Dict[str, pd.DataFrame]) 
                     h14 = df["High"].to_numpy(dtype=np.float64, copy=False)[-14:]
                     l14 = df["Low"].to_numpy(dtype=np.float64, copy=False)[-14:]
                     cp14 = df["Close"].to_numpy(dtype=np.float64, copy=False)[-15:-1]
-                    atr14 = float(np.mean(np.maximum(h14 - l14, np.maximum(np.abs(h14 - cp14), np.abs(l14 - cp14)))))
+                    tr14 = np.maximum(h14 - l14, np.maximum(np.abs(h14 - cp14), np.abs(l14 - cp14)))
+                    atr14 = float(np.mean(tr14))
+                    if math.isfinite(atr14) and atr14 > 0:
+                        trail_sl = round(max(entry_px, highest_seen - 1.5 * atr14), 2)
+                        if trail_sl > sl:
+                            state_engine.update_position_price(sym, current_price=c, stop_loss=trail_sl, highest_price=highest_seen, portfolio_type=PORTFOLIO_TYPE)
+                            telegram_vault.send_alert_and_sync(
+                                title=f"📈 P1 TRAILING STOP RATCHETED: {sym}",
+                                message=f"Stop-Loss raised from ₹{sl:,.2f} to <b>₹{trail_sl:,.2f}</b> (LTP: ₹{c:,.2f}).",
+                                sync_db=True
+                            )
+                        else:
+                            state_engine.update_position_price(sym, current_price=c, highest_price=highest_seen, portfolio_type=PORTFOLIO_TYPE)
+                    else:
+                        logger.warning(f"⚠️ [P1 Trailing SL] Invalid calculated ATR ({atr14}) for {sym}. Preserving existing stop-loss ₹{sl:.2f}.")
+                        state_engine.update_position_price(sym, current_price=c, highest_price=highest_seen, portfolio_type=PORTFOLIO_TYPE)
                 else:
-                    atr14 = entry_px * 0.02
-                trail_sl = round(max(entry_px, highest_seen - 1.5 * atr14), 2)
-                if trail_sl > sl:
-                    state_engine.update_position_price(sym, current_price=c, stop_loss=trail_sl, highest_price=highest_seen, portfolio_type=PORTFOLIO_TYPE)
-                    telegram_vault.send_alert_and_sync(
-                        title=f"📈 P1 TRAILING STOP RATCHETED: {sym}",
-                        message=f"Stop-Loss raised from ₹{sl:,.2f} to <b>₹{trail_sl:,.2f}</b> (LTP: ₹{c:,.2f}).",
-                        sync_db=True
-                    )
-                else:
+                    logger.warning(f"⚠️ [P1 Trailing SL] Insufficient historical bars ({len(df)}/15) for {sym}. Preserving existing stop-loss ₹{sl:.2f}.")
                     state_engine.update_position_price(sym, current_price=c, highest_price=highest_seen, portfolio_type=PORTFOLIO_TYPE)
             else:
                 state_engine.update_position_price(sym, current_price=c, highest_price=max(float(pos.get("highest_price") or entry_px), check_high), portfolio_type=PORTFOLIO_TYPE)
@@ -1606,6 +1665,7 @@ class InstitutionalEngine:
                     "shares": pos_info['shares'],
                     "capital_at_risk": pos_info['capital_at_risk'],
                     "risk_pct": pos_info['risk_pct'],
+                    "atr14": float(row.get('atr14', 0.0) or 0.0),
                     "atr_pct": round(row['atr_pct'], 2),
                     "rsi14": round(row['rsi14'], 1),
                     "dist_to_pivot": round(row['dist_to_pivot'], 2),
@@ -1706,6 +1766,10 @@ class InstitutionalEngine:
             for _, r in buy_now_candidates.iterrows():
                 ticker = str(r['ticker']).replace(".NS", "").replace(".BO", "").strip().upper()
                 cand_id = f"cand_{ticker}_{int(start_time)}"
+                # Sizing & risk gate: Do not evaluate or execute un-sized or rejected candidates
+                if int(r.get('shares', 0)) <= 0 or float(r.get('sl', 0.0)) <= 0 or r.get('tier') == 'REJECT':
+                    logger.warning(f"🚫 [Pre-ML Sizing Gate] Skipping {ticker}: Incomplete risk or sizing data (shares={r.get('shares')}, sl={r.get('sl')}, tier={r.get('tier')})")
+                    continue
                 req_val = round(float(r['entry']) * int(r['shares']), 2)
 
                 tech_snapshot = {
@@ -1715,7 +1779,7 @@ class InstitutionalEngine:
                     "dist_to_pivot": float(r.get('dist_to_pivot', 0.0)),
                     "dist_to_ema20": float(r.get('dist_to_ema20', 0.0)),
                     "vol_ratio": float(r.get('vol_ratio', 1.0)),
-                    "atr14": float(r.get('atr14', 1.0)),
+                    "atr14": float(r.get('atr14', 0.0) or 0.0),
                     "adx14": float(r.get('adx14', 25.0)),
                     "inst_score": float(r.get('inst_score', 60.0)),
                     "week_confluence": int(r.get('week_confluence', 1)),
@@ -2669,10 +2733,11 @@ class InstitutionalPortfolioBacktester:
                 # Trailing ATR ratchet
                 if pos.get("t1_hit"):
                     pos["highest_price"] = max(pos["highest_price"], h)
-                    atr = pos.get("atr", entry_px * 0.02)
-                    trail_sl = round(max(entry_px, pos["highest_price"] - 1.5 * atr), 2)
-                    if trail_sl > pos["stop_loss"]:
-                        pos["stop_loss"] = trail_sl
+                    atr = pos.get("atr")
+                    if atr is not None and math.isfinite(atr) and atr > 0:
+                        trail_sl = round(max(entry_px, pos["highest_price"] - 1.5 * atr), 2)
+                        if trail_sl > pos["stop_loss"]:
+                            pos["stop_loss"] = trail_sl
 
             for s in syms_to_close:
                 active_positions.pop(s, None)

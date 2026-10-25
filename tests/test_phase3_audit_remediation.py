@@ -200,8 +200,8 @@ def test_f35_classification_and_sizing():
     cls_mid = ExecutionEngine.classify(coherent_mid_row)
     assert cls_mid in ("PRE_BREAKOUT", "WAIT_PULLBACK"), f"Coherent mid-score setup returned {cls_mid} instead of PRE_BREAKOUT/WAIT_PULLBACK"
 
-    # Position sizing with NaN ATR/low handling and dynamic RR
-    sizing_row = pd.Series({
+    # F3-02: Missing ATR/low must fail closed (REJECT, shares=0)
+    sizing_row_missing = pd.Series({
         "close": 1000.0,
         "atr14": np.nan,  # Missing ATR
         "low": np.nan,    # Missing Low
@@ -209,10 +209,25 @@ def test_f35_classification_and_sizing():
         "confidence": 4,
         "ml_verdict": "APPROVED"
     })
-    pos_plan = ExecutionEngine.calculate_position(sizing_row)
-    assert pos_plan["shares"] > 0
-    assert pos_plan["sl"] > 0
-    assert pos_plan["rr"] > 0
+    pos_plan_missing = ExecutionEngine.calculate_position(sizing_row_missing)
+    assert pos_plan_missing["tier"] == "REJECT"
+    assert pos_plan_missing["shares"] == 0
+    assert pos_plan_missing["sl"] == 0.0
+    assert pos_plan_missing["status"] == "DATA_UNAVAILABLE"
+
+    # Valid ATR and low must calculate authentic shares and stop loss
+    sizing_row_valid = pd.Series({
+        "close": 1000.0,
+        "atr14": 20.0,
+        "low": 970.0,
+        "score": 85.0,
+        "confidence": 4,
+        "ml_verdict": "APPROVED"
+    })
+    pos_plan_valid = ExecutionEngine.calculate_position(sizing_row_valid)
+    assert pos_plan_valid["shares"] > 0
+    assert pos_plan_valid["sl"] > 0
+    assert pos_plan_valid["rr"] > 0
 
 
 def test_f31_institutional_backtester_simulation():

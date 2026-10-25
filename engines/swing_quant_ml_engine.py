@@ -1517,6 +1517,7 @@ class SwingQuantMLEngine:
                        target, entry_price, stop_loss, r_multiple, is_winner, trade_type
                 FROM quant_trade_dataset
                 WHERE is_winner IS NOT NULL AND status IN ('RESOLVED_TARGET', 'RESOLVED_STOP_LOSS', 'EXPIRED_TIME')
+                ORDER BY created_at ASC, id ASC
                 """).fetchall()
 
         real_count = sum(1 for r in rows if r["trade_type"] == "REAL")
@@ -1554,23 +1555,32 @@ class SwingQuantMLEngine:
             })
 
         # Determine dataset source:
-        # If total_empirical >= 5 and both classes (winners and losers) are present,
-        # train 100% on real empirical market outcomes with zero synthetic prior rows.
+        # Train strictly on real empirical market outcomes. Never train or report model performance on synthetic records.
         classes_present = len(set(r["is_winner"] for r in empirical_rows)) if empirical_rows else 0
         if total_empirical >= 5 and classes_present >= 2:
             combined_df = pd.DataFrame(empirical_rows)
             training_mode = "100%_REAL_EMPIRICAL"
             prior_count = 0
         else:
-            prior_df = self._generate_canonical_prior_dataset()
-            prior_count = len(prior_df)
-            if total_empirical > 0:
-                emp_df = pd.DataFrame(empirical_rows)
-                combined_df = pd.concat([prior_df, emp_df], ignore_index=True)
-                training_mode = "COLD_START_HYBRID"
-            else:
-                combined_df = prior_df
-                training_mode = "COLD_START_PRIOR"
+            logger.warning(
+                f"Insufficient empirical trades for swing ML training ({total_empirical}/5 required, "
+                f"{classes_present}/2 classes). Refusing to train on synthetic prior."
+            )
+            return {
+                "status": "INSUFFICIENT_DATA",
+                "message": f"Insufficient empirical trade records ({total_empirical}/5 required, {classes_present}/2 classes). Training aborted to prevent synthetic bias.",
+                "total_trades": total_empirical,
+                "real_trades": real_count,
+                "shadow_trades": shadow_count,
+                "trained_at": format_ist(),
+                "training_mode": "INSUFFICIENT_DATA",
+                "prior_samples": 0,
+                "empirical_samples": total_empirical,
+                "validation_auc": None,
+                "brier_score": None,
+                "mae_r_multiple": None,
+                "feature_importances": {}
+            }
 
         X = combined_df[ML_FEATURE_COLS].values
         y_class = combined_df["is_winner"].values.astype(int)
@@ -1605,24 +1615,35 @@ class SwingQuantMLEngine:
         reg.fit(X_scaled, y_reg)
 
         # Out-of-sample Holdout Evaluation (Finding 6.5)
+        brier = None
         if len(X) >= 8:
             split_idx = int(len(X) * 0.75)
             X_tr, X_val = X[:split_idx], X[split_idx:]
             y_tr_c, y_val_c = y_class[:split_idx], y_class[split_idx:]
 
-            sc_eval = StandardScaler()
-            X_tr_s = sc_eval.fit_transform(X_tr)
-            X_val_s = sc_eval.transform(X_val)
+            tr_classes = len(set(y_tr_c)) if len(y_tr_c) > 0 else 0
+            val_classes = len(set(y_val_c)) if len(y_val_c) > 0 else 0
 
-            base_eval = HistGradientBoostingClassifier(max_iter=100, learning_rate=0.08, min_samples_leaf=5, random_state=42)
-            min_c = int(np.min(np.bincount(y_tr_c))) if len(np.bincount(y_tr_c)) > 1 else 0
-            if min_c >= 2:
-                clf_eval = CalibratedClassifierCV(estimator=base_eval, method="sigmoid", cv=min(3, min_c))
+            if tr_classes >= 2 and val_classes >= 2:
+                sc_eval = StandardScaler()
+                X_tr_s = sc_eval.fit_transform(X_tr)
+                X_val_s = sc_eval.transform(X_val)
+
+                base_eval = HistGradientBoostingClassifier(max_iter=100, learning_rate=0.08, min_samples_leaf=5, random_state=42)
+                min_c = int(np.min(np.bincount(y_tr_c))) if len(np.bincount(y_tr_c)) > 1 else 0
+                if min_c >= 2:
+                    clf_eval = CalibratedClassifierCV(estimator=base_eval, method="sigmoid", cv=min(3, min_c))
+                else:
+                    clf_eval = base_eval
+                clf_eval.fit(X_tr_s, y_tr_c)
+                preds_val = clf_eval.predict_proba(X_val_s)[:, 1] if len(clf_eval.classes_) > 1 else np.full(len(X_val), float(np.mean(y_tr_c)))
+                brier = round(float(np.mean((preds_val - y_val_c) ** 2)), 4)
             else:
-                clf_eval = base_eval
-            clf_eval.fit(X_tr_s, y_tr_c)
-            preds_val = clf_eval.predict_proba(X_val_s)[:, 1] if len(clf_eval.classes_) > 1 else np.full(len(X_val), float(np.mean(y_tr_c)))
-            brier = float(np.mean((preds_val - y_val_c) ** 2))
+                logger.warning(
+                    f"Holdout split contains biased/unsuitable class distribution "
+                    f"(Train classes: {tr_classes}/2, Val classes: {val_classes}/2). "
+                    f"Out-of-sample Brier score cannot be reliably computed."
+                )
         else:
             brier = 0.25
 
@@ -1637,7 +1658,7 @@ class SwingQuantMLEngine:
             "shadow_samples": int(shadow_count),
             "prior_samples": int(prior_count),
             "win_rate": round(win_rate, 3),
-            "brier_score": round(brier, 4),
+            "brier_score": brier,
             "features": ML_FEATURE_COLS,
             "status": "ONLINE_ACTIVE"
         }
@@ -1662,9 +1683,10 @@ class SwingQuantMLEngine:
             except Exception as e:
                 logger.warning(f"Failed to save swing_quant_ml_bundle to KV store: {e}")
 
+        brier_str = f"{brier:.4f}" if brier is not None else "N/A"
         logger.info(
             f"✅ [Swing Quant ML Trained] Samples: {len(combined_df)} (Empirical: {total_empirical} "
-            f"[{real_count} real, {shadow_count} shadow]) | Brier Score: {brier:.4f}"
+            f"[{real_count} real, {shadow_count} shadow]) | Brier Score: {brier_str}"
         )
         return metadata
 

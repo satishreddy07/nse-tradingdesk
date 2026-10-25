@@ -25,7 +25,7 @@ from typing import Dict, Any, List, Optional, Tuple
 
 import numpy as np
 
-from core.config import NIFTY_LOT_SIZE, RISK_FREE_RATE
+from core.config import NIFTY_LOT_SIZE, RISK_FREE_RATE, resolve_nifty_lot_size
 from core.data_quality import now_ist, format_ist
 
 logger = logging.getLogger("AdvancedOptionsPricingEngine")
@@ -119,7 +119,7 @@ class AdvancedOptionsPricingEngine:
         dte: int = 5,
         horizon: str = "WEEKLY",
         expiry_date: Optional[str] = None,
-        lot_size: int = NIFTY_LOT_SIZE
+        lot_size: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Formulates the complete multi-leg option strategy structure with exact strikes,
@@ -127,6 +127,19 @@ class AdvancedOptionsPricingEngine:
         """
         if spot_price <= 0.0:
             raise ValueError(f"Invalid spot price for options pricing: {spot_price}")
+
+        if lot_size is None or int(lot_size) <= 0:
+            try:
+                lot_size = resolve_nifty_lot_size(
+                    expiry_date=expiry_date,
+                    contract_type=horizon,
+                    symbol="NIFTY",
+                    strict=True
+                )
+            except Exception as ex:
+                raise ValueError(f"Cannot formulate options strategy: unable to resolve authoritative lot size: {ex}")
+        else:
+            lot_size = int(lot_size)
 
         horizon = horizon.upper()
         dte = max(1, dte)
@@ -427,9 +440,14 @@ class AdvancedOptionsPricingEngine:
         pop_estimate = np.mean([l["greeks"]["pop"] for l in legs]) * 100.0
         pop_estimate = float(np.clip(round(pop_estimate, 1), 40.0, 94.0))
 
+        for l in legs:
+            l["lot_size"] = lot_size
+            l["lots"] = l.get("ratio", 1)
+
         return {
             "strategy_name": name,
             "architecture": architecture,
+            "lot_size": lot_size,
             "horizon": horizon,
             "spot_price": spot_price,
             "atm_strike": atm_strike,

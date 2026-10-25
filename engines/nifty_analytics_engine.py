@@ -50,6 +50,7 @@ from sklearn.preprocessing import StandardScaler
 from core import config
 from core.config import (
     P1_BASE_CAPITAL, P2_BASE_CAPITAL, P3_BASE_CAPITAL, NIFTY_LOT_SIZE,
+    resolve_nifty_lot_size, enrich_leg_with_lot_metadata,
     RISK_FREE_RATE, DEFAULT_OPTIONS_IV, calc_regulatory_options_cost
 )
 
@@ -376,9 +377,63 @@ class NiftyAnalyticsEngine:
                     what_could_happen TEXT,
                     quant_suggestion TEXT,
                     snapshot_json TEXT,
+                    data_source TEXT DEFAULT 'UNVERIFIED_HISTORICAL',
                     UNIQUE(session_date, slot_time)
                 );
                 """)
+                conn.execute("""
+                CREATE TABLE IF NOT EXISTS simulated_option_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_date TEXT NOT NULL,
+                    slot_time TEXT NOT NULL,
+                    timestamp_ist TEXT NOT NULL,
+                    expiry_date TEXT NOT NULL,
+                    spot_price REAL NOT NULL,
+                    atm_strike INTEGER NOT NULL,
+                    atm_ce_ltp REAL DEFAULT 0.0,
+                    atm_pe_ltp REAL DEFAULT 0.0,
+                    straddle_premium REAL DEFAULT 0.0,
+                    overall_pcr REAL DEFAULT 0.0,
+                    near_atm_pcr REAL DEFAULT 0.0,
+                    atm_pcr REAL DEFAULT 0.0,
+                    chg_oi_pcr REAL DEFAULT 0.0,
+                    max_pain INTEGER DEFAULT 0,
+                    call_wall INTEGER DEFAULT 0,
+                    put_wall INTEGER DEFAULT 0,
+                    net_ce_oi_chg INTEGER DEFAULT 0,
+                    net_pe_oi_chg INTEGER DEFAULT 0,
+                    iv_skew REAL DEFAULT 0.0,
+                    atm_iv REAL DEFAULT 0.0,
+                    market_state TEXT,
+                    what_is_happening TEXT,
+                    what_could_happen TEXT,
+                    quant_suggestion TEXT,
+                    snapshot_json TEXT,
+                    data_source TEXT DEFAULT 'SIMULATED',
+                    simulation_method TEXT DEFAULT 'THETA_PCR_INTERPOLATION',
+                    UNIQUE(session_date, slot_time)
+                );
+                """)
+                snap_cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+                if "data_source" not in snap_cols:
+                    try:
+                        conn.execute("ALTER TABLE intraday_option_snapshots ADD COLUMN data_source TEXT DEFAULT 'UNVERIFIED_HISTORICAL';")
+                    except Exception:
+                        pass
+                try:
+                    conn.execute("""
+                        UPDATE intraday_option_snapshots
+                        SET data_source = 'SYNTHETIC_GAPFILL'
+                        WHERE (snapshot_json LIKE '%AUTO_GAPFILL%' OR snapshot_json LIKE '%"gapfilled": true%')
+                          AND (data_source IS NULL OR data_source = 'UNVERIFIED_HISTORICAL');
+                    """)
+                    conn.execute("""
+                        UPDATE intraday_option_snapshots
+                        SET data_source = 'UNVERIFIED_HISTORICAL'
+                        WHERE data_source IS NULL;
+                    """)
+                except Exception:
+                    pass
                 conn.execute("""
                 CREATE TABLE IF NOT EXISTS nifty_predictions_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1165,12 +1220,15 @@ class NiftyAnalyticsEngine:
         sig_gex = max(0.05, atm_iv / 100.0)
         net_gex_cr = 0.0
 
+        active_exp = cal_exp.get("weekly") or cal_exp.get("expiry_date")
+        gex_lot_size = resolve_nifty_lot_size(expiry_date=active_exp, strict=False)
+
         for s in active_slice:
             k = float(s["strike"])
             d1 = (math.log(max(1e-4, spot_price) / max(1e-4, k)) + (RISK_FREE_RATE + 0.5 * sig_gex ** 2) * t_years_gex) / (sig_gex * sqrt_t_gex)
             gamma_k = (1.0 / (math.sqrt(2.0 * math.pi) * spot_price * sig_gex * sqrt_t_gex)) * math.exp(-0.5 * d1 * d1)
             # Net dealer gamma: PE_OI generates positive dealer gamma, CE_OI generates negative dealer gamma
-            net_gex_cr += (spot_price ** 2) * gamma_k * (float(s["pe_oi"]) - float(s["ce_oi"])) * NIFTY_LOT_SIZE / 1e7
+            net_gex_cr += (spot_price ** 2) * gamma_k * (float(s["pe_oi"]) - float(s["ce_oi"])) * gex_lot_size / 1e7
 
         net_gex_score = round(net_gex_cr, 2)
         if net_gex_score > 5.0:
@@ -1420,8 +1478,12 @@ class NiftyAnalyticsEngine:
         mkt_status = NSEMarketCalendar.get_market_status()
 
         ref_prev_close = self.get_nifty_prev_close()
-        diff_pts = round(effective_spot - ref_prev_close, 2)
-        diff_pct = round((diff_pts / ref_prev_close) * 100.0, 2) if ref_prev_close > 0 else 0.0
+        if ref_prev_close is not None and ref_prev_close > 0:
+            diff_pts = round(effective_spot - ref_prev_close, 2)
+            diff_pct = round((diff_pts / ref_prev_close) * 100.0, 2)
+        else:
+            diff_pts = None
+            diff_pct = None
 
         if isinstance(weekly_analysis, dict):
             weekly_analysis["prev_close"] = ref_prev_close
@@ -1867,11 +1929,22 @@ class NiftyAnalyticsEngine:
         slot_time = slot_override or self._determine_current_slot(dt_now, interval_mode=interval_mode)
         if not slot_time:
             logger.info("⏳ Market is within pre-09:30 opening buffer; 09:30 slot capture will commence at 09:30 AM IST.")
-            return self.get_intraday_expiry_dashboard(interval_mode=interval_mode)
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": "Market is within pre-09:30 opening buffer; 09:30 slot capture will commence at 09:30 AM IST.",
+                "session_date": dt_now.strftime("%Y-%m-%d"),
+                "slot_time": None
+            }
 
         oc = self.fetch_and_analyze_option_chain(force_refresh=True)
         if oc.get("status") != "OK":
-            return self.get_intraday_expiry_dashboard(interval_mode=interval_mode)
+            logger.warning(f"Option chain unavailable ({oc.get('message')}); refusing to capture synthetic snapshot.")
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": f"Option chain unavailable: {oc.get('message', 'Unknown error')}. Refusing to record synthetic snapshot.",
+                "session_date": dt_now.strftime("%Y-%m-%d"),
+                "slot_time": slot_time
+            }
 
         w = oc["weekly"]
         session_date = dt_now.strftime("%Y-%m-%d")
@@ -1946,49 +2019,95 @@ class NiftyAnalyticsEngine:
         snap_meta["lower_breakeven"] = strad_info.get("lower_breakeven", round(spot - straddle_prem, 1))
         snap_meta["fresh_call_wall"] = walls_info.get("fresh_call_wall", call_wall)
         snap_meta["fresh_put_wall"] = walls_info.get("fresh_put_wall", put_wall)
+        snap_meta["data_source"] = "LIVE"
+        snap_meta["is_simulated"] = False
         oi_diff_lakhs = snap_meta.get("oi_diff_lakhs", round((net_pe_chg - net_ce_chg) / 100000.0, 2))
 
         with state_engine._lock:
             with state_engine._get_connection() as conn:
-                conn.execute("""
-                INSERT INTO intraday_option_snapshots (
-                    session_date, slot_time, timestamp_ist, expiry_date, spot_price, atm_strike,
-                    atm_ce_ltp, atm_pe_ltp, straddle_premium, overall_pcr, near_atm_pcr, atm_pcr,
-                    chg_oi_pcr, max_pain, call_wall, put_wall, net_ce_oi_chg, net_pe_oi_chg,
-                    iv_skew, atm_iv, market_state, what_is_happening, what_could_happen,
-                    quant_suggestion, snapshot_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(session_date, slot_time) DO UPDATE SET
-                    timestamp_ist = excluded.timestamp_ist,
-                    expiry_date = excluded.expiry_date,
-                    spot_price = excluded.spot_price,
-                    atm_strike = excluded.atm_strike,
-                    atm_ce_ltp = excluded.atm_ce_ltp,
-                    atm_pe_ltp = excluded.atm_pe_ltp,
-                    straddle_premium = excluded.straddle_premium,
-                    overall_pcr = excluded.overall_pcr,
-                    near_atm_pcr = excluded.near_atm_pcr,
-                    atm_pcr = excluded.atm_pcr,
-                    chg_oi_pcr = excluded.chg_oi_pcr,
-                    max_pain = excluded.max_pain,
-                    call_wall = excluded.call_wall,
-                    put_wall = excluded.put_wall,
-                    net_ce_oi_chg = excluded.net_ce_oi_chg,
-                    net_pe_oi_chg = excluded.net_pe_oi_chg,
-                    iv_skew = excluded.iv_skew,
-                    atm_iv = excluded.atm_iv,
-                    market_state = excluded.market_state,
-                    what_is_happening = excluded.what_is_happening,
-                    what_could_happen = excluded.what_could_happen,
-                    quant_suggestion = excluded.quant_suggestion,
-                    snapshot_json = excluded.snapshot_json;
-                """, (
-                    session_date, slot_time, ts_ist, w["expiry"], spot, atm_strike,
-                    atm_ce_ltp, atm_pe_ltp, straddle_prem, overall_pcr, near_atm_pcr, atm_pcr,
-                    chg_oi_pcr, max_pain, call_wall, put_wall, net_ce_chg, net_pe_chg,
-                    iv_skew, atm_iv, market_state, what_is_happening, what_could_happen,
-                    quant_suggestion, json.dumps(snap_meta)
-                ))
+                cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+                has_ds = "data_source" in cols
+                if has_ds:
+                    conn.execute("""
+                    INSERT INTO intraday_option_snapshots (
+                        session_date, slot_time, timestamp_ist, expiry_date, spot_price, atm_strike,
+                        atm_ce_ltp, atm_pe_ltp, straddle_premium, overall_pcr, near_atm_pcr, atm_pcr,
+                        chg_oi_pcr, max_pain, call_wall, put_wall, net_ce_oi_chg, net_pe_oi_chg,
+                        iv_skew, atm_iv, market_state, what_is_happening, what_could_happen,
+                        quant_suggestion, snapshot_json, data_source
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(session_date, slot_time) DO UPDATE SET
+                        timestamp_ist = excluded.timestamp_ist,
+                        expiry_date = excluded.expiry_date,
+                        spot_price = excluded.spot_price,
+                        atm_strike = excluded.atm_strike,
+                        atm_ce_ltp = excluded.atm_ce_ltp,
+                        atm_pe_ltp = excluded.atm_pe_ltp,
+                        straddle_premium = excluded.straddle_premium,
+                        overall_pcr = excluded.overall_pcr,
+                        near_atm_pcr = excluded.near_atm_pcr,
+                        atm_pcr = excluded.atm_pcr,
+                        chg_oi_pcr = excluded.chg_oi_pcr,
+                        max_pain = excluded.max_pain,
+                        call_wall = excluded.call_wall,
+                        put_wall = excluded.put_wall,
+                        net_ce_oi_chg = excluded.net_ce_oi_chg,
+                        net_pe_oi_chg = excluded.net_pe_oi_chg,
+                        iv_skew = excluded.iv_skew,
+                        atm_iv = excluded.atm_iv,
+                        market_state = excluded.market_state,
+                        what_is_happening = excluded.what_is_happening,
+                        what_could_happen = excluded.what_could_happen,
+                        quant_suggestion = excluded.quant_suggestion,
+                        snapshot_json = excluded.snapshot_json,
+                        data_source = excluded.data_source;
+                    """, (
+                        session_date, slot_time, ts_ist, w["expiry"], spot, atm_strike,
+                        atm_ce_ltp, atm_pe_ltp, straddle_prem, overall_pcr, near_atm_pcr, atm_pcr,
+                        chg_oi_pcr, max_pain, call_wall, put_wall, net_ce_chg, net_pe_chg,
+                        iv_skew, atm_iv, market_state, what_is_happening, what_could_happen,
+                        quant_suggestion, json.dumps(snap_meta), "LIVE"
+                    ))
+                else:
+                    conn.execute("""
+                    INSERT INTO intraday_option_snapshots (
+                        session_date, slot_time, timestamp_ist, expiry_date, spot_price, atm_strike,
+                        atm_ce_ltp, atm_pe_ltp, straddle_premium, overall_pcr, near_atm_pcr, atm_pcr,
+                        chg_oi_pcr, max_pain, call_wall, put_wall, net_ce_oi_chg, net_pe_oi_chg,
+                        iv_skew, atm_iv, market_state, what_is_happening, what_could_happen,
+                        quant_suggestion, snapshot_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(session_date, slot_time) DO UPDATE SET
+                        timestamp_ist = excluded.timestamp_ist,
+                        expiry_date = excluded.expiry_date,
+                        spot_price = excluded.spot_price,
+                        atm_strike = excluded.atm_strike,
+                        atm_ce_ltp = excluded.atm_ce_ltp,
+                        atm_pe_ltp = excluded.atm_pe_ltp,
+                        straddle_premium = excluded.straddle_premium,
+                        overall_pcr = excluded.overall_pcr,
+                        near_atm_pcr = excluded.near_atm_pcr,
+                        atm_pcr = excluded.atm_pcr,
+                        chg_oi_pcr = excluded.chg_oi_pcr,
+                        max_pain = excluded.max_pain,
+                        call_wall = excluded.call_wall,
+                        put_wall = excluded.put_wall,
+                        net_ce_oi_chg = excluded.net_ce_oi_chg,
+                        net_pe_oi_chg = excluded.net_pe_oi_chg,
+                        iv_skew = excluded.iv_skew,
+                        atm_iv = excluded.atm_iv,
+                        market_state = excluded.market_state,
+                        what_is_happening = excluded.what_is_happening,
+                        what_could_happen = excluded.what_could_happen,
+                        quant_suggestion = excluded.quant_suggestion,
+                        snapshot_json = excluded.snapshot_json;
+                    """, (
+                        session_date, slot_time, ts_ist, w["expiry"], spot, atm_strike,
+                        atm_ce_ltp, atm_pe_ltp, straddle_prem, overall_pcr, near_atm_pcr, atm_pcr,
+                        chg_oi_pcr, max_pain, call_wall, put_wall, net_ce_chg, net_pe_chg,
+                        iv_skew, atm_iv, market_state, what_is_happening, what_could_happen,
+                        quant_suggestion, json.dumps(snap_meta)
+                    ))
                 conn.commit()
 
         if sync_cloud:
@@ -2012,14 +2131,66 @@ class NiftyAnalyticsEngine:
 
         return self.get_intraday_expiry_dashboard(session_date=session_date, interval_mode=interval_mode)
 
-    def _get_snapshots_for_date(self, session_date: str) -> List[Dict[str, Any]]:
+    def _get_snapshots_for_date(
+        self,
+        session_date: str,
+        include_simulated: bool = False,
+        allow_unverified_historical: bool = False
+    ) -> List[Dict[str, Any]]:
         with state_engine._lock:
             with state_engine._get_connection() as conn:
-                rows = conn.execute(
-                    "SELECT * FROM intraday_option_snapshots WHERE session_date = ? ORDER BY slot_time ASC",
-                    (session_date,)
-                ).fetchall()
-                return [dict(r) for r in rows]
+                cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+                has_ds = "data_source" in cols
+                if not has_ds:
+                    if not allow_unverified_historical:
+                        return []
+                    rows = conn.execute(
+                        "SELECT * FROM intraday_option_snapshots WHERE session_date = ? "
+                        "AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%\"gapfilled\": true%')) "
+                        "ORDER BY slot_time ASC",
+                        (session_date,)
+                    ).fetchall()
+                    return [dict(r) for r in rows]
+
+                if allow_unverified_historical:
+                    rows = conn.execute(
+                        "SELECT * FROM intraday_option_snapshots WHERE session_date = ? "
+                        "AND data_source IN ('LIVE', 'UNVERIFIED_HISTORICAL') "
+                        "AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%\"gapfilled\": true%')) "
+                        "ORDER BY slot_time ASC",
+                        (session_date,)
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT * FROM intraday_option_snapshots WHERE session_date = ? "
+                        "AND data_source = 'LIVE' "
+                        "AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%\"gapfilled\": true%')) "
+                        "ORDER BY slot_time ASC",
+                        (session_date,)
+                    ).fetchall()
+
+                results = [dict(r) for r in rows]
+                if include_simulated:
+                    sim_snaps = self.get_simulated_snapshots_for_date(session_date)
+                    slot_map = {r["slot_time"]: r for r in results}
+                    for s in sim_snaps:
+                        if s.get("slot_time") not in slot_map:
+                            slot_map[s["slot_time"]] = s
+                    results = sorted(slot_map.values(), key=lambda x: str(x.get("slot_time") or ""))
+                return results
+
+    def get_simulated_snapshots_for_date(self, session_date: str) -> List[Dict[str, Any]]:
+        """Retrieves simulated option snapshots from the isolated simulation table."""
+        with state_engine._lock:
+            with state_engine._get_connection() as conn:
+                try:
+                    rows = conn.execute(
+                        "SELECT * FROM simulated_option_snapshots WHERE session_date = ? ORDER BY slot_time ASC",
+                        (session_date,)
+                    ).fetchall()
+                    return [dict(r) for r in rows]
+                except Exception:
+                    return []
 
     def auto_gapfill_missed_intraday_slots(
         self,
@@ -2193,22 +2364,26 @@ class NiftyAnalyticsEngine:
                     snap_meta = struct_res["snap_meta"]
                     snap_meta["reconciled_by"] = "AUTO_GAPFILL_WATCHDOG"
                     snap_meta["gapfilled"] = True
+                    snap_meta["data_source"] = "SIMULATED"
+                    snap_meta["is_simulated"] = True
+                    snap_meta["simulation_method"] = "THETA_PCR_INTERPOLATION"
 
                     conn.execute("""
-                        INSERT OR REPLACE INTO intraday_option_snapshots (
+                        INSERT OR REPLACE INTO simulated_option_snapshots (
                             session_date, slot_time, timestamp_ist, expiry_date,
                             spot_price, atm_strike, atm_ce_ltp, atm_pe_ltp,
                             straddle_premium, overall_pcr, near_atm_pcr, atm_pcr,
                             chg_oi_pcr, max_pain, call_wall, put_wall,
                             net_ce_oi_chg, net_pe_oi_chg, iv_skew, atm_iv,
                             market_state, what_is_happening, what_could_happen,
-                            quant_suggestion, snapshot_json
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            quant_suggestion, snapshot_json, data_source, simulation_method
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         target_date, slot_code, ts_ist, exp_label, spot, atm_strike,
                         ce_ltp, pe_ltp, strad, pcr, pcr, pcr,
                         pcr, max_p, call_w, put_w, 0, 0, 0.0, dynamic_iv,
-                        m_state, what_is, what_could, quant_sugg, json.dumps(snap_meta)
+                        m_state, what_is, what_could, quant_sugg, json.dumps(snap_meta),
+                        "SIMULATED", "THETA_PCR_INTERPOLATION"
                     ))
                     existing_sorted.append((slot_mins, {
                         "session_date": target_date, "slot_time": slot_code,
@@ -2225,14 +2400,16 @@ class NiftyAnalyticsEngine:
         self,
         session_date: Optional[str] = None,
         interval_mode: str = "15m",
-        force_refresh: bool = False
+        force_refresh: bool = False,
+        include_simulated: bool = False,
+        allow_unverified_historical: bool = False
     ) -> Dict[str, Any]:
         """
         Returns the complete Intraday Weekly Option Expiry Dashboard:
         - Supports interval_mode: '15m', '30m' (Recommended Institutional Standard), and '50m'
-        - In-memory cached (30s market hours, 300s off-market) for sub-millisecond API response.
-        - If no snapshot exists yet for today, captures the current live snapshot automatically!
-        - Automatically heals and gapfills any missed past slots so there are ZERO BLANKS!
+        - In-memory cached (15s market hours, 300s off-market) for sub-millisecond API response.
+        - If no snapshot exists yet for today and market is active, captures the current live snapshot.
+        - Zero synthetic or manufactured snapshots: missed past slots are reported honestly as MISSED_OR_PRE_CAPTURE.
         - Includes the schedule tracker, all recorded snapshots, live weekly option chain summary,
           and What Is Happening / What Could Happen analysis.
         """
@@ -2242,14 +2419,26 @@ class NiftyAnalyticsEngine:
         now_ts = time.time()
         market_open = NSEMarketCalendar.can_execute_trades()
         cache_ttl = 15 if market_open else 300
-        cache_key = f"{session_date}_{interval_mode}"
+        cache_key = f"{session_date}_{interval_mode}_{include_simulated}_{allow_unverified_historical}"
 
         if not force_refresh and cache_key in self._intraday_expiry_cache and (now_ts - self._intraday_expiry_cache_ts) < cache_ttl:
             return self._intraday_expiry_cache[cache_key]
 
-        # Automatically gapfill any elapsed slots that were missed
-        self.auto_gapfill_missed_intraday_slots(session_date=session_date, interval_mode=interval_mode)
-        snaps = self._get_snapshots_for_date(session_date)
+        snaps = self._get_snapshots_for_date(
+            session_date,
+            include_simulated=include_simulated,
+            allow_unverified_historical=allow_unverified_historical
+        )
+        if include_simulated:
+            sim_snaps = self.get_simulated_snapshots_for_date(session_date)
+            existing_slots = {s.get("slot_time") for s in snaps}
+            for sim in sim_snaps:
+                if sim.get("slot_time") not in existing_slots:
+                    sim_copy = dict(sim)
+                    sim_copy["is_simulated"] = True
+                    snaps.append(sim_copy)
+            snaps.sort(key=lambda s: s.get("slot_time", ""))
+
         dt_now = now_ist()
         is_today = (session_date == dt_now.strftime("%Y-%m-%d"))
         mins_now = dt_now.hour * 60 + dt_now.minute
@@ -2257,17 +2446,32 @@ class NiftyAnalyticsEngine:
             oc = self.fetch_and_analyze_option_chain(force_refresh=False)
             if oc.get("status") == "OK":
                 self.capture_intraday_50min_snapshot(sync_cloud=False, interval_mode=interval_mode)
-                self.auto_gapfill_missed_intraday_slots(session_date=session_date, interval_mode=interval_mode)
-                snaps = self._get_snapshots_for_date(session_date)
+                snaps = self._get_snapshots_for_date(
+                    session_date,
+                    include_simulated=include_simulated,
+                    allow_unverified_historical=allow_unverified_historical
+                )
                 if not snaps:
                     with state_engine._lock:
                         with state_engine._get_connection() as conn:
-                            latest_row = conn.execute(
-                                "SELECT session_date FROM intraday_option_snapshots ORDER BY session_date DESC LIMIT 1"
-                            ).fetchone()
+                            cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+                            if "data_source" in cols:
+                                query_source = "data_source IN ('LIVE', 'UNVERIFIED_HISTORICAL')" if allow_unverified_historical else "data_source = 'LIVE'"
+                                latest_row = conn.execute(
+                                    f"SELECT session_date FROM intraday_option_snapshots "
+                                    f"WHERE {query_source} "
+                                    f"  AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%\"gapfilled\": true%')) "
+                                    f"ORDER BY session_date DESC LIMIT 1"
+                                ).fetchone()
+                            else:
+                                latest_row = None
                             if latest_row:
                                 session_date = latest_row["session_date"]
-                                snaps = self._get_snapshots_for_date(session_date)
+                                snaps = self._get_snapshots_for_date(
+                                    session_date,
+                                    include_simulated=include_simulated,
+                                    allow_unverified_historical=allow_unverified_historical
+                                )
 
         # Select schedule slot definition according to chosen interval
         if interval_mode == "15m":
@@ -3725,11 +3929,17 @@ class NiftyAnalyticsEngine:
                     if r["trade_date"] and r["fii_fut_long_pct"] is not None:
                         fii_oi_map[str(r["trade_date"])] = float(r["fii_fut_long_pct"])
 
-                for r in conn.execute("SELECT session_date, near_atm_pcr, chg_oi_pcr FROM intraday_option_snapshots").fetchall():
-                    if r["session_date"] and r["near_atm_pcr"] is not None:
-                        pcr = float(r["near_atm_pcr"] or 1.0)
-                        chg_pcr = float(r["chg_oi_pcr"] or 1.0)
-                        options_pcr_map[str(r["session_date"])] = (pcr - 1.0) * 30.0 + (chg_pcr - 1.0) * 20.0
+                cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+                if "data_source" in cols:
+                    for r in conn.execute(
+                        "SELECT session_date, near_atm_pcr, chg_oi_pcr FROM intraday_option_snapshots "
+                        "WHERE data_source = 'LIVE' "
+                        "  AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%\"gapfilled\": true%'))"
+                    ).fetchall():
+                        if r["session_date"] and r["near_atm_pcr"] is not None:
+                            pcr = float(r["near_atm_pcr"] or 1.0)
+                            chg_pcr = float(r["chg_oi_pcr"] or 1.0)
+                            options_pcr_map[str(r["session_date"])] = (pcr - 1.0) * 30.0 + (chg_pcr - 1.0) * 20.0
         except Exception as e:
             logger.debug(f"Auxiliary SQLite history load notice: {e}")
 
@@ -6216,7 +6426,7 @@ class NiftyAnalyticsEngine:
         strategy_name = data.get("strategy_name") or "Custom Options Strategy"
         symbol = data.get("symbol") or "NIFTY"
         expiry_date = data.get("expiry_date") or ""
-        expiry_type = data.get("expiry_type") or "WEEKLY"
+        expiry_type = data.get("expiry_type")
         spot_at_entry = float(data.get("spot_at_entry") or 0.0)
         net_premium = float(data.get("net_premium") or 0.0)
         max_profit = data.get("max_profit")
@@ -6258,13 +6468,39 @@ class NiftyAnalyticsEngine:
             except (ValueError, TypeError) as ex:
                 raise ValueError(f"Invalid strike parameter: {l.get('strike')}: {ex}")
 
-            # Quantity and Lot validation
+            # Quantity and Lot validation with authoritative contract lot-size resolution
+            leg_ls = l.get("lot_size")
+            if not leg_ls or int(leg_ls) <= 0:
+                try:
+                    leg_ls = resolve_nifty_lot_size(
+                        expiry_date=l.get("expiry_date") or expiry_date,
+                        contract_metadata=l,
+                        contract_type=l.get("contract_type") or l.get("expiry_type") or expiry_type,
+                        symbol=symbol,
+                        strict=True
+                    )
+                except Exception as ex:
+                    logger.error(f"🛑 [DEPLOY REJECTED] Cannot resolve authoritative lot size for leg {l}: {ex}")
+                    raise ValueError(f"Cannot deploy options strategy: unable to resolve authoritative lot size: {ex}")
+            l["lot_size"] = int(leg_ls)
+
             try:
-                q = int(l.get("qty") or (int(l.get("lots", 1)) * NIFTY_LOT_SIZE))
-                if q <= 0:
-                    raise ValueError(f"Invalid contract quantity {q}. Must be positive integer.")
-                l["qty"] = q
-                l["lots"] = max(1, round(q / NIFTY_LOT_SIZE))
+
+                if l.get("qty") is not None:
+                    q = int(l["qty"])
+                    if q <= 0:
+                        raise ValueError(f"Invalid contract quantity {q}. Must be positive integer.")
+                    l["qty"] = q
+                    l["lots"] = max(1, round(q / l["lot_size"]))
+                elif l.get("lots") is not None:
+                    lots = int(l["lots"])
+                    if lots <= 0:
+                        raise ValueError(f"Invalid contract lots {lots}. Must be positive integer.")
+                    l["lots"] = lots
+                    l["qty"] = lots * l["lot_size"]
+                else:
+                    l["lots"] = 1
+                    l["qty"] = l["lot_size"]
             except (ValueError, TypeError) as ex:
                 raise ValueError(f"Invalid quantity parameter: {ex}")
 
@@ -6354,7 +6590,13 @@ class NiftyAnalyticsEngine:
         has_short = any(l["action"] == "SELL" for l in legs)
         if has_short:
             short_prem_sum = sum(l["entry_price"] for l in legs if l["action"] == "SELL")
-            est_margin = round(max(45000.0, (0.15 * max(spot_at_entry, 20000.0) + short_prem_sum) * NIFTY_LOT_SIZE), 2)
+            strat_ls = next((int(l["lot_size"]) for l in legs if l.get("lot_size")), None)
+            if not strat_ls:
+                try:
+                    strat_ls = resolve_nifty_lot_size(expiry_date=expiry_date, contract_type=expiry_type, symbol=symbol, strict=True)
+                except Exception as ex:
+                    raise ValueError(f"Cannot deploy options strategy: unable to resolve authoritative lot size: {ex}")
+            est_margin = round(max(45000.0, (0.15 * max(spot_at_entry, 20000.0) + short_prem_sum) * strat_ls), 2)
         else:
             est_margin = round(abs(net_premium), 2)
 
@@ -6415,7 +6657,8 @@ class NiftyAnalyticsEngine:
             typ = l.get("type", "CE")
             stk = l.get("strike", 0)
             lots = l.get("lots", 1)
-            qty = l.get("qty", lots * NIFTY_LOT_SIZE)
+            leg_ls = int(l.get("lot_size") or resolve_nifty_lot_size(expiry_date=expiry_date, strict=False))
+            qty = l.get("qty", lots * leg_ls)
             px = l.get("entry_price", l.get("price", 0.0))
             icon = "🟢" if act == "BUY" else "🔴"
             leg_bullets.append(f"{icon} Leg {i}: {act} {stk} {typ} | {lots} Lots ({qty} Qty) @ ₹{px:.2f}")
@@ -6493,7 +6736,29 @@ class NiftyAnalyticsEngine:
                     act = str(l.get("action", "BUY")).upper()
                     stk = int(round(float(l.get("strike", 0))))
                     typ = str(l.get("type", "CE")).upper()
-                    qty = int(l.get("qty") or NIFTY_LOT_SIZE)
+                    l_exp = l.get("expiry_date")
+                    l_type = l.get("contract_type") or l.get("expiry_type")
+                    if not l_exp:
+                        l_exp = current_strat.get("expiry_date")
+                        if not l_type:
+                            l_type = current_strat.get("expiry_type")
+
+                    leg_ls = l.get("lot_size")
+                    if not leg_ls or int(leg_ls) <= 0:
+                        try:
+                            leg_ls = resolve_nifty_lot_size(
+                                expiry_date=l_exp,
+                                contract_metadata=l,
+                                contract_type=l_type,
+                                symbol=current_strat.get("symbol") or "NIFTY",
+                                strict=True
+                            )
+                        except Exception as ex:
+                            logger.error(f"🛑 [ADJUST REJECTED] Cannot resolve authoritative lot size for leg: {ex}")
+                            return {"status": "ERROR", "message": f"Cannot adjust strategy: unable to resolve authoritative lot size: {ex}"}
+                    leg_ls = int(leg_ls)
+                    l["lot_size"] = leg_ls
+                    qty = int(l.get("qty") or (int(l.get("lots", 1)) * leg_ls))
                     ent_px = float(l.get("entry_price") or l.get("price") or 0.0)
 
                     exit_px = l.get("exit_price")
@@ -6545,7 +6810,7 @@ class NiftyAnalyticsEngine:
                 # Recalculate Net Premium across active/open legs
                 open_legs = [l for l in cleaned_legs if not l.get("exit_price")]
                 if open_legs:
-                    calc_prem = sum(((-1 if l.get("action") == "BUY" else 1) * float(l.get("entry_price", 0.0))) * int(l.get("qty", NIFTY_LOT_SIZE)) for l in open_legs)
+                    calc_prem = sum(((-1 if l.get("action") == "BUY" else 1) * float(l.get("entry_price", 0.0))) * int(l.get("qty") or (int(l.get("lots", 1)) * int(l.get("lot_size", 0)))) for l in open_legs)
                 else:
                     calc_prem = 0.0
                 net_premium = float(data.get("net_premium") if data.get("net_premium") is not None else calc_prem)
@@ -6608,7 +6873,7 @@ class NiftyAnalyticsEngine:
             act = l.get("action", "BUY")
             typ = l.get("type", "CE")
             stk = l.get("strike", 0)
-            qty = l.get("qty", NIFTY_LOT_SIZE)
+            qty = l.get("qty") or (int(l.get("lots", 1)) * int(l.get("lot_size") or resolve_nifty_lot_size(expiry_date=current_strat.get("expiry_date"), strict=False)))
             px = l.get("entry_price", l.get("price", 0.0))
             if l.get("exit_price"):
                 pnl = l.get("leg_pnl", 0.0)
@@ -6702,7 +6967,20 @@ class NiftyAnalyticsEngine:
             stk = leg.get("strike")
             opt_type = leg.get("type", "CE")
             action = leg.get("action", "BUY")
-            qty = leg.get("qty", NIFTY_LOT_SIZE)
+            leg_ls = leg.get("lot_size")
+            if not leg_ls or int(leg_ls) <= 0:
+                try:
+                    leg_ls = resolve_nifty_lot_size(
+                        expiry_date=leg.get("expiry_date") or d.get("expiry_date"),
+                        contract_metadata=leg,
+                        contract_type=leg.get("contract_type") or d.get("expiry_type"),
+                        symbol=d.get("symbol") or "NIFTY",
+                        strict=True
+                    )
+                except Exception as ex:
+                    raise ValueError(f"Cannot exit strategy {strategy_id}: unable to resolve authoritative lot size for leg {stk} {opt_type}: {ex}")
+            leg_ls = int(leg_ls)
+            qty = leg.get("qty") or (int(leg.get("lots", 1)) * leg_ls)
             entry_px = float(leg.get("entry_price", leg.get("price", 0.0)))
             try:
                 stk_int = int(round(float(stk)))
@@ -6871,9 +7149,10 @@ class NiftyAnalyticsEngine:
                 stk = float(leg.get("strike", spot))
                 opt_type = str(leg.get("type", "CE")).upper()
                 action = str(leg.get("action", "BUY")).upper()
-                qty = float(leg.get("qty", NIFTY_LOT_SIZE))
+                leg_ls = int(leg.get("lot_size") or resolve_nifty_lot_size(expiry_date=leg.get("expiry_date") or strat_exp, strict=False))
+                qty = float(leg.get("qty", leg_ls))
                 sign = 1.0 if action == "BUY" else -1.0
-                lots = qty / float(NIFTY_LOT_SIZE)
+                lots = qty / float(leg_ls)
 
                 iv_val = float(leg.get("iv") or base_iv)
                 sig = max(0.02, iv_val / 100.0)
@@ -7041,7 +7320,8 @@ class NiftyAnalyticsEngine:
                 stk = leg.get("strike")
                 opt_type = leg.get("type", "CE")
                 action = leg.get("action", "BUY")
-                qty = leg.get("qty", NIFTY_LOT_SIZE)
+                leg_ls = int(leg.get("lot_size") or resolve_nifty_lot_size(expiry_date=d.get("expiry_date"), strict=False))
+                qty = leg.get("qty") or (int(leg.get("lots", 1)) * leg_ls)
                 entry_px = float(leg.get("entry_price") or leg.get("price") or leg.get("premium") or 0.0)
 
                 try:
@@ -7216,6 +7496,19 @@ class NiftyAnalyticsEngine:
         """
         if not strikes_data:
             raise ValueError("Strikes data is required to construct strategy legs.")
+
+        if lot_size is None or int(lot_size) <= 0:
+            try:
+                lot_size = resolve_nifty_lot_size(
+                    expiry_date=expiry_date,
+                    contract_type=expiry_type,
+                    symbol="NIFTY",
+                    strict=True
+                )
+            except Exception as ex:
+                raise ValueError(f"Cannot build strategy legs: unable to resolve authoritative lot size: {ex}")
+        else:
+            lot_size = int(lot_size)
 
         def _get_strike(target: float):
             return min(strikes_data, key=lambda s: abs(s["strike"] - target))
@@ -7641,8 +7934,12 @@ class NiftyAnalyticsEngine:
         else:
             raise ValueError(f"Unknown options strategy type: '{strategy_type}'. Cannot construct strategy legs.")
 
+        for leg_obj in legs:
+            leg_obj["lot_size"] = lot_size
+
         return {
             "strategy_type": st,
+            "lot_size": lot_size,
             "legs": legs,
             "net_premium": net_premium,
             "max_profit": max_profit,
@@ -7867,7 +8164,7 @@ class NiftyAnalyticsEngine:
                         strikes_data=strikes_source,
                         atm_strike=atm_source,
                         spot_price=spot_price,
-                        lot_size=NIFTY_LOT_SIZE,
+                        lot_size=resolve_nifty_lot_size(expiry_date=expiry_source, strict=False),
                         expiry_date=expiry_source,
                         expiry_type=expiry_type_lbl
                     )
@@ -7992,7 +8289,8 @@ class NiftyAnalyticsEngine:
                         stk = float(leg.get("strike", 0.0))
                         opt_t = str(leg.get("type", "CE")).upper()
                         act = str(leg.get("action", "BUY")).upper()
-                        qty = int(leg.get("qty", NIFTY_LOT_SIZE))
+                        leg_ls = int(leg.get("lot_size") or resolve_nifty_lot_size(expiry_date=d.get("expiry_date"), strict=False))
+                        qty = int(leg.get("qty") or (int(leg.get("lots", 1)) * leg_ls))
                         e_px = float(leg.get("entry_price", leg.get("price", 0.0)))
 
                         intrinsic = max(0.0, settle_spot - stk) if opt_t == "CE" else max(0.0, stk - settle_spot)
@@ -8231,8 +8529,10 @@ class NiftyAnalyticsEngine:
             self._equity_curves_cache_ts = now_ts
         return result
 
+    _cached_nifty_prev_close: Optional[Tuple[str, float]] = None
+
     @classmethod
-    def get_nifty_prev_close(cls) -> float:
+    def get_nifty_prev_close(cls) -> Optional[float]:
         """
         Retrieves the authentic previous trading session close for NIFTY 50 (^NSEI).
         Dynamically resolves from:
@@ -8321,7 +8621,8 @@ class NiftyAnalyticsEngine:
 
         if prev_close_val and prev_close_val > 0:
             cls._cached_nifty_prev_close = (now_date_str, prev_close_val)
-        return prev_close_val or 22811.35
+            return prev_close_val
+        return None
 
     def get_live_nifty_spot(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
@@ -8350,9 +8651,9 @@ class NiftyAnalyticsEngine:
                 cached["is_live"] = is_market_open
                 cached["market_status"] = mkt_state_str
                 cached["session_phase"] = mkt_phase
-                if cached.get("prev_close", 0) <= 0 or (cached.get("change_pts") == 0.0 and cached.get("price", 0) != prev_close):
+                if cached.get("prev_close") is None or (cached.get("change_pts") == 0.0 and prev_close and cached.get("price", 0) != prev_close):
                     spot_c = float(cached.get("price") or 0.0)
-                    if spot_c > 0 and prev_close > 0:
+                    if spot_c > 0 and prev_close and prev_close > 0:
                         cached["prev_close"] = prev_close
                         cached["change_pts"] = round(spot_c - prev_close, 2)
                         cached["change_pct"] = round((cached["change_pts"] / prev_close) * 100.0, 2)
@@ -8369,9 +8670,13 @@ class NiftyAnalyticsEngine:
             if kotak_tick and float(kotak_tick.get("ltp") or 0.0) > 0:
                 spot = float(kotak_tick["ltp"])
                 tick_close = float(kotak_tick.get("close") or 0.0)
-                ref_close = tick_close if tick_close > 0 else prev_close
-                diff_pts = round(float(kotak_tick.get("change") or (spot - ref_close)), 2)
-                diff_pct = round(float(kotak_tick.get("change_pct") or ((diff_pts / ref_close) * 100.0 if ref_close > 0 else 0.0)), 2)
+                ref_close = tick_close if tick_close > 0 else (prev_close or 0.0)
+                if ref_close > 0:
+                    diff_pts = round(float(kotak_tick.get("change") or (spot - ref_close)), 2)
+                    diff_pct = round(float(kotak_tick.get("change_pct") or ((diff_pts / ref_close) * 100.0)), 2)
+                else:
+                    diff_pts = float(kotak_tick.get("change")) if kotak_tick.get("change") is not None else None
+                    diff_pct = float(kotak_tick.get("change_pct")) if kotak_tick.get("change_pct") is not None else None
                 day_high = float(kotak_tick.get("high") or spot)
                 day_low = float(kotak_tick.get("low") or spot)
                 atm_strike = int(round(spot / 50.0) * 50)
@@ -8414,8 +8719,8 @@ class NiftyAnalyticsEngine:
                 if spot_val and float(spot_val) > 0:
                     spot = float(spot_val)
                     atm_strike = int(round(spot / 50.0) * 50)
-                    diff_pts = round(spot - prev_close, 2)
-                    diff_pct = round((diff_pts / prev_close) * 100.0, 2) if prev_close > 0 else 0.0
+                    diff_pts = round(spot - prev_close, 2) if (prev_close and prev_close > 0) else None
+                    diff_pct = round((diff_pts / prev_close) * 100.0, 2) if (prev_close and prev_close > 0 and diff_pts is not None) else None
                     res = {
                         "price": round(spot, 2),
                         "change_pts": diff_pts,
@@ -8446,9 +8751,9 @@ class NiftyAnalyticsEngine:
                 cached["timestamp"] = ts_now
                 cached["source"] = "KOTAK_NEO_CACHE"
                 cached["is_live"] = is_market_open
-                if cached.get("prev_close", 0) <= 0 or (cached.get("change_pts") == 0.0 and cached.get("price", 0) != prev_close):
+                if cached.get("prev_close") is None or (cached.get("change_pts") == 0.0 and prev_close and cached.get("price", 0) != prev_close):
                     spot_c = float(cached.get("price") or 0.0)
-                    if spot_c > 0 and prev_close > 0:
+                    if spot_c > 0 and prev_close and prev_close > 0:
                         cached["prev_close"] = prev_close
                         cached["change_pts"] = round(spot_c - prev_close, 2)
                         cached["change_pct"] = round((cached["change_pts"] / prev_close) * 100.0, 2)
@@ -8457,8 +8762,8 @@ class NiftyAnalyticsEngine:
                 cached_spot = float(self._option_chain_mem_cache.get("spot_price") or 0.0)
                 if cached_spot > 0:
                     atm_k = int(round(cached_spot / 50.0) * 50)
-                    diff_pts = round(cached_spot - prev_close, 2)
-                    diff_pct = round((diff_pts / prev_close) * 100.0, 2) if prev_close > 0 else 0.0
+                    diff_pts = round(cached_spot - prev_close, 2) if (prev_close and prev_close > 0) else None
+                    diff_pct = round((diff_pts / prev_close) * 100.0, 2) if (prev_close and prev_close > 0 and diff_pts is not None) else None
                     return {
                         "price": round(cached_spot, 2),
                         "change_pts": diff_pts,
@@ -8479,8 +8784,8 @@ class NiftyAnalyticsEngine:
         if persisted and isinstance(persisted, dict) and persisted.get("spot_price"):
             cached_spot = float(persisted["spot_price"])
             atm_k = int(round(cached_spot / 50.0) * 50)
-            diff_pts = round(cached_spot - prev_close, 2)
-            diff_pct = round((diff_pts / prev_close) * 100.0, 2) if prev_close > 0 else 0.0
+            diff_pts = round(cached_spot - prev_close, 2) if (prev_close and prev_close > 0) else None
+            diff_pct = round((diff_pts / prev_close) * 100.0, 2) if (prev_close and prev_close > 0 and diff_pts is not None) else None
             return {
                 "price": round(cached_spot, 2),
                 "change_pts": diff_pts,
@@ -8501,34 +8806,39 @@ class NiftyAnalyticsEngine:
 
 
 
-        # 5. Fallback to latest snapshot in DB
+        # 5. Fallback to latest empirical snapshot with verified LIVE provenance in DB
         with state_engine._lock:
             with state_engine._get_connection() as conn:
-                r = conn.execute(
-                    "SELECT spot_price, timestamp_ist FROM intraday_option_snapshots ORDER BY id DESC LIMIT 1"
-                ).fetchone()
-                if r:
-                    snap_ts = r["timestamp_ist"]
-                    actual_age = None
-                    if snap_ts:
-                        try:
-                            clean_t = snap_ts.replace(" IST", "").strip()
-                            dt_s = datetime.datetime.strptime(clean_t[:19], "%Y-%m-%d %H:%M:%S")
-                            actual_age = max(0.0, (now_ist().replace(tzinfo=None) - dt_s).total_seconds())
-                        except Exception:
-                            pass
-                    return {
-                        "price": float(r["spot_price"]),
-                        "provider_timestamp": snap_ts,
-                        "timestamp": snap_ts,
-                        "source": "DB_SNAPSHOT_CACHE",
-                        "is_live": False,
-                        "is_stale": True,
-                        "is_fallback": True,
-                        "market_status": mkt_state_str,
-                        "session_phase": mkt_phase,
-                        "age_seconds": round(actual_age, 1) if actual_age is not None else None
-                    }
+                cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+                if "data_source" in cols:
+                    r = conn.execute(
+                        "SELECT spot_price, timestamp_ist, data_source FROM intraday_option_snapshots "
+                        "WHERE data_source = 'LIVE' "
+                        "  AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%\"gapfilled\": true%')) "
+                        "ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    if r:
+                        snap_ts = r["timestamp_ist"]
+                        actual_age = None
+                        if snap_ts:
+                            try:
+                                clean_t = snap_ts.replace(" IST", "").strip()
+                                dt_s = datetime.datetime.strptime(clean_t[:19], "%Y-%m-%d %H:%M:%S")
+                                actual_age = max(0.0, (now_ist().replace(tzinfo=None) - dt_s).total_seconds())
+                            except Exception:
+                                pass
+                        return {
+                            "price": float(r["spot_price"]),
+                            "provider_timestamp": snap_ts,
+                            "timestamp": snap_ts,
+                            "source": "DB_SNAPSHOT_CACHE",
+                            "is_live": False,
+                            "is_stale": True,
+                            "is_fallback": True,
+                            "market_status": mkt_state_str,
+                            "session_phase": mkt_phase,
+                            "age_seconds": round(actual_age, 1) if actual_age is not None else None
+                        }
 
         # 6. Fallback to latest historical close in ohlcv_master_store or nifty_predictions_log
         try:

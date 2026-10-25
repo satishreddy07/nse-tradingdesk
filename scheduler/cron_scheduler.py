@@ -662,8 +662,6 @@ def scheduled_nifty_intraday_50min_job(slot_label: Optional[str] = None):
     try:
         from engines.nifty_analytics_engine import nifty_analytics_engine
         dash = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override=slot_label, sync_cloud=True)
-        # Auto-gapfill any missed earlier slots so the dashboard is 100% complete
-        nifty_analytics_engine.auto_gapfill_missed_intraday_slots(interval_mode="15m")
         snap = dash.get("latest_snapshot") or {}
         slot_t = snap.get('slot_time') or slot_label or current_dt.strftime("%H:%M")
         logger.info(
@@ -708,9 +706,6 @@ def _intraday_collector_watchdog():
                 # Active market window: 09:15 to 15:35 IST
                 if 555 <= mins <= 935:
                     from engines.nifty_analytics_engine import nifty_analytics_engine
-                    # Reconcile both 15m fine-grained slots and 30m standard slots
-                    nifty_analytics_engine.auto_gapfill_missed_intraday_slots(interval_mode="15m")
-                    nifty_analytics_engine.auto_gapfill_missed_intraday_slots(interval_mode="30m")
                     active_slot = nifty_analytics_engine._determine_current_slot(dt_now, interval_mode="15m")
                     if active_slot:
                         today_str = dt_now.strftime("%Y-%m-%d")

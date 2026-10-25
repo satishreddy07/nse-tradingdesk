@@ -229,10 +229,16 @@ class DataWatchdog:
             try:
                 t0 = time.time()
                 with state_engine._get_connection() as conn:
-                    latest_snap = conn.execute(
-                        "SELECT session_date, slot_time, timestamp_ist, spot_price, atm_strike, market_state "
-                        "FROM intraday_option_snapshots ORDER BY id DESC LIMIT 1"
-                    ).fetchone()
+                    cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+                    if "data_source" in cols:
+                        latest_snap = conn.execute(
+                            "SELECT session_date, slot_time, timestamp_ist, spot_price, atm_strike, market_state "
+                            "FROM intraday_option_snapshots WHERE data_source = 'LIVE' "
+                            "  AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%\"gapfilled\": true%')) "
+                            "ORDER BY id DESC LIMIT 1"
+                        ).fetchone()
+                    else:
+                        latest_snap = None
                 t_latency = (time.time() - t0) * 1000.0
 
                 ep_intra = self._endpoints["intraday_desk"]

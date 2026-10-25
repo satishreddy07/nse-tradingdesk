@@ -71,7 +71,7 @@ from sklearn.preprocessing import StandardScaler
 
 from core.market_calendar import IST, now_ist, format_ist, NSEMarketCalendar
 from core.config import (
-    NIFTY_LOT_SIZE, RISK_FREE_RATE, DEFAULT_OPTIONS_IV, calc_regulatory_options_cost
+    NIFTY_LOT_SIZE, resolve_nifty_lot_size, RISK_FREE_RATE, DEFAULT_OPTIONS_IV, calc_regulatory_options_cost
 )
 from execution.state_engine import state_engine
 
@@ -1962,7 +1962,8 @@ class WeeklyMonthlyOptionsStrategyEngine:
                 "type": l.option_type,
                 "strike": l.strike,
                 "qty": l.qty,
-                "lots": max(1, l.qty // NIFTY_LOT_SIZE),
+                "lots": max(1, l.qty // int(getattr(l, "lot_size", None) or resolve_nifty_lot_size(expiry_date=expiry_date, contract_type="WEEKLY", symbol="NIFTY", strict=True))),
+                "lot_size": int(getattr(l, "lot_size", None) or resolve_nifty_lot_size(expiry_date=expiry_date, contract_type="WEEKLY", symbol="NIFTY", strict=True)),
                 "entry_price": l.original_entry_premium,
                 "current_price": l.original_entry_premium,
                 "sl_trigger": l.initial_sl_trigger,

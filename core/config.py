@@ -65,7 +65,20 @@ EQUITY_ROUND_TRIP_COST_RATE = float(os.environ.get("EQUITY_ROUND_TRIP_COST_RATE"
 
 
 # Options Quant Desk Defaults (Nifty 50 Lot Size = 65)
-NIFTY_LOT_SIZE = int(os.environ.get("NIFTY_LOT_SIZE", 65))
+from core.lot_size import (
+    resolve_nifty_lot_size,
+    get_nifty_lot_size,
+    calculate_contract_quantity,
+    calculate_lots_from_quantity,
+    enrich_leg_with_lot_metadata,
+    NIFTY_LOT_SIZE_SCHEDULE,
+    CURRENT_REGIME_NIFTY_LOT_SIZE,
+    AmbiguousLotSizeError
+)
+
+# Active default Nifty 50 lot size (NSE Circular Ref. No: NSE/FAOP/70616 effective Jan 2026 onwards)
+# Callers requiring contract-specific or historical accuracy should call resolve_nifty_lot_size(expiry_date=...)
+NIFTY_LOT_SIZE = int(os.environ.get("NIFTY_LOT_SIZE", CURRENT_REGIME_NIFTY_LOT_SIZE))
 
 # Scheduler Config (10:20 AM Morning & 3:00 PM MOC Close)
 SCHEDULE_MORNING_HOUR = int(os.environ.get("SCHEDULE_MORNING_HOUR", 10))

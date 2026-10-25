@@ -23,7 +23,7 @@ import pandas as pd
 import requests
 
 from core.market_calendar import IST, now_ist, format_ist, NSEMarketCalendar
-from core.config import NIFTY_LOT_SIZE
+from core.config import NIFTY_LOT_SIZE, resolve_nifty_lot_size
 from engines.state_engine import state_engine
 from core.telegram_vault import telegram_vault
 
@@ -1226,9 +1226,17 @@ class IntradayAnalyticsEngine:
         if spot <= 0:
             try:
                 from engines.kotak_neo_engine import kotak_neo_engine
-                spot = float(kotak_neo_engine.get_live_price("NIFTY 50") or 22800.0)
+                live_p = kotak_neo_engine.get_live_price("NIFTY 50")
+                if live_p and float(live_p) > 0:
+                    spot = float(live_p)
+                else:
+                    from engines.nifty_analytics_engine import nifty_analytics_engine
+                    spot_info = nifty_analytics_engine.get_live_nifty_spot()
+                    p = float(spot_info.get("price") or 0.0)
+                    if p > 0:
+                        spot = p
             except Exception:
-                spot = 22800.0
+                pass
 
         time_str = now.strftime("%H:%M")
         if cur_min < market_open_min:
@@ -1255,6 +1263,22 @@ class IntradayAnalyticsEngine:
             theta_phase = "POST_MARKET_SETTLED"
             decay_multiplier = 0.0
             phase_desc = "Trading session closed."
+
+        if spot <= 0:
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": "Market spot price unavailable for theta decay curve calculation",
+                "current_time_ist": time_str,
+                "session_progress_pct": session_progress_pct,
+                "theta_phase": theta_phase,
+                "phase_description": "Market spot price unavailable for theta calculation.",
+                "decay_acceleration_factor": decay_multiplier,
+                "base_atm_straddle_daily_pts": 0.0,
+                "current_decay_rate_pts_per_hour": 0.0,
+                "decay_rate_inr_per_lot_hour": 0.0,
+                "is_prime_harvest_window": False,
+                "decay_schedule": []
+            }
 
         milestones = [
             {"time": "09:15", "pct_elapsed": 0.0,  "decay_factor": 1.00},
@@ -1290,7 +1314,7 @@ class IntradayAnalyticsEngine:
             "decay_acceleration_factor": decay_multiplier,
             "base_atm_straddle_daily_pts": base_daily_straddle,
             "current_decay_rate_pts_per_hour": base_hourly_decay,
-            "decay_rate_inr_per_lot_hour": round(base_hourly_decay * float(NIFTY_LOT_SIZE), 1),
+            "decay_rate_inr_per_lot_hour": round(base_hourly_decay * float(resolve_nifty_lot_size(strict=False)), 1),
             "is_prime_harvest_window": (theta_phase == "PRIME_THETA_COLLAPSE_WINDOW"),
             "decay_schedule": decay_schedule
         }
@@ -1432,7 +1456,7 @@ class IntradayAnalyticsEngine:
             opt_type = str(leg.get("opt_type") or leg.get("option_type") or "CE").upper()
             action = str(leg.get("action") or "BUY").upper()
             lots = int(leg.get("lots") or 1)
-            lot_size = int(leg.get("lot_size") or NIFTY_LOT_SIZE)
+            lot_size = int(leg.get("lot_size") or resolve_nifty_lot_size(expiry_date=leg.get("expiry"), strict=False))
             total_qty = lots * lot_size
             expiry = leg.get("expiry")
 
@@ -1703,16 +1727,44 @@ class IntradayAnalyticsEngine:
         Determines whether an active delta-neutral strategy is within safe theta decay,
         or requires rebalancing adjustment.
         """
+        vol = float(iv or 12.5) / 100.0 if (iv and iv > 1.0) else float(iv or 0.125)
+        dte = float(dte_days or 5.0)
+
         spot = float(spot_price or 0.0)
         if spot <= 0:
             try:
                 from engines.kotak_neo_engine import kotak_neo_engine
-                spot = float(kotak_neo_engine.get_live_price("NIFTY 50") or 22800.0)
+                live_p = kotak_neo_engine.get_live_price("NIFTY 50")
+                if live_p and float(live_p) > 0:
+                    spot = float(live_p)
+                else:
+                    from engines.nifty_analytics_engine import nifty_analytics_engine
+                    spot_info = nifty_analytics_engine.get_live_nifty_spot()
+                    p = float(spot_info.get("price") or 0.0)
+                    if p > 0:
+                        spot = p
             except Exception:
-                spot = 22800.0
+                pass
 
-        vol = float(iv or 12.5) / 100.0 if (iv and iv > 1.0) else float(iv or 0.125)
-        dte = float(dte_days or 5.0)
+        if spot <= 0:
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": "Market spot price unavailable for delta neutral hedging band calculation",
+                "spot_price": None,
+                "iv_annualized_pct": round(vol * 100.0, 1),
+                "dte_days": dte,
+                "expected_move_1sigma_pts": 0.0,
+                "expected_move_2sigma_pts": 0.0,
+                "upper_1_sigma": None,
+                "lower_1_sigma": None,
+                "upper_2_sigma": None,
+                "lower_2_sigma": None,
+                "current_net_delta": round(net_delta, 3),
+                "delta_status": "DATA_UNAVAILABLE",
+                "action_required": False,
+                "adjustment_recommendation": "Market data unavailable. Rebalancing band calculation suspended.",
+                "timestamp_ist": format_ist()
+            }
         t_years = max(1e-4, dte / 365.0)
 
         sigma_1_pts = round(spot * vol * math.sqrt(t_years), 1)

@@ -69,15 +69,18 @@ class OptionsEdgeAnalyticsEngine:
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
             chain_data = nifty_analytics_engine.fetch_and_analyze_option_chain()
-            weekly_chain = chain_data.get("weekly", {})
-            spot = float(weekly_chain.get("spot_price") or 22600.0)
-            strikes = weekly_chain.get("strikes", [])
+            weekly_chain = chain_data.get("weekly", {}) if isinstance(chain_data, dict) else {}
+            spot = float(weekly_chain.get("spot_price") or 0.0)
+            if spot <= 0:
+                spot_info = nifty_analytics_engine.get_live_nifty_spot()
+                spot = float(spot_info.get("price") or 0.0)
+            strikes = weekly_chain.get("strikes", []) if isinstance(weekly_chain, dict) else []
         except Exception as e:
             logger.debug(f"OI pulse chain fetch notice: {e}")
-            return {"strikes": [], "dominant_regime": "NEUTRAL", "spot_price": 0.0}
+            return {"status": "DATA_UNAVAILABLE", "strikes": [], "dominant_regime": "DATA_UNAVAILABLE", "spot_price": 0.0}
 
-        if not strikes:
-            return {"strikes": [], "dominant_regime": "NEUTRAL", "spot_price": spot}
+        if spot <= 0 or not strikes:
+            return {"status": "DATA_UNAVAILABLE", "strikes": [], "dominant_regime": "DATA_UNAVAILABLE", "spot_price": spot if spot > 0 else 0.0}
 
         # Filter to near-ATM strikes (+- 8 strikes around spot)
         near_strikes = [s for s in strikes if abs(float(s.get("strike", 0)) - spot) <= 400]
@@ -176,25 +179,38 @@ class OptionsEdgeAnalyticsEngine:
         """
         with state_engine._lock:
             with state_engine._get_connection() as conn:
-                rows = conn.execute("""
-                    SELECT slot_time, spot_price, atm_strike, straddle_premium, atm_iv, atm_ce_ltp, atm_pe_ltp
-                    FROM intraday_option_snapshots
-                    WHERE session_date = ?
-                    ORDER BY slot_time ASC
-                """, (session_date,)).fetchall()
+                cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+                if "data_source" in cols:
+                    rows = conn.execute("""
+                        SELECT slot_time, spot_price, atm_strike, straddle_premium, atm_iv, atm_ce_ltp, atm_pe_ltp
+                        FROM intraday_option_snapshots
+                        WHERE session_date = ? AND data_source = 'LIVE'
+                          AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%"gapfilled": true%'))
+                        ORDER BY slot_time ASC
+                    """, (session_date,)).fetchall()
+                else:
+                    rows = []
 
         if not rows:
-            # Fallback to recent date
+            # Fallback to recent date with verified LIVE snapshots
             with state_engine._lock:
                 with state_engine._get_connection() as conn:
-                    latest_d = conn.execute("SELECT session_date FROM intraday_option_snapshots ORDER BY id DESC LIMIT 1").fetchone()
-                    if latest_d:
-                        rows = conn.execute("""
-                            SELECT slot_time, spot_price, atm_strike, straddle_premium, atm_iv, atm_ce_ltp, atm_pe_ltp
-                            FROM intraday_option_snapshots
-                            WHERE session_date = ?
-                            ORDER BY slot_time ASC
-                        """, (latest_d["session_date"],)).fetchall()
+                    cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+                    if "data_source" in cols:
+                        latest_d = conn.execute("""
+                            SELECT session_date FROM intraday_option_snapshots 
+                            WHERE data_source = 'LIVE' 
+                              AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%"gapfilled": true%')) 
+                            ORDER BY id DESC LIMIT 1
+                        """).fetchone()
+                        if latest_d:
+                            rows = conn.execute("""
+                                SELECT slot_time, spot_price, atm_strike, straddle_premium, atm_iv, atm_ce_ltp, atm_pe_ltp
+                                FROM intraday_option_snapshots
+                                WHERE session_date = ? AND data_source = 'LIVE'
+                                  AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%"gapfilled": true%'))
+                                ORDER BY slot_time ASC
+                            """, (latest_d["session_date"],)).fetchall()
 
         if not rows:
             return {
@@ -280,13 +296,20 @@ class OptionsEdgeAnalyticsEngine:
             logger.debug(f"IV Rank fetch notice: {e}")
 
         if not vix_series or len(vix_series) < 10:
-            # Fallback: estimate from intraday_option_snapshots
+            # Fallback: estimate from intraday_option_snapshots with verified LIVE provenance
             try:
                 with state_engine._lock:
                     with state_engine._get_connection() as conn:
-                        snap_ivs = conn.execute("SELECT DISTINCT atm_iv FROM intraday_option_snapshots WHERE atm_iv > 0 ORDER BY id DESC LIMIT 90").fetchall()
-                        if snap_ivs:
-                            vix_series = [float(r["atm_iv"]) for r in snap_ivs]
+                        cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+                        if "data_source" in cols:
+                            snap_ivs = conn.execute("""
+                                SELECT DISTINCT atm_iv FROM intraday_option_snapshots 
+                                WHERE atm_iv > 0 AND data_source = 'LIVE' 
+                                  AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%\"gapfilled\": true%')) 
+                                ORDER BY id DESC LIMIT 90
+                            """).fetchall()
+                            if snap_ivs:
+                                vix_series = [float(r["atm_iv"]) for r in snap_ivs]
             except Exception:
                 pass
 
@@ -336,11 +359,18 @@ class OptionsEdgeAnalyticsEngine:
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
             chain_data = nifty_analytics_engine.fetch_and_analyze_option_chain()
-            weekly_chain = chain_data.get("weekly", {})
-            spot = float(weekly_chain.get("spot_price") or 22600.0)
-            strikes = weekly_chain.get("strikes", [])
-        except Exception:
-            return {"spot": 0.0, "strikes": [], "total_net_gex_crores": 0.0, "gamma_flip_strike": 0}
+            weekly_chain = chain_data.get("weekly", {}) if isinstance(chain_data, dict) else {}
+            spot = float(weekly_chain.get("spot_price") or 0.0)
+            if spot <= 0:
+                spot_info = nifty_analytics_engine.get_live_nifty_spot()
+                spot = float(spot_info.get("price") or 0.0)
+            strikes = weekly_chain.get("strikes", []) if isinstance(weekly_chain, dict) else []
+        except Exception as e:
+            logger.debug(f"Strike GEX chain fetch notice: {e}")
+            return {"status": "DATA_UNAVAILABLE", "spot": 0.0, "strikes": [], "total_net_gex_crores": 0.0, "gamma_flip_strike": 0}
+
+        if spot <= 0 or not strikes:
+            return {"status": "DATA_UNAVAILABLE", "spot": spot if spot > 0 else 0.0, "strikes": [], "total_net_gex_crores": 0.0, "gamma_flip_strike": 0}
 
         near_strikes = [s for s in strikes if abs(float(s.get("strike", 0)) - spot) <= 500]
         if not near_strikes:

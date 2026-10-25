@@ -446,7 +446,15 @@ class OmniWatchdogEngine:
             # 1. Database snapshots & active trades
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
-            cur.execute("SELECT count(*), max(timestamp_ist) FROM intraday_option_snapshots")
+            cols = [c[1] for c in cur.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+            if "data_source" in cols:
+                cur.execute(
+                    "SELECT count(*), max(timestamp_ist) FROM intraday_option_snapshots "
+                    "WHERE data_source = 'LIVE' "
+                    "  AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%\"gapfilled\": true%'))"
+                )
+            else:
+                cur.execute("SELECT 0, NULL")
             snap_count, last_snap_time = cur.fetchone()
 
             cur.execute("SELECT count(*) FROM intraday_options_trade_log WHERE status = 'ACTIVE'")

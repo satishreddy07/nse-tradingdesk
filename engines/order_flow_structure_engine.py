@@ -71,24 +71,55 @@ class OrderFlowStructureEngine:
             logger.debug(f"Volume profile candle fetch notice: {e}")
             candles = []
 
+        spot = 0.0
+        if candles:
+            last_c = float(candles[-1].get("close") or 0.0)
+            if last_c > 0:
+                spot = last_c
+
         try:
             from engines.kotak_neo_engine import kotak_neo_engine
-            spot = float(kotak_neo_engine.get_live_price("NIFTY 50") or (candles[-1]["close"] if candles else 22600.0))
+            live_p = kotak_neo_engine.get_live_price("NIFTY 50")
+            if live_p and float(live_p) > 0:
+                spot = float(live_p)
+            elif spot <= 0:
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                spot_info = nifty_analytics_engine.get_live_nifty_spot()
+                p = float(spot_info.get("price") or 0.0)
+                if p > 0:
+                    spot = p
         except Exception:
-            spot = float(candles[-1]["close"]) if candles else 22600.0
+            pass
 
         if not candles:
-            # Fallback with current spot
-            center = round(spot / 25.0) * 25.0
+            if spot > 0:
+                center = round(spot / 25.0) * 25.0
+                return {
+                    "available": False,
+                    "spot": spot,
+                    "poc": center,
+                    "vah": center + 50.0,
+                    "val": center - 50.0,
+                    "total_volume": 0,
+                    "buckets": [],
+                    "market_state": "BALANCE_WITHIN_VALUE",
+                    "value_area_width_pts": 100.0,
+                    "state_badge_color": "text-slate-400 bg-slate-500/10 border-slate-500/30",
+                    "histogram": []
+                }
             return {
+                "status": "DATA_UNAVAILABLE",
                 "available": False,
-                "spot": spot,
-                "poc": center,
-                "vah": center + 50.0,
-                "val": center - 50.0,
+                "spot": 0.0,
+                "poc": 0.0,
+                "vah": 0.0,
+                "val": 0.0,
                 "total_volume": 0,
                 "buckets": [],
-                "market_state": "BALANCE_WITHIN_VALUE"
+                "market_state": "DATA_UNAVAILABLE",
+                "value_area_width_pts": 0.0,
+                "state_badge_color": "text-slate-400 bg-slate-500/10 border-slate-500/30",
+                "histogram": []
             }
 
         # Filter to active trading session candles (handles weekends & post-market)
@@ -212,32 +243,60 @@ class OrderFlowStructureEngine:
         """
         is_market_open, _ = NSEMarketCalendar.can_execute_trades(now_ist())
 
+        atm_price = 0.0
+        delta_now = 0
+        obi_pct = 0.0
+        traded_vol_now = 0
+
         try:
             from engines.kotak_neo_engine import kotak_neo_engine
-            atm_price = float(kotak_neo_engine.get_live_price("NIFTY 50") or 22600.0)
-            atm_strike = int(round(atm_price / 50.0) * 50)
-            ce_depth = kotak_neo_engine.get_option_depth(atm_strike, "CE") or {}
-            pe_depth = kotak_neo_engine.get_option_depth(atm_strike, "PE") or {}
+            live_p = kotak_neo_engine.get_live_price("NIFTY 50")
+            if live_p and float(live_p) > 0:
+                atm_price = float(live_p)
+            else:
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                spot_info = nifty_analytics_engine.get_live_nifty_spot()
+                p = float(spot_info.get("price") or 0.0)
+                if p > 0:
+                    atm_price = p
 
-            ce_tbq = int(ce_depth.get("total_buy", 0) or 0)
-            ce_tsq = int(ce_depth.get("total_sell", 0) or 0)
-            pe_tbq = int(pe_depth.get("total_buy", 0) or 0)
-            pe_tsq = int(pe_depth.get("total_sell", 0) or 0)
+            if atm_price > 0:
+                atm_strike = int(round(atm_price / 50.0) * 50)
+                ce_depth = kotak_neo_engine.get_option_depth(atm_strike, "CE") or {}
+                pe_depth = kotak_neo_engine.get_option_depth(atm_strike, "PE") or {}
 
-            # Net Order Book Imbalance across ATM pair (bids vs asks in resting queues)
-            delta_now = (ce_tbq - ce_tsq) - (pe_tbq - pe_tsq)
-            total_queue_depth = (ce_tbq + ce_tsq) + (pe_tbq + pe_tsq)
-            obi_pct = round((delta_now / max(1, total_queue_depth)) * 100.0, 1) if total_queue_depth > 0 else 0.0
+                ce_tbq = int(ce_depth.get("total_buy", 0) or 0)
+                ce_tsq = int(ce_depth.get("total_sell", 0) or 0)
+                pe_tbq = int(pe_depth.get("total_buy", 0) or 0)
+                pe_tsq = int(pe_depth.get("total_sell", 0) or 0)
 
-            # Authentic traded contract volume from exchange quotes
-            ce_vol = int(ce_depth.get("volume", 0) or 0)
-            pe_vol = int(pe_depth.get("volume", 0) or 0)
-            traded_vol_now = ce_vol + pe_vol
-        except Exception:
+                # Net Order Book Imbalance across ATM pair (bids vs asks in resting queues)
+                delta_now = (ce_tbq - ce_tsq) - (pe_tbq - pe_tsq)
+                total_queue_depth = (ce_tbq + ce_tsq) + (pe_tbq + pe_tsq)
+                obi_pct = round((delta_now / max(1, total_queue_depth)) * 100.0, 1) if total_queue_depth > 0 else 0.0
+
+                # Authentic traded contract volume from exchange quotes
+                ce_vol = int(ce_depth.get("volume", 0) or 0)
+                pe_vol = int(pe_depth.get("volume", 0) or 0)
+                traded_vol_now = ce_vol + pe_vol
+        except Exception as e:
+            logger.debug(f"CVD calculation notice: {e}")
             delta_now = 0
             obi_pct = 0.0
             traded_vol_now = 0
-            atm_price = 22600.0
+            atm_price = 0.0
+
+        if atm_price <= 0:
+            cvd_val = round(self._last_cvd_value) if self._last_cvd_value is not None else 0
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "current_cvd": cvd_val,
+                "instantaneous_delta": 0,
+                "order_book_imbalance_pct": 0.0,
+                "flow_sentiment": "NEUTRAL",
+                "absorption_signal": "DATA_UNAVAILABLE (Spot Price Unavailable)",
+                "badge_color": "text-slate-400 bg-slate-500/10 border-slate-500/30"
+            }
 
         now_ts = time.time()
         # Traded contract delta accumulation during active NSE market hours (pure lots traded, zero fudge factors)
