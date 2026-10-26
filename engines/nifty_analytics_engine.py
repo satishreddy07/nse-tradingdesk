@@ -7126,7 +7126,7 @@ class NiftyAnalyticsEngine:
         opt_chain_data = self.fetch_and_analyze_option_chain(force_refresh=True)
         weekly_chain = opt_chain_data.get("weekly", {}).get("strikes", []) or opt_chain_data.get("weekly", {}).get("chain", [])
         monthly_chain = opt_chain_data.get("monthly", {}).get("strikes", []) or opt_chain_data.get("monthly", {}).get("chain", [])
-        spot_price = opt_chain_data.get("spot_price", d.get("spot_at_entry", 0.0))
+        spot_price = opt_chain_data.get("spot_price") or d.get("spot_at_entry") or 0.0
 
         weekly_ltp_map = {}
         monthly_ltp_map = {}
@@ -7237,12 +7237,15 @@ class NiftyAnalyticsEngine:
         ret_pct = round((total_pnl / max(1.0, capital_base)) * 100.0, 2)
         pnl_icon = "🟢" if total_pnl >= 0 else "🔴"
 
+        spot_px_val = float(spot_price) if spot_price is not None else float(d.get("spot_at_entry") or 0.0)
+        entry_spot_val = float(d.get("spot_at_entry") or 0.0)
+
         telegram_msg = (
             f"🏁 <b>OPTIONS STRATEGY EXITED</b>\n\n"
             f"📊 <b>Strategy:</b> {d.get('strategy_name')}\n"
             f"🆔 <b>ID:</b> <code>{strategy_id}</code>\n"
             f"🚪 <b>Exit Reason:</b> {exit_reason}\n"
-            f"📌 <b>Exit Spot:</b> ₹{spot_price:,.2f} (Entry: ₹{d.get('spot_at_entry'):,.2f})\n"
+            f"📌 <b>Exit Spot:</b> ₹{spot_px_val:,.2f} (Entry: ₹{entry_spot_val:,.2f})\n"
             f"{pnl_icon} <b>Realized PnL:</b> {'+' if total_pnl >= 0 else ''}₹{total_pnl:,.2f} ({ret_pct:+.2f}%)\n"
             f"🕒 <b>Closed At:</b> {ts_close} (Entry: {d.get('created_at')})"
         )

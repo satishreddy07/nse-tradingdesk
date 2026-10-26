@@ -33,6 +33,9 @@ jobs:
         run: sudo timedatectl set-timezone Asia/Kolkata || true
 
       - name: Run Pytest
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
         run: |
           pytest tests/ -q --tb=short > pytest.log 2>&1 || {
             tail -n 50 pytest.log | while IFS= read -r line; do
