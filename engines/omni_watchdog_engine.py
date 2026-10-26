@@ -488,14 +488,15 @@ class OmniWatchdogEngine:
             ml_data = intraday_ml_engine.train_and_predict(force_refresh=False)
             ml_status = ml_data.get("status", "UNKNOWN")
             probs = ml_data.get("probabilities") or {}
-            prob_sum = sum(v for v in probs.values() if v is not None)
+            valid_probs = {k: float(v) for k, v in probs.items() if v is not None}
+            prob_sum = sum(valid_probs.values()) if valid_probs else 0.0
             ml_regime = ml_data.get("predicted_regime", "UNKNOWN")
 
             if ml_status != "OK" and is_market_open:
                 issues.append(f"Intraday ML status: {ml_status} ({ml_data.get('reason', 'Unknown')})")
                 if status == "HEALTHY":
                     status = "DEGRADED"
-            elif probs and not (0.95 <= prob_sum <= 1.05):
+            elif ml_status == "OK" and valid_probs and not (0.95 <= prob_sum <= 1.05):
                 issues.append(f"Intraday ML probability distortion: sum={prob_sum:.2f}")
                 if status == "HEALTHY":
                     status = "DEGRADED"
@@ -528,6 +529,11 @@ class OmniWatchdogEngine:
                     )
                     status = "ALERT"
 
+            p_up_str = f"{valid_probs.get('p_up', 0.0)*100:.0f}% Up" if valid_probs.get("p_up") is not None else "--"
+            p_flat_str = f"{valid_probs.get('p_flat', 0.0)*100:.0f}% Flat" if valid_probs.get("p_flat") is not None else "--"
+            p_down_str = f"{valid_probs.get('p_down', 0.0)*100:.0f}% Down" if valid_probs.get("p_down") is not None else "--"
+            intraday_regime_str = f"{ml_regime} ({p_up_str} / {p_flat_str} / {p_down_str})" if valid_probs else f"{ml_regime} (Standby)"
+
             details = {
                 "total_snapshots": snap_count or 0,
                 "last_snapshot_time": last_snap_time,
@@ -537,7 +543,7 @@ class OmniWatchdogEngine:
                 "delta_oi_flow": f"+{(net_pe_oi - net_ce_oi)/100000:.2f}L Net PE" if (net_pe_oi or net_ce_oi) else "0.00L",
                 "sector_breadth_pct": f"{sec_data.get('breadth_pct_green', 0)}% Green ({sec_source})",
                 "market_breadth_n500": f"{mkt_breadth.get('nifty500_advances', '--')} Adv / {mkt_breadth.get('nifty500_declines', '--')} Dec ({mkt_breadth.get('market_sentiment', 'NORMAL')})",
-                "intraday_ml_regime": f"{ml_regime} ({probs.get('p_up', 0)*100:.0f}% Up / {probs.get('p_flat', 0)*100:.0f}% Flat / {probs.get('p_down', 0)*100:.0f}% Down)",
+                "intraday_ml_regime": intraday_regime_str,
                 "intraday_ml_slots": ml_data.get("model_metrics", {}).get("slots_trained_today", 0),
             }
         except Exception as e:

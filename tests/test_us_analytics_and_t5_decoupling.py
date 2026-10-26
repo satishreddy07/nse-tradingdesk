@@ -232,7 +232,12 @@ def test_crude_oil_spike_awareness_and_metrics_calculation():
     assert m1["close"] == 80.36
 
     # Test live prediction engine output for basis_breakdown
-    preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True)
+    import datetime
+    from unittest.mock import patch
+    from core.market_calendar import now_ist
+    fake_premarket = datetime.datetime.strptime(f"{now_ist().strftime('%Y-%m-%d')} 08:30:00", "%Y-%m-%d %H:%M:%S")
+    with patch("engines.nifty_analytics_engine.now_ist", return_value=fake_premarket):
+        preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=True, force_recalculate=True)
     assert preds.get("status") == "OK"
 
     t1 = preds.get("t1_forecast", {})

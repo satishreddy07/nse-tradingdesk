@@ -548,6 +548,27 @@ def test_invariant_12_omni_watchdog_and_ml_sentinel_integrity():
     assert isinstance(gate_msg, str) and len(gate_msg) > 0
 
 
+def test_omni_watchdog_intraday_probe_resilience_to_standby_none_probs():
+    """
+    Verifies that probe_subsystem_intraday handles DATA_UNAVAILABLE and None probabilities
+    without crashing with TypeError, correctly tagging Standby regime.
+    """
+    from engines.omni_watchdog_engine import omni_watchdog
+    from unittest.mock import patch
+
+    mock_ml = {
+        "status": "DATA_UNAVAILABLE",
+        "probabilities": {"p_up": None, "p_flat": None, "p_down": None},
+        "predicted_regime": "STANDBY",
+        "reason": "Market is closed"
+    }
+    with patch("engines.intraday_ml_engine.intraday_ml_engine.train_and_predict", return_value=mock_ml):
+        probe = omni_watchdog.probe_subsystem_intraday()
+        assert probe["name"] == "Intraday Desk & ML Sentinel"
+        assert not any("unsupported operand type" in issue for issue in probe.get("issues", []))
+        assert "Standby" in probe.get("details", {}).get("intraday_ml_regime", "")
+
+
 # ==============================================================================
 # INVARIANT 13: OPTIONS STOP-LOSS NEGATIVITY & DYNAMIC LEG PRICING INTEGRITY
 # ==============================================================================

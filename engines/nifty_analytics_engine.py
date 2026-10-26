@@ -4575,7 +4575,11 @@ class NiftyAnalyticsEngine:
                             "expected_pts": round(exp_c_1 - spot, 2),
                             "expected_pct": round(((exp_c_1 - spot) / max(1.0, spot)) * 100.0, 2),
                             "range_1sigma": [low_1s_1, high_1s_1],
-                            "basis_breakdown": {"verdict": t1_v, "composite_score": score_t1}
+                            "basis_breakdown": {
+                                "verdict": t1_v,
+                                "composite_score": score_t1,
+                                "verdict_rationale": f"T+1 is evaluated as {t1_v} (Composite Score {score_t1:+.1f}/100) locked at morning pre-market."
+                            }
                         },
                         "t5_forecast": {
                             "verdict": t5_v,
@@ -4586,7 +4590,15 @@ class NiftyAnalyticsEngine:
                             "expected_pts": round(exp_c_5 - spot, 2),
                             "expected_pct": round(((exp_c_5 - spot) / max(1.0, spot)) * 100.0, 2),
                             "range_1sigma": [low_1s_5, high_1s_5],
-                            "basis_breakdown": {"verdict": t5_v, "composite_score": score_t5}
+                            "basis_breakdown": {
+                                "verdict": t5_v,
+                                "composite_score": score_t5,
+                                "verdict_rationale": f"T+5 is evaluated as {t5_v} (Composite Score {score_t5:+.1f}/100) locked at morning pre-market."
+                            }
+                        },
+                        "validation_and_calibration": {
+                            "t1_probs": {"up": float(d.get("t1_prob_up") or 0.33), "flat": float(d.get("t1_prob_flat") or 0.34), "down": float(d.get("t1_prob_down") or 0.33)},
+                            "t5_probs": {"up": float(d.get("t5_prob_up") or 0.33), "flat": float(d.get("t5_prob_flat") or 0.34), "down": float(d.get("t5_prob_down") or 0.33)}
                         }
                     }
                     return payload

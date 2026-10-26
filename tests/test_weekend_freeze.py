@@ -1,3 +1,5 @@
+from unittest.mock import patch
+from core.market_calendar import NSEMarketCalendar
 from engines.order_flow_structure_engine import OrderFlowStructureEngine
 
 def test_order_flow_weekend_freeze():
@@ -9,12 +11,13 @@ def test_order_flow_weekend_freeze():
     assert vp["vah"] >= vp["val"]
     
     # 2. CVD must be completely frozen across multiple calls outside market hours
-    first_cvd = eng.compute_cumulative_volume_delta()
-    for _ in range(10):
-        next_cvd = eng.compute_cumulative_volume_delta()
-        assert next_cvd["current_cvd"] == first_cvd["current_cvd"], "CVD must not accumulate when market is closed!"
-        assert next_cvd["instantaneous_delta"] == 0, "Instantaneous delta must be 0 when market is closed!"
-        assert "order_book_imbalance_pct" in next_cvd
+    with patch.object(NSEMarketCalendar, "can_execute_trades", return_value=(False, "Session Closed")):
+        first_cvd = eng.compute_cumulative_volume_delta()
+        for _ in range(10):
+            next_cvd = eng.compute_cumulative_volume_delta()
+            assert next_cvd["current_cvd"] == first_cvd["current_cvd"], "CVD must not accumulate when market is closed!"
+            assert next_cvd["instantaneous_delta"] == 0, "Instantaneous delta must be 0 when market is closed!"
+            assert "order_book_imbalance_pct" in next_cvd
     
     # 3. Multi-index confluence consistency
     conf = eng.compute_multi_index_confluence()

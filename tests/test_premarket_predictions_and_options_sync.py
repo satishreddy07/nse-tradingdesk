@@ -187,7 +187,8 @@ def test_premarket_telegram_bulletin_dispatch():
 
 def test_api_endpoints_premarket_lock_and_eod_eval(test_client):
     """Verifies that POST /api/nifty/premarket-forecast/lock and POST /api/nifty/eod-evaluation/run work cleanly."""
-    with patch("core.telegram_vault.telegram_vault.send_alert_and_sync"):
+    fake_now = datetime.datetime(2026, 10, 14, 8, 45, 0)
+    with patch("web.api.now_ist", return_value=fake_now), patch("core.telegram_vault.telegram_vault.send_alert_and_sync"):
         with patch.object(state_engine, "get_kv", return_value=None):
             with patch.object(nifty_analytics_engine, "compute_nifty_predictions", return_value={
                 "status": "OK",

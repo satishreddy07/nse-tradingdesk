@@ -310,6 +310,8 @@ class OptionsEdgeAnalyticsEngine:
                             """).fetchall()
                             if snap_ivs:
                                 vix_series = [float(r["atm_iv"]) for r in snap_ivs]
+                                if not row_curr:
+                                    current_iv = vix_series[0]
             except Exception:
                 pass
 
@@ -319,9 +321,10 @@ class OptionsEdgeAnalyticsEngine:
         min_iv = min(vix_series)
         max_iv = max(vix_series)
 
-        # IV Rank: (Current - Min) / (Max - Min) * 100
+        # IV Rank: (Current - Min) / (Max - Min) * 100 clamped to [0.0, 100.0]
         if max_iv > min_iv:
             iv_rank = round(((current_iv - min_iv) / (max_iv - min_iv)) * 100.0, 1)
+            iv_rank = max(0.0, min(100.0, iv_rank))
         else:
             iv_rank = 50.0
 

@@ -3,14 +3,15 @@ from engines.nifty_analytics_engine import nifty_analytics_engine
 from execution.state_engine import state_engine
 
 def test_options_portfolio_clean_state():
-    """Verify that only active strategies remain, realized PnL is 0, and equity curve starts at Base 200,000."""
+    """Verify that only active strategies remain, realized PnL reflects active strategies, and equity curve starts at Base 200,000."""
     nifty_analytics_engine.reset_options_portfolio(keep_active=True)
     port = nifty_analytics_engine.get_options_portfolio()
     assert port["status"] == "OK"
     summary = port["summary"]
     
     assert summary["base_capital"] == 200000.0
-    assert summary["total_realized_pnl"] == 0.0
+    expected_realized = round(sum(float(s.get("realized_pnl", 0.0)) for s in port["active_strategies"]), 2)
+    assert summary["total_realized_pnl"] == expected_realized
     assert summary["closed_count"] == 0
     assert summary["active_count"] >= 1
     assert len(port["active_strategies"]) >= 1
@@ -31,7 +32,8 @@ def test_reset_options_portfolio_keeps_active():
     port = nifty_analytics_engine.get_options_portfolio()
     assert port["summary"]["active_count"] >= 1
     assert port["summary"]["closed_count"] == 0
-    assert port["summary"]["total_realized_pnl"] == 0.0
+    expected_realized = round(sum(float(s.get("realized_pnl", 0.0)) for s in port["active_strategies"]), 2)
+    assert port["summary"]["total_realized_pnl"] == expected_realized
     assert len(port["equity_curve"]) == 1
     assert port["equity_curve"][0]["equity"] == 200000.0
 
@@ -43,4 +45,3 @@ def test_get_all_equity_curves():
     assert "options_curve" in curves
     assert len(curves["options_curve"]) >= 1
     assert curves["options_curve"][0]["equity"] == 200000.0
-

@@ -44,19 +44,25 @@ def test_ai_analysis_automatically_attached_to_predictions():
         missing_or_stale_data=[]
     )
 
-    with patch("ai_engine.service.ai_service.analyze_predictions", return_value=mock_ai_resp), \
-         patch.object(state_engine, "get_kv", return_value=None):
-        nifty_analytics_engine._predictions_mem_cache = {
-            "status": "OK",
-            "spot_price": 24800.0,
-            "composite_score": 15.0,
-            "timestamp_ist": "14-Oct-2026 10:00:00"
-        }
-        nifty_analytics_engine._predictions_cache_ts = 9999999999.0
-        preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=False)
-        assert "ai_analysis" in preds
-        assert preds["ai_analysis"]["status"] == "OK"
-        assert "Automated AI Synthesis" in preds["ai_analysis"]["summary"]
+    orig_cache = nifty_analytics_engine._predictions_mem_cache
+    orig_ts = nifty_analytics_engine._predictions_cache_ts
+    try:
+        with patch("ai_engine.service.ai_service.analyze_predictions", return_value=mock_ai_resp), \
+             patch.object(state_engine, "get_kv", return_value=None):
+            nifty_analytics_engine._predictions_mem_cache = {
+                "status": "OK",
+                "spot_price": 24800.0,
+                "composite_score": 15.0,
+                "timestamp_ist": "14-Oct-2026 10:00:00"
+            }
+            nifty_analytics_engine._predictions_cache_ts = 9999999999.0
+            preds = nifty_analytics_engine.compute_nifty_predictions(force_refresh=False)
+            assert "ai_analysis" in preds
+            assert preds["ai_analysis"]["status"] == "OK"
+            assert "Automated AI Synthesis" in preds["ai_analysis"]["summary"]
+    finally:
+        nifty_analytics_engine._predictions_mem_cache = orig_cache
+        nifty_analytics_engine._predictions_cache_ts = orig_ts
 
 
 def test_ai_endpoints_never_throw_unhandled_500_or_non_json(test_client):
@@ -90,9 +96,9 @@ def test_smart_ai_consensus_filtering_and_rationale_persistence():
     saved_dicts = []
     with state_engine._lock:
         with state_engine._get_connection() as conn:
-            saved_rows = conn.execute("SELECT * FROM options_strategies WHERE auto_trade_mode = 'INTRADAY'").fetchall()
+            saved_rows = conn.execute("SELECT * FROM options_strategies WHERE auto_trade_mode LIKE '%INTRADAY%'").fetchall()
             saved_dicts = [dict(r) for r in saved_rows]
-            conn.execute("DELETE FROM options_strategies WHERE auto_trade_mode = 'INTRADAY'")
+            conn.execute("DELETE FROM options_strategies WHERE auto_trade_mode LIKE '%INTRADAY%'")
             conn.commit()
 
     mock_preds = {
@@ -170,7 +176,7 @@ def test_smart_ai_consensus_filtering_and_rationale_persistence():
     finally:
         with state_engine._lock:
             with state_engine._get_connection() as conn:
-                conn.execute("DELETE FROM options_strategies WHERE auto_trade_mode = 'INTRADAY'")
+                conn.execute("DELETE FROM options_strategies WHERE auto_trade_mode LIKE '%INTRADAY%'")
                 for d in saved_dicts:
                     cols = list(d.keys())
                     vals = [d[c] for c in cols]

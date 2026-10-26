@@ -125,7 +125,7 @@ def test_f44_f45_f46_nifty_analytics_macro_imputation_and_caching():
 
     # Second call should be served instantaneously from in-memory cache
     t_start2 = time.perf_counter()
-    m2 = nifty_analytics_engine._train_ml_prediction_models(series_map=series_map, cutoff_date="2026-09-35")
+    m2 = nifty_analytics_engine._train_ml_prediction_models(series_map=series_map, cutoff_date="2026-09-01")
     duration2 = time.perf_counter() - t_start2
 
     assert m2 == m1

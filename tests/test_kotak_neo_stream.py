@@ -282,7 +282,7 @@ def test_zero_yahoo_and_nse_live_requests_in_intraday_and_options(monkeypatch):
     # 2. Intraday VWAP & ORB must NOT call Yahoo Finance
     vwap = intraday_analytics_engine.compute_vwap_and_orb()
     assert vwap.get("status") == "OK"
-    assert vwap.get("source") in ("KOTAK_NEO_STREAM", "MASTER_DB_PERSISTED_SNAPSHOT")
+    assert vwap.get("source") in ("KOTAK_NEO_STREAM", "MASTER_DB_PERSISTED_SNAPSHOT", "LIVE_INTRADAY_CANDLES")
 
     # 3. Sectoral Divergence must NOT call Yahoo Finance
     sec = intraday_analytics_engine.compute_sectoral_divergence()

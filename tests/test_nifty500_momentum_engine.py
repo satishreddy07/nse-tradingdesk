@@ -165,7 +165,7 @@ def test_four_tier_exit_hierarchy():
     target_2r = entry_px + 2.0 * risk_unit          # 1100.0
 
     today = now_ist().date()
-    dates = pd.date_range(today - pd.Timedelta(days=12), periods=10, freq="B")
+    dates = pd.date_range(today - datetime.timedelta(days=12), periods=10, freq="B")
 
     # 1. Test Priority 1: Initial SL hit
     opened = state_engine.open_position(
@@ -265,7 +265,7 @@ def test_four_tier_exit_hierarchy():
     assert closed3[0]["exit_reason"] == "FAST_EMA20_CUT"
 
     # 4. Test Priority 4: Time Stop (Day 8 Close, Gain < +1R)
-    dates_15 = pd.date_range(today - pd.Timedelta(days=20), periods=15, freq="B")
+    dates_15 = pd.date_range(today - datetime.timedelta(days=20), periods=15, freq="B")
     entry_day_15 = str(dates_15[0].date())
 
     state_engine.open_position(
@@ -314,7 +314,7 @@ def test_trailing_stop_ratchet_without_breach():
     target_2r = 1100.0   # +2R
 
     today = now_ist().date()
-    dates = pd.date_range(today - pd.Timedelta(days=12), periods=10, freq="B")
+    dates = pd.date_range(today - datetime.timedelta(days=12), periods=10, freq="B")
     entry_day = str(dates[0].date())
 
     state_engine.open_position(

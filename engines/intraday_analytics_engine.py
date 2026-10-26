@@ -1493,17 +1493,25 @@ class IntradayAnalyticsEngine:
             ask_q1 = 0
             ltp = float(leg.get("price") or 0.0)
 
+            def _parse_num(val: Any, default: float = 0.0) -> float:
+                if val is None:
+                    return default
+                try:
+                    return float(str(val).replace(",", "").strip())
+                except Exception:
+                    return default
+
             if depth.get("status") == "OK":
                 b_levels = depth.get("bid_levels", [])
                 a_levels = depth.get("ask_levels", [])
                 if b_levels:
-                    bid1 = float(b_levels[0].get("price", 0.0))
-                    bid_q1 = int(b_levels[0].get("quantity", 0))
+                    bid1 = _parse_num(b_levels[0].get("price", 0.0))
+                    bid_q1 = int(_parse_num(b_levels[0].get("quantity", 0)))
                 if a_levels:
-                    ask1 = float(a_levels[0].get("price", 0.0))
-                    ask_q1 = int(a_levels[0].get("quantity", 0))
+                    ask1 = _parse_num(a_levels[0].get("price", 0.0))
+                    ask_q1 = int(_parse_num(a_levels[0].get("quantity", 0)))
                 if ltp <= 0:
-                    ltp = float(depth.get("micro_price") or bid1 or ask1)
+                    ltp = _parse_num(depth.get("micro_price") or bid1 or ask1)
 
             if bid1 <= 0 and ask1 <= 0:
                 bid1 = max(0.05, round(ltp - 0.50, 2)) if ltp > 0 else 50.0
