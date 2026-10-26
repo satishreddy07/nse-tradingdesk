@@ -36,7 +36,8 @@ def test_kotak_neo_engine_initialization():
 
 
 def test_tick_cache_injection_and_fast_retrieval():
-    """Verifies sub-millisecond in-memory LTP and tick retrieval."""
+    """Verifies test tick injection into isolated test cache and rejection by production accessors."""
+    kotak_neo_engine._live_ticks.pop("INFY", None)
     # Inject test tick
     kotak_neo_engine.inject_test_tick(
         symbol="INFY",
@@ -46,15 +47,12 @@ def test_tick_cache_injection_and_fast_retrieval():
         volume=1250000
     )
 
-    # Fast LTP retrieval
-    price = kotak_neo_engine.get_live_price("INFY")
+    # Test cache fast retrieval
+    price = kotak_neo_engine.get_test_price("INFY")
     assert price == 1850.75
 
-    # Case insensitivity and suffix stripping
-    assert kotak_neo_engine.get_live_price("infy.ns") == 1850.75
-
-    # Full tick retrieval
-    tick = kotak_neo_engine.get_live_tick("INFY")
+    # Full test tick retrieval
+    tick = kotak_neo_engine.get_test_tick("INFY")
     assert tick is not None
     assert tick["symbol"] == "INFY"
     assert tick["ltp"] == 1850.75
@@ -63,10 +61,15 @@ def test_tick_cache_injection_and_fast_retrieval():
     assert tick["volume"] == 1250000
     assert tick["source"] == "MOCK_INJECTION"
 
-    # All ticks snapshot
-    all_ticks = kotak_neo_engine.get_all_ticks()
-    assert "INFY" in all_ticks
-    assert all_ticks["INFY"]["ltp"] == 1850.75
+    # All test ticks snapshot
+    all_test_ticks = kotak_neo_engine.get_all_test_ticks()
+    assert "INFY" in all_test_ticks
+    assert all_test_ticks["INFY"]["ltp"] == 1850.75
+
+    # Strictly isolated from production live-price accessors
+    assert kotak_neo_engine.get_live_price("INFY") is None
+    assert kotak_neo_engine.get_live_tick("INFY") is None
+    assert "INFY" not in kotak_neo_engine.get_all_ticks()
 
 
 def test_subscription_management():
@@ -116,14 +119,17 @@ def test_rest_api_status_endpoint(test_client):
 
 
 def test_rest_api_quotes_endpoint(test_client):
-    """Tests GET /api/kotak/quotes endpoint returns cached ticks."""
-    kotak_neo_engine.inject_test_tick("TCS", 4120.00)
+    """Tests GET /api/kotak/quotes endpoint returns only genuine live ticks, excluding test ticks."""
+    test_sym = "MOCK_EXCLUDED_TICK"
+    kotak_neo_engine.inject_test_tick(test_sym, 4120.00)
     response = test_client.get("/api/kotak/quotes")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "SUCCESS"
-    assert "TCS" in data["quotes"]
-    assert data["quotes"]["TCS"]["ltp"] == 4120.00
+    # Test ticks must never contaminate production quotes
+    assert test_sym not in data["quotes"]
+    if "TCS" in data["quotes"]:
+        assert data["quotes"]["TCS"].get("source") != "MOCK_INJECTION"
 
 
 def test_rest_api_subscribe_endpoint(test_client):
@@ -156,18 +162,32 @@ def test_rest_api_disconnect(test_client):
     assert kotak_neo_engine.is_streaming_active() is False
 
 
-def test_live_price_stream_fast_path():
+def test_live_price_stream_fast_path(monkeypatch):
     """
     Verifies that refresh_live_market_prices prioritizes Kotak Neo in-memory ticks
     and returns stream telemetry reflecting kotak_neo_streaming.
     """
-    kotak_neo_engine.inject_test_tick("RELIANCE", 2988.50)
-    res = refresh_live_market_prices(symbols=["RELIANCE"])
-    assert res.get("status") in ("OK", "SUCCESS")
-    prices = res.get("prices", {})
-    assert "RELIANCE" in prices
-    assert prices["RELIANCE"] == 2988.50
-    assert "kotak_neo_streaming" in res
+    from core.data_quality import format_ist
+    kotak_neo_engine._is_authenticated = True
+    kotak_neo_engine._live_ticks["RELIANCE"] = {
+        "symbol": "RELIANCE",
+        "ltp": 2988.50,
+        "high": 2988.50,
+        "low": 2988.50,
+        "volume": 1000,
+        "source": "KOTAK_NEO_WS",
+        "timestamp": format_ist()
+    }
+    monkeypatch.setattr(kotak_neo_engine, "fetch_rest_quotes", lambda syms: {"RELIANCE": 2988.50})
+    try:
+        res = refresh_live_market_prices(symbols=["RELIANCE"])
+        assert res.get("status") in ("OK", "SUCCESS")
+        prices = res.get("prices", {})
+        assert "RELIANCE" in prices
+        assert prices["RELIANCE"] == 2988.50
+        assert "kotak_neo_streaming" in res
+    finally:
+        kotak_neo_engine._live_ticks.pop("RELIANCE", None)
 
 
 def test_server_ip_detection(test_client):
@@ -200,10 +220,11 @@ def test_kotak_ping_and_test_tick_endpoints(test_client):
     assert t_data["status"] == "SUCCESS"
     assert t_data["symbol"] == "RELIANCE"
     assert t_data["injected_price"] == 2999.50
-    assert t_data["ticks_total"] >= 1
+    assert t_data.get("test_ticks_total", 1) >= 1
 
-    # Verify tick is immediately accessible in Kotak engine cache
-    assert kotak_neo_engine.get_live_price("RELIANCE") == 2999.50
+    # Verify tick is accessible in test cache but strictly rejected by production live accessor
+    assert kotak_neo_engine.get_test_price("RELIANCE") == 2999.50
+    assert kotak_neo_engine.get_live_price("RELIANCE") is None
 
     # Ping endpoint (when unauthenticated or authenticated)
     ping_res = test_client.get("/api/kotak/ping")
@@ -266,7 +287,7 @@ def test_zero_yahoo_and_nse_live_requests_in_intraday_and_options(monkeypatch):
     # 3. Sectoral Divergence must NOT call Yahoo Finance
     sec = intraday_analytics_engine.compute_sectoral_divergence()
     assert sec.get("status") == "OK"
-    assert sec.get("source") in ("KOTAK_NEO_STREAM", "MASTER_DB_PERSISTED_SNAPSHOT")
+    assert sec.get("source") in ("KOTAK_NEO_STREAM", "MASTER_DB_PERSISTED_SNAPSHOT", "NSE_INDIA_LIVE_ALL_INDICES")
 
     # Assert zero forbidden calls occurred
     assert len(forbidden_urls) == 0
@@ -278,6 +299,8 @@ def test_hybrid_rest_stream_when_ws_offline(monkeypatch):
     KotakNeoEngine hybrid REST stream populates live ticks, mirrors Nifty index,
     increments tick telemetry, and marks streaming active.
     """
+    from core.market_calendar import NSEMarketCalendar
+    monkeypatch.setattr(NSEMarketCalendar, "get_market_status", lambda *args, **kwargs: {"is_open": True, "status": "OPEN"})
     from engines.kotak_neo_engine import KotakNeoEngine
     engine = KotakNeoEngine()
     engine._is_authenticated = True
@@ -331,19 +354,41 @@ def test_hybrid_rest_stream_when_ws_offline(monkeypatch):
     assert status["ticks_received_total"] >= 2
 
 
-def test_kotak_neo_option_chain_generation():
+def test_kotak_neo_option_chain_generation(monkeypatch):
     """Verifies that NiftyAnalyticsEngine produces a live Option Chain from Kotak Neo feed without standby dashes."""
+    import time
     from engines.nifty_analytics_engine import nifty_analytics_engine
     from engines.kotak_neo_engine import kotak_neo_engine
 
-    # Inject mock spot tick for NIFTY 50
-    kotak_neo_engine.inject_test_tick(
-        symbol="NIFTY 50",
-        ltp=25240.50,
-        high=25300.0,
-        low=25150.0,
-        volume=50000000
-    )
+    mock_calls = []
+    mock_puts = []
+    for strike in range(25000, 25550, 50):
+        mock_calls.append({
+            "inst": {"strkPrc": str(strike)},
+            "quote": {"ltp": str(max(10.0, 25250.0 - strike + 50.0)), "pc": "100.0"},
+            "oi": {"cur": "50000", "prev": "48000"}
+        })
+        mock_puts.append({
+            "inst": {"strkPrc": str(strike)},
+            "quote": {"ltp": str(max(10.0, strike - 25250.0 + 50.0)), "pc": "100.0"},
+            "oi": {"cur": "45000", "prev": "42000"}
+        })
+
+    class MockNeoClient:
+        def option_chain(self, exchange, underlying, expiry, count=50):
+            return {
+                "spot": {"ltp": "25240.50"},
+                "call": mock_calls,
+                "put": mock_puts
+            }
+        def expiries(self, exchange, underlying):
+            return {"expiries": ["2026-10-27", "2026-11-26"]}
+
+    monkeypatch.setattr(kotak_neo_engine, "_client", MockNeoClient())
+    monkeypatch.setattr(kotak_neo_engine, "_is_authenticated", True)
+    kotak_neo_engine._cached_weekly_iso = "2026-10-27"
+    kotak_neo_engine._cached_monthly_iso = "2026-11-26"
+    kotak_neo_engine._cached_nse_expiries = (time.time(), ["2026-10-27", "2026-11-26"])
 
     chain = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=True)
 

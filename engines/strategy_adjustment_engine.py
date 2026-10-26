@@ -261,8 +261,15 @@ class StrategyAdjustmentEngine:
             leg_ls = l.get("lot_size")
             if not leg_ls or int(leg_ls) <= 0:
                 try:
+                    exp = l.get("expiry_date")
+                    as_of = l.get("as_of_date")
+                    if not exp and not as_of:
+                        cal_exp = NSEMarketCalendar.get_active_options_expiries()
+                        exp = cal_exp.get("weekly_expiry")
+                        as_of = now_ist().date()
                     leg_ls = resolve_nifty_lot_size(
-                        expiry_date=l.get("expiry_date"),
+                        expiry_date=exp,
+                        as_of_date=as_of,
                         contract_metadata=l,
                         contract_type=l.get("contract_type") or l.get("expiry_type"),
                         symbol="NIFTY",

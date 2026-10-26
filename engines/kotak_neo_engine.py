@@ -154,6 +154,8 @@ class KotakNeoEngine:
 
         # Live Real-time Tick Cache: { "RELIANCE": { ltp, high, low, volume, vwap, ... } }
         self._live_ticks: Dict[str, Dict[str, Any]] = {}
+        # Isolated Test-Only Tick Cache: strictly separated from production live ticks
+        self._test_ticks: Dict[str, Dict[str, Any]] = {}
 
         # Option Ticks Cache: { (strike, opt_type): { strike, type, symbol, token, ltp, high, low, volume, oi, ... } }
         self._option_ticks: Dict[Tuple[int, str], Dict[str, Any]] = {}
@@ -1605,38 +1607,66 @@ class KotakNeoEngine:
     # --------------------------------------------------------------------------
     # TICK DATA ACCESSORS (FOR INSTANT READ IN ENGINES & API)
     # --------------------------------------------------------------------------
+    @staticmethod
+    def _is_valid_live_tick(tick: Optional[Dict[str, Any]]) -> bool:
+        """
+        Validates that a tick object represents an authentic, positive, finite live market observation.
+        Rejects mock injections, test tokens, simulated values, zero/negative, NaN, or infinite LTPs.
+        """
+        if not tick or not isinstance(tick, dict):
+            return False
+        source = str(tick.get("source", "")).strip().upper()
+        token = str(tick.get("token", "")).strip().upper()
+        if source in ("MOCK_INJECTION", "SIMULATED", "TEST", "TEST_ONLY") or token == "TEST_TOKEN":
+            return False
+        raw_ltp = tick.get("ltp")
+        if raw_ltp is None:
+            return False
+        try:
+            flt = float(raw_ltp)
+            if not math.isfinite(flt) or flt <= 0:
+                return False
+        except (TypeError, ValueError):
+            return False
+        return True
+
     def get_live_price(self, symbol: str) -> Optional[float]:
         """
         Returns live LTP from in-memory Kotak Neo tick cache.
         Microsecond execution time with zero network I/O.
+        Rejects test injection, simulated sources, and non-finite prices.
         """
         clean_sym = symbol.strip().upper().replace(".NS", "")
         with self._lock:
             tick = self._live_ticks.get(clean_sym)
-            if tick and tick.get("ltp"):
+            if self._is_valid_live_tick(tick):
                 return float(tick["ltp"])
             if clean_sym in ("NIFTY 50", "NIFTY", "^NSEI"):
                 for alt in ("NIFTY 50", "NIFTY", "^NSEI"):
-                    if alt in self._live_ticks and self._live_ticks[alt].get("ltp"):
-                        return float(self._live_ticks[alt]["ltp"])
+                    alt_tick = self._live_ticks.get(alt)
+                    if self._is_valid_live_tick(alt_tick):
+                        return float(alt_tick["ltp"])
             if clean_sym in ("NIFTY BANK", "BANKNIFTY", "^NSEBANK"):
                 for alt in ("NIFTY BANK", "BANKNIFTY", "^NSEBANK"):
-                    if alt in self._live_ticks and self._live_ticks[alt].get("ltp"):
-                        return float(self._live_ticks[alt]["ltp"])
+                    alt_tick = self._live_ticks.get(alt)
+                    if self._is_valid_live_tick(alt_tick):
+                        return float(alt_tick["ltp"])
         return None
 
 
     def get_live_tick(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Returns full live tick dictionary or None."""
+        """Returns full live tick dictionary or None if missing, stale, or simulated."""
         clean_sym = symbol.strip().upper().replace(".NS", "")
         with self._lock:
             tick = self._live_ticks.get(clean_sym)
-            return dict(tick) if tick else None
+            if self._is_valid_live_tick(tick):
+                return dict(tick)
+            return None
 
     def get_all_ticks(self) -> Dict[str, Dict[str, Any]]:
-        """Returns snapshot of all tracked live ticks."""
+        """Returns snapshot of all verified live ticks (excluding any non-live sources)."""
         with self._lock:
-            return {k: dict(v) for k, v in self._live_ticks.items()}
+            return {k: dict(v) for k, v in self._live_ticks.items() if self._is_valid_live_tick(v)}
 
     def get_option_tick(self, strike: int, opt_type: str) -> Optional[Dict[str, Any]]:
         """Returns full live option tick dictionary or None."""
@@ -2769,7 +2799,7 @@ class KotakNeoEngine:
                 time.sleep(3.0)
 
     # --------------------------------------------------------------------------
-    # TEST & BENCHMARK INJECTION
+    # TEST & BENCHMARK INJECTION (ISOLATED TEST-ONLY CACHE)
     # --------------------------------------------------------------------------
     def inject_test_tick(
         self,
@@ -2779,11 +2809,14 @@ class KotakNeoEngine:
         low: Optional[float] = None,
         volume: Optional[int] = None
     ):
-        """Used in automated unit tests to simulate incoming WebSocket ticks."""
+        """
+        Injects a synthetic tick exclusively into the isolated test tick cache.
+        This cache is strictly isolated from production live-price accessors.
+        """
         sym_clean = symbol.strip().upper().replace(".NS", "")
         now_str = format_ist()
         with self._lock:
-            self._live_ticks[sym_clean] = {
+            self._test_ticks[sym_clean] = {
                 "symbol": sym_clean,
                 "token": "TEST_TOKEN",
                 "ltp": round(float(ltp), 2),
@@ -2793,8 +2826,38 @@ class KotakNeoEngine:
                 "updated_at": now_str,
                 "source": "MOCK_INJECTION"
             }
-            self._ticks_received_count += 1
-            self._last_tick_time_ist = now_str
+            if sym_clean in ("NIFTY 50", "NIFTY", "^NSEI"):
+                for alt in ("NIFTY 50", "NIFTY", "^NSEI"):
+                    self._test_ticks[alt] = self._test_ticks[sym_clean]
+            elif sym_clean in ("NIFTY BANK", "BANKNIFTY", "^NSEBANK"):
+                for alt in ("NIFTY BANK", "BANKNIFTY", "^NSEBANK"):
+                    self._test_ticks[alt] = self._test_ticks[sym_clean]
+
+    def get_test_price(self, symbol: str) -> Optional[float]:
+        """Test-only accessor: retrieves LTP from the isolated test tick cache."""
+        sym_clean = symbol.strip().upper().replace(".NS", "")
+        with self._lock:
+            t = self._test_ticks.get(sym_clean)
+            if t and t.get("ltp"):
+                return float(t["ltp"])
+        return None
+
+    def get_test_tick(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Test-only accessor: retrieves full tick dictionary from isolated test cache."""
+        sym_clean = symbol.strip().upper().replace(".NS", "")
+        with self._lock:
+            t = self._test_ticks.get(sym_clean)
+            return dict(t) if t else None
+
+    def get_all_test_ticks(self) -> Dict[str, Dict[str, Any]]:
+        """Test-only accessor: retrieves copy of all isolated test ticks."""
+        with self._lock:
+            return {k: dict(v) for k, v in self._test_ticks.items()}
+
+    def clear_test_ticks(self):
+        """Test-only helper: clears isolated test tick cache."""
+        with self._lock:
+            self._test_ticks.clear()
 
     # --------------------------------------------------------------------------
     # STATUS & TELEMETRY
@@ -2809,8 +2872,8 @@ class KotakNeoEngine:
         is_mkt_open = mkt_status.get("is_open", False)
 
         with self._lock:
-            is_stream = bool(self._is_authenticated and is_mkt_open and (self._is_connected or self._ticks_received_count > 0))
-            stream_mode = "WEBSOCKET" if (self._is_connected and is_mkt_open) else ("STANDBY" if self._is_authenticated else "OFFLINE")
+            is_stream = self.is_streaming_active()
+            stream_mode = "WEBSOCKET" if self._is_connected else ("REST_STREAM" if is_stream else ("STANDBY" if self._is_authenticated else "OFFLINE"))
             opt_ticks_total = len(self._option_ticks)
             opt_tokens_mapped = len(self._option_token_to_contract)
             last_opt_tick = max((t.get("updated_at") for t in self._option_ticks.values() if t.get("updated_at")), default=None)
@@ -2829,13 +2892,14 @@ class KotakNeoEngine:
                 "ticks_received_total": self._ticks_received_count,
                 "last_tick_time": self._last_tick_time_ist,
                 "tracked_symbols_sample": list(self._subscribed_symbols)[:20],
-                "cache_size": len(self._live_ticks),
+                "cache_size": len(self._live_ticks) + len(self._test_ticks),
+                "test_cache_size": len(self._test_ticks),
                 "options_ticks_total": opt_ticks_total,
                 "options_tokens_mapped": opt_tokens_mapped,
                 "last_option_tick_time": last_opt_tick,
                 "options_feed_healthy": options_feed_healthy,
                 "has_saved_credentials": bool(saved_creds.get("consumer_key") or config.KOTAK_NEO_CONSUMER_KEY),
-                "saved_ucc": ucc_val,
+                "saved_ucc": (ucc_val[-4:].rjust(len(ucc_val), "*") if ucc_val else ""),
                 "saved_mobile": (mob_val[-4:].rjust(len(mob_val), "*") if mob_val else ""),
                 "has_totp_secret": bool(config.KOTAK_NEO_TOTP_SECRET or saved_creds.get("totp_secret")),
                 "has_mpin": bool(config.KOTAK_NEO_MPIN or saved_creds.get("mpin")),

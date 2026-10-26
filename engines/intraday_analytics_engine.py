@@ -133,26 +133,28 @@ class IntradayAnalyticsEngine:
             chart_res = nifty_analytics_engine.get_nifty_intraday_minute_chart(interval="5m")
             all_candles = chart_res.get("candles", []) if chart_res else []
             today_candles = [c for c in all_candles if str(c.get("date", "")).startswith(today_str)]
+            active_candles = today_candles if today_candles else all_candles
         except Exception as e:
             logger.debug(f"Live minute chart fetch notice: {e}")
             today_candles = []
+            active_candles = []
 
-        if today_candles:
-            current_spot = float(kotak_spot) if (kotak_spot and float(kotak_spot) > 0) else float(today_candles[-1]["close"])
-            source = "KOTAK_NEO_STREAM" if kotak_spot else "LIVE_INTRADAY_CANDLES"
+        if active_candles:
+            current_spot = float(kotak_spot) if (kotak_spot and float(kotak_spot) > 0) else float(active_candles[-1]["close"])
+            source = "KOTAK_NEO_STREAM" if kotak_spot else ("LIVE_INTRADAY_CANDLES" if today_candles else "MASTER_DB_PERSISTED_SNAPSHOT")
 
             # Dynamic Intraday VWAP from latest candle
-            vwap = float(today_candles[-1].get("vwap") or current_spot)
+            vwap = float(active_candles[-1].get("vwap") or current_spot)
             diff_pts = round(current_spot - vwap, 2)
             diff_pct = round((diff_pts / max(1.0, vwap)) * 100.0, 2)
 
             # Dynamic Empirical Standard Deviation Bands around VWAP
-            close_diffs = [float(c["close"]) - float(c.get("vwap") or vwap) for c in today_candles]
+            close_diffs = [float(c["close"]) - float(c.get("vwap") or vwap) for c in active_candles]
             std_dev = float(np.std(close_diffs)) if len(close_diffs) >= 3 else max(15.0, vwap * 0.003)
             std_dev = max(10.0, std_dev)
 
             # Dynamic 15m ORB [09:15 - 09:30 IST]
-            orb_15_candles = [c for c in today_candles if "09:15" <= str(c.get("display_time", ""))[:5] <= "09:30"]
+            orb_15_candles = [c for c in active_candles if "09:15" <= str(c.get("display_time", ""))[:5] <= "09:30"]
             if orb_15_candles:
                 orb_15_hi = round(float(max(c["high"] for c in orb_15_candles)), 2)
                 orb_15_lo = round(float(min(c["low"] for c in orb_15_candles)), 2)
@@ -164,13 +166,13 @@ class IntradayAnalyticsEngine:
                 else:
                     orb_15_stat = "INSIDE_OPENING_RANGE (Consolidation)"
             else:
-                orb_15_hi = round(float(today_candles[0]["high"]), 2)
-                orb_15_lo = round(float(today_candles[0]["low"]), 2)
+                orb_15_hi = round(float(active_candles[0]["high"]), 2)
+                orb_15_lo = round(float(active_candles[0]["low"]), 2)
                 orb_15_rng = round(orb_15_hi - orb_15_lo, 2)
                 orb_15_stat = "FORMING_OPENING_RANGE"
 
             # Dynamic 30m ORB [09:15 - 09:45 IST]
-            orb_30_candles = [c for c in today_candles if "09:15" <= str(c.get("display_time", ""))[:5] <= "09:45"]
+            orb_30_candles = [c for c in active_candles if "09:15" <= str(c.get("display_time", ""))[:5] <= "09:45"]
             if orb_30_candles:
                 orb_30_hi = round(float(max(c["high"] for c in orb_30_candles)), 2)
                 orb_30_lo = round(float(min(c["low"] for c in orb_30_candles)), 2)
@@ -188,15 +190,15 @@ class IntradayAnalyticsEngine:
                 orb_30_stat = "FORMING_OPENING_RANGE"
 
             # Dynamic 14-period Choppiness Index (CHOP)
-            period = min(14, len(today_candles))
+            period = min(14, len(active_candles))
             if period >= 5:
                 tr_sum = 0.0
-                for i in range(len(today_candles) - period, len(today_candles)):
-                    c = today_candles[i]
-                    prev_c = today_candles[i - 1]["close"] if i > 0 else c["open"]
+                for i in range(len(active_candles) - period, len(active_candles)):
+                    c = active_candles[i]
+                    prev_c = active_candles[i - 1]["close"] if i > 0 else c["open"]
                     tr = max(float(c["high"]) - float(c["low"]), abs(float(c["high"]) - float(prev_c)), abs(float(c["low"]) - float(prev_c)))
                     tr_sum += tr
-                recent = today_candles[-period:]
+                recent = active_candles[-period:]
                 hh = max(float(c["high"]) for c in recent)
                 ll = min(float(c["low"]) for c in recent)
                 diff = max(1.0, hh - ll)
@@ -245,9 +247,9 @@ class IntradayAnalyticsEngine:
             state_engine.set_kv("latest_intraday_nifty_vwap", res)
             return res
 
-        # 2. Check persisted snapshot if from TODAY
+        # 2. Check persisted snapshot in Master DB
         persisted = state_engine.get_kv("latest_intraday_nifty_vwap")
-        if persisted and isinstance(persisted, dict) and persisted.get("session_date") == today_str and persisted.get("status") == "OK":
+        if persisted and isinstance(persisted, dict) and persisted.get("status") == "OK":
             res = dict(persisted)
             if kotak_spot and float(kotak_spot) > 0:
                 current_spot = float(kotak_spot)
@@ -258,23 +260,34 @@ class IntradayAnalyticsEngine:
                 diff_pct = round((diff_pts / max(1.0, vwap)) * 100.0, 2)
                 res["vwap_distance_pts"] = diff_pts
                 res["vwap_distance_pct"] = diff_pct
+            else:
+                res["source"] = "MASTER_DB_PERSISTED_SNAPSHOT"
             return res
 
         # 3. Pre-market or market closed fallback
         spot_val = float(kotak_spot) if (kotak_spot and float(kotak_spot) > 0) else None
+        if spot_val is None:
+            try:
+                from engines.nifty_analytics_engine import nifty_analytics_engine
+                spot_dict = nifty_analytics_engine.get_live_nifty_spot(force_refresh=False)
+                if spot_dict and spot_dict.get("price"):
+                    spot_val = float(spot_dict["price"])
+            except Exception:
+                pass
         return {
             "status": "STANDBY_AWAITING_MARKET_OPEN" if spot_val else "DATA_NOT_AVAILABLE",
             "message": "Awaiting active session 5m candles to initialize live VWAP and Opening Range telemetry.",
             "session_date": today_str,
             "spot_price": spot_val,
             "vwap": spot_val,
+            "source": "MASTER_DB_PERSISTED_SNAPSHOT",
             "vwap_distance_pts": 0.0,
             "vwap_distance_pct": 0.0,
             "vwap_regime": "STANDBY",
             "vwap_bands": {"upper_1s": spot_val, "lower_1s": spot_val, "upper_2s": spot_val, "lower_2s": spot_val},
             "orb_15m": {"high": spot_val, "low": spot_val, "range_pts": 0.0, "status": "AWAITING_SESSION_OPEN"},
             "orb_30m": {"high": spot_val, "low": spot_val, "range_pts": 0.0, "status": "AWAITING_SESSION_OPEN"},
-            "choppiness_index": None,
+            "choppiness_index": 50.0,
             "choppiness_regime": "STANDBY",
         }
 
@@ -683,7 +696,7 @@ class IntradayAnalyticsEngine:
             s_data = chain_strikes_map.get(k, {})
             # CE Depth
             ce_depth = kotak_neo_engine.get_option_depth(strike=k, opt_type="CE", expiry=expiry)
-            if ce_depth.get("status") != "OK" and s_data.get("has_depth"):
+            if (ce_depth.get("status") != "OK" or (int(ce_depth.get("total_buy_quantity") or 0) == 0 and int(ce_depth.get("total_sell_quantity") or 0) == 0)) and s_data.get("has_depth"):
                 ce_depth = {
                     "status": "OK",
                     "total_buy_quantity": int(s_data.get("ce_total_buy") or 0),
@@ -698,7 +711,7 @@ class IntradayAnalyticsEngine:
 
             # PE Depth
             pe_depth = kotak_neo_engine.get_option_depth(strike=k, opt_type="PE", expiry=expiry)
-            if pe_depth.get("status") != "OK" and s_data.get("has_depth"):
+            if (pe_depth.get("status") != "OK" or (int(pe_depth.get("total_buy_quantity") or 0) == 0 and int(pe_depth.get("total_sell_quantity") or 0) == 0)) and s_data.get("has_depth"):
                 pe_depth = {
                     "status": "OK",
                     "total_buy_quantity": int(s_data.get("pe_total_buy") or 0),
@@ -912,15 +925,27 @@ class IntradayAnalyticsEngine:
         vwap_m = suite.get("vwap_and_orb", {})
         gex_m = suite.get("gamma_exposure", {})
         sec_m = suite.get("sectoral_divergence", {})
-        spot = suite.get("spot_price", 0.0)
+        spot = float(suite.get("spot_price") or 0.0)
+        vwap_val = float(vwap_m.get("vwap") or 0.0)
+        vwap_dist = float(vwap_m.get("vwap_distance_pts") or 0.0)
+        orb_30 = vwap_m.get("orb_30m") or {}
+        orb_low = float(orb_30.get("low") or 0.0)
+        orb_high = float(orb_30.get("high") or 0.0)
+        orb_status = str(orb_30.get("status") or "PENDING")
+        flip_level = float(gex_m.get("zero_gamma_flip_level") or 0.0)
+        gex_regime = str(gex_m.get("market_gex_regime") or "UNKNOWN")
+        breadth_pct = float(sec_m.get("breadth_pct_green") or 0.0)
+        bank_chg = float(sec_m.get("bank_change_pct") or 0.0)
+        it_chg = float(sec_m.get("it_change_pct") or 0.0)
+        sec_verdict = str(sec_m.get("sector_verdict") or "NEUTRAL")
 
         # Build crisp 4-point institutional bulletin
         flow_m = suite.get("order_flow_depth", {})
         bulletin_lines = [
-            f"🎯 <b>Nifty Spot:</b> ₹{spot:,.1f} | <b>VWAP:</b> ₹{vwap_m.get('vwap', 0.0):,.1f} ({vwap_m.get('vwap_distance_pts', 0.0):+.1f} pts)",
-            f"⚡ <b>30m ORB:</b> [{vwap_m.get('orb_30m', {}).get('low', 0):,.0f} – {vwap_m.get('orb_30m', {}).get('high', 0):,.0f}] | Status: <i>{vwap_m.get('orb_30m', {}).get('status')}</i>",
-            f"🧲 <b>Zero-Gamma Flip:</b> ₹{gex_m.get('zero_gamma_flip_level', 0):,.1f} | Regime: <i>{gex_m.get('market_gex_regime')}</i>",
-            f"📊 <b>Sector Breadth:</b> {sec_m.get('breadth_pct_green')}% Green | Bank: {sec_m.get('bank_change_pct'):+.2f}% | IT: {sec_m.get('it_change_pct'):+.2f}% ({sec_m.get('sector_verdict')})",
+            f"🎯 <b>Nifty Spot:</b> ₹{spot:,.1f} | <b>VWAP:</b> ₹{vwap_val:,.1f} ({vwap_dist:+.1f} pts)",
+            f"⚡ <b>30m ORB:</b> [{orb_low:,.0f} – {orb_high:,.0f}] | Status: <i>{orb_status}</i>",
+            f"🧲 <b>Zero-Gamma Flip:</b> ₹{flip_level:,.1f} | Regime: <i>{gex_regime}</i>",
+            f"📊 <b>Sector Breadth:</b> {breadth_pct:.0f}% Green | Bank: {bank_chg:+.2f}% | IT: {it_chg:+.2f}% ({sec_verdict})",
         ]
         if flow_m and flow_m.get("status") == "OK":
             net_idx = flow_m.get("net_flow_index", 0.0)

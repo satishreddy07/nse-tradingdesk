@@ -16,6 +16,19 @@ Never invent, assume, approximate, or silently substitute a business rule, tradi
 
 When the correct value cannot be established from the repository, an authoritative data source, or an explicitly approved specification, stop and report the uncertainty.
 
+### Mandatory Compliance with Permanent Anti-Fabrication Policy
+
+All future code modifications, additions, audits, and agent workflows touching:
+1. **Financial Market Data** (live quotes, historical OHLCV, ticks, order-book depth, option chains, Greeks),
+2. **Quantitative Analytics** (decay curves, volume profiles, GEX, IV ranks, technical indicators),
+3. **Machine Learning & AI** (feature pipelines, empirical training sets, forecast calibration, model registries),
+4. **Risk Management** (position sizing, risk limits, stop losses, drawdowns, capital budgets), and
+5. **Trading & Order Execution** (execution daemons, broker orders, leg adjustments, state transitions)
+
+MUST strictly comply with the comprehensive rules established in [docs/ANTI_FABRICATION_POLICY.md](docs/ANTI_FABRICATION_POLICY.md).
+
+No pull request, patch, or agent turn is complete without proving adherence to the core policy domains defined in [docs/ANTI_FABRICATION_POLICY.md](docs/ANTI_FABRICATION_POLICY.md).
+
 
 
 \## 2. Prohibited Behaviors
@@ -210,7 +223,7 @@ Before editing:
 
 2\. Identify the relevant files and execution paths.
 
-3\. Establish the expected behavior from existing specifications and tests.
+3\. Establish the expected behavior from existing specifications, tests, and [docs/ANTI_FABRICATION_POLICY.md](docs/ANTI_FABRICATION_POLICY.md).
 
 4\. Identify any uncertainty or conflicting requirements.
 
@@ -246,7 +259,7 @@ After implementation:
 
 4\. Verify boundary cases and failure handling.
 
-5\. Inspect the Git diff for unintended changes.
+5\. Inspect the Git diff for unintended changes and verify strict compliance with [docs/ANTI_FABRICATION_POLICY.md](docs/ANTI_FABRICATION_POLICY.md).
 
 6\. Report exactly which tests passed, failed, or could not be run.
 
@@ -327,6 +340,7 @@ A change is complete only when:
 \- The Git diff contains only justified changes.
 
 \- The final report accurately describes what was verified and what remains uncertain.
+- It strictly adheres to all domains of [docs/ANTI_FABRICATION_POLICY.md](docs/ANTI_FABRICATION_POLICY.md).
 
 
 

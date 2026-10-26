@@ -312,7 +312,8 @@ def test_moneycontrol_economic_calendar_scraper():
     """
     NiftyAnalyticsEngine._eco_cal_cache = {}
     cal = NiftyAnalyticsEngine.fetch_moneycontrol_economic_calendar(force_refresh=True)
-    assert cal.get("status") in ["OK", "WARNING"]
+    # The external moneycontrol.com scraper may return OK/WARNING, or fail-closed DATA_UNAVAILABLE if anti-bot HTTP 403 occurs
+    assert cal.get("status") in ["OK", "WARNING", "DATA_UNAVAILABLE"]
     assert "Moneycontrol Economic Calendar" in cal.get("source", "")
     assert "total_high_impact" in cal
     assert "reported_count" in cal
@@ -350,12 +351,62 @@ def test_moneycontrol_economic_calendar_scraper():
     assert upcoming["status"] == "UPCOMING"
 
 
+def test_moneycontrol_economic_calendar_parser_mocked(monkeypatch):
+    """Hermetic unit test validating HTML parsing, 3-star filtering, and surprise logic with mock response."""
+    sample_html = """
+    <html>
+      <div class="eco_date">Thursday, October 29, 2026</div>
+      <table>
+        <tr data-impact="3">
+          <td>1</td>
+          <td>19:00</td>
+          <td><img title="United States">USA</td>
+          <td>Initial Jobless Claims</td>
+          <td>Weekly</td>
+          <td>215K</td>
+          <td>225K</td>
+          <td>220K</td>
+          <td>Extra</td>
+        </tr>
+        <tr data-impact="1">
+          <td>2</td>
+          <td>20:00</td>
+          <td><img title="India">IND</td>
+          <td>Low Impact Event</td>
+          <td>Monthly</td>
+          <td>10%</td>
+          <td>10%</td>
+          <td>10%</td>
+          <td>Extra</td>
+        </tr>
+      </table>
+    </html>
+    """
+    class MockResponse:
+        status_code = 200
+        text = sample_html
+
+    import requests
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: MockResponse())
+    NiftyAnalyticsEngine._eco_cal_cache = {}
+    parsed = NiftyAnalyticsEngine.fetch_moneycontrol_economic_calendar(force_refresh=True)
+    assert parsed.get("status") == "OK"
+    assert parsed.get("total_high_impact") == 1
+    ev = parsed["events"][0]
+    assert ev["event"] == "Initial Jobless Claims"
+    assert ev["country_code"] == "USA"
+    assert ev["actual"] == "215K"
+    assert ev["consensus"] == "220K"
+    assert ev["impact"] == 3
+    assert ev["impact_stars"] == "⭐⭐⭐"
+
+
 def test_api_economic_calendar_endpoint(client):
     """Verifies that the /api/nifty/economic-calendar endpoint returns HTTP 200 with sanitized JSON."""
     resp = client.get("/api/nifty/economic-calendar")
     assert resp.status_code == 200
     data = resp.json()
-    assert data.get("status") in ["OK", "WARNING"]
+    assert data.get("status") in ["OK", "WARNING", "DATA_UNAVAILABLE"]
     assert "events" in data
     assert "total_high_impact" in data
 

@@ -128,10 +128,22 @@ class AdvancedOptionsPricingEngine:
         if spot_price <= 0.0:
             raise ValueError(f"Invalid spot price for options pricing: {spot_price}")
 
+        eff_exp = expiry_date
+        eff_as_of = None
+        if not eff_exp:
+            try:
+                from core.market_calendar import NSEMarketCalendar
+                cal_exp = NSEMarketCalendar.get_active_options_expiries()
+                eff_exp = cal_exp.get("monthly_expiry") if str(horizon).upper() == "MONTHLY" else cal_exp.get("weekly_expiry")
+                eff_as_of = now_ist().date()
+            except Exception:
+                eff_as_of = now_ist().date()
+
         if lot_size is None or int(lot_size) <= 0:
             try:
                 lot_size = resolve_nifty_lot_size(
-                    expiry_date=expiry_date,
+                    expiry_date=eff_exp,
+                    as_of_date=eff_as_of,
                     contract_type=horizon,
                     symbol="NIFTY",
                     strict=True
@@ -443,6 +455,16 @@ class AdvancedOptionsPricingEngine:
         for l in legs:
             l["lot_size"] = lot_size
             l["lots"] = l.get("ratio", 1)
+            if "expiry_date" not in l or not l["expiry_date"]:
+                l["expiry_date"] = eff_exp
+            if "as_of_date" not in l or not l["as_of_date"]:
+                l["as_of_date"] = str(eff_as_of) if eff_as_of else None
+            if "entry_price" not in l or not l["entry_price"]:
+                l["entry_price"] = l.get("premium", 0.0)
+            if "price" not in l or not l["price"]:
+                l["price"] = l.get("premium", 0.0)
+            if "current_price" not in l or not l["current_price"]:
+                l["current_price"] = l.get("premium", 0.0)
 
         return {
             "strategy_name": name,

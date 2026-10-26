@@ -33,6 +33,7 @@ Strictly Index & Derivatives Quantitative Analytics (Zero Hardcoded / Fake Value
 import math
 import json
 import re
+import urllib.request
 import time
 import random
 import logging
@@ -54,7 +55,7 @@ from core.config import (
     RISK_FREE_RATE, DEFAULT_OPTIONS_IV, calc_regulatory_options_cost
 )
 
-from core.data_quality import IST, now_ist, format_ist
+from core.data_quality import IST, now_ist, format_ist, check_data_freshness
 from core.market_calendar import NSEMarketCalendar
 from core.stock_registry import get_stock_sector
 from core.telegram_vault import telegram_vault
@@ -65,9 +66,8 @@ from engines.us_analytics_engine import us_analytics_engine
 logger = logging.getLogger("NiftyAnalyticsEngine")
 
 
-# Scheduled 15-minute, 30-minute (Institutional Standard), and 50-minute intraday collection slots from 09:15 to 15:30 IST
+# Scheduled 15-minute, 30-minute (Institutional Standard), and 50-minute intraday collection slots from 09:30 to 15:30 IST
 INTRADAY_15M_SLOTS = [
-    ("09:15", "09:15 AM • Market Open & Baseline Positioning"),
     ("09:30", "09:30 AM • Opening Bell & Initial OI Positioning"),
     ("09:45", "09:45 AM • Opening 15m ORB & First Writer Test"),
     ("10:00", "10:00 AM • Institutional Basket Execution"),
@@ -96,7 +96,6 @@ INTRADAY_15M_SLOTS = [
 ]
 
 INTRADAY_30M_SLOTS = [
-    ("09:15", "09:15 AM • Market Open & Baseline Positioning"),
     ("09:30", "09:30 AM • Opening Bell & Initial OI Positioning"),
     ("10:00", "10:00 AM • Opening 30m ORB & Early Writer Flow"),
     ("10:30", "10:30 AM • 1-Hour Initial Balance (IB) High/Low Lock"),
@@ -113,7 +112,6 @@ INTRADAY_30M_SLOTS = [
 ]
 
 INTRADAY_50M_SLOTS = [
-    ("09:15", "09:15 AM • Market Open & Baseline Positioning"),
     ("09:30", "09:30 AM • Opening Bell & Initial OI Positioning"),
     ("10:20", "10:20 AM • Post-Opening Range & First 50m Writer Flow"),
     ("11:10", "11:10 AM • Mid-Morning Institutional OI Buildup"),
@@ -244,7 +242,7 @@ def generate_projected_central_bank_events(year: int) -> List[Dict[str, Any]]:
                 "title": f"India MOSPI Retail CPI & IIP Release ({cpi_dt.strftime('%b %Y')})",
                 "status": "UPCOMING",
                 "consensus": "Retail CPI Inflation & Industrial Output",
-                "market_impact": "RBI_RATE_DECISION_DRIVER"
+                "market_impact": "HIGH_EVENT_VOLATILITY"
             })
         except Exception:
             pass
@@ -812,35 +810,42 @@ class NiftyAnalyticsEngine:
         disp_reg = breadth_an.get("dispersion_regime", "BALANCED")
         disp_note = breadth_an.get("dispersion_note", "")
 
-        # Fallback to direct Yahoo chart fetch if any primary benchmark is missing
-        try:
-            from engines.us_analytics_engine import us_analytics_engine
-            if not spy_close:
-                _, df_s, _ = us_analytics_engine._fetch_yahoo_chart("SPY", "1mo")
-                if df_s is not None and not df_s.empty:
-                    m = us_analytics_engine._calc_series_metrics(df_s)
-                    spy_close = m.get("close")
-                    spy_1d = m.get("ret_1d")
-                    spy_5d = m.get("ret_5d")
-                    spy_e20 = m.get("ema20")
-            if not vix_spot or vix_1d is None or vix_e20 is None:
-                _, df_v, _ = us_analytics_engine._fetch_yahoo_chart("^VIX", "1mo")
-                if df_v is not None and not df_v.empty:
-                    m = us_analytics_engine._calc_series_metrics(df_v)
-                    vix_spot = m.get("close")
-                    vix_1d = m.get("ret_1d")
-                    vix_5d = m.get("ret_5d")
-                    vix_e20 = m.get("ema20")
-            if not es_close or es_1d is None:
-                _, df_e, _ = us_analytics_engine._fetch_yahoo_chart("ES=F", "1mo")
-                if df_e is not None and not df_e.empty:
-                    m = us_analytics_engine._calc_series_metrics(df_e)
-                    es_close = m.get("close")
-                    es_1d = m.get("ret_1d")
-                    es_5d = m.get("ret_5d")
-                    es_e20 = m.get("ema20")
-        except Exception as e:
-            logger.debug(f"Direct Yahoo fallback error in backfill: {e}")
+        # Fallback to direct Yahoo chart fetch only if us_intel is not explicitly marked UNAVAILABLE
+        is_us_unavail = bool(
+            us_intel and (
+                us_intel.get("volatility_surface", {}).get("regime") == "UNAVAILABLE"
+                or us_intel.get("status") == "UNAVAILABLE"
+            )
+        )
+        if not is_us_unavail:
+            try:
+                from engines.us_analytics_engine import us_analytics_engine
+                if not spy_close:
+                    _, df_s, _ = us_analytics_engine._fetch_yahoo_chart("SPY", "1mo")
+                    if df_s is not None and not df_s.empty:
+                        m = us_analytics_engine._calc_series_metrics(df_s)
+                        spy_close = m.get("close")
+                        spy_1d = m.get("ret_1d")
+                        spy_5d = m.get("ret_5d")
+                        spy_e20 = m.get("ema20")
+                if not vix_spot or vix_1d is None or vix_e20 is None:
+                    _, df_v, _ = us_analytics_engine._fetch_yahoo_chart("^VIX", "1mo")
+                    if df_v is not None and not df_v.empty:
+                        m = us_analytics_engine._calc_series_metrics(df_v)
+                        vix_spot = m.get("close")
+                        vix_1d = m.get("ret_1d")
+                        vix_5d = m.get("ret_5d")
+                        vix_e20 = m.get("ema20")
+                if not es_close or es_1d is None:
+                    _, df_e, _ = us_analytics_engine._fetch_yahoo_chart("ES=F", "1mo")
+                    if df_e is not None and not df_e.empty:
+                        m = us_analytics_engine._calc_series_metrics(df_e)
+                        es_close = m.get("close")
+                        es_1d = m.get("ret_1d")
+                        es_5d = m.get("ret_5d")
+                        es_e20 = m.get("ema20")
+            except Exception as e:
+                logger.debug(f"Direct Yahoo fallback error in backfill: {e}")
 
         for r in g_rows:
             tk = str(r.get("ticker", "")).upper()
@@ -865,47 +870,65 @@ class NiftyAnalyticsEngine:
 
             # 2. US T+1 / SPY
             elif "SPY" in tk or "US T+1" in name:
-                if (r.get("ltp") is None or r.get("ltp") == 0) and spy_close is not None:
-                    r["ltp"] = round(float(spy_close), 2)
-                if r.get("ret_1d") is None and spy_1d is not None:
-                    r["ret_1d"] = round(float(spy_1d), 2)
-                if r.get("ret_5d") is None and spy_5d is not None:
-                    r["ret_5d"] = round(float(spy_5d), 2)
-                if r.get("ema20") is None and spy_e20 is not None:
-                    r["ema20"] = round(float(spy_e20), 2)
-                if t1_fc.get("verdict"):
-                    r["name"] = f"US T+1 Prediction: {t1_fc.get('verdict')}"
-                if t1_fc.get("expected_close_spy"):
-                    prob_up = t1_fc.get("prob_up", 0.33)
-                    conf = t1_fc.get("confidence", "MEDIUM")
-                    r["note"] = f"US T+1 Model (Prob Up: {prob_up*100:.0f}%, Confidence: {conf})"
-                u_score = float((us_intel.get("us_composite_score") if us_intel else None) or 0.0)
-                r["signal_score"] = round(u_score, 1)
-                r["trend"] = "BULLISH_TAILWIND" if u_score >= 10 else ("BEARISH_HEADWIND" if u_score <= -10 else "NEUTRAL")
+                if spy_close is None and t1_fc.get("expected_close_spy") is None:
+                    r["ltp"] = None
+                    r["ret_1d"] = None
+                    r["ret_5d"] = None
+                    r["ema20"] = None
+                    r["trend"] = "UNAVAILABLE"
+                else:
+                    if (r.get("ltp") is None or r.get("ltp") == 0) and spy_close is not None:
+                        r["ltp"] = round(float(spy_close), 2)
+                    if r.get("ret_1d") is None and spy_1d is not None:
+                        r["ret_1d"] = round(float(spy_1d), 2)
+                    if r.get("ret_5d") is None and spy_5d is not None:
+                        r["ret_5d"] = round(float(spy_5d), 2)
+                    if r.get("ema20") is None and spy_e20 is not None:
+                        r["ema20"] = round(float(spy_e20), 2)
+                    if t1_fc.get("verdict"):
+                        r["name"] = f"US T+1 Prediction: {t1_fc.get('verdict')}"
+                    if t1_fc.get("expected_close_spy"):
+                        prob_up = t1_fc.get("prob_up", 0.33)
+                        conf = t1_fc.get("confidence", "MEDIUM")
+                        r["note"] = f"US T+1 Model (Prob Up: {prob_up*100:.0f}%, Confidence: {conf})"
+                    u_score = float((us_intel.get("us_composite_score") if us_intel else None) or 0.0)
+                    r["signal_score"] = round(u_score, 1)
+                    r["trend"] = "BULLISH_TAILWIND" if u_score >= 10 else ("BEARISH_HEADWIND" if u_score <= -10 else "NEUTRAL")
 
             # 3. US VIX / ^VIX
             elif "VIX" in tk or "VIX" in name.upper():
-                if (r.get("ltp") is None or r.get("ltp") == 0) and vix_spot is not None:
-                    r["ltp"] = round(float(vix_spot), 2)
-                if r.get("ret_1d") is None and vix_1d is not None:
-                    r["ret_1d"] = round(float(vix_1d), 2)
-                elif r.get("ret_1d") is None and vix_spot is not None:
-                    r["ret_1d"] = 0.00
-                if r.get("ret_5d") is None and vix_5d is not None:
-                    r["ret_5d"] = round(float(vix_5d), 2)
-                elif r.get("ret_5d") is None and vix_spot is not None:
-                    r["ret_5d"] = 0.00
-                if r.get("ema20") is None and vix_e20 is not None:
-                    r["ema20"] = round(float(vix_e20), 2)
-                elif r.get("ema20") is None and vix_spot is not None:
-                    r["ema20"] = round(float(vix_spot), 2)
-                if vol_surf.get("regime"):
-                    r["name"] = f"US VIX Term Structure: {vol_surf.get('regime')}"
-                if vol_surf.get("note"):
-                    r["note"] = str(vol_surf.get("note"))
-                v_score = float(((us_intel.get("pillar_scores", {}) if us_intel else {}).get("volatility_score")) or 0.0)
-                r["signal_score"] = round(v_score, 1)
-                r["trend"] = "BULLISH_TAILWIND" if v_score >= 10 else ("BEARISH_HEADWIND" if v_score <= -10 else "NEUTRAL")
+                if vol_surf.get("regime") == "UNAVAILABLE" or vix_spot is None:
+                    r["ltp"] = None
+                    r["ret_1d"] = None
+                    r["ret_5d"] = None
+                    r["ema20"] = None
+                    r["trend"] = "UNAVAILABLE"
+                    if vol_surf.get("regime"):
+                        r["name"] = f"US VIX Term Structure: {vol_surf.get('regime')}"
+                    if vol_surf.get("note"):
+                        r["note"] = str(vol_surf.get("note"))
+                else:
+                    if (r.get("ltp") is None or r.get("ltp") == 0) and vix_spot is not None:
+                        r["ltp"] = round(float(vix_spot), 2)
+                    if r.get("ret_1d") is None and vix_1d is not None:
+                        r["ret_1d"] = round(float(vix_1d), 2)
+                    elif r.get("ret_1d") is None and vix_spot is not None:
+                        r["ret_1d"] = 0.00
+                    if r.get("ret_5d") is None and vix_5d is not None:
+                        r["ret_5d"] = round(float(vix_5d), 2)
+                    elif r.get("ret_5d") is None and vix_spot is not None:
+                        r["ret_5d"] = 0.00
+                    if r.get("ema20") is None and vix_e20 is not None:
+                        r["ema20"] = round(float(vix_e20), 2)
+                    elif r.get("ema20") is None and vix_spot is not None:
+                        r["ema20"] = round(float(vix_spot), 2)
+                    if vol_surf.get("regime"):
+                        r["name"] = f"US VIX Term Structure: {vol_surf.get('regime')}"
+                    if vol_surf.get("note"):
+                        r["note"] = str(vol_surf.get("note"))
+                    v_score = float(((us_intel.get("pillar_scores", {}) if us_intel else {}).get("volatility_score")) or 0.0)
+                    r["signal_score"] = round(v_score, 1)
+                    r["trend"] = "BULLISH_TAILWIND" if v_score >= 10 else ("BEARISH_HEADWIND" if v_score <= -10 else "NEUTRAL")
 
             # 4. Futures / ES=F
             elif "ES" in tk or "FUTURES" in name.upper():
@@ -1238,8 +1261,8 @@ class NiftyAnalyticsEngine:
         else:
             gex_regime = "NEUTRAL_GAMMA_TRANSITION"
 
-        # 8. Display Table (±30 strikes around ATM, up to 61 strikes)
-        display_strikes = strikes_data[max(0, atm_idx - 30): min(len(strikes_data), atm_idx + 31)]
+        # 8. Display Table (±12 strikes around ATM, up to 25 strikes)
+        display_strikes = strikes_data[max(0, atm_idx - 12): min(len(strikes_data), atm_idx + 13)]
 
         # 9. Sentiment Verdict & Institutional Summary
         if near_atm_pcr >= 1.25 and chg_oi_pcr >= 1.20:
@@ -1568,7 +1591,8 @@ class NiftyAnalyticsEngine:
             persisted["source"] = "MASTER_DB_PERSISTED_SNAPSHOT"
             is_market_open, _ = NSEMarketCalendar.can_execute_trades()
             mkt_status = NSEMarketCalendar.get_market_status()
-            persisted["is_live"] = is_market_open
+            persisted["is_live"] = False
+            persisted["is_cached"] = True
             persisted["market_status"] = {
                 "is_open": is_market_open,
                 "status": "OPEN" if is_market_open else "CLOSED",
@@ -1937,16 +1961,116 @@ class NiftyAnalyticsEngine:
             }
 
         oc = self.fetch_and_analyze_option_chain(force_refresh=True)
-        if oc.get("status") != "OK":
-            logger.warning(f"Option chain unavailable ({oc.get('message')}); refusing to capture synthetic snapshot.")
+        if not oc or oc.get("status") != "OK":
+            logger.warning(f"Option chain unavailable ({(oc or {}).get('message')}); refusing to capture synthetic snapshot.")
             return {
                 "status": "DATA_UNAVAILABLE",
-                "message": f"Option chain unavailable: {oc.get('message', 'Unknown error')}. Refusing to record synthetic snapshot.",
+                "message": f"Option chain unavailable: {(oc or {}).get('message', 'Unknown error')}. Refusing to record synthetic snapshot.",
                 "session_date": dt_now.strftime("%Y-%m-%d"),
                 "slot_time": slot_time
             }
 
-        w = oc["weekly"]
+        source = oc.get("source")
+        if source != "KOTAK_NEO_STREAM" or oc.get("is_live") is not True:
+            logger.warning(
+                f"Option chain rejected for empirical snapshot capture: source='{source}', is_live={oc.get('is_live')!r}. "
+                "Persisted cache or non-live fallback cannot be recorded as LIVE."
+            )
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": f"Option chain source '{source}' is not a verified live stream (is_live={oc.get('is_live')!r}). Refusing to persist non-live snapshot.",
+                "session_date": dt_now.strftime("%Y-%m-%d"),
+                "slot_time": slot_time
+            }
+
+        symbol = oc.get("symbol", "")
+        if symbol not in ("NIFTY 50", "NIFTY"):
+            logger.warning(f"Option chain symbol mismatch: '{symbol}' != 'NIFTY 50'. Refusing to capture snapshot.")
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": f"Instrument identity mismatch: symbol '{symbol}' is not NIFTY 50.",
+                "session_date": dt_now.strftime("%Y-%m-%d"),
+                "slot_time": slot_time
+            }
+
+        w = oc.get("weekly")
+        if not w or not isinstance(w, dict) or not w.get("expiry"):
+            logger.warning("Option chain weekly expiry section missing or invalid.")
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": "Weekly option chain contract details missing or invalid.",
+                "session_date": dt_now.strftime("%Y-%m-%d"),
+                "slot_time": slot_time
+            }
+
+        expiry_str = str(w.get("expiry", "")).strip()
+        parsed_exp = self._parse_nse_expiry_date(expiry_str)
+        if not parsed_exp:
+            logger.warning(f"Weekly option chain expiry '{expiry_str}' cannot be parsed into a valid date.")
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": f"Weekly option chain expiry '{expiry_str}' is not a valid date format.",
+                "session_date": dt_now.strftime("%Y-%m-%d"),
+                "slot_time": slot_time
+            }
+
+        # Validate spot_price: must be finite and strictly positive
+        raw_spot = w.get("spot_price")
+        if raw_spot is None:
+            logger.warning("Option chain weekly spot_price is missing.")
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": "Weekly option chain spot_price is missing.",
+                "session_date": dt_now.strftime("%Y-%m-%d"),
+                "slot_time": slot_time
+            }
+        try:
+            spot = float(raw_spot)
+        except (TypeError, ValueError):
+            logger.warning(f"Option chain weekly spot_price '{raw_spot}' is not numeric.")
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": f"Weekly option chain spot_price '{raw_spot}' is not a valid number.",
+                "session_date": dt_now.strftime("%Y-%m-%d"),
+                "slot_time": slot_time
+            }
+        if not math.isfinite(spot) or spot <= 0:
+            logger.warning(f"Option chain weekly spot_price {spot} is not finite and strictly positive.")
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": f"Weekly option chain spot_price {spot} must be finite and strictly positive.",
+                "session_date": dt_now.strftime("%Y-%m-%d"),
+                "slot_time": slot_time
+            }
+
+        # Validate atm_strike: must be positive integer
+        raw_atm = w.get("atm_strike")
+        try:
+            atm_strike = int(raw_atm)
+            if atm_strike <= 0:
+                raise ValueError("ATM strike must be positive")
+        except (TypeError, ValueError):
+            logger.warning(f"Option chain weekly atm_strike '{raw_atm}' is invalid.")
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": f"Weekly option chain atm_strike '{raw_atm}' is invalid.",
+                "session_date": dt_now.strftime("%Y-%m-%d"),
+                "slot_time": slot_time
+            }
+
+        # Authenticate source timestamp and freshness (max age 180s under core/data_quality.py)
+        source_ts = oc.get("fetched_at") or oc.get("timestamp") or oc.get("fetched_at_ist") or w.get("nse_timestamp")
+        freshness = check_data_freshness(source_ts, max_age_seconds=180)
+        if freshness.get("status") != "VALID" or freshness.get("is_stale", True):
+            reason = freshness.get("error") or f"Data is stale (age: {freshness.get('age_seconds')}s > 180s)"
+            logger.warning(f"Option chain timestamp freshness check failed ({freshness.get('status')}): {reason}")
+            return {
+                "status": "DATA_UNAVAILABLE",
+                "message": f"Option chain timestamp not fresh: {reason}",
+                "session_date": dt_now.strftime("%Y-%m-%d"),
+                "slot_time": slot_time
+            }
+
         session_date = dt_now.strftime("%Y-%m-%d")
         nse_ts = w.get("nse_timestamp") or ""
         if len(nse_ts) >= 11:
@@ -1954,10 +2078,7 @@ class NiftyAnalyticsEngine:
             if parsed_nse_dt:
                 session_date = parsed_nse_dt.strftime("%Y-%m-%d")
 
-        ts_ist = format_ist(dt_now)
-
-        spot = float(w["spot_price"])
-        atm_strike = int(w["atm_strike"])
+        ts_ist = source_ts
         strad_info = w["straddle"]
         pcr_info = w["pcr"]
         walls_info = w["walls_and_pain"]
@@ -2019,6 +2140,10 @@ class NiftyAnalyticsEngine:
         snap_meta["lower_breakeven"] = strad_info.get("lower_breakeven", round(spot - straddle_prem, 1))
         snap_meta["fresh_call_wall"] = walls_info.get("fresh_call_wall", call_wall)
         snap_meta["fresh_put_wall"] = walls_info.get("fresh_put_wall", put_wall)
+        snap_meta["source_timestamp"] = source_ts
+        snap_meta["captured_at"] = format_ist(dt_now)
+        snap_meta["freshness_age_seconds"] = freshness.get("age_seconds")
+        snap_meta["source"] = source
         snap_meta["data_source"] = "LIVE"
         snap_meta["is_simulated"] = False
         oi_diff_lakhs = snap_meta.get("oi_diff_lakhs", round((net_pe_chg - net_ce_chg) / 100000.0, 2))
@@ -6504,7 +6629,7 @@ class NiftyAnalyticsEngine:
             except (ValueError, TypeError) as ex:
                 raise ValueError(f"Invalid quantity parameter: {ex}")
 
-            px = float(l.get("entry_price") or l.get("price") or 0.0)
+            px = float(l.get("entry_price") or l.get("price") or l.get("premium") or 0.0)
             if px <= 0.0:
                 if oc_lookup is None:
                     try:
@@ -7107,6 +7232,7 @@ class NiftyAnalyticsEngine:
         if spot <= 0.0 or not legs:
             return {"delta": 0.0, "theta": 0.0, "gamma": 0.0, "vega": 0.0}
 
+        strat_exp = str(expiry_date_str or "").strip()
         dte = 5.0
         today_date = now_ist().date()
         parsed_exp = False
@@ -7544,6 +7670,7 @@ class NiftyAnalyticsEngine:
             return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
         # Determine legitimate DTE from expiry date or market calendar (F-17)
+        strat_exp = str(expiry_date or "").strip()
         dte = 5.0
         today_date = now_ist().date()
         parsed_exp = False
@@ -8744,9 +8871,104 @@ class NiftyAnalyticsEngine:
         except Exception:
             pass
 
+        # 2. Fast Yahoo Finance quote fallback (if Kotak Neo is not active)
+        if not is_kotak_authenticated:
+            try:
+                t0 = time.time()
+                url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1m&range=1d"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    if resp.status == 200:
+                        lat_ms = round((time.time() - t0) * 1000.0, 1)
+                        data = json.loads(resp.read().decode("utf-8"))
+                        meta = data.get("chart", {}).get("result", [{}])[0].get("meta", {})
+                        spot = float(meta.get("regularMarketPrice") or 0.0)
+                        if spot > 0:
+                            p_close = float(meta.get("previousClose") or prev_close or spot)
+                            diff_pts = round(spot - p_close, 2)
+                            diff_pct = round((diff_pts / p_close) * 100.0, 2) if p_close > 0 else 0.0
+                            m_time = meta.get("regularMarketTime") or now_ts
+                            t_age = max(0.0, round(now_ts - m_time, 1))
+                            res = {
+                                "price": round(spot, 2),
+                                "change_pts": diff_pts,
+                                "change_pct": diff_pct,
+                                "prev_close": p_close,
+                                "day_high": float(meta.get("regularMarketDayHigh") or spot),
+                                "day_low": float(meta.get("regularMarketDayLow") or spot),
+                                "atm_strike": int(round(spot / 50.0) * 50),
+                                "timestamp": ts_now,
+                                "source": "YAHOO_LIVE_FAST_STREAM",
+                                "is_live": is_market_open and t_age <= 180.0,
+                                "is_stale": t_age > 180.0,
+                                "age_seconds": t_age,
+                                "latency_ms": lat_ms
+                            }
+                            with self._lock:
+                                self._live_spot_cache = res
+                                self._live_spot_cache_ts = now_ts
+                            return res
+            except Exception as e:
+                logger.debug(f"Fast live Nifty spot Yahoo notice: {e}")
+
+        # 3. Fast NSE All Indices quote fallback
+        if not is_kotak_authenticated:
+            try:
+                session = self._get_nse_session(force_refresh=False)
+                t0 = time.time()
+                resp = session.get("https://www.nseindia.com/api/allIndices", timeout=3)
+                if resp.status_code == 200:
+                    lat_ms = round((time.time() - t0) * 1000.0, 1)
+                    resp_data = resp.json() if hasattr(resp, "json") else {}
+                    indices = resp_data.get("data", []) if isinstance(resp_data, dict) else []
+                    for idx in indices:
+                        if idx.get("index") == "NIFTY 50":
+                            spot = float(idx.get("last") or 0.0)
+                            diff_pts = float(idx.get("variation") or 0.0)
+                            diff_pct = float(idx.get("percentChange") or 0.0)
+                            atm_strike = int(round(spot / 50.0) * 50)
+                            raw_prov_ts = resp_data.get("timestamp") or idx.get("timestamp")
+                            provider_timestamp = None
+                            prov_age_sec = None
+                            if raw_prov_ts:
+                                try:
+                                    prov_dt = pd.to_datetime(raw_prov_ts, dayfirst=True)
+                                    provider_timestamp = format_ist(prov_dt)
+                                    prov_age_sec = max(0.0, (now_ist() - (IST.localize(prov_dt) if hasattr(IST, "localize") else prov_dt.replace(tzinfo=now_ist().tzinfo))).total_seconds())
+                                except Exception:
+                                    provider_timestamp = str(raw_prov_ts)
+
+                            is_stale_quote = (prov_age_sec is None or prov_age_sec > 180.0) if is_market_open else False
+                            res = {
+                                "price": round(spot, 2),
+                                "change_pts": diff_pts,
+                                "change_pct": diff_pct,
+                                "prev_close": round(spot - diff_pts, 2),
+                                "day_high": float(idx.get("high") or spot),
+                                "day_low": float(idx.get("low") or spot),
+                                "atm_strike": atm_strike,
+                                "provider_timestamp": provider_timestamp,
+                                "timestamp": provider_timestamp or ts_now,
+                                "received_at": ts_now,
+                                "source": "NSE_ALL_INDICES_STREAM",
+                                "is_live": is_market_open and not is_stale_quote and provider_timestamp is not None,
+                                "is_stale": is_stale_quote or provider_timestamp is None,
+                                "data_quality": "VALID" if (provider_timestamp and not is_stale_quote) else "UNVERIFIED_SOURCE_TIMESTAMP",
+                                "market_status": mkt_state_str,
+                                "session_phase": mkt_phase,
+                                "age_seconds": round(prov_age_sec, 1) if prov_age_sec is not None else None,
+                                "latency_ms": lat_ms
+                            }
+                            with self._lock:
+                                self._live_spot_cache = res
+                                self._live_spot_cache_ts = now_ts
+                            return res
+            except Exception as e:
+                logger.debug(f"Fast live Nifty spot NSE indices notice: {e}")
+
         # Kotak Neo Stream: ZERO DELAYED SCRAPING (NSE / Yahoo)
         with self._lock:
-            if self._live_spot_cache:
+            if not force_refresh and self._live_spot_cache:
                 cached = dict(self._live_spot_cache)
                 cached["timestamp"] = ts_now
                 cached["source"] = "KOTAK_NEO_CACHE"

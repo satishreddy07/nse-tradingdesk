@@ -138,15 +138,22 @@ def test_capture_snapshot_fails_closed_on_option_chain_unavailability(temp_db):
 
 def test_capture_snapshot_records_live_provenance(temp_db):
     """Test that capture_intraday_50min_snapshot records genuine data with data_source='LIVE'."""
+    from core.data_quality import format_ist, now_ist
     db_file, get_conn = temp_db
 
+    fresh_ts = format_ist(now_ist())
     mock_chain = {
         "status": "OK",
+        "source": "KOTAK_NEO_STREAM",
+        "symbol": "NIFTY 50",
+        "is_live": True,
+        "fetched_at": fresh_ts,
+        "timestamp": fresh_ts,
         "weekly": {
             "spot_price": 22600.0,
             "atm_strike": 22600,
             "expiry": "2026-10-22",
-            "nse_timestamp": "2026-10-20 10:00:00",
+            "nse_timestamp": fresh_ts,
             "straddle": {
                 "ce_ltp": 60.0,
                 "pe_ltp": 55.0,
@@ -180,10 +187,14 @@ def test_capture_snapshot_records_live_provenance(temp_db):
         assert row is not None
         assert row["spot_price"] == 22600.0
         assert row["data_source"] == "LIVE"
+        assert row["timestamp_ist"] == fresh_ts
 
         meta = json.loads(row["snapshot_json"])
         assert meta.get("data_source") == "LIVE"
         assert meta.get("is_simulated") is False
+        assert meta.get("source") == "KOTAK_NEO_STREAM"
+        assert meta.get("source_timestamp") == fresh_ts
+        assert meta.get("freshness_age_seconds") is not None
 
 
 def test_get_snapshots_excludes_synthetic_by_default(temp_db):
@@ -253,8 +264,10 @@ def test_spot_fallback_ignores_synthetic_snapshot(temp_db):
         """)
         conn.commit()
 
-    # Simulate Kotak Neo unavailable
-    with patch("engines.kotak_neo_engine.kotak_neo_engine") as mock_kotak:
+    # Simulate Kotak Neo, Yahoo Finance, and NSE unavailable
+    with patch("engines.kotak_neo_engine.kotak_neo_engine") as mock_kotak, \
+         patch("urllib.request.urlopen", side_effect=Exception("Offline")), \
+         patch.object(nifty_analytics_engine, "_get_nse_session", side_effect=Exception("Offline")):
         mock_kotak.get_live_tick.return_value = None
         mock_kotak.get_live_price.return_value = None
         mock_kotak._is_authenticated = False
@@ -410,7 +423,9 @@ def test_provenance_handling_matrix_across_consumers(temp_db):
     )
 
     # 3. Live Spot Fallback: Must choose the latest LIVE row (09:45 at 22510.0), NOT later unverified/synthetic rows
-    with patch("engines.kotak_neo_engine.kotak_neo_engine") as mock_kotak:
+    with patch("engines.kotak_neo_engine.kotak_neo_engine") as mock_kotak, \
+         patch("urllib.request.urlopen", side_effect=Exception("Offline")), \
+         patch.object(nifty_analytics_engine, "_get_nse_session", side_effect=Exception("Offline")):
         mock_kotak.get_live_tick.return_value = None
         mock_kotak.get_live_price.return_value = None
         mock_kotak._is_authenticated = False
@@ -533,4 +548,375 @@ def test_unmigrated_database_fails_closed_safely(tmp_path):
                     with patch("execution.state_engine.state_engine.get_kv", return_value=None):
                         spot_res = nifty_analytics_engine.get_live_nifty_spot(force_refresh=True)
         assert spot_res.get("source") != "DB_SNAPSHOT_CACHE", "Live spot must refuse to trust unmigrated snapshot table"
+
+
+# =============================================================================
+# 7. LIVE-DATA PROVENANCE & FRESHNESS VALIDATION (F3-05 Follow-Up)
+# =============================================================================
+
+def _build_valid_live_option_chain(fetched_at: str) -> dict:
+    return {
+        "status": "OK",
+        "source": "KOTAK_NEO_STREAM",
+        "symbol": "NIFTY 50",
+        "is_live": True,
+        "spot_price": 22600.0,
+        "fetched_at": fetched_at,
+        "timestamp": fetched_at,
+        "weekly": {
+            "expiry": "2026-10-29",
+            "nse_timestamp": fetched_at,
+            "spot_price": 22600.0,
+            "atm_strike": 22600,
+            "straddle": {
+                "ce_ltp": 65.0,
+                "pe_ltp": 55.0,
+                "straddle_premium": 120.0,
+            },
+            "pcr": {
+                "overall_oi_pcr": 1.1,
+                "near_atm_pcr": 1.05,
+                "exact_atm_pcr": 1.02,
+                "chg_oi_pcr": 1.15
+            },
+            "walls_and_pain": {
+                "max_pain": 22600,
+                "call_wall_1": 22800,
+                "put_wall_1": 22400
+            },
+            "volatility_and_gex": {
+                "near_ce_chg_total": 50000,
+                "near_pe_chg_total": 60000,
+                "iv_skew": 0.5,
+                "atm_iv": 14.2
+            }
+        }
+    }
+
+
+def test_fresh_validated_live_response_persisted_as_live(temp_db):
+    """Test 1: A fresh, validated live response from KOTAK_NEO_STREAM is stored as LIVE with authentic timestamp."""
+    from core.data_quality import format_ist, now_ist
+    db_file, get_conn = temp_db
+
+    fresh_ts = format_ist(now_ist())
+    live_chain = _build_valid_live_option_chain(fresh_ts)
+
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=live_chain):
+        res = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="10:15")
+
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM intraday_option_snapshots WHERE slot_time = '10:15'").fetchone()
+        assert row is not None, "Fresh validated snapshot must be persisted"
+        assert row["data_source"] == "LIVE", "Provenance must be strictly LIVE"
+        assert row["timestamp_ist"] == fresh_ts, "Stored timestamp must match authentic source timestamp"
+
+        meta = json.loads(row["snapshot_json"])
+        assert meta["source"] == "KOTAK_NEO_STREAM"
+        assert meta["source_timestamp"] == fresh_ts
+        assert meta["data_source"] == "LIVE"
+        assert meta["is_simulated"] is False
+        assert meta["freshness_age_seconds"] is not None
+
+
+def test_master_db_persisted_snapshot_never_stored_as_live(temp_db):
+    """Test 2: A MASTER_DB_PERSISTED_SNAPSHOT is never stored as LIVE even if status='OK'."""
+    from core.data_quality import format_ist, now_ist
+    db_file, get_conn = temp_db
+
+    persisted_chain = _build_valid_live_option_chain(format_ist(now_ist()))
+    persisted_chain["source"] = "MASTER_DB_PERSISTED_SNAPSHOT"
+    persisted_chain["is_live"] = False
+    persisted_chain["is_cached"] = True
+
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=persisted_chain):
+        res = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="10:15")
+
+    assert res.get("status") == "DATA_UNAVAILABLE"
+    assert "not a verified live stream" in res.get("message", "")
+
+    with get_conn() as conn:
+        count = conn.execute("SELECT count(*) FROM intraday_option_snapshots WHERE slot_time = '10:15'").fetchone()[0]
+        assert count == 0, "MASTER_DB_PERSISTED_SNAPSHOT must never be written to intraday_option_snapshots"
+
+
+def test_cached_response_with_status_ok_is_rejected(temp_db):
+    """Test 3: A cached response with status='OK' but non-live source is rejected."""
+    from core.data_quality import format_ist, now_ist
+    db_file, get_conn = temp_db
+
+    cached_chain = _build_valid_live_option_chain(format_ist(now_ist()))
+    cached_chain["source"] = "IN_MEMORY_CACHE"
+    cached_chain["is_live"] = False
+
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=cached_chain):
+        res = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="10:30")
+
+    assert res.get("status") == "DATA_UNAVAILABLE"
+
+    with get_conn() as conn:
+        count = conn.execute("SELECT count(*) FROM intraday_option_snapshots WHERE slot_time = '10:30'").fetchone()[0]
+        assert count == 0, "Non-live cached response must not be written as LIVE"
+
+
+def test_market_open_flag_cannot_convert_cached_data_into_live(temp_db):
+    """Test 4: Market-open flag cannot convert persisted cache fallback into LIVE data."""
+    from core.data_quality import format_ist, now_ist
+    from core.market_calendar import NSEMarketCalendar
+    db_file, get_conn = temp_db
+
+    # Store a cached chain in KV store
+    kv_payload = _build_valid_live_option_chain(format_ist(now_ist()))
+    state_engine.set_kv("latest_nifty_option_chain_deep", kv_payload)
+
+    # Simulate market open condition and live quote failure
+    with patch.object(NSEMarketCalendar, "can_execute_trades", return_value=(True, "Market Open")):
+        with patch.object(nifty_analytics_engine, "_generate_kotak_neo_live_option_chain", return_value={"status": "UNAVAILABLE"}):
+            with patch.object(nifty_analytics_engine, "_option_chain_mem_cache", None):
+                # fetch_and_analyze_option_chain falls back to persisted KV
+                chain = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=True)
+                assert chain["source"] == "MASTER_DB_PERSISTED_SNAPSHOT"
+                assert chain["is_live"] is False, "Persisted cache must have is_live=False even during market open"
+
+                # capture_intraday_50min_snapshot must reject this fallback
+                res = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="10:45")
+                assert res.get("status") == "DATA_UNAVAILABLE"
+
+    with get_conn() as conn:
+        count = conn.execute("SELECT count(*) FROM intraday_option_snapshots WHERE slot_time = '10:45'").fetchone()[0]
+        assert count == 0, "Market-open condition must never coerce persisted cache into LIVE snapshot"
+
+
+@pytest.mark.parametrize("invalid_ts, expected_reason", [
+    (None, "Missing timestamp"),
+    ("", "Missing timestamp"),
+    ("INVALID_FORMAT_TIMESTAMP", "not fresh"),
+    ("2026-10-25 12:00:00 IST", "in the future"),  # future timestamp
+    ("2026-10-25 08:00:00 IST", "stale"),          # older than 180s threshold
+])
+def test_missing_invalid_or_stale_source_timestamps_fail_closed(temp_db, invalid_ts, expected_reason):
+    """Test 5: Missing, invalid, future, or stale (>180s) timestamps fail closed with DATA_UNAVAILABLE."""
+    import datetime
+    from core.data_quality import now_ist
+    db_file, get_conn = temp_db
+
+    # Construct timestamp according to test case
+    if invalid_ts == "2026-10-25 12:00:00 IST":
+        ts = (now_ist() + datetime.timedelta(seconds=300)).strftime("%Y-%m-%d %H:%M:%S IST")
+    elif invalid_ts == "2026-10-25 08:00:00 IST":
+        ts = (now_ist() - datetime.timedelta(seconds=300)).strftime("%Y-%m-%d %H:%M:%S IST")
+    else:
+        ts = invalid_ts
+
+    chain = _build_valid_live_option_chain(ts)
+
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=chain):
+        res = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="11:00")
+
+    assert res.get("status") == "DATA_UNAVAILABLE"
+    assert expected_reason.lower() in res.get("message", "").lower()
+
+    with get_conn() as conn:
+        count = conn.execute("SELECT count(*) FROM intraday_option_snapshots WHERE slot_time = '11:00'").fetchone()[0]
+        assert count == 0, f"Timestamp '{invalid_ts}' must fail closed and write 0 rows"
+
+
+def test_broker_outages_do_not_generate_empirical_live_observation(temp_db):
+    """Test 6: Broker outages do not generate new empirical live observations from old data."""
+    from core.data_quality import format_ist, now_ist
+    db_file, get_conn = temp_db
+
+    # 1. First slot (09:30) succeeds with fresh live data
+    t0 = format_ist(now_ist())
+    live_chain = _build_valid_live_option_chain(t0)
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=live_chain):
+        res1 = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="09:30")
+        assert res1.get("status") != "DATA_UNAVAILABLE"
+
+    with get_conn() as conn:
+        count_t0 = conn.execute("SELECT count(*) FROM intraday_option_snapshots").fetchone()[0]
+        assert count_t0 == 1
+
+    # 2. Broker outage occurs at next slot (09:45): live fetch raises exception or returns unavailable
+    fallback_chain = dict(live_chain)
+    fallback_chain["source"] = "MASTER_DB_PERSISTED_SNAPSHOT"
+    fallback_chain["is_live"] = False
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=fallback_chain):
+        res2 = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="09:45")
+        assert res2.get("status") == "DATA_UNAVAILABLE"
+
+    # Verify no new row was created during broker outage
+    with get_conn() as conn:
+        count_t1 = conn.execute("SELECT count(*) FROM intraday_option_snapshots").fetchone()[0]
+        assert count_t1 == 1, "Broker outage must not create an empirical live observation from old data"
+
+
+def test_downstream_empirical_readers_cannot_consume_rejected_fallback(temp_db):
+    """Test 7: Downstream empirical readers (ML engines, watchdogs) see zero new records when fallback is rejected."""
+    from core.data_quality import format_ist, now_ist
+    db_file, get_conn = temp_db
+
+    fresh_ts = format_ist(now_ist())
+    live_chain = _build_valid_live_option_chain(fresh_ts)
+
+    # Ingest 1 valid row at 09:30
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=live_chain):
+        nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="09:30")
+
+    # Ingest attempt at 09:45 with cached fallback (rejected)
+    cached_chain = dict(live_chain)
+    cached_chain["source"] = "MASTER_DB_PERSISTED_SNAPSHOT"
+    cached_chain["is_live"] = False
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=cached_chain):
+        nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="09:45")
+
+    with get_conn() as conn:
+        # Check database rows with data_source = 'LIVE'
+        live_rows = conn.execute("SELECT slot_time FROM intraday_option_snapshots WHERE data_source = 'LIVE'").fetchall()
+        assert len(live_rows) == 1
+        assert live_rows[0]["slot_time"] == "09:30"
+
+        # Downstream Intraday ML Engine training transition query sees only 1 row
+        cols = [c[1] for c in conn.execute("PRAGMA table_info(intraday_option_snapshots)").fetchall()]
+        assert "data_source" in cols
+        ml_rows = conn.execute("SELECT slot_time FROM intraday_option_snapshots WHERE data_source = 'LIVE'").fetchall()
+        assert len(ml_rows) == 1, "ML engine must not see rejected 09:45 fallback"
+
+        # Downstream Forecast Learning Engine PCR query sees only 1 row
+        pcr_rows = conn.execute(
+            "SELECT slot_time FROM intraday_option_snapshots WHERE near_atm_pcr > 0 AND data_source = 'LIVE'"
+        ).fetchall()
+        assert len(pcr_rows) == 1, "Forecast engine must not see rejected 09:45 fallback"
+
+
+def test_existing_dashboard_preserves_display_without_writing_live(temp_db):
+    """Test 8: Dashboard reads cached structure for off-market display, but capture rejects it for empirical persistence."""
+    from core.data_quality import format_ist, now_ist
+    db_file, get_conn = temp_db
+
+    persisted_chain = _build_valid_live_option_chain(format_ist(now_ist()))
+    state_engine.set_kv("latest_nifty_option_chain_deep", persisted_chain)
+
+    with patch.object(nifty_analytics_engine, "_generate_kotak_neo_live_option_chain", return_value={"status": "UNAVAILABLE"}):
+        with patch.object(nifty_analytics_engine, "_option_chain_mem_cache", None):
+            # Display call succeeds returning cached chain with is_live=False
+            display_chain = nifty_analytics_engine.get_deep_option_chain(force_refresh=True)
+            assert display_chain.get("status") == "OK"
+            assert display_chain.get("source") == "MASTER_DB_PERSISTED_SNAPSHOT"
+            assert display_chain.get("is_live") is False
+
+            # Empirical capture call refuses to persist this as LIVE
+            capture_res = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="11:30")
+            assert capture_res.get("status") == "DATA_UNAVAILABLE"
+
+    with get_conn() as conn:
+        count = conn.execute("SELECT count(*) FROM intraday_option_snapshots WHERE slot_time = '11:30'").fetchone()[0]
+        assert count == 0, "Cached display data must never be persisted as LIVE"
+
+
+# =============================================================================
+# 8. STRICT IS_LIVE BOOLEAN & FINITE SPOT PRICE GATES (Code Review Remediation)
+# =============================================================================
+
+@pytest.mark.parametrize("is_live_val, should_pass", [
+    (None, False),       # Explicit None
+    (False, False),      # Explicit False
+    (0, False),          # Integer 0
+    ("True", False),     # String "True"
+    ("1", False),        # String "1"
+    (True, True),        # Only boolean True passes
+])
+def test_is_live_gate_strictly_requires_boolean_true(temp_db, is_live_val, should_pass):
+    """Test requirement 1 & 2: Only explicitly validated is_live is True can pass the gate."""
+    from core.data_quality import format_ist, now_ist
+    db_file, get_conn = temp_db
+
+    fresh_ts = format_ist(now_ist())
+    chain = _build_valid_live_option_chain(fresh_ts)
+    chain["is_live"] = is_live_val
+
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=chain):
+        res = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="12:00")
+
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM intraday_option_snapshots WHERE slot_time = '12:00'").fetchone()
+        if should_pass:
+            assert res.get("status") != "DATA_UNAVAILABLE"
+            assert row is not None
+            assert row["data_source"] == "LIVE"
+        else:
+            assert res.get("status") == "DATA_UNAVAILABLE"
+            assert row is None, f"is_live value {is_live_val!r} must fail closed and write 0 rows"
+
+
+def test_is_live_gate_rejects_missing_field(temp_db):
+    """Test requirement 2: Omitted is_live field must fail closed."""
+    from core.data_quality import format_ist, now_ist
+    db_file, get_conn = temp_db
+
+    fresh_ts = format_ist(now_ist())
+    chain = _build_valid_live_option_chain(fresh_ts)
+    del chain["is_live"]  # Omit is_live entirely
+
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=chain):
+        res = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="12:15")
+
+    assert res.get("status") == "DATA_UNAVAILABLE"
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM intraday_option_snapshots WHERE slot_time = '12:15'").fetchone()
+        assert row is None, "Missing is_live must fail closed and write 0 rows"
+
+
+@pytest.mark.parametrize("bad_spot", [
+    None,                # Missing
+    0,                   # Zero integer
+    0.0,                 # Zero float
+    -10.0,               # Negative price
+    float("nan"),        # NaN
+    float("inf"),        # Infinity
+    float("-inf"),       # Negative Infinity
+    "invalid_numeric",   # Non-numeric string
+])
+def test_spot_price_must_be_finite_and_strictly_positive(temp_db, bad_spot):
+    """Test requirement 3: spot_price must be finite and strictly positive before persisting snapshot."""
+    from core.data_quality import format_ist, now_ist
+    db_file, get_conn = temp_db
+
+    fresh_ts = format_ist(now_ist())
+    chain = _build_valid_live_option_chain(fresh_ts)
+    chain["weekly"]["spot_price"] = bad_spot
+
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=chain):
+        res = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="12:30")
+
+    assert res.get("status") == "DATA_UNAVAILABLE"
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM intraday_option_snapshots WHERE slot_time = '12:30'").fetchone()
+        assert row is None, f"Non-positive/non-finite spot_price {bad_spot!r} must fail closed and write 0 rows"
+
+
+@pytest.mark.parametrize("bad_expiry", [
+    None,
+    "",
+    "not_a_valid_date",
+    "2026/13/45",
+])
+def test_weekly_expiry_contract_validation(temp_db, bad_expiry):
+    """Test requirement 4: weekly expiry date must be a valid date format."""
+    from core.data_quality import format_ist, now_ist
+    db_file, get_conn = temp_db
+
+    fresh_ts = format_ist(now_ist())
+    chain = _build_valid_live_option_chain(fresh_ts)
+    chain["weekly"]["expiry"] = bad_expiry
+
+    with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=chain):
+        res = nifty_analytics_engine.capture_intraday_50min_snapshot(slot_override="12:45")
+
+    assert res.get("status") == "DATA_UNAVAILABLE"
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM intraday_option_snapshots WHERE slot_time = '12:45'").fetchone()
+        assert row is None, f"Invalid expiry {bad_expiry!r} must fail closed and write 0 rows"
+
+
 

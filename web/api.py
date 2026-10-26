@@ -22,20 +22,54 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import secrets
+
+def is_production_environment() -> bool:
+    """Detects whether application is running in a production or live VPS/Render environment."""
+    env = os.environ.get("ENVIRONMENT", os.environ.get("APP_ENV", "")).strip().lower()
+    if env in ("production", "prod", "live"):
+        return True
+    if os.environ.get("RENDER") or os.environ.get("VPS_PROD"):
+        return True
+    return False
+
 def verify_admin_key(request: Request):
     """
-    Security Gate for Mutating Endpoints (F-03 remediation):
-    If ADMIN_API_KEY is configured in the environment, requests must provide
-    either header 'X-API-Key: <key>' or 'Authorization: Bearer <key>'.
+    Security Gate for Mutating & Privileged Endpoints.
+    Fails closed in production if ADMIN_API_KEY is not configured.
+    Constant-time comparison against expected key from Authorization, X-API-Key, query, or cookie.
     """
     expected = os.environ.get("ADMIN_API_KEY", "").strip()
     if not expected:
-        return True  # Dev mode: open if not configured
+        if is_production_environment():
+            logger.error("Security failure: ADMIN_API_KEY is not configured in production environment.")
+            raise HTTPException(
+                status_code=500,
+                detail="Security misconfiguration: ADMIN_API_KEY must be configured in production."
+            )
+        # Development / local testing mode without configured key
+        return True
+
     auth_header = request.headers.get("Authorization", "")
     api_key_header = request.headers.get("X-API-Key", "")
-    token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else api_key_header
-    if token != expected:
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing administrative API key.")
+    query_key = request.query_params.get("api_key", "")
+    cookie_key = request.cookies.get("admin_api_key", "")
+
+    token = ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    elif api_key_header:
+        token = api_key_header.strip()
+    elif query_key:
+        token = query_key.strip()
+    elif cookie_key:
+        token = cookie_key.strip()
+
+    if not token or not secrets.compare_digest(token, expected):
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: Invalid or missing administrative API key."
+        )
     return True
 
 from contextlib import asynccontextmanager
@@ -139,9 +173,10 @@ else:
         "https://nseuniverse.duckdns.org",
     ]
 
+# Note: CORS is an origin-restriction browser policy, NOT an authentication mechanism.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins if cors_origins else ["*"],
+    allow_origins=cors_origins if cors_origins else ["http://localhost:8000", "http://127.0.0.1:8000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
@@ -324,7 +359,7 @@ def get_market_calendar():
     }
 
 
-@app.post("/api/calendar/sync-holidays")
+@app.post("/api/calendar/sync-holidays", dependencies=[Depends(verify_admin_key)])
 def sync_nse_holidays_endpoint():
     """Manually triggers a live sync of official NSE trading holidays from nseindia.com."""
     meta = NSEMarketCalendar.sync_holidays_from_nse(force=True)
@@ -476,7 +511,7 @@ def get_portfolio3_legs():
         return [dict(r) for r in rows]
 
 
-@app.post("/api/portfolio/PORTFOLIO_3/scan-watchlist")
+@app.post("/api/portfolio/PORTFOLIO_3/scan-watchlist", dependencies=[Depends(verify_admin_key)])
 def trigger_portfolio3_watchlist_scan(background_tasks: BackgroundTasks):
     """Manually triggers EOD Pre-Breakout Coil Watchlist Ingestion for Portfolio 3."""
     def _worker():
@@ -485,7 +520,7 @@ def trigger_portfolio3_watchlist_scan(background_tasks: BackgroundTasks):
     return {"status": "TRIGGERED", "message": "Portfolio 3 Watchlist Ingestion triggered in background."}
 
 
-@app.post("/api/portfolio/PORTFOLIO_3/trigger-intraday")
+@app.post("/api/portfolio/PORTFOLIO_3/trigger-intraday", dependencies=[Depends(verify_admin_key)])
 def trigger_portfolio3_intraday_cycle(bypass_window: bool = False, bypass_gate: bool = False):
     """Manually triggers Intraday Breakout Validation & Volume Confirmation for Portfolio 3."""
     res = portfolio3_strategy_engine.run_intraday_breakout_cycle(
@@ -495,7 +530,7 @@ def trigger_portfolio3_intraday_cycle(bypass_window: bool = False, bypass_gate: 
     return res
 
 
-@app.post("/api/portfolio/PORTFOLIO_3/reconcile")
+@app.post("/api/portfolio/PORTFOLIO_3/reconcile", dependencies=[Depends(verify_admin_key)])
 def trigger_portfolio3_reconcile(bypass_gate: bool = False):
     """Manually triggers automated split exit reconciliation for Portfolio 3."""
     closed = portfolio3_strategy_engine.reconcile_open_positions(bypass_gate=bypass_gate)
@@ -506,7 +541,7 @@ class RefreshPricesRequest(BaseModel):
     scope: str = "ACTIVE_AND_SIGNALS"
 
 
-@app.post("/api/prices/refresh")
+@app.post("/api/prices/refresh", dependencies=[Depends(verify_admin_key)])
 def refresh_prices_endpoint(req: Optional[RefreshPricesRequest] = None):
     """
     Fetches live LTP from Yahoo Finance for all Active Portfolio Positions and Screened Signals on the page,
@@ -550,7 +585,7 @@ class TriggerScanRequest(BaseModel):
     source: Optional[str] = None
 
 
-@app.get("/api/execution/queue")
+@app.get("/api/execution/queue", dependencies=[Depends(verify_admin_key)])
 def get_execution_queue_status():
     """Returns live telemetry of QuantDesk central Execution Queue."""
     return execution_queue.get_status()
@@ -643,7 +678,7 @@ def get_scan_logs(limit: int = 50):
     return state_engine.get_recent_scan_logs(limit=limit)
 
 
-@app.get("/api/system/activity-logs")
+@app.get("/api/system/activity-logs", dependencies=[Depends(verify_admin_key)])
 def get_system_activity_logs(limit: int = 100, category: Optional[str] = None):
     """
     Returns unified system-wide execution, audit, and pipeline telemetry logs.
@@ -814,7 +849,7 @@ def get_stock_chart_and_data(symbol: str, bars: int = 260):
     return payload
 
 
-@app.post("/api/stocks/{symbol}/reset_chart")
+@app.post("/api/stocks/{symbol}/reset_chart", dependencies=[Depends(verify_admin_key)])
 def reset_stock_chart(symbol: str):
     """
     Explicitly resets chart state for a completed or exited stock:
@@ -845,7 +880,7 @@ def reset_portfolio(req: ResetPortfolioRequest):
     )
 
 
-@app.get("/api/vault/status")
+@app.get("/api/vault/status", dependencies=[Depends(verify_admin_key)])
 def get_vault_status():
     return telegram_vault.get_status()
 
@@ -873,14 +908,14 @@ def restore_vault_from_cloud():
     }
 
 
-@app.post("/api/system/backup/daily")
+@app.post("/api/system/backup/daily", dependencies=[Depends(verify_admin_key)])
 def trigger_daily_backup():
     """Triggers an immediate atomic MOC daily backup with integrity check and retention pruning."""
     from core.backup_manager import daily_backup_manager
     return daily_backup_manager.run_daily_moc_backup(retention_days=14, sync_cloud=True)
 
 
-@app.get("/api/system/backup/list")
+@app.get("/api/system/backup/list", dependencies=[Depends(verify_admin_key)])
 def list_daily_backups():
     """Lists recent daily MOC backups and retention status."""
     from core.backup_manager import daily_backup_manager
@@ -947,7 +982,7 @@ def get_nifty_intraday_ml(force_refresh: bool = False):
         return {"status": "ERROR", "message": str(e)}
 
 
-@app.post("/api/nifty/intraday-expiry/capture")
+@app.post("/api/nifty/intraday-expiry/capture", dependencies=[Depends(verify_admin_key)])
 def capture_nifty_intraday_snapshot(slot_override: Optional[str] = None, interval_mode: str = "15m"):
     """Manually or automatically captures a live Weekly Option Expiry snapshot and syncs to Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
@@ -1028,7 +1063,7 @@ def get_nifty_order_flow_analytics(force_refresh: bool = False):
         return {"status": "ERROR", "message": str(e)}
 
 
-@app.post("/api/nifty/options/smart-execution")
+@app.post("/api/nifty/options/smart-execution", dependencies=[Depends(verify_admin_key)])
 async def calculate_smart_execution_router(request: Request):
     """
     Micro-Price Smart Execution Router:
@@ -1134,7 +1169,7 @@ def get_system_watchdog_status(force_probe: bool = False):
     return data_watchdog.check_all_endpoints(force_probe=force_probe)
 
 
-@app.post("/api/system/watchdog/probe")
+@app.post("/api/system/watchdog/probe", dependencies=[Depends(verify_admin_key)])
 def probe_all_system_feeds():
     """Forces an immediate health check & stream re-connection probe across all 4 data pipelines."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
@@ -1169,7 +1204,7 @@ def get_omni_watchdog_status(force_probe: bool = False):
     return omni_watchdog.probe_all_subsystems(force_active_probe=force_probe)
 
 
-@app.post("/api/system/omni-watchdog/probe-all")
+@app.post("/api/system/omni-watchdog/probe-all", dependencies=[Depends(verify_admin_key)])
 def probe_all_omni_subsystems():
     """Forces an immediate active diagnostic health probe across all 10 platform subsystems and ML suite."""
     return omni_watchdog.probe_all_subsystems(force_active_probe=True)
@@ -1181,13 +1216,13 @@ def get_omni_watchdog_ml_health():
     return omni_watchdog.probe_ml_lifecycle()
 
 
-@app.post("/api/system/omni-watchdog/self-heal")
+@app.post("/api/system/omni-watchdog/self-heal", dependencies=[Depends(verify_admin_key)])
 def trigger_omni_self_healing(req: SelfHealRequest):
     """Executes targeted autonomous self-healing for a specified subsystem domain."""
     return omni_watchdog.execute_self_healing(domain=req.domain)
 
 
-@app.post("/api/system/omni-watchdog/retrain-model")
+@app.post("/api/system/omni-watchdog/retrain-model", dependencies=[Depends(verify_admin_key)])
 def trigger_omni_model_retrain(req: RetrainModelRequest, background_tasks: BackgroundTasks):
     """Triggers walk-forward retraining for an ML horizon or all horizons in the background."""
     from engines.horizon_learning_orchestrator import horizon_learning_orchestrator
@@ -1241,7 +1276,7 @@ def get_nifty_predictions(force_refresh: bool = False, force_recalculate: bool =
         return {"status": "DATA_UNAVAILABLE", "message": f"Data unavailable: Prediction service error: {str(e)}"}
 
 
-@app.post("/api/nifty/premarket-forecast/lock")
+@app.post("/api/nifty/premarket-forecast/lock", dependencies=[Depends(verify_admin_key)])
 def lock_premarket_forecast():
     """Explicitly calculates the official pre-market forecast, locks it for today's session, and dispatches the Telegram Bulletin."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
@@ -1309,7 +1344,7 @@ def lock_premarket_forecast():
         return {"status": "ERROR", "message": str(e)}
 
 
-@app.post("/api/nifty/eod-evaluation/run")
+@app.post("/api/nifty/eod-evaluation/run", dependencies=[Depends(verify_admin_key)])
 def run_eod_prediction_evaluation():
     """Runs the 03:40 PM EOD prediction outcome evaluation, grades direction and cones, updates learning weights, and sends Telegram review."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
@@ -1407,7 +1442,7 @@ def get_nifty_fii_dii_status():
     return _sanitize_for_json({"status": "OK", "telemetry": tel})
 
 
-@app.post("/api/nifty/fii-dii/update-now")
+@app.post("/api/nifty/fii-dii/update-now", dependencies=[Depends(verify_admin_key)])
 def trigger_nifty_fii_dii_manual_update(force: bool = False):
     """
     Manually triggers immediate check and ingestion of latest official NSE FII/DII Cash and F&O Participant OI.
@@ -1495,7 +1530,7 @@ def get_options_portfolio_endpoint():
     return nifty_analytics_engine.get_options_portfolio()
 
 
-@app.post("/api/options/reset-portfolio")
+@app.post("/api/options/reset-portfolio", dependencies=[Depends(verify_admin_key)])
 def reset_options_portfolio_endpoint(req: Optional[ResetPortfolioRequest] = None, keep_active: Optional[bool] = None):
     """Resets the Options Trading Portfolio: clears closed strategies, wipes historical realized PnL back to ₹0, preserves active strategies by default, and syncs cloud vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
@@ -1508,28 +1543,28 @@ def reset_options_portfolio_endpoint(req: Optional[ResetPortfolioRequest] = None
 
 
 
-@app.post("/api/options/deploy-strategy")
+@app.post("/api/options/deploy-strategy", dependencies=[Depends(verify_admin_key)])
 def deploy_options_strategy_endpoint(req: DeployStrategyRequest):
     """Deploys a multi-leg options strategy into the Options Trading Portfolio and syncs to Telegram Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     return nifty_analytics_engine.deploy_options_strategy(req.dict())
 
 
-@app.post("/api/options/adjust-strategy")
+@app.post("/api/options/adjust-strategy", dependencies=[Depends(verify_admin_key)])
 def adjust_options_strategy_endpoint(req: AdjustStrategyRequest):
     """Adjusts an active multi-leg options strategy in the Options Trading Portfolio and syncs to Telegram Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     return nifty_analytics_engine.adjust_options_strategy(req.dict())
 
 
-@app.post("/api/options/exit-strategy")
+@app.post("/api/options/exit-strategy", dependencies=[Depends(verify_admin_key)])
 def exit_options_strategy_endpoint(req: ExitStrategyRequest):
     """Exits a deployed multi-leg options strategy at current market prices and syncs to Telegram Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
     return nifty_analytics_engine.exit_options_strategy(req.strategy_id, req.exit_reason)
 
 
-@app.post("/api/options/auto-deploy")
+@app.post("/api/options/auto-deploy", dependencies=[Depends(verify_admin_key)])
 def auto_deploy_options_endpoint(req: Optional[AutoDeployOptionsRequest] = None):
     """Regenerates complete analysis (fresh live option chain, 6-pillar ML predictions & AI interpretation) then evaluates and auto-deploys strategies."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
@@ -1592,7 +1627,7 @@ def get_options_intraday_backtest_endpoint(lookback_sessions: int = 50, lot_size
     )
 
 
-@app.post("/api/options/intraday-rules/auto-deploy")
+@app.post("/api/options/intraday-rules/auto-deploy", dependencies=[Depends(verify_admin_key)])
 def post_options_auto_deploy_endpoint(req: Optional[AutoDeploy5RegimeRequest] = None):
     """
     Executes auto-trades whenever the system feels confident based on the 5-regime rules.
@@ -1666,7 +1701,7 @@ def get_options_ml_metrics_endpoint():
     return meta
 
 
-@app.post("/api/options/intraday-rules/train-ml")
+@app.post("/api/options/intraday-rules/train-ml", dependencies=[Depends(verify_admin_key)])
 def post_options_train_ml_endpoint():
     """Retrains the options machine learning meta-model on all completed trade lifecycle logs."""
     from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
@@ -1704,7 +1739,7 @@ def get_options_positional_backtest_endpoint(
     )
 
 
-@app.post("/api/options/positional-rules/auto-deploy")
+@app.post("/api/options/positional-rules/auto-deploy", dependencies=[Depends(verify_admin_key)])
 def post_options_positional_auto_deploy_endpoint(req: Optional[AutoDeployPositionalRequest] = None):
     """
     Executes Weekly or Monthly auto-trades whenever the system feels confident based on 5-regime rules.
@@ -1786,7 +1821,7 @@ def get_options_positional_ml_metrics_endpoint(horizon: str = "WEEKLY"):
     return meta
 
 
-@app.post("/api/options/positional-rules/train-ml")
+@app.post("/api/options/positional-rules/train-ml", dependencies=[Depends(verify_admin_key)])
 def post_options_positional_train_ml_endpoint(horizon: str = "WEEKLY"):
     """Retrains the Weekly or Monthly machine learning meta-model exclusively on its own trade logs."""
     from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
@@ -1817,7 +1852,7 @@ def get_advanced_options_confidence_endpoint(horizon: str = "INTRADAY", force_re
     )
 
 
-@app.post("/api/options/advanced/deploy")
+@app.post("/api/options/advanced/deploy", dependencies=[Depends(verify_admin_key)])
 def post_advanced_options_deploy_endpoint(req: Optional[AdvancedAutoDeployRequest] = None):
     """
     Evaluates dynamic confidence score and executes advanced options strategies
@@ -1838,7 +1873,7 @@ def post_advanced_options_deploy_endpoint(req: Optional[AdvancedAutoDeployReques
     )
 
 
-@app.post("/api/options/advanced/watchdog-tick")
+@app.post("/api/options/advanced/watchdog-tick", dependencies=[Depends(verify_admin_key)])
 @app.get("/api/options/advanced/watchdog-tick")
 def get_advanced_options_watchdog_tick_endpoint(force_execution: bool = False):
     """
@@ -1966,7 +2001,7 @@ def get_ml_shap_explanation_endpoint(horizon: str = "INTRADAY"):
     return tree_quant_ml_engine.compute_shap_explanations(horizon=horizon, features=sample_features)
 
 
-@app.post("/api/ml/shap")
+@app.post("/api/ml/shap", dependencies=[Depends(verify_admin_key)])
 def post_ml_shap_explanation_endpoint(payload: Dict[str, Any], horizon: str = "INTRADAY"):
     """Computes exact TreeSHAP feature attributions for custom user/signal feature payloads."""
     from engines.tree_quant_ml_engine import tree_quant_ml_engine
@@ -1980,14 +2015,14 @@ def get_ml_reentry_audit_endpoint(horizon: str = "WEEKLY"):
     return horizon_learning_orchestrator.evaluate_stop_loss_and_reentry_matrix(horizon=horizon)
 
 
-@app.post("/api/ml/retrain")
+@app.post("/api/ml/retrain", dependencies=[Depends(verify_admin_key)])
 def post_ml_retrain_endpoint():
     """Triggers continuous training & promotion pipeline across all 4 trading horizons."""
     from engines.horizon_learning_orchestrator import horizon_learning_orchestrator
     return horizon_learning_orchestrator.retrain_and_evaluate_all_horizons()
 
 
-@app.post("/api/ml/rollback")
+@app.post("/api/ml/rollback", dependencies=[Depends(verify_admin_key)])
 def post_ml_rollback_endpoint(horizon: str = "INTRADAY"):
     """Restores the previous production model artifact for the requested horizon."""
     from engines.tree_quant_ml_engine import tree_quant_ml_engine
@@ -2045,7 +2080,7 @@ def get_nifty_forecast_evaluation_endpoint(horizon: str = "T+1"):
     return nifty_forecast_learning_engine.generate_evaluation_report(horizon=horizon)
 
 
-@app.post("/api/nifty-forecast/retrain")
+@app.post("/api/nifty-forecast/retrain", dependencies=[Depends(verify_admin_key)])
 def post_nifty_forecast_retrain_endpoint(horizon: str = "ALL"):
     """Executes controlled retraining and promotion verification for T+1 and/or T+5 models."""
     from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
@@ -2061,7 +2096,7 @@ def post_nifty_forecast_retrain_endpoint(horizon: str = "ALL"):
     }
 
 
-@app.post("/api/nifty-forecast/rollback")
+@app.post("/api/nifty-forecast/rollback", dependencies=[Depends(verify_admin_key)])
 def post_nifty_forecast_rollback_endpoint(horizon: str = "T+1"):
     """Restores the previous production model artifact for T+1 or T+5."""
     from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
@@ -2076,7 +2111,7 @@ def get_nifty_forecast_predict_endpoint(horizon: str = "T+1"):
     return nifty_forecast_learning_engine.predict(horizon=horizon)
 
 
-@app.post("/api/nifty-forecast/predict")
+@app.post("/api/nifty-forecast/predict", dependencies=[Depends(verify_admin_key)])
 def post_nifty_forecast_predict_endpoint(payload: Optional[Dict[str, Any]] = None, horizon: str = "T+1"):
     """Runs inference on the active LightGBM/XGBoost ensemble with optional custom feature payload (F-47)."""
     from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
@@ -2243,7 +2278,7 @@ def get_ai_analysis_endpoint():
         return ai_service._build_unavailable_fallback(str(exc), datetime.now(timezone.utc).isoformat()).model_dump()
 
 
-@app.post("/api/ai/analyze")
+@app.post("/api/ai/analyze", dependencies=[Depends(verify_admin_key)])
 def trigger_ai_analysis_endpoint(payload: Optional[AIAnalyzeRequest] = None):
     """Triggers an on-demand AI analysis from current verified ML predictions."""
     try:
@@ -2261,7 +2296,7 @@ def trigger_ai_analysis_endpoint(payload: Optional[AIAnalyzeRequest] = None):
         return ai_service._build_unavailable_fallback(str(exc), datetime.now(timezone.utc).isoformat()).model_dump()
 
 
-@app.post("/api/ai/benchmark")
+@app.post("/api/ai/benchmark", dependencies=[Depends(verify_admin_key)])
 def run_ai_benchmark_endpoint():
     """Protected benchmark workflow comparing all 5 candidate models against standardized input."""
     from ai_engine.service import ai_service
@@ -2288,7 +2323,7 @@ def get_swing_ml_status_endpoint():
     }
 
 
-@app.post("/api/ml/swing/train")
+@app.post("/api/ml/swing/train", dependencies=[Depends(verify_admin_key)])
 def train_swing_ml_endpoint():
     """Triggers on-demand online training for the Swing Quant ML meta-classifier & expected R regressor."""
     from engines.swing_quant_ml_engine import swing_quant_ml_engine
@@ -2324,7 +2359,7 @@ def get_active_shadow_trades_endpoint():
     }
 
 
-@app.post("/api/ml/swing/reconcile-shadow")
+@app.post("/api/ml/swing/reconcile-shadow", dependencies=[Depends(verify_admin_key)])
 def reconcile_shadow_trades_endpoint():
     """Triggers on-demand reconciliation of active shadow trades against latest EOD candle highs/lows."""
     from engines.swing_quant_ml_engine import swing_quant_ml_engine
@@ -2568,7 +2603,7 @@ def get_screener_presets_endpoint():
         "presets": custom_screener_engine.get_presets()
     }
 
-@app.post("/api/screener/run")
+@app.post("/api/screener/run", dependencies=[Depends(verify_admin_key)])
 def run_custom_screener_endpoint(req: RunScreenerRequest):
     """Executes screener scan with real-time enrichment and 20EMA distance."""
     try:
@@ -2583,7 +2618,7 @@ def run_custom_screener_endpoint(req: RunScreenerRequest):
         logger.error(f"Error running custom screener: {e}")
         return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
 
-@app.post("/api/screener/save-preset")
+@app.post("/api/screener/save-preset", dependencies=[Depends(verify_admin_key)])
 def save_screener_preset_endpoint(req: SavePresetRequest, _auth=Depends(verify_admin_key)):
     """Saves a user-configured custom screener preset."""
     ok = custom_screener_engine.save_preset(req.name, req.conditions, req.description)
@@ -2591,7 +2626,7 @@ def save_screener_preset_endpoint(req: SavePresetRequest, _auth=Depends(verify_a
         raise HTTPException(status_code=400, detail="Invalid preset name or empty conditions.")
     return {"status": "SUCCESS", "message": f"Preset '{req.name}' saved successfully."}
 
-@app.delete("/api/screener/preset/{name}")
+@app.delete("/api/screener/preset/{name}", dependencies=[Depends(verify_admin_key)])
 def delete_screener_preset_endpoint(name: str, _auth=Depends(verify_admin_key)):
     """Deletes a user-configured custom screener preset."""
     ok = custom_screener_engine.delete_preset(name)
@@ -2635,7 +2670,7 @@ def get_screener_source_endpoint():
     }
 
 
-@app.post("/api/screener/source")
+@app.post("/api/screener/source", dependencies=[Depends(verify_admin_key)])
 def set_screener_source_endpoint(req: ScreenerSourceUpdateRequest):
     """Sets candidate universe sourcing preference for swing trading."""
     new_src = state_engine.set_swing_universe_source(req.source)
@@ -2647,7 +2682,7 @@ def set_screener_source_endpoint(req: ScreenerSourceUpdateRequest):
     }
 
 
-@app.post("/api/screener/compare")
+@app.post("/api/screener/compare", dependencies=[Depends(verify_admin_key)])
 def compare_screener_endpoint(req: CompareScreenerRequest):
     """Executes dual-engine comparison audit: Chartink Live vs In-House VPS Institutional Screener."""
     try:
@@ -2706,7 +2741,7 @@ def get_movers_accumulation_research(force_refresh: bool = False):
         return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
 
 
-@app.post("/api/research/run-study")
+@app.post("/api/research/run-study", dependencies=[Depends(verify_admin_key)])
 def trigger_movers_research_study(force_refresh: bool = True):
     """Triggers an on-demand empirical research scan of moving stocks and pre-breakout accumulation."""
     from engines.accumulation_research_engine import accumulation_research_engine
@@ -2819,7 +2854,7 @@ def get_pre_rally_combination_detail(combination_id: str):
         return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
 
 
-@app.post("/api/research/pre-rally/run")
+@app.post("/api/research/pre-rally/run", dependencies=[Depends(verify_admin_key)])
 def trigger_pre_rally_discovery_run(
     min_fwd_return: float = 5.0,
     fwd_horizon: int = 10,
@@ -2903,7 +2938,7 @@ def get_prospective_validation_summary():
         return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
 
 
-@app.post("/api/research/prospective-validation/scan-today")
+@app.post("/api/research/prospective-validation/scan-today", dependencies=[Depends(verify_admin_key)])
 def trigger_prospective_scan_today(as_of_date: Optional[str] = None):
     """
     Triggers prospective signal scan across universe as of today (or specified date),
@@ -2918,7 +2953,7 @@ def trigger_prospective_scan_today(as_of_date: Optional[str] = None):
         return JSONResponse(status_code=500, content={"status": "ERROR", "message": str(e)})
 
 
-@app.post("/api/research/prospective-validation/update-trades")
+@app.post("/api/research/prospective-validation/update-trades", dependencies=[Depends(verify_admin_key)])
 def trigger_prospective_update_trades():
     """
     Advances open paper trades with latest OHLCV bars without scanning new signals.
@@ -2956,7 +2991,7 @@ class KotakSubscribeRequest(BaseModel):
     symbols: list[str]
 
 
-@app.get("/api/kotak/config")
+@app.get("/api/kotak/config", dependencies=[Depends(verify_admin_key)])
 def get_kotak_config_endpoint():
     """Returns saved Kotak Neo configuration details for UI setup modal."""
     from core import config
@@ -2968,11 +3003,17 @@ def get_kotak_config_endpoint():
     has_sec = bool(config.KOTAK_NEO_TOTP_SECRET or saved_creds.get("totp_secret"))
     has_mpin = bool(config.KOTAK_NEO_MPIN or saved_creds.get("mpin"))
     env = config.KOTAK_NEO_ENVIRONMENT or saved_creds.get("environment", "prod")
+
+    # Mask sensitive credentials
+    masked_c_key = (c_key[-4:].rjust(len(c_key), "*") if c_key else "")
+    masked_ucc = (ucc_val[-4:].rjust(len(ucc_val), "*") if ucc_val else "")
+    masked_mob = (mob_val[-4:].rjust(len(mob_val), "*") if mob_val else "")
+
     return {
         "status": "OK",
-        "consumer_key": c_key,
-        "ucc": ucc_val,
-        "mobile_number": mob_val,
+        "consumer_key": masked_c_key,
+        "ucc": masked_ucc,
+        "mobile_number": masked_mob,
         "has_totp_secret": has_sec,
         "has_mpin": has_mpin,
         "environment": env
@@ -2986,7 +3027,7 @@ def get_kotak_status_endpoint():
     return kotak_neo_engine.get_status()
 
 
-@app.post("/api/kotak/auth")
+@app.post("/api/kotak/auth", dependencies=[Depends(verify_admin_key)])
 def authenticate_kotak_neo_endpoint(payload: Optional[KotakAuthRequest] = None):
     """
     Authenticates with Kotak Neo API using credentials or automated TOTP.
@@ -3006,7 +3047,7 @@ def authenticate_kotak_neo_endpoint(payload: Optional[KotakAuthRequest] = None):
     return res
 
 
-@app.post("/api/kotak/subscribe")
+@app.post("/api/kotak/subscribe", dependencies=[Depends(verify_admin_key)])
 def subscribe_kotak_symbols_endpoint(payload: KotakSubscribeRequest):
     """Subscribes specified NSE trading symbols to Kotak Neo live feed."""
     from engines.kotak_neo_engine import kotak_neo_engine
@@ -3029,7 +3070,7 @@ def get_kotak_quotes_endpoint():
     }
 
 
-@app.post("/api/kotak/disconnect")
+@app.post("/api/kotak/disconnect", dependencies=[Depends(verify_admin_key)])
 def disconnect_kotak_endpoint():
     """Disconnects Kotak Neo live stream."""
     from engines.kotak_neo_engine import kotak_neo_engine
@@ -3037,7 +3078,7 @@ def disconnect_kotak_endpoint():
     return {"status": "SUCCESS", "message": "Kotak Neo stream disconnected."}
 
 
-@app.post("/api/kotak/sync-scrip")
+@app.post("/api/kotak/sync-scrip", dependencies=[Depends(verify_admin_key)])
 def sync_kotak_scrip_master_endpoint(background_tasks: BackgroundTasks):
     """Triggers background synchronization of official Kotak Neo Scrip Master (NSE CM)."""
     from engines.kotak_neo_engine import kotak_neo_engine
@@ -3088,19 +3129,27 @@ def ping_kotak_connection_endpoint():
         }
 
 
-@app.post("/api/kotak/test-tick")
+@app.post("/api/kotak/test-tick", dependencies=[Depends(verify_admin_key)])
 def inject_test_tick_endpoint(symbol: str = "RELIANCE", ltp: Optional[float] = None):
     """
-    Injects a simulated tick to verify tick cache, UI counter, and data pipeline
-    outside market hours.
+    Injects a simulated tick exclusively into the isolated test tick cache for verification outside market hours.
+    Permanently disabled in production environments.
     """
+    if is_production_environment():
+        raise HTTPException(
+            status_code=403,
+            detail="Test tick injection is permanently disabled in production environments."
+        )
     from engines.kotak_neo_engine import kotak_neo_engine
     price = float(ltp or 2980.50)
+    if not math.isfinite(price) or price <= 0:
+        raise HTTPException(status_code=400, detail="Invalid test tick price: must be finite and positive.")
     kotak_neo_engine.inject_test_tick(symbol=symbol, ltp=price)
     return {
         "status": "SUCCESS",
         "symbol": symbol,
         "injected_price": price,
+        "test_ticks_total": len(kotak_neo_engine.get_all_test_ticks()),
         "ticks_total": kotak_neo_engine.get_status().get("ticks_received_total", 0),
         "timestamp_ist": format_ist()
     }
@@ -3109,7 +3158,7 @@ def inject_test_tick_endpoint(symbol: str = "RELIANCE", ltp: Optional[float] = N
 # ==============================================================================
 # SERVER PUBLIC IP DETECTION ENDPOINT (FOR BROKER API WHITELISTING)
 # ==============================================================================
-@app.get("/api/server-ip")
+@app.get("/api/server-ip", dependencies=[Depends(verify_admin_key)])
 def get_server_ip_endpoint(refresh: bool = False):
     """Returns the detected public server IP of the instance."""
     from scheduler.cron_scheduler import get_server_public_ip
@@ -3347,7 +3396,7 @@ def get_commodities_summary():
     }
 
 
-@app.post("/api/commodities/refresh")
+@app.post("/api/commodities/refresh", dependencies=[Depends(verify_admin_key)])
 def refresh_commodities_data():
     """
     Forces immediate scrip rediscovery and live quote refresh from Kotak Neo API.
@@ -3395,7 +3444,7 @@ def get_commodity_option_chain(
     )
 
 
-@app.post("/api/commodities/options/strategy/analyze")
+@app.post("/api/commodities/options/strategy/analyze", dependencies=[Depends(verify_admin_key)])
 def analyze_commodity_strategy_endpoint(payload: Dict[str, Any] = Body(...)):
     """
     Analyzes a multi-leg commodity options strategy and returns dual-curve payoff graph data,
@@ -3414,7 +3463,7 @@ def analyze_commodity_strategy_endpoint(payload: Dict[str, Any] = Body(...)):
     )
 
 
-@app.post("/api/commodities/options/strategy/deploy")
+@app.post("/api/commodities/options/strategy/deploy", dependencies=[Depends(verify_admin_key)])
 def deploy_commodity_strategy_endpoint(payload: Dict[str, Any] = Body(...)):
     """
     Deploys a multi-leg commodity strategy for real-time paper execution and tracking.
@@ -3437,7 +3486,7 @@ def get_deployed_commodity_strategies_endpoint():
     }
 
 
-@app.post("/api/commodities/options/strategy/squareoff")
+@app.post("/api/commodities/options/strategy/squareoff", dependencies=[Depends(verify_admin_key)])
 def square_off_commodity_strategy_endpoint(payload: Dict[str, Any] = Body(...)):
     """
     Squares off an active deployed commodity strategy.
@@ -3459,7 +3508,7 @@ def get_daemon_status():
     return autonomous_execution_daemon.get_status()
 
 
-@app.post("/api/daemon/mode")
+@app.post("/api/daemon/mode", dependencies=[Depends(verify_admin_key)])
 def set_daemon_mode(payload: Dict[str, Any] = Body(...)):
     """Switches execution daemon mode between PAPER and LIVE_BROKER."""
     from engines.autonomous_execution_daemon import autonomous_execution_daemon
@@ -3468,7 +3517,7 @@ def set_daemon_mode(payload: Dict[str, Any] = Body(...)):
     return {"status": "OK", "mode": res}
 
 
-@app.post("/api/daemon/evaluate-now")
+@app.post("/api/daemon/evaluate-now", dependencies=[Depends(verify_admin_key)])
 def trigger_daemon_evaluation():
     """Forces an immediate atomic evaluation pass of all legs and risk circuit breakers."""
     from engines.autonomous_execution_daemon import autonomous_execution_daemon

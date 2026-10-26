@@ -117,7 +117,8 @@ def test_get_options_portfolio_with_far_otm_strikes_and_type_normalization():
 
     try:
         with patch.object(nifty_analytics_engine, "fetch_and_analyze_option_chain", return_value=mock_chain):
-            port = nifty_analytics_engine.get_options_portfolio()
+            nifty_analytics_engine._opt_portfolio_cache = None
+            port = nifty_analytics_engine.get_options_portfolio(force_refresh=True)
             matching = [s for s in port.get("active_strategies", []) if s.get("strategy_id") == test_strat_id]
             assert len(matching) == 1
             strat = matching[0]

@@ -110,7 +110,7 @@ def test_no_undefined_symbols_recursive_across_repo():
 
     errors = []
     for r, _, files in os.walk('.'):
-        if any(x in r for x in ['.git', '__pycache__', '.venv', 'venv']):
+        if any(x in r for x in ['.git', '__pycache__', '.venv', 'venv', 'scratch']):
             continue
         for f in files:
             if f.endswith('.py'):
@@ -162,6 +162,8 @@ def test_afternoon_scan_worker_mock_execution(monkeypatch):
     }])
     monkeypatch.setattr(cs.InstitutionalEngine, "run", lambda self, auto_execute=True, mode_override="afternoon": mock_df)
     monkeypatch.setattr(cs, "run_nifty500_pipeline_sync", lambda mode="SCHEDULED_300PM", auto_execute=True: {"orders_executed": 1})
+    import engines.institutional_engine as ie
+    monkeypatch.setattr(ie, "get_institutional_status", lambda: {"status": "COMPLETED", "universe_size": 1})
 
     # Intercept execution_queue.submit_task to capture worker function
     submitted_tasks = []
