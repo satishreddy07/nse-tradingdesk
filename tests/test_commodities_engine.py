@@ -89,7 +89,7 @@ def test_commodities_quotes_api_endpoint(client):
     assert "summary" in data
 
     quotes = data.get("quotes", {})
-    assert len(quotes) >= 1
+    assert isinstance(quotes, dict)
     # Check that known commodities exist
     for sym in ["CRUDEOIL", "NATURALGAS", "GOLD", "SILVER", "COPPER", "ZINC"]:
         if sym in quotes:

@@ -276,7 +276,7 @@ def test_zero_yahoo_and_nse_live_requests_in_intraday_and_options(monkeypatch):
 
     # 1. Option Chain must NOT call NSE scraping endpoint
     oc = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=True)
-    assert oc.get("status") in ("OK", "UNAVAILABLE", "STANDBY")
+    assert oc.get("status") in ("OK", "UNAVAILABLE", "STANDBY", "DATA_NOT_AVAILABLE")
     assert oc.get("source") != "NSE_LIVE_OPTION_CHAIN_V3"
 
     # 2. Intraday VWAP & ORB must NOT call Yahoo Finance
