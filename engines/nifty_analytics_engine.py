@@ -1054,6 +1054,14 @@ class NiftyAnalyticsEngine:
             if ce_vol < 0 or ce_vol > 500_000_000:
                 ce_vol = 0
             ce_iv = float(ce.get("impliedVolatility") or 0.0)
+            if ce_iv <= 0.0 and ce_ltp > 0 and spot_price > 0:
+                try:
+                    from engines.kotak_neo_engine import kotak_neo_engine
+                    cal_exp = NSEMarketCalendar.get_active_options_expiries()
+                    dte = max(0.00003, max(900.0, (datetime.datetime.combine(datetime.datetime.strptime(expiry_label, "%Y-%m-%d").date() if "-" in expiry_label and len(expiry_label)==10 else now_ist().date(), datetime.time(15, 30, 0), tzinfo=IST) - now_ist()).total_seconds()) / (365.25 * 86400.0)) if expiry_label else 0.008
+                    ce_iv = kotak_neo_engine._calc_implied_vol(ce_ltp, spot_price, k, dte, is_call=True)
+                except Exception:
+                    pass
             ce_ltp = float(ce.get("lastPrice") or 0.0)
             ce_chg = float(ce.get("change") or 0.0)
             ce_pchg = float(ce.get("pChange") or 0.0)
@@ -1073,6 +1081,14 @@ class NiftyAnalyticsEngine:
             if pe_vol < 0 or pe_vol > 500_000_000:
                 pe_vol = 0
             pe_iv = float(pe.get("impliedVolatility") or 0.0)
+            if pe_iv <= 0.0 and pe_ltp > 0 and spot_price > 0:
+                try:
+                    from engines.kotak_neo_engine import kotak_neo_engine
+                    cal_exp = NSEMarketCalendar.get_active_options_expiries()
+                    dte = max(0.00003, max(900.0, (datetime.datetime.combine(datetime.datetime.strptime(expiry_label, "%Y-%m-%d").date() if "-" in expiry_label and len(expiry_label)==10 else now_ist().date(), datetime.time(15, 30, 0), tzinfo=IST) - now_ist()).total_seconds()) / (365.25 * 86400.0)) if expiry_label else 0.008
+                    pe_iv = kotak_neo_engine._calc_implied_vol(pe_ltp, spot_price, k, dte, is_call=False)
+                except Exception:
+                    pass
             pe_ltp = float(pe.get("lastPrice") or 0.0)
             pe_chg = float(pe.get("change") or 0.0)
             pe_pchg = float(pe.get("pChange") or 0.0)
@@ -2744,6 +2760,19 @@ class NiftyAnalyticsEngine:
             net_pe_oi_chg = int(w_chain.get("oi_flow", {}).get("net_pe_oi_chg") or w_chain.get("volatility_and_gex", {}).get("near_pe_chg_total") or latest.get("net_pe_oi_chg") or 0)
             net_ce_oi_chg = int(w_chain.get("oi_flow", {}).get("net_ce_oi_chg") or w_chain.get("volatility_and_gex", {}).get("near_ce_chg_total") or latest.get("net_ce_oi_chg") or 0)
 
+        atm_iv = float(
+            w_chain.get("volatility_and_gex", {}).get("atm_iv")
+            or w_chain.get("volatility_and_sentiment", {}).get("atm_iv")
+            or latest.get("atm_iv")
+            or 0.0
+        )
+        iv_skew = float(
+            w_chain.get("volatility_and_gex", {}).get("iv_skew")
+            or w_chain.get("volatility_and_sentiment", {}).get("iv_skew")
+            or latest.get("iv_skew")
+            or 0.0
+        )
+
         live_synced_metrics = {
             "spot_price": spot_p,
             "atm_strike": cur_atm,
@@ -2759,6 +2788,10 @@ class NiftyAnalyticsEngine:
             "max_pain": max_pain,
             "net_pe_oi_chg": net_pe_oi_chg,
             "net_ce_oi_chg": net_ce_oi_chg,
+            "atm_iv": atm_iv,
+            "iv_skew": iv_skew,
+            "atm_iv": atm_iv,
+            "iv_skew": iv_skew,
             "synced_at_ist": format_ist(),
             "source": live_spot.get("source", "FAST_STREAM_SYNC")
         }
@@ -2845,6 +2878,8 @@ class NiftyAnalyticsEngine:
             "max_pain": max_pain,
             "net_pe_oi_chg": net_pe_oi_chg,
             "net_ce_oi_chg": net_ce_oi_chg,
+            "atm_iv": atm_iv,
+            "iv_skew": iv_skew,
             "spot_from_open": spot_from_open,
             "spot_pct_from_open": spot_pct_from_open,
             "strad_decay_pct": strad_decay_pct,

@@ -529,6 +529,34 @@ class OmniWatchdogEngine:
                     )
                     status = "ALERT"
 
+            # 6. Dynamic Cumulative Volume Delta (CVD) & Order Flow Sentinel
+            from engines.order_flow_structure_engine import order_flow_structure_engine
+            cvd_data = order_flow_structure_engine.compute_cumulative_volume_delta()
+            cvd_val = cvd_data.get("current_cvd", 0)
+            cvd_source = cvd_data.get("data_source", "UNKNOWN")
+            if is_market_open and cvd_data.get("status") == "DATA_UNAVAILABLE":
+                issues.append("Order Flow & CVD data feed unavailable during open market hours")
+                if status == "HEALTHY":
+                    status = "DEGRADED"
+
+            # 7. Dynamic ATM Implied Volatility & Volatility Skew Sentinel
+            atm_iv_val = float(live_an.get("atm_iv") or intra_dash.get("live_synced_metrics", {}).get("atm_iv") or 0.0)
+            iv_skew_val = float(live_an.get("iv_skew") or intra_dash.get("live_synced_metrics", {}).get("iv_skew") or 0.0)
+            if is_market_open and (atm_iv_val <= 0.0 or atm_iv_val > 80.0):
+                issues.append(f"ATM Implied Volatility anomaly: {atm_iv_val:.2f}% (Pricing model or quote failure)")
+                if status == "HEALTHY":
+                    status = "DEGRADED"
+
+            # 8. Dynamic Gamma Exposure (GEX) & Zero-Gamma Flip Sentinel
+            adv_intra = intra_dash.get("advanced_intraday", {})
+            gex_block = adv_intra.get("gamma_exposure", {})
+            flip_lvl = float(gex_block.get("zero_gamma_flip_level") or 0.0)
+            net_gex = float(gex_block.get("total_net_gex_cr") or 0.0)
+            if is_market_open and flip_lvl <= 0.0:
+                issues.append("Dealer Gamma Exposure (GEX) or Zero-Gamma Flip level uncalculated")
+                if status == "HEALTHY":
+                    status = "DEGRADED"
+
             p_up_str = f"{valid_probs.get('p_up', 0.0)*100:.0f}% Up" if valid_probs.get("p_up") is not None else "--"
             p_flat_str = f"{valid_probs.get('p_flat', 0.0)*100:.0f}% Flat" if valid_probs.get("p_flat") is not None else "--"
             p_down_str = f"{valid_probs.get('p_down', 0.0)*100:.0f}% Down" if valid_probs.get("p_down") is not None else "--"
@@ -545,6 +573,9 @@ class OmniWatchdogEngine:
                 "market_breadth_n500": f"{mkt_breadth.get('nifty500_advances', '--')} Adv / {mkt_breadth.get('nifty500_declines', '--')} Dec ({mkt_breadth.get('market_sentiment', 'NORMAL')})",
                 "intraday_ml_regime": intraday_regime_str,
                 "intraday_ml_slots": ml_data.get("model_metrics", {}).get("slots_trained_today", 0),
+                "running_cvd": f"{cvd_val:+d} ({cvd_data.get('flow_sentiment', 'NEUTRAL')})",
+                "atm_iv_and_skew": f"{atm_iv_val:.2f}% (Skew: {iv_skew_val:+.2f}%)" if atm_iv_val > 0 else "0.00% (Standby)",
+                "zero_gamma_flip": f"₹{flip_lvl:,.1f} ({gex_block.get('market_gex_regime', 'NEUTRAL')})" if flip_lvl > 0 else "Uncalculated",
             }
         except Exception as e:
             status = "ALERT"
@@ -1459,6 +1490,16 @@ class OmniWatchdogEngine:
                 res = nifty_analytics_engine.get_intraday_expiry_dashboard(interval_mode="15m", force_refresh=True)
                 live_an = res.get("live_analysis", {})
                 actions_taken.append(f"Re-calibrated tactical walls: {live_an.get('put_wall')} PE / {live_an.get('call_wall')} CE")
+
+            elif domain in ("cvd_feed", "order_flow"):
+                from engines.order_flow_structure_engine import order_flow_structure_engine
+                res = order_flow_structure_engine.get_full_order_flow_suite(force_refresh=True)
+                actions_taken.append(f"Flushed Order Flow cache and re-accumulated volume delta ({res.get('status')})")
+
+            elif domain in ("atm_iv", "gex_engine", "gamma_exposure"):
+                from engines.intraday_analytics_engine import intraday_analytics_engine
+                res = intraday_analytics_engine.get_full_intraday_suite(force_refresh=True)
+                actions_taken.append(f"Re-computed Intraday Suite & Dealer Gamma Profile ({res.get('status')})")
 
             elif domain in ("options", "options_desk", "kotak_options"):
                 from engines.kotak_neo_engine import kotak_neo_engine

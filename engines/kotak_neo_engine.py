@@ -57,7 +57,7 @@ except ImportError:
     HAS_NEO_API = False
 
 from core.data_quality import now_ist, format_ist
-from core.market_calendar import NSEMarketCalendar
+from core.market_calendar import NSEMarketCalendar, IST
 from core import config
 from execution.state_engine import state_engine
 
@@ -2035,7 +2035,7 @@ class KotakNeoEngine:
             except Exception as exp_err:
                 logger.debug(f"Expiry resolution error in get_option_depth: {exp_err}")
                 try:
-                    from core.market_calendar import NSEMarketCalendar
+                    from core.market_calendar import NSEMarketCalendar, IST
                     cal_exp = NSEMarketCalendar.get_active_options_expiries()
                     w_d = cal_exp.get("weekly_date")
                     m_d = cal_exp.get("monthly_date")
@@ -2205,7 +2205,7 @@ class KotakNeoEngine:
                 # If Kotak API rate-limited or unavailable, derive authentic dates from NSE Market Calendar
                 if not exp_list:
                     try:
-                        from core.market_calendar import NSEMarketCalendar
+                        from core.market_calendar import NSEMarketCalendar, IST
                         cal_exp = NSEMarketCalendar.get_active_options_expiries()
                         w_d = cal_exp.get("weekly_date")
                         m_d = cal_exp.get("monthly_date")
@@ -2315,11 +2315,14 @@ class KotakNeoEngine:
                 now_str = format_ist()
 
                 try:
-                    exp_dt = datetime.datetime.strptime(exp_iso_str, "%Y-%m-%d").date()
-                    dte_days = max(0.5, (exp_dt - now_ist().date()).total_seconds() / 86400.0)
+                    exp_d = datetime.datetime.strptime(exp_iso_str, "%Y-%m-%d").date()
+                    now_dt_cur = now_ist()
+                    # Official NSE settlement cutoff is 15:30:00 IST on expiry date
+                    exp_target_dt = datetime.datetime.combine(exp_d, datetime.time(15, 30, 0), tzinfo=IST)
+                    diff_sec = (exp_target_dt - now_dt_cur).total_seconds()
+                    dte_years = max(0.00003, max(900.0, diff_sec) / (365.25 * 86400.0))
                 except Exception:
-                    dte_days = 4.0
-                dte_years = max(0.001, dte_days / 365.0)
+                    dte_years = max(0.001, 3.0 / 365.25)
 
                 for k in all_k:
                     c = calls_by_k.get(k, {})
@@ -2483,17 +2486,18 @@ class KotakNeoEngine:
             return {"status": "UNAVAILABLE", "message": f"Kotak Neo Option Chain error: {e}"}
 
     @staticmethod
-    def _calc_implied_vol(price: float, S: float, K: float, T: float, r: float = 0.07, is_call: bool = True) -> float:
-        """Computes Implied Volatility via Black-Scholes bisection."""
-        if price <= 0 or S <= 0 or K <= 0 or T <= 0.0001:
+    def _calc_implied_vol(price: float, S: float, K: float, T: float, r: float = 0.065, is_call: bool = True) -> float:
+        """Computes authentic Implied Volatility via high-precision Black-Scholes bisection (RBI benchmark r=6.5%)."""
+        if price <= 0 or S <= 0 or K <= 0 or T <= 1e-6:
             return 0.0
         intrinsic = max(0.0, (S - K) if is_call else (K - S))
-        if price <= intrinsic + 0.05:
+        if price <= intrinsic + 0.02:
             return 0.0
 
+        sqrt_t = math.sqrt(T)
         def _bs(sigma: float) -> float:
-            d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
-            d2 = d1 - sigma * math.sqrt(T)
+            d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt_t)
+            d2 = d1 - sigma * sqrt_t
             def _cdf(x):
                 return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
             if is_call:
@@ -2501,11 +2505,11 @@ class KotakNeoEngine:
             else:
                 return K * math.exp(-r * T) * _cdf(-d2) - S * _cdf(-d1)
 
-        low, high = 0.02, 3.0
-        for _ in range(22):
+        low, high = 0.01, 3.5
+        for _ in range(25):
             mid = (low + high) / 2.0
             p = _bs(mid)
-            if abs(p - price) < 0.15:
+            if abs(p - price) < 0.05:
                 return round(mid * 100.0, 2)
             if p > price:
                 high = mid

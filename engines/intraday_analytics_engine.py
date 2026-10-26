@@ -226,6 +226,7 @@ class IntradayAnalyticsEngine:
 
             res = {
                 "status": "OK",
+                "timestamp_ist": format_ist(),
                 "source": source,
                 "session_date": today_str,
                 "spot_price": round(current_spot, 2),
@@ -418,6 +419,9 @@ class IntradayAnalyticsEngine:
 
         return {
             "status": "OK",
+            "timestamp_ist": format_ist(),
+            "data_source": "BLACK_SCHOLES_DEALER_GAMMA_CALCULATED",
+            "expiry_date": weekly_chain_data.get("expiry") or weekly_chain_data.get("expiry_date") or "--",
             "spot_price": spot,
             "zero_gamma_flip_level": flip_level,
             "spot_vs_flip_pts": round(spot - flip_level, 1),
