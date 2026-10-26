@@ -114,6 +114,11 @@ async def lifespan(app: FastAPI):
     and cleanly shuts down background schedulers on exit.
     """
     logger.info("Initializing Quant Trading Desk services...")
+    try:
+        import anyio
+        anyio.to_thread.current_default_thread_limiter().total_tokens = 60
+    except Exception as _te:
+        logger.debug(f"Threadpool limiter config notice: {_te}")
     # Cold-boot disaster recovery from Telegram Cloud Vault (Trade DB + OHLCV Historical Cache)
     try:
         telegram_vault.auto_restore_on_cold_boot()
@@ -558,9 +563,15 @@ def refresh_prices_endpoint(req: Optional[RefreshPricesRequest] = None):
             _refresh_task,
             task_name="Manual Price Refresh",
             task_type="PRICE_REFRESH_MANUAL",
-            timeout=30.0
+            timeout=6.0
         )
-        return res or {"status": "SUCCESS", "message": "Live prices refreshed successfully."}
+        if res is not None:
+            return res
+        return {
+            "status": "PROCESSING",
+            "message": "Live price refresh processing in background.",
+            "queue_status": execution_queue.get_status()
+        }
     else:
         info = execution_queue.submit_task(
             _refresh_task,
@@ -1547,14 +1558,28 @@ def reset_options_portfolio_endpoint(req: Optional[ResetPortfolioRequest] = None
 def deploy_options_strategy_endpoint(req: DeployStrategyRequest):
     """Deploys a multi-leg options strategy into the Options Trading Portfolio and syncs to Telegram Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
-    return nifty_analytics_engine.deploy_options_strategy(req.dict())
+    try:
+        data = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+        return nifty_analytics_engine.deploy_options_strategy(data)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Strategy deploy internal error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal deploy error: {e}")
 
 
 @app.post("/api/options/adjust-strategy", dependencies=[Depends(verify_admin_key)])
 def adjust_options_strategy_endpoint(req: AdjustStrategyRequest):
     """Adjusts an active multi-leg options strategy in the Options Trading Portfolio and syncs to Telegram Cloud Vault."""
     from engines.nifty_analytics_engine import nifty_analytics_engine
-    return nifty_analytics_engine.adjust_options_strategy(req.dict())
+    try:
+        data = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+        return nifty_analytics_engine.adjust_options_strategy(data)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Strategy adjust internal error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal adjust error: {e}")
 
 
 @app.post("/api/options/exit-strategy", dependencies=[Depends(verify_admin_key)])

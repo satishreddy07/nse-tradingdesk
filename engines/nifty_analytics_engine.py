@@ -6650,12 +6650,23 @@ class NiftyAnalyticsEngine:
 
             px = float(l.get("entry_price") or l.get("price") or l.get("premium") or 0.0)
             if px <= 0.0:
+                # Fast in-memory tick cache check
+                try:
+                    from engines.kotak_neo_engine import kotak_neo_engine
+                    near_ticks = kotak_neo_engine.get_near_atm_option_ticks()
+                    tick_key = f"{l['strike']}_{l['type']}"
+                    if tick_key in near_ticks and near_ticks[tick_key].get("ltp"):
+                        px = float(near_ticks[tick_key]["ltp"])
+                except Exception:
+                    pass
+
+            if px <= 0.0:
                 if oc_lookup is None:
                     try:
                         oc_lookup = self.fetch_and_analyze_option_chain(force_refresh=False)
                     except Exception:
                         oc_lookup = {}
-                exp_key = "monthly" if expiry_type.upper() == "MONTHLY" else "weekly"
+                exp_key = "monthly" if (expiry_type and str(expiry_type).upper() == "MONTHLY") else "weekly"
                 all_s = oc_lookup.get(exp_key, {}).get("all_strikes") or oc_lookup.get(exp_key, {}).get("strikes", [])
                 stk_row = next((s for s in all_s if int(round(float(s.get("strike", 0)))) == l["strike"]), None)
                 if stk_row:
@@ -6830,11 +6841,13 @@ class NiftyAnalyticsEngine:
         )
 
         try:
-            telegram_vault.send_alert_and_sync(
-                title=f"Options Strategy: {strategy_name}",
-                message=telegram_msg,
-                sync_db=True
-            )
+            import threading
+            threading.Thread(
+                target=telegram_vault.send_alert_and_sync,
+                kwargs={"title": f"Options Strategy: {strategy_name}", "message": telegram_msg, "sync_db": True},
+                daemon=True,
+                name="TelegramDeployAlertSync"
+            ).start()
         except Exception as e:
             logger.warning(f"Telegram alert error on deploy options strategy: {e}")
 
@@ -7042,11 +7055,13 @@ class NiftyAnalyticsEngine:
         )
 
         try:
-            telegram_vault.send_alert_and_sync(
-                title=f"Options Strategy Adjusted: {current_strat.get('strategy_name')}",
-                message=telegram_msg,
-                sync_db=True
-            )
+            import threading
+            threading.Thread(
+                target=telegram_vault.send_alert_and_sync,
+                kwargs={"title": f"Options Strategy Adjusted: {current_strat.get('strategy_name')}", "message": telegram_msg, "sync_db": True},
+                daemon=True,
+                name="TelegramAdjustAlertSync"
+            ).start()
         except Exception as e:
             logger.warning(f"Telegram alert error on adjust options strategy: {e}")
 
@@ -8555,29 +8570,28 @@ class NiftyAnalyticsEngine:
             if self._equity_curves_cache is not None and (now_ts - self._equity_curves_cache_ts) < 60:
                 return self._equity_curves_cache
 
-        opt_port = self.get_options_portfolio()
+        opt_port = self.get_options_portfolio(force_refresh=False)
         opt_curve = opt_port.get("equity_curve", [])
 
-        with state_engine._lock:
-            with state_engine._get_connection() as conn:
-                p1_rows = conn.execute(
-                    "SELECT * FROM trade_history WHERE portfolio_type IN ('P1_SWING', 'INSTITUTIONAL_6PILLAR') ORDER BY exit_date ASC"
-                ).fetchall()
-                p2_rows = conn.execute(
-                    "SELECT * FROM trade_history WHERE portfolio_type IN ('P2_NIFTY500', 'NIFTY500_MOMENTUM') ORDER BY exit_date ASC"
-                ).fetchall()
-                p3_rows = conn.execute(
-                    "SELECT * FROM trade_history WHERE portfolio_type IN ('PORTFOLIO_3_PRE_BREAKOUT', 'PORTFOLIO_3') ORDER BY exit_date ASC"
-                ).fetchall()
-                p1_active = conn.execute(
-                    "SELECT * FROM active_positions WHERE portfolio_type IN ('P1_SWING', 'INSTITUTIONAL_6PILLAR')"
-                ).fetchall()
-                p2_active = conn.execute(
-                    "SELECT * FROM active_positions WHERE portfolio_type IN ('P2_NIFTY500', 'NIFTY500_MOMENTUM')"
-                ).fetchall()
-                p3_active = conn.execute(
-                    "SELECT * FROM active_positions WHERE portfolio_type IN ('PORTFOLIO_3_PRE_BREAKOUT', 'PORTFOLIO_3')"
-                ).fetchall()
+        with state_engine._get_connection() as conn:
+            p1_rows = conn.execute(
+                "SELECT * FROM trade_history WHERE portfolio_type IN ('P1_SWING', 'INSTITUTIONAL_6PILLAR') ORDER BY exit_date ASC"
+            ).fetchall()
+            p2_rows = conn.execute(
+                "SELECT * FROM trade_history WHERE portfolio_type IN ('P2_NIFTY500', 'NIFTY500_MOMENTUM') ORDER BY exit_date ASC"
+            ).fetchall()
+            p3_rows = conn.execute(
+                "SELECT * FROM trade_history WHERE portfolio_type IN ('PORTFOLIO_3_PRE_BREAKOUT', 'PORTFOLIO_3') ORDER BY exit_date ASC"
+            ).fetchall()
+            p1_active = conn.execute(
+                "SELECT * FROM active_positions WHERE portfolio_type IN ('P1_SWING', 'INSTITUTIONAL_6PILLAR')"
+            ).fetchall()
+            p2_active = conn.execute(
+                "SELECT * FROM active_positions WHERE portfolio_type IN ('P2_NIFTY500', 'NIFTY500_MOMENTUM')"
+            ).fetchall()
+            p3_active = conn.execute(
+                "SELECT * FROM active_positions WHERE portfolio_type IN ('PORTFOLIO_3_PRE_BREAKOUT', 'PORTFOLIO_3')"
+            ).fetchall()
 
         # Build P1 curve (Institutional 6-Pillar Swing Desk, Base ₹5,00,000)
         p1_base = float(P1_BASE_CAPITAL)

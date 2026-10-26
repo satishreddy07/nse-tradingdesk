@@ -80,6 +80,7 @@ def main():
     parser.add_argument("--backtest", action="store_true", help="Run 250-day Event-Driven Institutional Backtest")
     parser.add_argument("--host", type=str, default=HOST, help="Host address (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=PORT, help=f"Server port (default: {PORT})")
+    parser.add_argument("--workers", type=int, default=int(os.environ.get("UVICORN_WORKERS", 1)), help="Number of worker processes (default: 1)")
     args = parser.parse_args()
 
     if args.scan:
@@ -103,7 +104,10 @@ def main():
     print(f"Listening on http://{args.host}:{args.port}")
     print("=" * 80)
 
-    uvicorn.run("web.api:app", host=args.host, port=args.port, reload=False)
+    if args.workers > 1:
+        uvicorn.run("web.api:app", host=args.host, port=args.port, workers=args.workers, reload=False)
+    else:
+        uvicorn.run("web.api:app", host=args.host, port=args.port, reload=False)
 
 
 if __name__ == "__main__":

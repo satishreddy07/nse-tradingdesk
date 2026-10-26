@@ -251,7 +251,8 @@ def test_swing_quant_ml_deterministic_chronological_ordering_and_brier_evaluatio
     mock_conn2.__enter__.return_value = mock_conn2
     mock_conn2.execute.return_value.fetchall.return_value = mock_rows
 
-    with patch.object(eng, "_get_connection", return_value=mock_conn2):
+    with patch.object(eng, "_get_connection", return_value=mock_conn2), \
+         patch("execution.state_engine.state_engine.set_kv"):
         res2 = eng.train_model()
         assert res2["status"] == "ONLINE_ACTIVE"
         # Brier score must be None to prevent presenting misleading metrics on single-class holdout

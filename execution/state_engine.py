@@ -81,8 +81,11 @@ class StateEngine:
     def _get_connection(self) -> ClosingConnection:
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=45.0)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=15000;")
+        conn.execute("PRAGMA busy_timeout=30000;")
         conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA cache_size=-64000;")
+        conn.execute("PRAGMA mmap_size=268435456;")
+        conn.execute("PRAGMA temp_store=MEMORY;")
         return ClosingConnection(conn)
 
     def _normalize_portfolio_type(self, p_type: Optional[str]) -> str:
@@ -104,6 +107,9 @@ class StateEngine:
                     conn.execute("PRAGMA journal_mode=WAL;")
                     conn.execute("PRAGMA synchronous=NORMAL;")
                     conn.execute("PRAGMA wal_autocheckpoint=1000;")
+                    conn.execute("PRAGMA cache_size=-64000;")
+                    conn.execute("PRAGMA mmap_size=268435456;")
+                    conn.execute("PRAGMA temp_store=MEMORY;")
                 except Exception:
                     pass
 
@@ -260,7 +266,8 @@ class StateEngine:
                     SELECT symbol, portfolio_type, 'REAL', 'ACTIVE', entry_price, stop_loss, target, target_2,
                            sector, entry_date, updated_at
                     FROM active_positions
-                    WHERE symbol NOT IN (SELECT symbol FROM quant_trade_dataset WHERE status = 'ACTIVE' AND trade_type = 'REAL');
+                    WHERE symbol NOT LIKE 'TEST%' AND symbol NOT LIKE '%TEST%' AND symbol NOT LIKE 'AUTO%' AND symbol != 'BETA'
+                      AND symbol NOT IN (SELECT symbol FROM quant_trade_dataset WHERE status = 'ACTIVE' AND trade_type = 'REAL');
                     """)
                 except Exception:
                     pass
@@ -516,14 +523,13 @@ class StateEngine:
                 conn.commit()
 
     def get_kv(self, key: str, default: Any = None) -> Any:
-        with self._lock:
-            with self._get_connection() as conn:
-                row = conn.execute("SELECT value_json FROM system_kv_store WHERE key = ?", (key,)).fetchone()
-                if row and row["value_json"]:
-                    try:
-                        return json.loads(row["value_json"])
-                    except Exception:
-                        return default
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT value_json FROM system_kv_store WHERE key = ?", (key,)).fetchone()
+            if row and row["value_json"]:
+                try:
+                    return json.loads(row["value_json"])
+                except Exception:
+                    return default
         return default
 
     def get_swing_universe_source(self) -> str:
@@ -1565,29 +1571,30 @@ class StateEngine:
                     """, (now_str, sync_type, p_type, "CLOUD_SYNCED", 0.25, 1, 1, 1, sync_msg, sync_details))
                     conn.commit()
 
-                    # Closed-Loop Quant ML Engine: Record Real Trade Entry
-                    try:
-                        from engines.swing_quant_ml_engine import swing_quant_ml_engine
-                        cand_meta = dict(entry_metrics) if entry_metrics else {}
-                        cand_meta.update({
-                            "sector": sector,
-                            "entry": entry_price,
-                            "sl": stop_loss,
-                            "t1": target,
-                            "t2": target_2,
-                            "notes": notes
-                        })
-                        swing_quant_ml_engine.record_real_trade_entry(
-                            symbol=sym_clean,
-                            portfolio_type=p_type,
-                            entry_price=entry_price,
-                            stop_loss=stop_loss,
-                            target=target,
-                            target_2=target_2,
-                            candidate_meta=cand_meta
-                        )
-                    except Exception as ex:
-                        logger.debug(f"Could not log entry into quant_trade_dataset: {ex}")
+                    # Closed-Loop Quant ML Engine: Record Real Trade Entry (production only, skip test symbols)
+                    if self.db_path == DB_PATH and not (sym_clean.startswith("TEST") or "_TEST" in sym_clean or sym_clean.startswith("AUTO") or sym_clean == "BETA"):
+                        try:
+                            from engines.swing_quant_ml_engine import swing_quant_ml_engine
+                            cand_meta = dict(entry_metrics) if entry_metrics else {}
+                            cand_meta.update({
+                                "sector": sector,
+                                "entry": entry_price,
+                                "sl": stop_loss,
+                                "t1": target,
+                                "t2": target_2,
+                                "notes": notes
+                            })
+                            swing_quant_ml_engine.record_real_trade_entry(
+                                symbol=sym_clean,
+                                portfolio_type=p_type,
+                                entry_price=entry_price,
+                                stop_loss=stop_loss,
+                                target=target,
+                                target_2=target_2,
+                                candidate_meta=cand_meta
+                            )
+                        except Exception as ex:
+                            logger.debug(f"Could not log entry into quant_trade_dataset: {ex}")
                 except Exception as e:
                     logger.error(f"Error opening position for {sym_clean}: {e}")
                     return False
@@ -1627,60 +1634,59 @@ class StateEngine:
             params.append(p_type)
         query += " ORDER BY a.entry_date DESC"
 
-        with self._lock:
-            with self._get_connection() as conn:
-                rows = conn.execute(query, params).fetchall()
-                result = []
-                for r in rows:
-                    item = dict(r)
-                    sym = item.get("symbol", "")
-                    clean_sym = sym.replace(".NS", "").replace(".BO", "").strip()
-                    live_p = None
-                    try:
-                        from engines.kotak_neo_engine import kotak_neo_engine
-                        live_p = kotak_neo_engine.get_live_price(clean_sym) or kotak_neo_engine.get_live_price(sym)
-                    except Exception:
-                        pass
+        with self._get_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+        result = []
+        for r in rows:
+            item = dict(r)
+            sym = item.get("symbol", "")
+            clean_sym = sym.replace(".NS", "").replace(".BO", "").strip()
+            live_p = None
+            try:
+                from engines.kotak_neo_engine import kotak_neo_engine
+                live_p = kotak_neo_engine.get_live_price(clean_sym) or kotak_neo_engine.get_live_price(sym)
+            except Exception:
+                pass
 
-                    master_lc = float(item.get("master_last_close") or 0.0)
-                    master_upd = item.get("master_updated_at") or ""
-                    pos_upd = item.get("updated_at") or ""
-                    if live_p and float(live_p) > 0:
-                        lp = float(live_p)
-                        item["current_price"] = round(lp, 2)
-                        item["highest_price"] = round(max(float(item.get("highest_price") or 0.0), lp), 2)
-                        item["price_updated_at"] = "LIVE_KOTAK_STREAM"
-                    elif master_lc > 0 and (master_upd >= pos_upd or float(item.get("current_price") or 0) == float(item.get("entry_price") or 0)):
-                        item["current_price"] = round(master_lc, 2)
-                        item["highest_price"] = round(max(float(item.get("highest_price") or 0.0), master_lc), 2)
-                        if master_upd:
-                            item["price_updated_at"] = master_upd
-                    else:
-                        item["price_updated_at"] = pos_upd or item.get("entry_date", "")
-                    
-                    ep = float(item.get("entry_price") or 0.0)
-                    cp = float(item.get("current_price") or ep)
-                    day_chg = round(float(item.get("day_change_pct") or 0.0), 2)
-                    master_prev = float(item.get("master_prev_close") or 0.0)
-                    if (day_chg == 0.0 or live_p) and master_prev > 0 and cp > 0:
-                        day_chg = round(((cp - master_prev) / master_prev) * 100.0, 2)
-                    item["day_change_pct"] = day_chg
-                    sl = float(item.get("stop_loss") or ep * 0.95)
-                    qty = int(item.get("quantity") or 0)
-                    orig_qty = int(item.get("original_quantity") or (qty * 2 if (item.get("t1_hit") and float(item.get("t1_pnl") or 0.0) > 0) else qty))
-                    item["qty"] = qty
-                    item["original_quantity"] = orig_qty
-                    item["unrealized_pnl"] = round((cp - ep) * qty, 2)
-                    item["return_pct"] = round(((cp - ep) / max(0.01, ep)) * 100.0, 2)
-                    item["stop_distance_pct"] = round(((cp - sl) / max(0.01, cp)) * 100.0, 2)
-                    r_unit = max(0.01, ep - float(item.get("original_stop_loss") or sl))
-                    item["current_r"] = round((cp - ep) / r_unit, 2)
-                    try:
-                        item["metrics"] = json.loads(item.get("metrics_json") or "{}")
-                    except Exception:
-                        item["metrics"] = {}
-                    result.append(item)
-                return result
+            master_lc = float(item.get("master_last_close") or 0.0)
+            master_upd = item.get("master_updated_at") or ""
+            pos_upd = item.get("updated_at") or ""
+            if live_p and float(live_p) > 0:
+                lp = float(live_p)
+                item["current_price"] = round(lp, 2)
+                item["highest_price"] = round(max(float(item.get("highest_price") or 0.0), lp), 2)
+                item["price_updated_at"] = "LIVE_KOTAK_STREAM"
+            elif master_lc > 0 and (master_upd >= pos_upd or float(item.get("current_price") or 0) == float(item.get("entry_price") or 0)):
+                item["current_price"] = round(master_lc, 2)
+                item["highest_price"] = round(max(float(item.get("highest_price") or 0.0), master_lc), 2)
+                if master_upd:
+                    item["price_updated_at"] = master_upd
+            else:
+                item["price_updated_at"] = pos_upd or item.get("entry_date", "")
+            
+            ep = float(item.get("entry_price") or 0.0)
+            cp = float(item.get("current_price") or ep)
+            day_chg = round(float(item.get("day_change_pct") or 0.0), 2)
+            master_prev = float(item.get("master_prev_close") or 0.0)
+            if (day_chg == 0.0 or live_p) and master_prev > 0 and cp > 0:
+                day_chg = round(((cp - master_prev) / master_prev) * 100.0, 2)
+            item["day_change_pct"] = day_chg
+            sl = float(item.get("stop_loss") or ep * 0.95)
+            qty = int(item.get("quantity") or 0)
+            orig_qty = int(item.get("original_quantity") or (qty * 2 if (item.get("t1_hit") and float(item.get("t1_pnl") or 0.0) > 0) else qty))
+            item["qty"] = qty
+            item["original_quantity"] = orig_qty
+            item["unrealized_pnl"] = round((cp - ep) * qty, 2)
+            item["return_pct"] = round(((cp - ep) / max(0.01, ep)) * 100.0, 2)
+            item["stop_distance_pct"] = round(((cp - sl) / max(0.01, cp)) * 100.0, 2)
+            r_unit = max(0.01, ep - float(item.get("original_stop_loss") or sl))
+            item["current_r"] = round((cp - ep) / r_unit, 2)
+            try:
+                item["metrics"] = json.loads(item.get("metrics_json") or "{}")
+            except Exception:
+                item["metrics"] = {}
+            result.append(item)
+        return result
 
     def update_position_price(
         self,
@@ -1889,20 +1895,21 @@ class StateEngine:
                     conn.execute("DELETE FROM latest_signals WHERE symbol = ? AND portfolio_type = ?", (sym_clean, p_type))
                 conn.commit()
 
-                # Record Closed-Loop Real Trade Exit into quant_trade_dataset
-                try:
-                    from engines.swing_quant_ml_engine import swing_quant_ml_engine
-                    swing_quant_ml_engine.record_real_trade_exit(
-                        symbol=sym_clean,
-                        exit_price=exit_price,
-                        exit_reason=exit_reason,
-                        pnl=round(total_pnl, 2),
-                        r_multiple=r_multiple,
-                        return_pct=return_pct,
-                        hold_days=hold_days
-                    )
-                except Exception as ex:
-                    logger.debug(f"Failed to record trade exit in quant_trade_dataset: {ex}")
+                # Record Closed-Loop Real Trade Exit into quant_trade_dataset (production only, skip test symbols)
+                if self.db_path == DB_PATH and not (sym_clean.startswith("TEST") or "_TEST" in sym_clean or sym_clean.startswith("AUTO") or sym_clean == "BETA"):
+                    try:
+                        from engines.swing_quant_ml_engine import swing_quant_ml_engine
+                        swing_quant_ml_engine.record_real_trade_exit(
+                            symbol=sym_clean,
+                            exit_price=exit_price,
+                            exit_reason=exit_reason,
+                            pnl=round(total_pnl, 2),
+                            r_multiple=r_multiple,
+                            return_pct=return_pct,
+                            hold_days=hold_days
+                        )
+                    except Exception as ex:
+                        logger.debug(f"Failed to record trade exit in quant_trade_dataset: {ex}")
 
                 trade_record = {
                     "symbol": sym_clean,
@@ -2023,10 +2030,9 @@ class StateEngine:
         query += " ORDER BY id DESC LIMIT ?"
         params.append(limit)
 
-        with self._lock:
-            with self._get_connection() as conn:
-                rows = conn.execute(query, params).fetchall()
-                return [dict(r) for r in rows]
+        with self._get_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
 
     def get_portfolio_stats(self, base_capital: float = 500000.0, portfolio_type: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -2292,21 +2298,20 @@ class StateEngine:
             params.append(p_type)
         query += " ORDER BY s.score DESC, s.ml_prob DESC"
 
-        with self._lock:
-            with self._get_connection() as conn:
-                rows = conn.execute(query, params).fetchall()
-                result = []
-                for r in rows:
-                    item = dict(r)
-                    master_lc = float(item.get("master_last_close") or 0.0)
-                    master_upd = item.get("master_updated_at") or ""
-                    sig_upd = item.get("updated_at") or ""
-                    if master_lc > 0 and master_upd >= sig_upd:
-                        item["close"] = round(master_lc, 2)
-                        item["intraday_pct"] = round(float(item.get("master_change_pct") or item.get("intraday_pct") or 0.0), 2)
-                        item["updated_at"] = master_upd
-                    result.append(item)
-                return result
+        with self._get_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+        result = []
+        for r in rows:
+            item = dict(r)
+            master_lc = float(item.get("master_last_close") or 0.0)
+            master_upd = item.get("master_updated_at") or ""
+            sig_upd = item.get("updated_at") or ""
+            if master_lc > 0 and master_upd >= sig_upd:
+                item["close"] = round(master_lc, 2)
+                item["intraday_pct"] = round(float(item.get("master_change_pct") or item.get("intraday_pct") or 0.0), 2)
+                item["updated_at"] = master_upd
+            result.append(item)
+        return result
 
     # --------------------------------------------------------------------------
     # SCAN EXECUTION LOGS
@@ -2342,18 +2347,17 @@ class StateEngine:
 
     def get_recent_scan_logs(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Retrieves recent scan execution logs."""
-        with self._lock:
-            with self._get_connection() as conn:
-                rows = conn.execute("SELECT * FROM scan_logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-                result = []
-                for r in rows:
-                    item = dict(r)
-                    try:
-                        item["details"] = json.loads(item.get("details_json") or "{}")
-                    except Exception:
-                        item["details"] = {}
-                    result.append(item)
-                return result
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM scan_logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            result = []
+            for r in rows:
+                item = dict(r)
+                try:
+                    item["details"] = json.loads(item.get("details_json") or "{}")
+                except Exception:
+                    item["details"] = {}
+                result.append(item)
+            return result
 
     # --------------------------------------------------------------------------
     # LIVE REAL-TIME SCAN PROGRESS TRACKER

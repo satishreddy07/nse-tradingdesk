@@ -377,16 +377,15 @@ class SwingQuantMLEngine:
                 probs = self._classifier.predict_proba(X_scaled)[0]
                 win_prob = round(float(probs[1]), 3)
 
+            rr = feat_dict["rr_ratio"]
+            ev_math = (win_prob * rr) - ((1.0 - win_prob) * 1.0)
             if self._regressor is not None:
                 X_scaled = self._scaler.transform([vec]) if self._scaler else [vec]
                 pred_r = float(self._regressor.predict(X_scaled)[0])
-                # Blend model prediction with mathematical expected value: E[R] = P(Win)*RR - (1-P(Win))*1.0
-                rr = feat_dict["rr_ratio"]
-                ev_math = (win_prob * rr) - ((1.0 - win_prob) * 1.0)
-                expected_r = round(0.5 * pred_r + 0.5 * ev_math, 2)
+                # Mathematical expected payoff: E[R] = P(Win)*RR - (1-P(Win))*1.0
+                expected_r = round(ev_math, 2)
             else:
-                rr = feat_dict["rr_ratio"]
-                expected_r = round((win_prob * rr) - ((1.0 - win_prob) * 1.0), 2)
+                expected_r = round(ev_math, 2)
         except Exception as e:
             logger.debug(f"Error in ML model evaluation: {e}; falling back to calibrated heuristic")
             # Heuristic calculation
@@ -523,6 +522,8 @@ class SwingQuantMLEngine:
     ) -> bool:
         """Records an active real position in the master quant dataset."""
         sym_clean = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+        if sym_clean.startswith("TEST") or "_TEST" in sym_clean or sym_clean.startswith("AUTO") or sym_clean == "BETA":
+            return False
         now_str = format_ist()
         regime = self.capture_market_regime()
         _, feat_dict = self.vectorize_features(candidate_meta, regime)
@@ -1517,6 +1518,7 @@ class SwingQuantMLEngine:
                        target, entry_price, stop_loss, r_multiple, is_winner, trade_type
                 FROM quant_trade_dataset
                 WHERE is_winner IS NOT NULL AND status IN ('RESOLVED_TARGET', 'RESOLVED_STOP_LOSS', 'EXPIRED_TIME')
+                  AND symbol NOT LIKE 'TEST%' AND symbol NOT LIKE '%TEST%' AND symbol NOT LIKE 'AUTO%' AND symbol != 'BETA'
                 ORDER BY created_at ASC, id ASC
                 """).fetchall()
 
@@ -1669,7 +1671,7 @@ class SwingQuantMLEngine:
             self._scaler = scaler
             self._model_metadata = metadata
 
-            # Serialize and store in SQLite KV store
+            # Serialize and store in SQLite KV store (production database only)
             try:
                 bundle = {
                     "classifier": calibrated_clf,
@@ -1678,8 +1680,9 @@ class SwingQuantMLEngine:
                     "metadata": metadata
                 }
                 pickled = pickle.dumps(bundle)
-                state_engine.set_kv("swing_quant_ml_bundle", pickled)
-                logger.info(f"💾 Persisted swing_quant_ml_bundle to SQLite KV store ({len(pickled)} bytes)")
+                if self.db_path == DB_PATH:
+                    state_engine.set_kv("swing_quant_ml_bundle", pickled)
+                    logger.info(f"💾 Persisted swing_quant_ml_bundle to SQLite KV store ({len(pickled)} bytes)")
             except Exception as e:
                 logger.warning(f"Failed to save swing_quant_ml_bundle to KV store: {e}")
 

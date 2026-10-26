@@ -16433,6 +16433,19 @@
       const expiryType = activeExpiryMode.toUpperCase();
 
       const isAdjustment = !!activeAdjustmentStrategyId;
+      if (!strategyLegs || strategyLegs.length === 0) {
+        showToast("Strategy must contain at least one leg before deploying.", "error");
+        return;
+      }
+      for (const l of strategyLegs) {
+        const p = Number(l.entryPrice || l.price || l.premium || 0);
+        if (p <= 0 && (!window.niftyOptionsChainCache || !niftyOptionsChainCache.spot_price)) {
+          showToast(`Strike ${l.strike} ${l.type} is missing live price quote. Please check connection.`, "error");
+          return;
+        }
+      }
+      const deployController = new AbortController();
+      const deployTimeoutId = setTimeout(() => deployController.abort(), 15000);
       const btn = document.getElementById('btn-deploy-strategy');
       const origHtml = btn ? btn.innerHTML : '';
       if (btn) {
@@ -16541,13 +16554,15 @@
           res = await fetch('/api/options/adjust-strategy', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: deployController.signal
           });
         } else {
           res = await fetch('/api/options/deploy-strategy', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: deployController.signal
           });
         }
 
@@ -16569,9 +16584,14 @@
           showToast(`Failed to ${isAdjustment ? 'adjust' : 'deploy'}: ${data.detail || data.message || 'Server error'}`, "error");
         }
       } catch (err) {
-        console.error("Deploy Strategy Error:", err);
-        showToast(`Deploy failed: ${err.message}`, "error");
+        if (err && err.name === 'AbortError') {
+          showToast("Deployment timed out after 15s. Please check Options Portfolio.", "error");
+        } else {
+          console.error("Deploy Strategy Error:", err);
+          showToast(`Deploy failed: ${err.message}`, "error");
+        }
       } finally {
+        clearTimeout(deployTimeoutId);
         if (btn) {
           btn.disabled = false;
           btn.innerHTML = origHtml;
@@ -20284,9 +20304,12 @@
     }
 
     async function refreshLivePrices(silent = false) {
+      if (window._isRefreshingPrices) return;
+      window._isRefreshingPrices = true;
+
       const icon = document.getElementById('refresh-icon');
       const btnText = document.getElementById('btn-refresh-prices-text');
-      if (icon) icon.classList.add('animate-spin');
+      if (!silent && icon) icon.classList.add('animate-spin');
       if (!silent && btnText) btnText.innerText = 'Streaming...';
 
       try {
@@ -20310,14 +20333,15 @@
         console.error("Error streaming live prices:", e);
         if (!silent) showToast(`Price refresh error: ${e.message}`, 'error');
       } finally {
-        if (icon) icon.classList.remove('animate-spin');
-        if (btnText) btnText.innerText = 'Refresh Prices';
+        window._isRefreshingPrices = false;
+        if (!silent && icon) icon.classList.remove('animate-spin');
+        if (!silent && btnText) btnText.innerText = 'Refresh';
       }
     }
 
     async function refreshAllData(forceSignals = false) {
-      const icon = document.getElementById('refresh-icon');
-      if (icon) icon.classList.add('animate-spin');
+      if (window._isRefreshingAllData) return;
+      window._isRefreshingAllData = true;
 
       try {
         await Promise.all([
@@ -20347,7 +20371,7 @@
       } catch (e) {
         console.error("Error refreshing data:", e);
       } finally {
-        if (icon) icon.classList.remove('animate-spin');
+        window._isRefreshingAllData = false;
       }
     }
 
