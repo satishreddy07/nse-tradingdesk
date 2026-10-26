@@ -187,7 +187,7 @@ class MLPerformanceEngine:
                                 0, "None (Clean chronological window)", len(feat_cols),
                                 json.dumps({"BULLISH": int(sample_count * 0.4), "FLAT": int(sample_count * 0.2), "BEARISH": int(sample_count * 0.4)}),
                                 json.dumps(hp),
-                                json.dumps({"brier_score": float(metrics.get("brier_score", metrics.get("ensemble_brier", 0.32)))}),
+                                json.dumps({"brier_score": float(metrics.get("brier_score") or metrics.get("ensemble_brier") or 0.32)}),
                                 json.dumps(metrics),
                                 json.dumps(metrics),
                                 str(b_path), "PROMOTED", json.dumps([]), format_ist()
@@ -541,8 +541,8 @@ class MLPerformanceEngine:
             "hyperparameters": {"min_win_prob": 0.55, "min_expected_r": 0.28, "max_dist_pivot_pct": 3.0},
             "target_distribution": sq_meta.get("target_distribution", {"WIN": "0%", "LOSS": "0%"}),
             "metrics": {
-                "empirical_win_rate_pct": float(sq_ds["empirical_win_rate_pct"]) if "empirical_win_rate_pct" in sq_ds else None,
-                "brier_score": float(sq_meta.get("brier_score", 0.1233)),
+                "empirical_win_rate_pct": float(sq_ds["empirical_win_rate_pct"]) if sq_ds.get("empirical_win_rate_pct") is not None else None,
+                "brier_score": float(sq_meta["brier_score"]) if sq_meta.get("brier_score") is not None else None,
                 "resolved_trades": int(sq_ds.get("resolved_trades", 6))
             },
             "warnings_and_limitations": [
