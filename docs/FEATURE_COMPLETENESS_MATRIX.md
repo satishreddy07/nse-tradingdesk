@@ -3,7 +3,7 @@
 **Audit Date**: October 26, 2026  
 **Auditor**: Antigravity Quantitative Engineering  
 **Standard**: Strict Compliance with `AGENTS.md` and `docs/ANTI_FABRICATION_POLICY.md`  
-**Test Suite Status**: 555 passed, 0 failed across entire repository (`pytest tests/ -q`)
+**Test Suite Status**: 573 passed, 0 failed across entire repository (`pytest tests/ -q`)
 
 ---
 
@@ -30,6 +30,7 @@ Each feature and component is classified under one of the mandatory audit status
 | **Intraday Order Flow & Market Depth** | `web/templates/index.html` (`#order-flow-depth-card`, `#ai-flash-bulletin`) | 5-level market depth bid/ask imbalance, VWAP bands, intraday volume profile, institutional AI flash bulletin. | Coerces missing depth to fail-closed `has_depth=False` off-market; safe numeric float formatting prevents UI crashes. | **Fixed & Verified** | `tests/test_intraday_suite.py`, `tests/test_kotak_neo_depth_and_order_flow.py` |
 | **US Macro & Futures Radar** | `web/templates/index.html` (`#us-macro-card`, `#futures-radar-table`) | S&P 500, Nasdaq, 10Y Treasury, DXY, Brent crude spike alert, 3-star high-impact economic calendar. | External scraper fails closed (`DATA_UNAVAILABLE`) on HTTP 403; zero synthetic economic calendar events. | **Fixed & Verified** | `tests/test_us_analytics_and_t5_decoupling.py` |
 | **Predictions & ML Performance** | `web/templates/index.html` (`#ml-performance-card`, `#forecast-ledger-tbody`) | T+1, T+2, T+5 forecast ledger, directional Brier score, calibration curves, classification accuracy metrics. | Direction determined strictly by argmax statistical probability, no heuristic overrides. | **Verified Working** | `tests/test_system_invariants.py::test_invariant_2_prediction_direction_argmax` |
+| **Intraday Prediction Validation Desk** | `web/templates/index.html` (`#intraday-validation-desk-container`, `#intra-val-recent-tbody`) | Multi-horizon (5m/15m/30m) out-of-sample directional validation, Wilson 95% CI, Brier score, 3x3 confusion matrix, feature IC. | Strictly append-only; immutable ledger prevents retroactive overwrites. Amber alert when $N < 30$. Fail-closed off-market. | **Verified Working** | `tests/test_intraday_prediction_validation_engine.py` |
 | **Omni Risk Watchdog Modal** | `web/templates/index.html` (`#watchdog-modal`, `#watchdog-status-badge`) | Live circuit breaker status, margin utilization, max drawdown limits, emergency liquidation controls. | Fails closed: freezes trading if broker stream or database heartbeat is interrupted. | **Verified Working** | `tests/test_system_invariants.py::test_invariant_12_omni_watchdog_and_ml_sentinel_integrity` |
 
 ---
@@ -46,6 +47,7 @@ Each feature and component is classified under one of the mandatory audit status
 | **Intraday & Order Flow** | `/api/intraday/order-flow`, `/api/intraday/depth`, `/api/intraday/flash-bulletin` | Live VWAP, 5-level depth imbalance, volume profile, institutional flash report. | Returns `has_depth=False` when off-market; safe numeric float coercion eliminates formatting exceptions. | **Fixed & Verified** | `tests/test_intraday_suite.py`, `tests/test_kotak_neo_depth_and_order_flow.py` |
 | **US Macro & Radar** | `/api/us/macro-radar`, `/api/nifty/economic-calendar` | Global macro telemetry, Treasury yield, crude oil spike detection, economic calendar. | Fails closed (`DATA_UNAVAILABLE`) when external scraper is blocked; zero fabricated entries. | **Fixed & Verified** | `tests/test_us_analytics_and_t5_decoupling.py` |
 | **Predictions & ML Ledger** | `/api/nifty/predictions`, `/api/ml/performance`, `/api/ml/audit-events` | T+1/T+2/T+5 forecasts, Brier score calibration, model registry metadata, provenance logs. | Zero heuristic score override of argmax statistical class; empirical dataset verified against DB tables. | **Verified Working** | `tests/test_system_invariants.py`, `tests/test_full_repo_audit_remediation.py` |
+| **Intraday Validation Engine** | `/api/intraday/validation/metrics`, `/api/intraday/validation/recent`, `/api/intraday/validation/feature-contributions` | Out-of-sample directional validation metrics, Wilson 95% CI, Brier score, 3x3 confusion matrix, feature IC. | Admin-key guarded mutation routes (`/record`, `/evaluate`); zero synthetic price substitutions. | **Verified Working** | `tests/test_intraday_prediction_validation_engine.py` |
 | **Omni Watchdog** | `/api/watchdog/status`, `/api/watchdog/heartbeat`, `/api/watchdog/kill-switch` | Autonomous risk monitor, margin limits, auto-trade gate controls, emergency stop. | Fail-closed kill switch: immediately disarms auto-trade if market data freshness exceeds 180s. | **Verified Working** | `tests/test_f301_autonomous_execution_integrity.py` |
 
 ---
@@ -64,6 +66,7 @@ Each feature and component is classified under one of the mandatory audit status
 | **Omni Watchdog Engine** | `engines/omni_watchdog_engine.py` | Autonomous risk monitor, drawdown circuit breaker, broker stream heartbeat. | Fails closed: freezes trading when broker ticks stop or clock skew is detected. | **Verified Working** | `tests/test_f301_autonomous_execution_integrity.py` |
 | **Tree Quant Engine** | `engines/tree_quant_engine.py` | Machine learning decision tree ensembles, feature importance, regime routing. | Models trained exclusively on verified empirical data; zero synthetic data contamination. | **Verified Working** | `tests/test_f305_synthetic_snapshots_integrity.py` |
 | **ML Performance Engine** | `engines/ml_performance_engine.py` | Out-of-sample forecast ledger, Brier calibration, direction classification accuracy. | Direction strictly argmax probability; metrics audited against verified historical settlements. | **Verified Working** | `tests/test_system_invariants.py` |
+| **Intraday Validation Engine** | `engines/intraday_prediction_validation_engine.py` | Multi-horizon (5m, 15m, 30m) forward evaluation, Wilson CI, Brier score, Spearman rank feature IC, baseline lift. | Strictly immutable predictions; fail-closed off-market, weekend, and missing price handling. | **Verified Working** | `tests/test_intraday_prediction_validation_engine.py` |
 
 ---
 
@@ -99,6 +102,8 @@ Each feature and component is classified under one of the mandatory audit status
 | `fao_participant_oi_history` | F&O participant open interest (Client, DII, FII, Pro). | 14 rows | Official exchange participant OI breakdown. | **Verified Working** |
 | `unified_trade_learning_dataset` | Empirical ML feature-label pairs for model training. | 440 rows | Strict provenance filter: rejects any rows with synthetic or null provenance. | **Fixed & Verified** |
 | `nifty_forecast_lifecycle_ledger` | End-to-end lifecycle tracking for forecasts from generation to expiry. | 14 rows | Evaluates forecast accuracy against actual settlement price; zero heuristic overrides. | **Verified Working** |
+| `intraday_prediction_ledger` | Immutable ledger of intraday directional predictions and feature snapshots. | Dynamic | Append-only; duplicate prediction IDs fail closed; zero retroactive modifications. | **Verified Working** |
+| `intraday_prediction_evaluations` | Multi-horizon (5m, 15m, 30m) evaluation outcomes and Brier scores. | Dynamic | `UNIQUE(prediction_id, horizon_min)`; deadband symmetry; fail-closed off-market. | **Verified Working** |
 | `ml_training_run_history` | Full audit trail of model training runs, hyperparameters, metrics. | 493 rows | Tracks model version, sample size, Brier score, test accuracy. | **Verified Working** |
 | `ml_audit_event_logs` | Telemetry logs for ML sentinel, drift detection, calibration audits. | 106 rows | Audited for threshold symmetry and out-of-bounds metrics. | **Verified Working** |
 | `swing_decision_audit` | Granular step-by-step audit of swing screener filtering decisions. | 282 rows | Records why each stock was accepted or rejected (liquidity, ATR, volume). | **Verified Working** |
@@ -127,3 +132,4 @@ Each feature and component is classified under one of the mandatory audit status
 | **T+2 Swing Momentum Classifier** | 2 Trading Days | Sector Relative Strength, 20-EMA Slope, Institutional Volume Z-Score | P(BULLISH), P(BEARISH) | Models trained exclusively on empirical settlements; synthetic records strictly rejected. | **Verified Working** | `tests/test_f305_synthetic_snapshots_integrity.py` |
 | **T+5 Macroeconomic Regime Model** | 1 Week | US 10Y Yield, DXY, Brent Crude Shock, RBI/Fed Rate Policy, Economic Surprise | Regime Class & Directional Bias | Decoupled from T+1 structural regime; verified economic calendar inputs. | **Verified Working** | `tests/test_us_analytics_and_t5_decoupling.py` |
 | **Forecast Calibration & Brier Score** | All Horizons | Predicted Probabilities vs Actual Binary Outcomes | Multi-class Brier Score & Reliability Curves | Error metrics calculated strictly in probability space; raw rupee mixing forbidden. | **Verified Working** | `tests/test_system_invariants.py::test_invariant_4_error_metrics_no_raw_rupee_mixing` |
+| **Intraday Multi-Horizon Validation** | 5m, 15m, 30m | 11 Quant Features (OI, PCR, IV, Order Flow, Decay) | Directional accuracy, Wilson 95% CI, Spearman IC | Deadband symmetry ($\pm 0.03\%$, $\pm 0.06\%$, $\pm 0.08\%$); immutable ledger; fail-closed off-market. | **Verified Working** | `tests/test_intraday_prediction_validation_engine.py` |

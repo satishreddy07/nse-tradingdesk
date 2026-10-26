@@ -3577,3 +3577,81 @@ def get_intraday_confluence():
     """Returns weighted Multi-Index & Heavyweight Confluence Score with divergence warnings."""
     from engines.order_flow_structure_engine import order_flow_structure_engine
     return order_flow_structure_engine.compute_multi_index_confluence()
+
+# =========================================================================
+# INTRADAY PREDICTION VALIDATION ENGINE ENDPOINTS
+# =========================================================================
+@app.get("/api/intraday/validation/metrics")
+def get_intraday_validation_metrics(
+    horizon_min: Optional[int] = None,
+    session_date: Optional[str] = None,
+    regime: Optional[str] = None,
+    min_sample_warning: int = 30
+):
+    """
+    Returns comprehensive empirical out-of-sample directional validation metrics:
+    accuracy with 95% Wilson CI, Brier score, confusion matrix, precision/recall,
+    probability calibration, horizon breakdown, regime breakdown, and small-sample warnings.
+    """
+    from engines.intraday_prediction_validation_engine import intraday_prediction_validation_engine
+    return _sanitize_for_json(intraday_prediction_validation_engine.compute_validation_metrics(
+        horizon_min=horizon_min,
+        session_date=session_date,
+        regime=regime,
+        min_sample_warning=min_sample_warning
+    ))
+
+
+@app.get("/api/intraday/validation/recent")
+def get_intraday_validation_recent_predictions(
+    session_date: Optional[str] = None,
+    limit: int = 50,
+    status: Optional[str] = None
+):
+    """
+    Returns recent predictions from the immutable ledger along with their 5m, 15m,
+    and 30m evaluation resolution states.
+    """
+    from core.intraday_prediction_ledger import intraday_prediction_ledger
+    preds = intraday_prediction_ledger.list_predictions(
+        session_date=session_date,
+        limit=limit,
+        status=status
+    )
+    for p in preds:
+        p["evaluations"] = intraday_prediction_ledger.get_evaluations_for_prediction(p["prediction_id"])
+    return _sanitize_for_json({"status": "OK", "count": len(preds), "predictions": preds})
+
+
+@app.get("/api/intraday/validation/feature-contributions")
+def get_intraday_validation_feature_contributions(
+    horizon_min: int = 15,
+    session_date: Optional[str] = None
+):
+    """
+    Evaluates whether OI changes, ATM PCR, near-ATM PCR, futures basis, VWAP,
+    order flow, and sector strength contribute useful predictive information.
+    Compares against simple baselines using chronological walk-forward alignment.
+    """
+    from engines.intraday_prediction_validation_engine import intraday_prediction_validation_engine
+    return _sanitize_for_json(intraday_prediction_validation_engine.evaluate_feature_contributions(
+        horizon_min=horizon_min,
+        session_date=session_date
+    ))
+
+
+@app.post("/api/intraday/validation/record", dependencies=[Depends(verify_admin_key)])
+def record_intraday_prediction(force_refresh: bool = False):
+    """Records the current live intraday analysis and directional prediction to the immutable ledger."""
+    from engines.intraday_prediction_validation_engine import intraday_prediction_validation_engine
+    res = intraday_prediction_validation_engine.capture_and_record_prediction(force_refresh=force_refresh)
+    return _sanitize_for_json(res)
+
+
+@app.post("/api/intraday/validation/evaluate", dependencies=[Depends(verify_admin_key)])
+def evaluate_intraday_pending_predictions():
+    """Runs an outcome evaluation cycle across all pending intraday predictions that are due."""
+    from engines.intraday_prediction_validation_engine import intraday_prediction_validation_engine
+    res = intraday_prediction_validation_engine.evaluate_pending_predictions()
+    return _sanitize_for_json(res)
+

@@ -2254,6 +2254,13 @@ class NiftyAnalyticsEngine:
         except Exception:
             pass
 
+        try:
+            from engines.intraday_prediction_validation_engine import intraday_prediction_validation_engine
+            intraday_prediction_validation_engine.capture_and_record_prediction()
+            intraday_prediction_validation_engine.evaluate_pending_predictions()
+        except Exception as _e_val:
+            logger.debug(f"Intraday validation engine snapshot hook notice: {_e_val}")
+
         return self.get_intraday_expiry_dashboard(session_date=session_date, interval_mode=interval_mode)
 
     def _get_snapshots_for_date(

@@ -16,6 +16,7 @@ Enforces 7 uncompromised mathematical, architectural, and data invariants:
 import math
 import os
 from pathlib import Path
+from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
@@ -403,45 +404,46 @@ def test_invariant_11_advanced_confidence_and_asymmetric_strategy_integrity():
         assert "updated_count" in watchdog_res
 
     # 4. Test Intraday Auto-Adjustment Suite Across All 5 Asymmetric Architectures
-    # 4a. Iron Fly Wing Roll Down on spot drop
-    fly_down = advanced_options_pricing_engine.formulate_strategy("INSTITUTIONAL_IRON_FLY", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
-    k_atm_down = next(l for l in fly_down["legs"] if l["action"] == "SELL")["strike"]
-    adj_if_down, _, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_IF_DOWN", fly_down["strategy_name"], fly_down["legs"], spot_price=k_atm_down - 75.0, horizon="INTRADAY")
-    assert adj_if_down is True, "Iron Fly must roll Call wing down when spot drops >= 70 pts intraday"
+    with patch.object(strategy_adjustment_engine, "_get_option_quote", return_value=50.0):
+        # 4a. Iron Fly Wing Roll Down on spot drop
+        fly_down = advanced_options_pricing_engine.formulate_strategy("INSTITUTIONAL_IRON_FLY", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
+        k_atm_down = next(l for l in fly_down["legs"] if l["action"] == "SELL")["strike"]
+        adj_if_down, _, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_IF_DOWN", fly_down["strategy_name"], fly_down["legs"], spot_price=k_atm_down - 75.0, horizon="INTRADAY")
+        assert adj_if_down is True, "Iron Fly must roll Call wing down when spot drops >= 70 pts intraday"
 
-    # 4b. Iron Fly Wing Roll Up on spot rally
-    fly_up = advanced_options_pricing_engine.formulate_strategy("INSTITUTIONAL_IRON_FLY", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
-    k_atm_up = next(l for l in fly_up["legs"] if l["action"] == "SELL")["strike"]
-    adj_if_up, _, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_IF_UP", fly_up["strategy_name"], fly_up["legs"], spot_price=k_atm_up + 75.0, horizon="INTRADAY")
-    assert adj_if_up is True, "Iron Fly must roll Put wing up when spot rallies >= 70 pts intraday"
+        # 4b. Iron Fly Wing Roll Up on spot rally
+        fly_up = advanced_options_pricing_engine.formulate_strategy("INSTITUTIONAL_IRON_FLY", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
+        k_atm_up = next(l for l in fly_up["legs"] if l["action"] == "SELL")["strike"]
+        adj_if_up, _, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_IF_UP", fly_up["strategy_name"], fly_up["legs"], spot_price=k_atm_up + 75.0, horizon="INTRADAY")
+        assert adj_if_up is True, "Iron Fly must roll Put wing up when spot rallies >= 70 pts intraday"
 
-    # 4c. Bull Broken Wing Butterfly Wing Tighten on downside threat
-    bwb_bull = advanced_options_pricing_engine.formulate_strategy("BULL_BROKEN_WING_BUTTERFLY", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
-    k2_bull = next(l for l in bwb_bull["legs"] if l["action"] == "SELL")["strike"]
-    adj_bwb_bull, _, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_BWB_BULL", bwb_bull["strategy_name"], bwb_bull["legs"], spot_price=k2_bull + 10.0, horizon="INTRADAY")
-    assert adj_bwb_bull is True, "Bull BWB must tighten broken put wing when spot approaches short strike K2"
+        # 4c. Bull Broken Wing Butterfly Wing Tighten on downside threat
+        bwb_bull = advanced_options_pricing_engine.formulate_strategy("BULL_BROKEN_WING_BUTTERFLY", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
+        k2_bull = next(l for l in bwb_bull["legs"] if l["action"] == "SELL")["strike"]
+        adj_bwb_bull, _, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_BWB_BULL", bwb_bull["strategy_name"], bwb_bull["legs"], spot_price=k2_bull + 10.0, horizon="INTRADAY")
+        assert adj_bwb_bull is True, "Bull BWB must tighten broken put wing when spot approaches short strike K2"
 
-    # 4d. Bear Broken Wing Butterfly Wing Tighten on upside threat
-    bwb_bear = advanced_options_pricing_engine.formulate_strategy("BEAR_BROKEN_WING_BUTTERFLY", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
-    k2_bear = next(l for l in bwb_bear["legs"] if l["action"] == "SELL")["strike"]
-    adj_bwb_bear, _, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_BWB_BEAR", bwb_bear["strategy_name"], bwb_bear["legs"], spot_price=k2_bear - 10.0, horizon="INTRADAY")
-    assert adj_bwb_bear is True, "Bear BWB must tighten broken call wing when spot approaches short strike K2"
+        # 4d. Bear Broken Wing Butterfly Wing Tighten on upside threat
+        bwb_bear = advanced_options_pricing_engine.formulate_strategy("BEAR_BROKEN_WING_BUTTERFLY", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
+        k2_bear = next(l for l in bwb_bear["legs"] if l["action"] == "SELL")["strike"]
+        adj_bwb_bear, _, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_BWB_BEAR", bwb_bear["strategy_name"], bwb_bear["legs"], spot_price=k2_bear - 10.0, horizon="INTRADAY")
+        assert adj_bwb_bear is True, "Bear BWB must tighten broken call wing when spot approaches short strike K2"
 
-    # 4e. Call Ratio Backspread Valley Defense
-    crb = advanced_options_pricing_engine.formulate_strategy("CALL_RATIO_BACKSPREAD", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
-    k1_crb = next(l for l in crb["legs"] if l["action"] == "SELL")["strike"]
-    k2_crb = next(l for l in crb["legs"] if l["action"] == "BUY")["strike"]
-    adj_crb, legs_crb, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_CRB", crb["strategy_name"], crb["legs"], spot_price=(k1_crb + k2_crb) / 2.0, horizon="INTRADAY")
-    assert adj_crb is True, "Call Ratio Backspread must deploy Put Credit Spread hedge when stalling in Valley of Death"
-    assert len(legs_crb) == 4, "Must add 2 hedge legs to original 2 legs"
+        # 4e. Call Ratio Backspread Valley Defense
+        crb = advanced_options_pricing_engine.formulate_strategy("CALL_RATIO_BACKSPREAD", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
+        k1_crb = next(l for l in crb["legs"] if l["action"] == "SELL")["strike"]
+        k2_crb = next(l for l in crb["legs"] if l["action"] == "BUY")["strike"]
+        adj_crb, legs_crb, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_CRB", crb["strategy_name"], crb["legs"], spot_price=(k1_crb + k2_crb) / 2.0, horizon="INTRADAY")
+        assert adj_crb is True, "Call Ratio Backspread must deploy Put Credit Spread hedge when stalling in Valley of Death"
+        assert len(legs_crb) == 4, "Must add 2 hedge legs to original 2 legs"
 
-    # 4f. Put Ratio Backspread Valley Defense
-    prb = advanced_options_pricing_engine.formulate_strategy("PUT_RATIO_BACKSPREAD", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
-    k1_prb = next(l for l in prb["legs"] if l["action"] == "SELL")["strike"]
-    k2_prb = next(l for l in prb["legs"] if l["action"] == "BUY")["strike"]
-    adj_prb, legs_prb, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_PRB", prb["strategy_name"], prb["legs"], spot_price=(k1_prb + k2_prb) / 2.0, horizon="INTRADAY")
-    assert adj_prb is True, "Put Ratio Backspread must deploy Call Credit Spread hedge when stalling in Valley of Death"
-    assert len(legs_prb) == 4
+        # 4f. Put Ratio Backspread Valley Defense
+        prb = advanced_options_pricing_engine.formulate_strategy("PUT_RATIO_BACKSPREAD", spot_price=spot, iv_pct=iv, dte=1, horizon="INTRADAY")
+        k1_prb = next(l for l in prb["legs"] if l["action"] == "SELL")["strike"]
+        k2_prb = next(l for l in prb["legs"] if l["action"] == "BUY")["strike"]
+        adj_prb, legs_prb, _ = strategy_adjustment_engine._check_and_apply_adjustments("TEST_PRB", prb["strategy_name"], prb["legs"], spot_price=(k1_prb + k2_prb) / 2.0, horizon="INTRADAY")
+        assert adj_prb is True, "Put Ratio Backspread must deploy Call Credit Spread hedge when stalling in Valley of Death"
+        assert len(legs_prb) == 4
 
 
 def test_invariant_12_omni_watchdog_and_ml_sentinel_integrity():
@@ -638,13 +640,14 @@ def test_invariant_13_options_sl_and_hedge_pricing():
             {"action": "SELL", "type": "PE", "strike": 22500, "qty": 65, "entry_price": 80.0, "state": "ACTIVE"},
             {"action": "BUY", "type": "PE", "strike": 22400, "qty": 65, "entry_price": 40.0, "state": "ACTIVE"}
         ]
-        adjusted, adj_legs, note = strategy_adjustment_engine._check_and_apply_adjustments(
-            strategy_id="TEST-VALLEY-001",
-            strat_name="Put Ratio Backspread",
-            legs=test_legs,
-            spot_price=22450.0, # Stalls in valley (22400 <= 22450 <= 22500)
-            horizon="INTRADAY"
-        )
+        with patch.object(strategy_adjustment_engine, "_get_option_quote", return_value=50.0):
+            adjusted, adj_legs, note = strategy_adjustment_engine._check_and_apply_adjustments(
+                strategy_id="TEST-VALLEY-001",
+                strat_name="Put Ratio Backspread",
+                legs=test_legs,
+                spot_price=22450.0, # Stalls in valley (22400 <= 22450 <= 22500)
+                horizon="INTRADAY"
+            )
         assert adjusted is True
         assert len(adj_legs) == 4
         hedge_legs = [l for l in adj_legs if l.get("state") == "HEDGE_LEG"]

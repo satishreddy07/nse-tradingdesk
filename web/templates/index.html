@@ -4735,6 +4735,240 @@
           </table>
         </div>
       </div>
+    
+      <!-- =================================================================== -->
+      <!-- INTRADAY PREDICTION VALIDATION & OUT-OF-SAMPLE PERFORMANCE DESK     -->
+      <!-- =================================================================== -->
+      <div id="intraday-validation-desk-container" class="bg-slate-900/80 border border-cyan-500/35 rounded-2xl p-4 sm:p-5 shadow-lg mt-6">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">VALIDATION ENGINE • OUT-OF-SAMPLE PREDICTION INTEGRITY</span>
+              <span id="intra-val-status-badge" class="text-[11px] font-mono text-cyan-400">⚡ Live Forward Evaluation Desk</span>
+            </div>
+            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Nifty 50 Intraday Prediction Validation & Drift Performance</h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Measures whether live intraday analysis and directional predictions have genuine out-of-sample predictive power across <code class="text-cyan-300">5m</code>, <code class="text-cyan-300">15m</code>, and <code class="text-cyan-300">30m</code> forward horizons. Strictly zero synthetic data or post-hoc cherry picking.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <!-- Horizon Filter -->
+            <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+              <button onclick="switchIntraValHorizon('all')" id="btn-val-hor-all" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyan-500 text-black shadow-md transition">All Horizons</button>
+              <button onclick="switchIntraValHorizon('5')" id="btn-val-hor-5" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition">5m</button>
+              <button onclick="switchIntraValHorizon('15')" id="btn-val-hor-15" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition">15m</button>
+              <button onclick="switchIntraValHorizon('30')" id="btn-val-hor-30" class="px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition">30m</button>
+            </div>
+            <button onclick="recordIntradayPredictionNow()" id="btn-intra-val-record" class="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="radio" class="w-3.5 h-3.5 shrink-0"></i>
+              <span>Log Prediction</span>
+            </button>
+            <button onclick="evaluateIntradayPredictionsNow()" id="btn-intra-val-eval" class="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="check-circle-2" class="w-3.5 h-3.5 shrink-0"></i>
+              <span>Evaluate Pending</span>
+            </button>
+            <button onclick="loadIntradayValidationDesk(true)" class="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-cyan-400 shrink-0"></i>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Small Sample Warning Banner (renders when N < 30) -->
+        <div id="intra-val-sample-warning" class="hidden mt-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400 shrink-0 mt-0.5"></i>
+          <div>
+            <span class="font-bold">Preliminary Forward Sample:</span>
+            <span id="intra-val-sample-warning-text">Only N observations evaluated. Minimum 30 out-of-sample forward evaluations required for statistical significance.</span>
+          </div>
+        </div>
+
+        <!-- 5 Summary KPI Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mt-4 items-stretch">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] font-mono uppercase text-cyan-400">Directional Accuracy</div>
+              <div id="intra-val-kpi-acc" class="text-base sm:text-xl font-mono font-bold text-white mt-1">--</div>
+            </div>
+            <div id="intra-val-kpi-acc-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">95% Wilson CI: [--, --]</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] font-mono uppercase text-emerald-400">5-Minute Horizon</div>
+              <div id="intra-val-kpi-5m" class="text-base sm:text-xl font-mono font-bold text-emerald-400 mt-1">--</div>
+            </div>
+            <div id="intra-val-kpi-5m-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">N = 0 | Brier: --</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] font-mono uppercase text-amber-400">15-Minute Horizon</div>
+              <div id="intra-val-kpi-15m" class="text-base sm:text-xl font-mono font-bold text-amber-400 mt-1">--</div>
+            </div>
+            <div id="intra-val-kpi-15m-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">N = 0 | Brier: --</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] font-mono uppercase text-purple-400">30-Minute Horizon</div>
+              <div id="intra-val-kpi-30m" class="text-base sm:text-xl font-mono font-bold text-purple-400 mt-1">--</div>
+            </div>
+            <div id="intra-val-kpi-30m-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">N = 0 | Brier: --</div>
+          </div>
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] font-mono uppercase text-blue-400">Multi-Class Brier Score</div>
+              <div id="intra-val-kpi-brier" class="text-base sm:text-xl font-mono font-bold text-blue-300 mt-1">--</div>
+            </div>
+            <div id="intra-val-kpi-brier-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">Probabilistic Loss [0-2]</div>
+          </div>
+        </div>
+
+        <!-- 2-Column Grid: Confusion Matrix & Baseline Benchmark -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+          <!-- Left: 3x3 Confusion Matrix & Precision Breakdown -->
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-mono font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <i data-lucide="grid" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span>3×3 Directional Confusion Matrix & Precision</span>
+              </h3>
+              <span class="text-[10px] font-mono text-slate-500">Live Out-of-Sample</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2 mt-3">
+              <div class="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
+                <div class="text-[10px] text-emerald-400 font-mono uppercase">Bullish Prec / Rec</div>
+                <div id="intra-val-prec-bull" class="text-xs font-mono font-bold text-white mt-0.5">-- / --</div>
+              </div>
+              <div class="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center">
+                <div class="text-[10px] text-amber-400 font-mono uppercase">Neutral Prec / Rec</div>
+                <div id="intra-val-prec-neut" class="text-xs font-mono font-bold text-white mt-0.5">-- / --</div>
+              </div>
+              <div class="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-center">
+                <div class="text-[10px] text-rose-400 font-mono uppercase">Bearish Prec / Rec</div>
+                <div id="intra-val-prec-bear" class="text-xs font-mono font-bold text-white mt-0.5">-- / --</div>
+              </div>
+            </div>
+            <!-- Matrix Table -->
+            <div class="mt-3 overflow-x-auto">
+              <table class="w-full text-[11px] font-mono border-collapse text-center">
+                <thead>
+                  <tr class="text-slate-400 border-b border-slate-800">
+                    <th class="p-1.5 text-left text-slate-500">Pred \ Realized</th>
+                    <th class="p-1.5 text-emerald-400">Bullish</th>
+                    <th class="p-1.5 text-amber-400">Neutral</th>
+                    <th class="p-1.5 text-rose-400">Bearish</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                  <tr>
+                    <td class="p-1.5 text-left text-emerald-400 font-semibold">Pred Bullish</td>
+                    <td id="cm-0-0" class="p-1.5 font-bold text-white bg-slate-900/60">0</td>
+                    <td id="cm-0-1" class="p-1.5 text-slate-400">0</td>
+                    <td id="cm-0-2" class="p-1.5 text-slate-400">0</td>
+                  </tr>
+                  <tr>
+                    <td class="p-1.5 text-left text-amber-400 font-semibold">Pred Neutral</td>
+                    <td id="cm-1-0" class="p-1.5 text-slate-400">0</td>
+                    <td id="cm-1-1" class="p-1.5 font-bold text-white bg-slate-900/60">0</td>
+                    <td id="cm-1-2" class="p-1.5 text-slate-400">0</td>
+                  </tr>
+                  <tr>
+                    <td class="p-1.5 text-left text-rose-400 font-semibold">Pred Bearish</td>
+                    <td id="cm-2-0" class="p-1.5 text-slate-400">0</td>
+                    <td id="cm-2-1" class="p-1.5 text-slate-400">0</td>
+                    <td id="cm-2-2" class="p-1.5 font-bold text-white bg-slate-900/60">0</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Right: Feature Contribution & Baseline Benchmark -->
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-mono font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <i data-lucide="layers" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>Baseline Benchmarking & Feature Lift</span>
+              </h3>
+              <span id="intra-val-baseline-lift" class="text-[10px] font-mono text-cyan-400">Lift: --%</span>
+            </div>
+            <div class="mt-3 overflow-x-auto">
+              <table class="w-full text-[11px] font-mono border-collapse">
+                <thead>
+                  <tr class="text-slate-400 border-b border-slate-800 text-left">
+                    <th class="p-1.5">Benchmark / Baseline</th>
+                    <th class="p-1.5 text-right">Accuracy</th>
+                    <th class="p-1.5 text-right">Lift vs Baseline</th>
+                  </tr>
+                </thead>
+                <tbody id="intra-val-baseline-tbody" class="divide-y divide-slate-800/60">
+                  <tr>
+                    <td class="p-1.5 text-cyan-300 font-bold">Combined Multi-Factor Model</td>
+                    <td id="bench-acc-combined" class="p-1.5 text-right font-bold text-white">--</td>
+                    <td class="p-1.5 text-right text-slate-500">Ref</td>
+                  </tr>
+                  <tr>
+                    <td class="p-1.5 text-slate-400">Majority-Class Baseline</td>
+                    <td id="bench-acc-majority" class="p-1.5 text-right text-slate-300">--</td>
+                    <td id="bench-lift-majority" class="p-1.5 text-right font-semibold">--</td>
+                  </tr>
+                  <tr>
+                    <td class="p-1.5 text-slate-400">Zero-Drift Random (33.3%)</td>
+                    <td class="p-1.5 text-right text-slate-300">33.3%</td>
+                    <td id="bench-lift-random" class="p-1.5 text-right font-semibold">--</td>
+                  </tr>
+                  <tr>
+                    <td class="p-1.5 text-slate-400">Single-Feature: VWAP Alignment</td>
+                    <td id="bench-acc-vwap" class="p-1.5 text-right text-slate-300">--</td>
+                    <td id="bench-lift-vwap" class="p-1.5 text-right font-semibold">--</td>
+                  </tr>
+                  <tr>
+                    <td class="p-1.5 text-slate-400">Single-Feature: Near-ATM PCR</td>
+                    <td id="bench-acc-pcr" class="p-1.5 text-right text-slate-300">--</td>
+                    <td id="bench-lift-pcr" class="p-1.5 text-right font-semibold">--</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <!-- Top IC Features List -->
+            <div class="mt-3 pt-2 border-t border-slate-800 flex flex-wrap gap-1.5 text-[10px] font-mono" id="intra-val-ic-chips">
+              <span class="text-slate-500">Feature ICs:</span>
+              <span class="text-slate-400">Awaiting evaluations...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Predictions & Forward Realized Outcomes Ledger Table -->
+        <div class="mt-5 border border-slate-800 rounded-xl overflow-hidden">
+          <div class="p-3 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between">
+            <h3 class="text-xs font-mono font-bold text-slate-200 flex items-center gap-1.5">
+              <i data-lucide="clock" class="w-3.5 h-3.5 text-cyan-400"></i>
+              <span>Immutable Prediction Ledger & Outcome Horizons</span>
+            </h3>
+            <span class="text-[10px] font-mono text-slate-500">Live Non-Destructive Ledger</span>
+          </div>
+          <div class="overflow-x-auto max-h-[380px] overflow-y-auto">
+            <table class="w-full text-left text-xs font-mono whitespace-nowrap">
+              <thead class="bg-slate-950/80 text-slate-400 text-[10px] uppercase border-b border-slate-800 sticky top-0 z-10">
+                <tr>
+                  <th class="p-2.5">Prediction ID</th>
+                  <th class="p-2.5">Timestamp</th>
+                  <th class="p-2.5">Spot Price</th>
+                  <th class="p-2.5">Regime / Score</th>
+                  <th class="p-2.5">Predicted Dir (Prob)</th>
+                  <th class="p-2.5">5m Horizon</th>
+                  <th class="p-2.5">15m Horizon</th>
+                  <th class="p-2.5">30m Horizon</th>
+                  <th class="p-2.5 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody id="intra-val-recent-tbody" class="divide-y divide-slate-800/60">
+                <tr><td colspan="9" class="p-6 text-center text-slate-500">Loading prediction ledger...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </section>
 
     <!-- =================================================================== -->
@@ -10775,6 +11009,9 @@
       if (typeof loadIntradayOrderFlowDesk === 'function') {
         loadIntradayOrderFlowDesk();
       }
+      if (typeof loadIntradayValidationDesk === 'function') {
+        loadIntradayValidationDesk(forceRefresh);
+      }
       if (niftyIntradayCache && !forceRefresh) {
         renderIntradayExpiryUI(niftyIntradayCache);
       }
@@ -13696,6 +13933,288 @@
           pillEl.className = "hidden lg:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-rose-900 border border-rose-500 text-rose-200 animate-bounce";
         }
       } catch (e) {}
+    }
+
+    
+    // =========================================================================
+    // INTRADAY PREDICTION VALIDATION ENGINE JAVASCRIPT CONTROLLERS
+    // =========================================================================
+    let currentIntraValHorizon = 'all';
+
+    async function loadIntradayValidationDesk(forceRefresh = false) {
+      try {
+        const horParam = (currentIntraValHorizon && currentIntraValHorizon !== 'all') ? `?horizon_min=${currentIntraValHorizon}` : '';
+        const [metricsRes, recentRes, featsRes] = await Promise.all([
+          fetch(`/api/intraday/validation/metrics${horParam}`),
+          fetch('/api/intraday/validation/recent?limit=30'),
+          fetch(`/api/intraday/validation/feature-contributions?horizon_min=${currentIntraValHorizon === 'all' ? 15 : currentIntraValHorizon}`)
+        ]);
+
+        if (metricsRes.ok) {
+          const metrics = await metricsRes.json();
+          renderIntradayValidationMetrics(metrics);
+        }
+        if (recentRes.ok) {
+          const recent = await recentRes.json();
+          renderIntradayValidationRecent(recent.predictions || []);
+        }
+        if (featsRes.ok) {
+          const feats = await featsRes.json();
+          renderIntradayValidationFeatures(feats);
+        }
+      } catch (e) {
+        console.error("Error loading Intraday Validation Desk:", e);
+      }
+    }
+
+    function switchIntraValHorizon(hor) {
+      currentIntraValHorizon = hor;
+      const btns = ['all', '5', '15', '30'];
+      btns.forEach(b => {
+        const btn = document.getElementById(`btn-val-hor-${b}`);
+        if (!btn) return;
+        if (b === hor) {
+          btn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyan-500 text-black shadow-md transition';
+        } else {
+          btn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition';
+        }
+      });
+      loadIntradayValidationDesk(true);
+    }
+
+    async function recordIntradayPredictionNow() {
+      const btn = document.getElementById('btn-intra-val-record');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>Logging...</span>`;
+      }
+      try {
+        const res = await fetch('/api/intraday/validation/record', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'OK' && data.recorded) {
+          showToast(`✓ Recorded immutable prediction ${data.prediction_id} (${data.predicted_direction} @ ${data.spot_price})`, "success");
+          await loadIntradayValidationDesk(true);
+        } else {
+          showToast(`Notice: ${data.message || 'Prediction unavailable'}`, "info");
+        }
+      } catch (e) {
+        showToast(`Record error: ${e.message}`, "error");
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<i data-lucide="radio" class="w-3.5 h-3.5 shrink-0"></i><span>Log Prediction</span>`;
+          if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+      }
+    }
+
+    async function evaluateIntradayPredictionsNow() {
+      const btn = document.getElementById('btn-intra-val-eval');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>Evaluating...</span>`;
+      }
+      try {
+        const res = await fetch('/api/intraday/validation/evaluate', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'OK') {
+          showToast(`✓ Evaluated ${data.evaluated_count} due horizons (${data.unavailable_count || 0} unavailable, ${data.session_closed_count || 0} closed)`, "success");
+          await loadIntradayValidationDesk(true);
+        } else {
+          showToast(`Notice: ${data.message || 'No pending evaluations'}`, "info");
+        }
+      } catch (e) {
+        showToast(`Evaluation error: ${e.message}`, "error");
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<i data-lucide="check-circle-2" class="w-3.5 h-3.5 shrink-0"></i><span>Evaluate Pending</span>`;
+          if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+      }
+    }
+
+    function renderIntradayValidationMetrics(m) {
+      if (!m) return;
+
+      // Small sample warning banner
+      const warnBox = document.getElementById('intra-val-sample-warning');
+      const warnText = document.getElementById('intra-val-sample-warning-text');
+      if (warnBox && warnText) {
+        if (!m.is_sample_sufficient) {
+          warnBox.classList.remove('hidden');
+          warnText.innerText = m.warning_message || `Sample size (${m.sample_size || 0}) is below statistical significance threshold (30). Out-of-sample forward observations only.`;
+        } else {
+          warnBox.classList.add('hidden');
+        }
+      }
+
+      // KPIs
+      const accEl = document.getElementById('intra-val-kpi-acc');
+      const accSub = document.getElementById('intra-val-kpi-acc-sub');
+      if (accEl) accEl.innerText = m.sample_size > 0 ? `${(m.accuracy * 100).toFixed(1)}%` : '--';
+      if (accSub) {
+        if (m.confidence_interval_95 && m.sample_size > 0) {
+          const ci = m.confidence_interval_95;
+          accSub.innerText = `95% Wilson CI: [${(ci[0] * 100).toFixed(1)}% - ${(ci[1] * 100).toFixed(1)}%] (N=${m.sample_size})`;
+        } else {
+          accSub.innerText = `95% Wilson CI: [--, --] (N=0)`;
+        }
+      }
+
+      const hb = m.horizon_breakdown || {};
+      const kpi5m = document.getElementById('intra-val-kpi-5m');
+      const kpi5mSub = document.getElementById('intra-val-kpi-5m-sub');
+      if (kpi5m && hb['5m']) {
+        kpi5m.innerText = hb['5m'].count > 0 ? `${(hb['5m'].accuracy * 100).toFixed(1)}%` : '--';
+        kpi5mSub.innerText = `N = ${hb['5m'].count} | Brier: ${hb['5m'].mean_brier_score != null ? hb['5m'].mean_brier_score : '--'}`;
+      }
+
+      const kpi15m = document.getElementById('intra-val-kpi-15m');
+      const kpi15mSub = document.getElementById('intra-val-kpi-15m-sub');
+      if (kpi15m && hb['15m']) {
+        kpi15m.innerText = hb['15m'].count > 0 ? `${(hb['15m'].accuracy * 100).toFixed(1)}%` : '--';
+        kpi15mSub.innerText = `N = ${hb['15m'].count} | Brier: ${hb['15m'].mean_brier_score != null ? hb['15m'].mean_brier_score : '--'}`;
+      }
+
+      const kpi30m = document.getElementById('intra-val-kpi-30m');
+      const kpi30mSub = document.getElementById('intra-val-kpi-30m-sub');
+      if (kpi30m && hb['30m']) {
+        kpi30m.innerText = hb['30m'].count > 0 ? `${(hb['30m'].accuracy * 100).toFixed(1)}%` : '--';
+        kpi30mSub.innerText = `N = ${hb['30m'].count} | Brier: ${hb['30m'].mean_brier_score != null ? hb['30m'].mean_brier_score : '--'}`;
+      }
+
+      const brierEl = document.getElementById('intra-val-kpi-brier');
+      const brierSub = document.getElementById('intra-val-kpi-brier-sub');
+      if (brierEl) brierEl.innerText = m.sample_size > 0 ? m.brier_score.toFixed(3) : '--';
+      if (brierSub && m.sample_size > 0) {
+        const b = m.brier_score;
+        const b_desc = b < 0.25 ? 'Well Calibrated' : (b < 0.35 ? 'Moderate' : 'Under-Calibrated');
+        brierSub.innerText = `${b_desc} (0.0=Perfect, 0.67=Random)`;
+      }
+
+      // Prec / Rec
+      const p = m.precision || {};
+      const r = m.recall || {};
+      const bPrecEl = document.getElementById('intra-val-prec-bull');
+      const nPrecEl = document.getElementById('intra-val-prec-neut');
+      const bearPrecEl = document.getElementById('intra-val-prec-bear');
+      if (bPrecEl) bPrecEl.innerText = `${(p.bullish * 100 || 0).toFixed(0)}% / ${(r.bullish * 100 || 0).toFixed(0)}%`;
+      if (nPrecEl) nPrecEl.innerText = `${(p.neutral * 100 || 0).toFixed(0)}% / ${(r.neutral * 100 || 0).toFixed(0)}%`;
+      if (bearPrecEl) bearPrecEl.innerText = `${(p.bearish * 100 || 0).toFixed(0)}% / ${(r.bearish * 100 || 0).toFixed(0)}%`;
+
+      // Confusion Matrix 3x3
+      const cm = m.confusion_matrix?.matrix || [[0,0,0],[0,0,0],[0,0,0]];
+      for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) {
+          const el = document.getElementById(`cm-${i}-${j}`);
+          if (el) el.innerText = cm[i][j];
+        }
+      }
+    }
+
+    function renderIntradayValidationFeatures(feats) {
+      if (!feats) return;
+      const comp = feats.baseline_comparisons || {};
+      const combEl = document.getElementById('bench-acc-combined');
+      const majEl = document.getElementById('bench-acc-majority');
+      const majLiftEl = document.getElementById('bench-lift-majority');
+      const rndLiftEl = document.getElementById('bench-lift-random');
+      const vwapEl = document.getElementById('bench-acc-vwap');
+      const vwapLiftEl = document.getElementById('bench-lift-vwap');
+      const pcrEl = document.getElementById('bench-acc-pcr');
+      const pcrLiftEl = document.getElementById('bench-lift-pcr');
+      const topLiftBadge = document.getElementById('intra-val-baseline-lift');
+
+      if (combEl) combEl.innerText = comp.combined_model_accuracy != null ? `${(comp.combined_model_accuracy * 100).toFixed(1)}%` : '--';
+      if (majEl) majEl.innerText = comp.majority_class_baseline_accuracy != null ? `${(comp.majority_class_baseline_accuracy * 100).toFixed(1)}%` : '--';
+      if (majLiftEl) {
+        const l = comp.lift_over_majority_baseline_pct;
+        majLiftEl.innerText = l != null ? `${l >= 0 ? '+' : ''}${l.toFixed(1)}%` : '--';
+        majLiftEl.className = `p-1.5 text-right font-semibold ${l >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      if (rndLiftEl) {
+        const l = comp.lift_over_uniform_baseline_pct;
+        rndLiftEl.innerText = l != null ? `${l >= 0 ? '+' : ''}${l.toFixed(1)}%` : '--';
+        rndLiftEl.className = `p-1.5 text-right font-semibold ${l >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      if (vwapEl) vwapEl.innerText = comp.single_feature_vwap_accuracy != null ? `${(comp.single_feature_vwap_accuracy * 100).toFixed(1)}%` : '--';
+      if (vwapLiftEl && comp.combined_model_accuracy != null && comp.single_feature_vwap_accuracy != null) {
+        const diff = (comp.combined_model_accuracy - comp.single_feature_vwap_accuracy) * 100;
+        vwapLiftEl.innerText = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%`;
+        vwapLiftEl.className = `p-1.5 text-right font-semibold ${diff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      if (pcrEl) pcrEl.innerText = comp.single_feature_pcr_accuracy != null ? `${(comp.single_feature_pcr_accuracy * 100).toFixed(1)}%` : '--';
+      if (pcrLiftEl && comp.combined_model_accuracy != null && comp.single_feature_pcr_accuracy != null) {
+        const diff = (comp.combined_model_accuracy - comp.single_feature_pcr_accuracy) * 100;
+        pcrLiftEl.innerText = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%`;
+        pcrLiftEl.className = `p-1.5 text-right font-semibold ${diff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+      if (topLiftBadge && comp.lift_over_majority_baseline_pct != null) {
+        const l = comp.lift_over_majority_baseline_pct;
+        topLiftBadge.innerText = `Lift vs Majority: ${l >= 0 ? '+' : ''}${l.toFixed(1)}%`;
+        topLiftBadge.className = `text-[10px] font-mono ${l >= 0 ? 'text-emerald-400' : 'text-amber-400'}`;
+      }
+
+      // Feature IC chips
+      const icContainer = document.getElementById('intra-val-ic-chips');
+      if (icContainer && feats.features_evaluated && feats.features_evaluated.length > 0) {
+        icContainer.innerHTML = '<span class="text-slate-500">Feature ICs:</span>' + feats.features_evaluated.slice(0, 6).map(f => {
+          const color = f.spearman_ic >= 0.05 ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10' : (f.spearman_ic <= -0.05 ? 'text-rose-300 border-rose-500/30 bg-rose-500/10' : 'text-slate-400 border-slate-700 bg-slate-800');
+          return `<span class="px-1.5 py-0.5 rounded border text-[10px] ${color}" title="${f.feature_label}: Spearman IC = ${f.spearman_ic}">${f.feature_key}: ${f.spearman_ic >= 0 ? '+' : ''}${f.spearman_ic.toFixed(2)}</span>`;
+        }).join('');
+      }
+    }
+
+    function renderIntradayValidationRecent(preds) {
+      const tbody = document.getElementById('intra-val-recent-tbody');
+      if (!tbody) return;
+      if (!preds || preds.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-slate-500">Zero intraday predictions logged yet. Click "Log Prediction" to capture live observation.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = preds.map(p => {
+        const evals = p.evaluations || [];
+        const e5 = evals.find(e => e.horizon_min === 5);
+        const e15 = evals.find(e => e.horizon_min === 15);
+        const e30 = evals.find(e => e.horizon_min === 30);
+
+        function _formatHorizonBadge(e) {
+          if (!e) return '<span class="text-slate-600 font-mono text-[10px]">--</span>';
+          if (e.evaluation_status === 'RESOLVED') {
+            const isHit = e.is_direction_correct === 1;
+            const delta = (e.price_delta_pts != null) ? `${e.price_delta_pts >= 0 ? '+' : ''}${e.price_delta_pts.toFixed(1)} pts` : '';
+            const color = isHit ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : 'bg-rose-500/15 border-rose-500/40 text-rose-300';
+            return `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border ${color}"><span>${isHit ? '✓ HIT' : '✗ MISS'}</span><span class="text-slate-400">(${e.realized_direction?.slice(0,4)} ${delta})</span></span>`;
+          } else if (e.evaluation_status === 'PENDING') {
+            return `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 animate-pulse">⏳ PENDING</span>`;
+          } else if (e.evaluation_status === 'SESSION_CLOSED') {
+            return `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">CLOSED</span>`;
+          } else {
+            return `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400">${e.evaluation_status}</span>`;
+          }
+        }
+
+        const dirColor = p.predicted_direction === 'BULLISH' ? 'text-emerald-400' : (p.predicted_direction === 'BEARISH' ? 'text-rose-400' : 'text-amber-400');
+        const probStr = `(↑${(p.prob_up*100).toFixed(0)}% =${(p.prob_flat*100).toFixed(0)}% ↓${(p.prob_down*100).toFixed(0)}%)`;
+
+        return `
+          <tr class="hover:bg-slate-850/50 transition">
+            <td class="p-2.5 text-[10px] font-mono text-cyan-300 font-bold">${p.prediction_id}</td>
+            <td class="p-2.5 text-[10px] text-slate-300 font-mono">${(p.prediction_timestamp || '').slice(11, 19)}</td>
+            <td class="p-2.5 font-bold text-white font-mono">₹${Number(p.spot_price).toFixed(1)}</td>
+            <td class="p-2.5 text-[10px] text-slate-400 font-mono">${p.market_regime} <span class="text-slate-500">(${p.composite_score})</span></td>
+            <td class="p-2.5 font-bold font-mono ${dirColor}">${p.predicted_direction} <span class="text-[9px] text-slate-400 font-normal">${probStr}</span></td>
+            <td class="p-2.5">${_formatHorizonBadge(e5)}</td>
+            <td class="p-2.5">${_formatHorizonBadge(e15)}</td>
+            <td class="p-2.5">${_formatHorizonBadge(e30)}</td>
+            <td class="p-2.5 text-right font-mono text-[10px]">
+              <span class="px-2 py-0.5 rounded-full ${p.prediction_status === 'EVALUATED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/30'}">${p.prediction_status}</span>
+            </td>
+          </tr>
+        `;
+      }).join('');
     }
 
     async function loadOptionsChainDesk(forceRefresh = false, showUserToast = false) {
