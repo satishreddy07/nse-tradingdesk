@@ -38,7 +38,10 @@ jobs:
           PYTHONIOENCODING: "utf-8"
         run: |
           pytest tests/ -q --tb=short > pytest.log 2>&1 || {
-            tail -n 50 pytest.log | while IFS= read -r line; do
+            grep -E "^(FAILED|ERROR) " pytest.log | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            tail -n 60 pytest.log | while IFS= read -r line; do
               echo "::error::$line"
             done
             exit 1
