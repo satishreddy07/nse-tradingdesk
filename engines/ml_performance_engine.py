@@ -338,11 +338,20 @@ class MLPerformanceEngine:
         for m in reg_models:
             m_id = m["model_id"]
             mets = m.get("metrics", {})
+            bs = mets.get("brier_score")
+            bb = mets.get("baseline_brier")
+            is_improved = False
+            if bs is not None and bb is not None:
+                try:
+                    is_improved = float(bs) <= float(bb)
+                except (TypeError, ValueError):
+                    is_improved = False
+
             perf_summary[m_id] = {
                 "primary_metric": "Brier Score" if "brier_score" in mets or "ensemble_brier" in mets else "Win Rate",
                 "score": mets.get("brier_score", mets.get("ensemble_brier", mets.get("directional_accuracy", mets.get("empirical_win_rate_pct", "PENDING")))),
                 "sample_count": m.get("sample_counts", {}).get("total", 0),
-                "status": "IMPROVED" if mets.get("brier_score", 0.5) <= mets.get("baseline_brier", 0.5) else "NEUTRAL"
+                "status": "IMPROVED" if is_improved else "NEUTRAL"
             }
 
         return {
@@ -1105,21 +1114,21 @@ class MLPerformanceEngine:
             eval_window = f"Walk-Forward Purged Time-Series Test ({sample_count} sessions)" if sample_count > 0 else "Dynamic Out-Of-Sample Evaluation"
 
             # Production model dynamic metrics
-            prod_acc_raw = float(mets.get("val_accuracy", mets.get("directional_accuracy", 0.0)))
+            prod_acc_raw = float(mets.get("val_accuracy") or mets.get("directional_accuracy") or 0.0)
             prod_acc = round(prod_acc_raw * 100.0, 1) if 0.0 < prod_acc_raw <= 1.0 else round(prod_acc_raw, 1)
-            prod_brier = round(float(mets.get("brier_score", mets.get("ensemble_brier", 0.0))), 4)
-            prod_mae = round(float(mets.get("val_mae", mets.get("return_mae", 0.0))), 2)
+            prod_brier = round(float(mets.get("brier_score") or mets.get("ensemble_brier") or 0.0), 4)
+            prod_mae = round(float(mets.get("val_mae") or mets.get("return_mae") or 0.0), 2)
 
             # Baseline dynamic metrics
-            base_brier = round(float(mets.get("baseline_brier", 0.0)), 4)
-            base_acc_raw = float(mets.get("baseline_accuracy", 0.0))
+            base_brier = round(float(mets.get("baseline_brier") or 0.0), 4)
+            base_acc_raw = float(mets.get("baseline_accuracy") or 0.0)
             base_acc = round(base_acc_raw * 100.0, 1) if 0.0 < base_acc_raw <= 1.0 else round(base_acc_raw, 1)
 
             # Standalone metrics from actual holdout measurements
-            lgb_acc = round(float(mets.get("lgb_acc") or (mets.get("lgb_auc", 0.0) * 100.0)), 1) if ("lgb_acc" in mets or "lgb_auc" in mets) else None
-            xgb_acc = round(float(mets.get("xgb_acc") or (mets.get("xgb_auc", 0.0) * 100.0)), 1) if ("xgb_acc" in mets or "xgb_auc" in mets) else None
-            lgb_brier = round(float(mets["lgb_brier"]), 4) if "lgb_brier" in mets else None
-            xgb_brier = round(float(mets["xgb_brier"]), 4) if "xgb_brier" in mets else None
+            lgb_acc = round(float(mets.get("lgb_acc") or (float(mets.get("lgb_auc", 0.0) or 0.0) * 100.0)), 1) if ("lgb_acc" in mets or "lgb_auc" in mets) else None
+            xgb_acc = round(float(mets.get("xgb_acc") or (float(mets.get("xgb_auc", 0.0) or 0.0) * 100.0)), 1) if ("xgb_acc" in mets or "xgb_auc" in mets) else None
+            lgb_brier = round(float(mets["lgb_brier"]), 4) if mets.get("lgb_brier") is not None else None
+            xgb_brier = round(float(mets["xgb_brier"]), 4) if mets.get("xgb_brier") is not None else None
 
             return {
                 "horizon": h_norm,
@@ -1190,18 +1199,18 @@ class MLPerformanceEngine:
         except Exception:
             tree_meta = {}
 
-        t_acc_raw = float(tree_meta.get("ensemble_auc", 0.0))
+        t_acc_raw = float(tree_meta.get("ensemble_auc") or 0.0)
         t_acc = round(t_acc_raw * 100.0, 1) if 0.0 < t_acc_raw <= 1.0 else round(t_acc_raw, 1)
-        t_brier = round(float(tree_meta.get("ensemble_brier", 0.0)), 4)
-        t_base_brier = round(float(tree_meta.get("baseline_brier", 0.0)), 4)
+        t_brier = round(float(tree_meta.get("ensemble_brier") or 0.0), 4)
+        t_base_brier = round(float(tree_meta.get("baseline_brier") or 0.0), 4)
 
-        t_lgb_auc_raw = float(tree_meta.get("lgb_auc", 0.0))
+        t_lgb_auc_raw = float(tree_meta.get("lgb_auc") or 0.0)
         t_lgb_acc = round(t_lgb_auc_raw * 100.0, 1) if 0.0 < t_lgb_auc_raw <= 1.0 else round(t_lgb_auc_raw, 1)
-        t_lgb_brier = round(float(tree_meta.get("lgb_brier", 0.0)), 4)
+        t_lgb_brier = round(float(tree_meta.get("lgb_brier") or 0.0), 4)
 
-        t_xgb_auc_raw = float(tree_meta.get("xgb_auc", 0.0))
+        t_xgb_auc_raw = float(tree_meta.get("xgb_auc") or 0.0)
         t_xgb_acc = round(t_xgb_auc_raw * 100.0, 1) if 0.0 < t_xgb_auc_raw <= 1.0 else round(t_xgb_auc_raw, 1)
-        t_xgb_brier = round(float(tree_meta.get("xgb_brier", 0.0)), 4)
+        t_xgb_brier = round(float(tree_meta.get("xgb_brier") or 0.0), 4)
 
         return {
             "horizon": h_norm,
