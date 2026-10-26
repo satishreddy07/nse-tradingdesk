@@ -457,8 +457,11 @@ class OmniWatchdogEngine:
                 cur.execute("SELECT 0, NULL")
             snap_count, last_snap_time = cur.fetchone()
 
-            cur.execute("SELECT count(*) FROM intraday_options_trade_log WHERE status = 'ACTIVE'")
-            active_intraday_trades = cur.fetchone()[0]
+            try:
+                cur.execute("SELECT count(*) FROM intraday_options_trade_log WHERE status = 'ACTIVE'")
+                active_intraday_trades = cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                active_intraday_trades = 0
             conn.close()
 
             # 2. Check Market Breadth & Sector Divergence
@@ -658,15 +661,29 @@ class OmniWatchdogEngine:
             # 4. Active Options Strategies MTM Pricing & Invariants Check
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
-            cur.execute("SELECT strategy_id, strategy_name, legs_json, stoploss_pnl FROM options_strategies WHERE status = 'ACTIVE'")
-            active_rows = cur.fetchall()
+            try:
+                cur.execute("SELECT strategy_id, strategy_name, legs_json, stoploss_pnl FROM options_strategies WHERE status = 'ACTIVE'")
+                active_rows = cur.fetchall()
+            except sqlite3.OperationalError:
+                active_rows = []
 
-            cur.execute("SELECT count(*) FROM weekly_options_trade_log")
-            weekly_cnt = cur.fetchone()[0]
-            cur.execute("SELECT count(*) FROM monthly_options_trade_log")
-            monthly_cnt = cur.fetchone()[0]
-            cur.execute("SELECT count(*), max(created_at) FROM options_strategies")
-            strat_cnt, last_strat_time = cur.fetchone()
+            try:
+                cur.execute("SELECT count(*) FROM weekly_options_trade_log")
+                weekly_cnt = cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                weekly_cnt = 0
+
+            try:
+                cur.execute("SELECT count(*) FROM monthly_options_trade_log")
+                monthly_cnt = cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                monthly_cnt = 0
+
+            try:
+                cur.execute("SELECT count(*), max(created_at) FROM options_strategies")
+                strat_cnt, last_strat_time = cur.fetchone()
+            except sqlite3.OperationalError:
+                strat_cnt, last_strat_time = 0, None
             conn.close()
 
             unpriced_active_legs = 0
@@ -687,8 +704,8 @@ class OmniWatchdogEngine:
 
             # 5. Diagnostic Evaluations & Alerts
             if weekly_s_cnt == 0:
-                issues.append("Weekly option chain is completely empty or missing")
-                status = "ALERT"
+                issues.append("Weekly option chain is empty or in standby")
+                status = "STANDBY" if not is_market_open else "ALERT"
 
             if is_market_open and coverage_pct < 70.0 and weekly_s_cnt > 0:
                 issues.append(f"Near-ATM option strikes live coverage low: {coverage_pct}% (expected >= 70%)")
@@ -767,12 +784,18 @@ class OmniWatchdogEngine:
             cur = conn.cursor()
 
             # Check adjustments log
-            cur.execute("SELECT count(*), max(timestamp_ist) FROM options_strategy_adjustments_log")
-            adj_cnt, last_adj_time = cur.fetchone()
+            try:
+                cur.execute("SELECT count(*), max(timestamp_ist) FROM options_strategy_adjustments_log")
+                adj_cnt, last_adj_time = cur.fetchone()
+            except sqlite3.OperationalError:
+                adj_cnt, last_adj_time = 0, None
 
             # Check active strategies
-            cur.execute("SELECT count(*) FROM options_strategies WHERE status IN ('ACTIVE', 'ADJUSTING')")
-            active_strats = cur.fetchone()[0]
+            try:
+                cur.execute("SELECT count(*) FROM options_strategies WHERE status IN ('ACTIVE', 'ADJUSTING')")
+                active_strats = cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                active_strats = 0
 
             conn.close()
 
@@ -900,16 +923,25 @@ class OmniWatchdogEngine:
             cur = conn.cursor()
 
             # Check pre-rally runs
-            cur.execute("SELECT count(*), max(run_timestamp) FROM pre_rally_runs")
-            run_count, last_run = cur.fetchone()
+            try:
+                cur.execute("SELECT count(*), max(run_timestamp) FROM pre_rally_runs")
+                run_count, last_run = cur.fetchone()
+            except sqlite3.OperationalError:
+                run_count, last_run = 0, None
 
             # Check pre-rally events
-            cur.execute("SELECT count(*) FROM pre_rally_events")
-            event_count = cur.fetchone()[0]
+            try:
+                cur.execute("SELECT count(*) FROM pre_rally_events")
+                event_count = cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                event_count = 0
 
             # Check scan logs
-            cur.execute("SELECT count(*), max(timestamp) FROM scan_logs")
-            scan_count, last_scan = cur.fetchone()
+            try:
+                cur.execute("SELECT count(*), max(timestamp) FROM scan_logs")
+                scan_count, last_scan = cur.fetchone()
+            except sqlite3.OperationalError:
+                scan_count, last_scan = 0, None
 
             conn.close()
 
@@ -945,11 +977,17 @@ class OmniWatchdogEngine:
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
 
-            cur.execute("SELECT count(*) FROM prospective_paper_signals")
-            signals_cnt = cur.fetchone()[0]
+            try:
+                cur.execute("SELECT count(*) FROM prospective_paper_signals")
+                signals_cnt = cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                signals_cnt = 0
 
-            cur.execute("SELECT count(*), max(created_at) FROM prospective_paper_trades")
-            trades_cnt, last_trade_time = cur.fetchone()
+            try:
+                cur.execute("SELECT count(*), max(created_at) FROM prospective_paper_trades")
+                trades_cnt, last_trade_time = cur.fetchone()
+            except sqlite3.OperationalError:
+                trades_cnt, last_trade_time = 0, None
 
             conn.close()
 
@@ -1055,8 +1093,11 @@ class OmniWatchdogEngine:
             cur = conn.cursor()
 
             # 1. DATASET HEALTH & FEATURE COMPLETENESS
-            cur.execute("SELECT count(*) FROM unified_trade_learning_dataset")
-            total_dataset_rows = cur.fetchone()[0]
+            try:
+                cur.execute("SELECT count(*) FROM unified_trade_learning_dataset")
+                total_dataset_rows = cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                total_dataset_rows = 0
 
             if total_dataset_rows < 50:
                 issues.append(f"Low training dataset size: {total_dataset_rows} rows")
@@ -1087,11 +1128,14 @@ class OmniWatchdogEngine:
             }
 
             # 2. TRAINING RUN HISTORY
-            cur.execute("SELECT count(*), max(created_at) FROM ml_training_run_history")
-            total_runs, last_run_time = cur.fetchone()
-
-            cur.execute("SELECT status, count(*) FROM ml_training_run_history GROUP BY status")
-            run_status_counts = dict(cur.fetchall())
+            try:
+                cur.execute("SELECT count(*), max(created_at) FROM ml_training_run_history")
+                total_runs, last_run_time = cur.fetchone()
+                cur.execute("SELECT status, count(*) FROM ml_training_run_history GROUP BY status")
+                run_status_counts = dict(cur.fetchall())
+            except sqlite3.OperationalError:
+                total_runs, last_run_time = 0, None
+                run_status_counts = {}
 
             training_runs_health = {
                 "total_training_runs": total_runs or 0,
@@ -1101,19 +1145,22 @@ class OmniWatchdogEngine:
             }
 
             # 3. PREDICTION LEDGER RECONCILIATION
-            cur.execute("SELECT count(*) FROM nifty_forecast_lifecycle_ledger")
-            total_forecasts = cur.fetchone()[0]
-
-            cur.execute(
-                "SELECT status, count(*) FROM nifty_forecast_lifecycle_ledger GROUP BY status"
-            )
-            status_counts = dict(cur.fetchall())
-
-            cur.execute("SELECT count(*) FROM nifty_forecast_lifecycle_ledger WHERE direction_correct = 1")
-            hits = cur.fetchone()[0]
-
-            cur.execute("SELECT count(*) FROM nifty_forecast_lifecycle_ledger WHERE direction_correct = 0")
-            misses = cur.fetchone()[0]
+            try:
+                cur.execute("SELECT count(*) FROM nifty_forecast_lifecycle_ledger")
+                total_forecasts = cur.fetchone()[0]
+                cur.execute(
+                    "SELECT status, count(*) FROM nifty_forecast_lifecycle_ledger GROUP BY status"
+                )
+                status_counts = dict(cur.fetchall())
+                cur.execute("SELECT count(*) FROM nifty_forecast_lifecycle_ledger WHERE direction_correct = 1")
+                hits = cur.fetchone()[0]
+                cur.execute("SELECT count(*) FROM nifty_forecast_lifecycle_ledger WHERE direction_correct = 0")
+                misses = cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                total_forecasts = 0
+                status_counts = {}
+                hits = 0
+                misses = 0
 
             resolved = hits + misses
             hit_rate_pct = round((hits / resolved) * 100.0, 1) if resolved > 0 else 0.0
