@@ -29,9 +29,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Set Timezone to Asia/Kolkata
+        run: sudo timedatectl set-timezone Asia/Kolkata || true
+
       - name: Run Pytest
         run: |
-          pytest tests/ -q
+          pytest tests/ -q --tb=short || (echo "### Pytest Failure Details" >> $GITHUB_STEP_SUMMARY && echo '```' >> $GITHUB_STEP_SUMMARY && pytest tests/ --tb=short --last-failed >> $GITHUB_STEP_SUMMARY && echo '```' >> $GITHUB_STEP_SUMMARY && exit 1)
 
   deploy:
     name: Production Deployment
