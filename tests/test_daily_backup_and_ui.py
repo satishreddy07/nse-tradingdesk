@@ -140,6 +140,10 @@ def test_ui_templates_optimizations():
     assert 'id="mobile-nav-drawer"' in html
     assert 'z-[100]' in html
     assert 'translate3d(100%, 0, 0)' in html
+    assert 'max-width: 28px; max-height: 28px;' in html
+    assert 'max-width: 32px; max-height: 32px;' in html
+    assert 'w-6.5' not in html, "Invalid Tailwind class w-6.5 must not be used on mobile elements"
+    assert 'h-6.5' not in html, "Invalid Tailwind class h-6.5 must not be used on mobile elements"
 
     # 4. Portfolio 3 Watchlist filter counts & LTP column
     assert 'id="btn-p3-filter-active"' in html
