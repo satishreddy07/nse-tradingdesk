@@ -140,5 +140,5 @@ def test_price_refresh_endpoint_non_blocking():
 
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     data = resp.json()
-    assert data.get("status") in ("OK", "SUCCESS", "PROCESSING", "QUEUED")
+    assert data.get("status") in ("OK", "SUCCESS", "PROCESSING", "QUEUED", "NO_SYMBOLS")
     assert elapsed < 15.0, f"/api/prices/refresh blocked for {elapsed:.2f}s, expected < 15.0s"

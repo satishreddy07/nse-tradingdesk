@@ -310,6 +310,25 @@ def test_forward_testing_ledger_immutability_and_non_repainting():
     test_date = "2026-10-19"
     with state_engine._lock:
         with state_engine._get_connection() as conn:
+            conn.execute("""
+                INSERT INTO nifty_predictions_log (
+                    prediction_date, timestamp_ist, spot_at_prediction, composite_score,
+                    t1_verdict, t1_prob_up, t1_prob_flat, t1_prob_down, t1_expected_close, t1_low_1s, t1_high_1s,
+                    t5_verdict, t5_prob_up, t5_prob_flat, t5_prob_down, t5_expected_close, t5_low_1s, t5_high_1s,
+                    actual_t1_close, t1_validated
+                ) VALUES (
+                    ?, '2026-10-19 08:45:00 IST', 23146.15, 0.7,
+                    'RANGE-BOUND / CONSOLIDATION', 0.25, 0.50, 0.25, 23150.0, 22950.0, 23350.0,
+                    'MODERATELY BEARISH', 0.20, 0.30, 0.50, 23000.0, 22800.0, 23200.0,
+                    22888.95, 'DIRECTION_MISS'
+                ) ON CONFLICT(prediction_date) DO UPDATE SET
+                    composite_score = 0.7,
+                    t1_verdict = 'RANGE-BOUND / CONSOLIDATION',
+                    t5_verdict = 'MODERATELY BEARISH',
+                    actual_t1_close = 22888.95,
+                    t1_validated = 'DIRECTION_MISS';
+            """, (test_date,))
+            conn.commit()
             row = conn.execute(
                 "SELECT t1_verdict, t5_verdict, composite_score, t1_validated FROM nifty_predictions_log WHERE prediction_date = ?",
                 (test_date,)

@@ -45,7 +45,7 @@ from core.data_quality import format_ist, now_ist
 from core.nifty_prediction_ledger import NIFTY_FEATURE_COLS, nifty_prediction_ledger
 from core.unified_ml_dataset import UNIFIED_FEATURE_COLS, unified_ml_dataset
 from engines.nifty_forecast_learning_engine import nifty_forecast_learning_engine
-from engines.swing_quant_ml_engine import swing_quant_ml_engine
+from engines.swing_quant_ml_engine import ML_FEATURE_COLS, swing_quant_ml_engine
 from engines.tree_quant_ml_engine import tree_quant_ml_engine
 from execution.state_engine import state_engine
 
@@ -512,6 +512,7 @@ class MLPerformanceEngine:
         sq_meta = sq_status.get("model_metadata", {})
         sq_ds = sq_status.get("dataset_summary", {})
         sq_valid = sq_meta.get("status") == "ONLINE_ACTIVE"
+        sq_features = sq_meta.get("features") or ML_FEATURE_COLS
 
         models.append({
             "model_id": "swing_quant_winrate_evaluator",
@@ -536,8 +537,8 @@ class MLPerformanceEngine:
                 "test": int(sq_meta.get("empirical_samples", 0)),
                 "total": int(sq_meta.get("total_samples", 0))
             },
-            "feature_count": len(sq_meta.get("features", [])),
-            "feature_names": sq_meta.get("features", []),
+            "feature_count": len(sq_features),
+            "feature_names": sq_features,
             "hyperparameters": {"min_win_prob": 0.55, "min_expected_r": 0.28, "max_dist_pivot_pct": 3.0},
             "target_distribution": sq_meta.get("target_distribution", {"WIN": "0%", "LOSS": "0%"}),
             "metrics": {
