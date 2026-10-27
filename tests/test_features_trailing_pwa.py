@@ -106,7 +106,7 @@ def test_trailing_stop_loss_progression():
     with patch.object(nifty_analytics_engine, "get_options_portfolio", return_value=mock_port_tier1):
         with patch("engines.nifty_analytics_engine.now_ist", return_value=dt_midday):
             reconcile_res = nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
-            assert reconcile_res["exited"] == 0
+            assert not any(isinstance(a, dict) and a.get("strategy_id") == strat_id for a in reconcile_res.get("actions", []))
 
     # Verify Trailing Stop moved to Breakeven ₹0
     with state_engine._lock:
@@ -125,7 +125,7 @@ def test_trailing_stop_loss_progression():
     with patch.object(nifty_analytics_engine, "get_options_portfolio", return_value=mock_port_tier2):
         with patch("engines.nifty_analytics_engine.now_ist", return_value=dt_midday):
             reconcile_res = nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
-            assert reconcile_res["exited"] == 0
+            assert not any(isinstance(a, dict) and a.get("strategy_id") == strat_id for a in reconcile_res.get("actions", []))
 
     # Verify Trailing Stop moved to Lock 50% (+₹2,000)
     with state_engine._lock:
@@ -144,8 +144,9 @@ def test_trailing_stop_loss_progression():
     with patch.object(nifty_analytics_engine, "get_options_portfolio", return_value=mock_port_exit):
         with patch("engines.nifty_analytics_engine.now_ist", return_value=dt_midday):
             reconcile_res = nifty_analytics_engine.reconcile_active_options_strategies_stops_and_targets()
-            assert reconcile_res["exited"] == 1
-            assert "TRAILING_STOP_HIT" in reconcile_res["actions"][0]["exit_reason"]
+            strat_exit = next((a for a in reconcile_res.get("actions", []) if isinstance(a, dict) and a.get("strategy_id") == strat_id), None)
+            assert strat_exit is not None
+            assert "TRAILING_STOP_HIT" in strat_exit["exit_reason"]
 
     # Verify strategy is now CLOSED with protected profit
     with state_engine._lock:

@@ -1647,7 +1647,7 @@ class IntradayAnalyticsEngine:
                     break
 
         # Resolve days to expiry (T in fraction of year)
-        days_to_expiry = 2.0
+        days_to_expiry = 1.0
         if expiry_str:
             try:
                 for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d%b%Y", "%d-%m-%Y"):

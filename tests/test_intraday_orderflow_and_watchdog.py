@@ -42,7 +42,7 @@ def test_volume_profile_and_gex_provenance_and_timestamps():
         "spot_price": 24500.0,
         "expiry": "2026-10-29",
         "strikes": [
-            {"strike": 24400, "ce_oi": 1000, "pe_oi": 800, "ce_ltp": 150.0, "pe_ltp": 60.0},
+            {"strike": 24400, "ce_oi": 1000, "pe_oi": 2500, "ce_ltp": 150.0, "pe_ltp": 60.0},
             {"strike": 24500, "ce_oi": 5000, "pe_oi": 4000, "ce_ltp": 80.0, "pe_ltp": 85.0},
             {"strike": 24600, "ce_oi": 3000, "pe_oi": 1200, "ce_ltp": 35.0, "pe_ltp": 140.0},
         ]

@@ -3764,7 +3764,7 @@ def get_historical_data_quality_events(
     return _sanitize_for_json({"status": "OK", "count": len(events), "events": events})
 
 
-@app.post("/api/market-data/replay/start")
+@app.post("/api/market-data/replay/start", dependencies=[Depends(verify_admin_key)])
 def start_historical_replay(
     session_date: str,
     speed: float = 1.0,
@@ -3782,7 +3782,7 @@ def start_historical_replay(
     return _sanitize_for_json(res)
 
 
-@app.post("/api/market-data/replay/control")
+@app.post("/api/market-data/replay/control", dependencies=[Depends(verify_admin_key)])
 def control_historical_replay(
     action: str,
     value: Optional[float] = None,
@@ -3816,7 +3816,7 @@ def get_historical_replay_state():
     return _sanitize_for_json(historical_replay_engine.get_replay_state())
 
 
-@app.post("/api/market-data/replay/stop")
+@app.post("/api/market-data/replay/stop", dependencies=[Depends(verify_admin_key)])
 def stop_historical_replay():
     """Stops active historical playback and resets virtual state to live stream."""
     from engines.historical_replay_engine import historical_replay_engine

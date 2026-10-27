@@ -6731,7 +6731,7 @@ class NiftyAnalyticsEngine:
             strategy_name = data.get("strategy_name") or "Custom Options Strategy"
             symbol = data.get("symbol") or "NIFTY"
             expiry_date = data.get("expiry_date") or ""
-            expiry_type = data.get("expiry_type") or "WEEKLY"
+            expiry_type = data.get("expiry_type")
             spot_at_entry = float(data.get("spot_at_entry") or 0.0)
             net_premium = float(data.get("net_premium") or 0.0)
             max_profit = data.get("max_profit")
@@ -6870,6 +6870,15 @@ class NiftyAnalyticsEngine:
                     exp_key = "monthly" if (expiry_type and str(expiry_type).upper() == "MONTHLY") else "weekly"
                     all_s = oc_lookup.get(exp_key, {}).get("all_strikes") or oc_lookup.get(exp_key, {}).get("strikes", [])
                     stk_row = next((s for s in all_s if int(round(float(s.get("strike", 0)))) == l["strike"]), None)
+                    if not stk_row:
+                        try:
+                            fresh_oc = self.fetch_and_analyze_option_chain(force_refresh=False)
+                            if fresh_oc:
+                                oc_lookup = fresh_oc
+                                all_s = oc_lookup.get(exp_key, {}).get("all_strikes") or oc_lookup.get(exp_key, {}).get("strikes", [])
+                                stk_row = next((s for s in all_s if int(round(float(s.get("strike", 0)))) == l["strike"]), None)
+                        except Exception:
+                            pass
                     if stk_row:
                         ltp_key = "ce_ltp" if l["type"] == "CE" else "pe_ltp"
                         alt_key = "call_ltp" if l["type"] == "CE" else "put_ltp"
