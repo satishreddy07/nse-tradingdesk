@@ -1,29 +1,27 @@
 import json
 import pytest
 from engines.nifty_analytics_engine import nifty_analytics_engine
-from execution.state_engine import state_engine
 
 @pytest.fixture(autouse=True)
 def setup_active_strategy():
     port = nifty_analytics_engine.get_options_portfolio()
     if not port.get("active_strategies"):
-        test_strat = {
-            "strategy_id": "TEST_PORT_RESET_ACTIVE",
-            "name": "Test Active Strategy",
+        strat_payload = {
+            "strategy_name": "Test Active Strategy",
             "symbol": "NIFTY",
-            "status": "ACTIVE",
-            "entry_time": "2026-10-27 10:00:00",
-            "legs_json": json.dumps([{"strike": 24500, "type": "CE", "action": "BUY", "qty": 75, "entry_price": 100.0, "price": 105.0}]),
-            "realized_pnl": 0.0,
-            "unrealized_pnl": 375.0,
+            "expiry_date": "29-Oct-2026",
+            "expiry_type": "WEEKLY",
+            "spot_at_entry": 24500.0,
+            "net_premium": 50.0,
+            "max_profit": 3750.0,
+            "max_loss": -3750.0,
+            "target_pnl": 4000.0,
+            "stoploss_pnl": -2000.0,
+            "legs": [
+                {"strike": 24500, "type": "CE", "action": "BUY", "qty": 75, "entry_price": 100.0}
+            ]
         }
-        with state_engine._lock:
-            with state_engine._get_connection() as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO options_strategies (strategy_id, name, symbol, status, entry_time, legs_json, realized_pnl, unrealized_pnl) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (test_strat["strategy_id"], test_strat["name"], test_strat["symbol"], test_strat["status"], test_strat["entry_time"], test_strat["legs_json"], test_strat["realized_pnl"], test_strat["unrealized_pnl"])
-                )
-                conn.commit()
+        nifty_analytics_engine.deploy_options_strategy(strat_payload)
     yield
 
 def test_options_portfolio_clean_state():

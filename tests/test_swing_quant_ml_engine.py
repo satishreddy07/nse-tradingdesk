@@ -15,6 +15,7 @@ import json
 import sqlite3
 import pytest
 from fastapi.testclient import TestClient
+from unittest.mock import patch
 
 from engines.swing_quant_ml_engine import swing_quant_ml_engine, ML_FEATURE_COLS
 from execution.state_engine import state_engine
@@ -104,10 +105,11 @@ def test_pre_trade_gatekeeper_approves_sound_setup():
         "t1": 1100.0
     }
     favorable_regime = {"nifty_trend": "BULLISH", "composite_score": 1.5, "breadth_ratio": 1.5, "nifty_spot": 24500.0, "vix_val": 13.0, "nifty_ret_5d": 1.0, "nifty_rsi14": 55.0}
-    decision = swing_quant_ml_engine.evaluate_candidate(sound_setup, market_regime=favorable_regime)
-    assert decision["verdict"] in ("APPROVED", "CAUTION")
-    assert decision["win_prob"] >= 0.45
-    assert decision["expected_r"] > 0.0
+    with patch.object(swing_quant_ml_engine, "_classifier", None):
+        decision = swing_quant_ml_engine.evaluate_candidate(sound_setup, market_regime=favorable_regime)
+        assert decision["verdict"] in ("APPROVED", "CAUTION")
+        assert decision["win_prob"] >= 0.45
+        assert decision["expected_r"] > 0.0
 
 
 def test_pre_trade_gatekeeper_rejects_overextended_setup():
