@@ -10593,9 +10593,9 @@
     window._latestIntradayWallsState = { putWall: '', callWall: '', maxPain: '' };
     window.updateIntradayWallsCard = function(pw, cw, mp) {
       const s = window._latestIntradayWallsState;
-      if (pw && pw !== '--') s.putWall = String(pw);
-      if (cw && cw !== '--') s.callWall = String(cw);
-      if (mp && mp !== '--') s.maxPain = String(mp);
+      if (pw && pw !== '--' && pw !== 0 && pw !== '0' && pw !== 'undefined') s.putWall = String(pw);
+      if (cw && cw !== '--' && cw !== 0 && cw !== '0' && cw !== 'undefined') s.callWall = String(cw);
+      if (mp && mp !== '--' && mp !== 0 && mp !== '0' && mp !== 'UNAVAILABLE' && mp !== 'undefined') s.maxPain = String(mp);
 
       const wallsEl = document.getElementById('intra-kpi-walls');
       if (wallsEl && s.putWall && s.callWall) {
@@ -14395,26 +14395,31 @@
         const streamTextEl = document.getElementById('opt-stream-text');
         const streamPillEl = document.getElementById('opt-stream-pill');
         const streamDotEl = document.getElementById('opt-stream-dot');
-        if (streamTextEl) streamTextEl.innerText = (data && data.message) ? `⚠️ UNAVAILABLE: ${data.message}` : '⚠️ LIVE OPTION CHAIN UNAVAILABLE';
+        const tbody = document.getElementById('opt-chain-tbody');
+        const hasExistingRows = tbody && tbody.children && tbody.children.length > 1;
+
+        if (streamTextEl) streamTextEl.innerText = (data && data.message) ? `⚠️ PAUSED: ${data.message}` : '⚠️ STREAM RECONNECTING';
         if (streamPillEl) streamPillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/40 max-w-full overflow-hidden shrink-0";
         if (streamDotEl) streamDotEl.className = "w-2 h-2 rounded-full bg-amber-400 shrink-0";
 
-        if (document.getElementById('opt-kpi-spot')) document.getElementById('opt-kpi-spot').innerText = '--';
-        if (document.getElementById('opt-kpi-atm')) document.getElementById('opt-kpi-atm').innerText = 'ATM Strike: UNAVAILABLE';
-        if (document.getElementById('opt-kpi-overall-pcr')) document.getElementById('opt-kpi-overall-pcr').innerText = '--';
-        if (document.getElementById('opt-kpi-vol-pcr')) document.getElementById('opt-kpi-vol-pcr').innerText = 'Vol PCR: --';
-        if (document.getElementById('opt-kpi-nearatm-pcr')) document.getElementById('opt-kpi-nearatm-pcr').innerText = '--';
-        if (document.getElementById('opt-kpi-exactatm-pcr')) document.getElementById('opt-kpi-exactatm-pcr').innerText = 'Exact ATM (±1): --';
-        if (document.getElementById('opt-kpi-chgoi-pcr')) document.getElementById('opt-kpi-chgoi-pcr').innerText = '--';
-        if (document.getElementById('opt-kpi-maxpain')) document.getElementById('opt-kpi-maxpain').innerText = 'UNAVAILABLE';
-        if (document.getElementById('opt-kpi-callwall')) document.getElementById('opt-kpi-callwall').innerText = '--';
-        if (document.getElementById('opt-kpi-putwall')) document.getElementById('opt-kpi-putwall').innerText = '--';
-        if (document.getElementById('opt-kpi-straddle')) document.getElementById('opt-kpi-straddle').innerText = '--';
-        if (document.getElementById('opt-kpi-skew')) document.getElementById('opt-kpi-skew').innerText = '--';
+        // If we already have live data on screen, preserve it! Never wipe cards or table during temporary stream glitches
+        if (!hasExistingRows) {
+          if (document.getElementById('opt-kpi-spot')) document.getElementById('opt-kpi-spot').innerText = '--';
+          if (document.getElementById('opt-kpi-atm')) document.getElementById('opt-kpi-atm').innerText = 'ATM Strike: UNAVAILABLE';
+          if (document.getElementById('opt-kpi-overall-pcr')) document.getElementById('opt-kpi-overall-pcr').innerText = '--';
+          if (document.getElementById('opt-kpi-vol-pcr')) document.getElementById('opt-kpi-vol-pcr').innerText = 'Vol PCR: --';
+          if (document.getElementById('opt-kpi-nearatm-pcr')) document.getElementById('opt-kpi-nearatm-pcr').innerText = '--';
+          if (document.getElementById('opt-kpi-exactatm-pcr')) document.getElementById('opt-kpi-exactatm-pcr').innerText = 'Exact ATM (±1): --';
+          if (document.getElementById('opt-kpi-chgoi-pcr')) document.getElementById('opt-kpi-chgoi-pcr').innerText = '--';
+          if (document.getElementById('opt-kpi-maxpain')) document.getElementById('opt-kpi-maxpain').innerText = 'UNAVAILABLE';
+          if (document.getElementById('opt-kpi-callwall')) document.getElementById('opt-kpi-callwall').innerText = '--';
+          if (document.getElementById('opt-kpi-putwall')) document.getElementById('opt-kpi-putwall').innerText = '--';
+          if (document.getElementById('opt-kpi-straddle')) document.getElementById('opt-kpi-straddle').innerText = '--';
+          if (document.getElementById('opt-kpi-skew')) document.getElementById('opt-kpi-skew').innerText = '--';
 
-        const tbody = document.getElementById('opt-chain-tbody');
-        if (tbody) {
-          tbody.innerHTML = `<tr><td colspan="15" class="py-12 text-center text-amber-400 font-mono text-sm">⚠️ Live Option Chain Unavailable — ${data?.message || 'Kotak Neo stream offline or off-market'}</td></tr>`;
+          if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="15" class="py-12 text-center text-amber-400 font-mono text-sm">⚠️ Live Option Chain Unavailable — ${data?.message || 'Kotak Neo stream offline or off-market'}</td></tr>`;
+          }
         }
         return;
       }

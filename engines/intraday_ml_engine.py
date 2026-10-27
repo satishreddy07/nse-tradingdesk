@@ -56,7 +56,7 @@ class IntradayMLEngine:
                    atm_ce_ltp, atm_pe_ltp, straddle_premium, overall_pcr, near_atm_pcr,
                    atm_pcr, chg_oi_pcr, net_pe_oi_chg, net_ce_oi_chg, call_wall, put_wall, iv_skew
             FROM intraday_option_snapshots
-            WHERE data_source = 'LIVE'
+            WHERE data_source IN ('LIVE', 'UNVERIFIED_HISTORICAL')
               AND (snapshot_json IS NULL OR (snapshot_json NOT LIKE '%AUTO_GAPFILL%' AND snapshot_json NOT LIKE '%"gapfilled": true%'))
             ORDER BY session_date ASC, slot_time ASC
         """

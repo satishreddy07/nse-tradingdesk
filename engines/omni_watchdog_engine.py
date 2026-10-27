@@ -465,7 +465,8 @@ class OmniWatchdogEngine:
             conn.close()
 
             # Dynamic Intraday Snapshot Gap Sentinel
-            if is_market_open and last_snap_time:
+            today_str = now_dt.strftime("%Y-%m-%d")
+            if is_market_open and curr_time_str >= "09:35" and last_snap_time:
                 try:
                     clean_ts = str(last_snap_time).replace(" IST", "").strip()
                     last_dt = datetime.strptime(clean_ts[:19], "%Y-%m-%d %H:%M:%S")
@@ -509,9 +510,12 @@ class OmniWatchdogEngine:
             ml_regime = ml_data.get("predicted_regime", "UNKNOWN")
 
             if ml_status != "OK" and is_market_open:
-                issues.append(f"Intraday ML status: {ml_status} ({ml_data.get('reason', 'Unknown')})")
-                if status == "HEALTHY":
-                    status = "DEGRADED"
+                if curr_time_str < "09:35" and ml_status in ("DATA_UNAVAILABLE", "STANDBY"):
+                    pass # Initial opening buffer awaiting slot transitions
+                else:
+                    issues.append(f"Intraday ML status: {ml_status} ({ml_data.get('reason', 'Unknown')})")
+                    if status == "HEALTHY":
+                        status = "DEGRADED"
             elif ml_status == "OK" and valid_probs and not (0.95 <= prob_sum <= 1.05):
                 issues.append(f"Intraday ML probability distortion: sum={prob_sum:.2f}")
                 if status == "HEALTHY":
@@ -1576,7 +1580,7 @@ class OmniWatchdogEngine:
                 # 2. Re-resolve Kotak REST option quotes
                 if hasattr(kotak_neo_engine, "fetch_option_quotes"):
                     try:
-                        q_res = kotak_neo_engine.fetch_option_quotes(near_atm_only=False)
+                        q_res = kotak_neo_engine.fetch_option_quotes(near_atm_only=True)
                         actions_taken.append(f"Invoked Kotak REST Option Quotes fetch (retrieved {len(q_res)} quotes)")
                     except Exception as e_q:
                         actions_taken.append(f"Kotak REST quotes notice: {e_q}")

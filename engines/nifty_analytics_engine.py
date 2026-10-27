@@ -1059,7 +1059,16 @@ class NiftyAnalyticsEngine:
                 try:
                     from engines.kotak_neo_engine import kotak_neo_engine
                     cal_exp = NSEMarketCalendar.get_active_options_expiries()
-                    dte = max(0.00003, max(900.0, (datetime.datetime.combine(datetime.datetime.strptime(expiry_label, "%Y-%m-%d").date() if "-" in expiry_label and len(expiry_label)==10 else now_ist().date(), datetime.time(15, 30, 0), tzinfo=IST) - now_ist()).total_seconds()) / (365.25 * 86400.0)) if expiry_label else 0.008
+                    exp_d = None
+                    for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                        try:
+                            exp_d = datetime.datetime.strptime(str(expiry_label).strip(), fmt).date()
+                            break
+                        except Exception:
+                            pass
+                    if not exp_d:
+                        exp_d = now_ist().date()
+                    dte = max(0.00003, max(900.0, (datetime.datetime.combine(exp_d, datetime.time(15, 30, 0), tzinfo=IST) - now_ist()).total_seconds()) / (365.25 * 86400.0))
                     ce_iv = kotak_neo_engine._calc_implied_vol(ce_ltp, spot_price, k, dte, is_call=True)
                 except Exception:
                     pass
@@ -2795,6 +2804,21 @@ class NiftyAnalyticsEngine:
         call_wall = walls_and_pain.get("call_wall_1") or latest.get("call_wall")
         put_wall = walls_and_pain.get("put_wall_1") or latest.get("put_wall")
         max_pain = walls_and_pain.get("max_pain") or latest.get("max_pain")
+
+        if not call_wall or int(call_wall) == 0:
+            call_wall = state_engine.get_kv("latest_valid_call_wall") or 0
+        else:
+            state_engine.set_kv("latest_valid_call_wall", int(call_wall))
+
+        if not put_wall or int(put_wall) == 0:
+            put_wall = state_engine.get_kv("latest_valid_put_wall") or 0
+        else:
+            state_engine.set_kv("latest_valid_put_wall", int(put_wall))
+
+        if not max_pain or int(max_pain) == 0:
+            max_pain = state_engine.get_kv("latest_valid_max_pain") or 0
+        else:
+            state_engine.set_kv("latest_valid_max_pain", int(max_pain))
 
         # Extract live active window ±10 strikes (±500 pts) fresh ΔOI & Total Active Contracts
         weekly_exp = w_chain.get("expiry") or (latest.get("expiry_date") if latest else None)

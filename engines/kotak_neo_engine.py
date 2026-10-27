@@ -1699,18 +1699,7 @@ class KotakNeoEngine:
         if not allow_chain_fallback:
             return None
 
-        # Level 3: Kotak REST option quotes
-        if self._is_authenticated and self._client:
-            try:
-                self.fetch_option_quotes(near_atm_only=False)
-                with self._lock:
-                    tick = self._option_ticks.get((strike_int, opt_type_upper))
-                    if tick and tick.get("ltp") and float(tick["ltp"]) > 0:
-                        return float(tick["ltp"])
-            except Exception as e_rest:
-                logger.debug(f"Kotak REST option quote fallback notice for {strike_int} {opt_type_upper}: {e_rest}")
-
-        # Level 4: NSE Live Option Chain cascade
+        # Level 3: NSE Live Option Chain cascade (Bulk-cached, Zero Extra API calls)
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
             chain_data = nifty_analytics_engine.fetch_and_analyze_option_chain(force_refresh=False)
@@ -1734,6 +1723,17 @@ class KotakNeoEngine:
                         return round(ltp, 2)
         except Exception as e_chain:
             logger.debug(f"NSE Option Chain cascade notice for {strike_int} {opt_type_upper}: {e_chain}")
+
+        # Level 4: Kotak REST option quotes (Near-ATM only, rate-limited)
+        if self._is_authenticated and self._client:
+            try:
+                self.fetch_option_quotes(near_atm_only=True)
+                with self._lock:
+                    tick = self._option_ticks.get((strike_int, opt_type_upper))
+                    if tick and tick.get("ltp") and float(tick["ltp"]) > 0:
+                        return float(tick["ltp"])
+            except Exception as e_rest:
+                logger.debug(f"Kotak REST option quote fallback notice for {strike_int} {opt_type_upper}: {e_rest}")
 
         return None
 
@@ -1800,6 +1800,18 @@ class KotakNeoEngine:
         if not self._client or not self._is_authenticated:
             return {}
 
+        now_ts = time.time()
+        cached_q = getattr(self, "_option_quotes_cache", None)
+        if cached_q and (now_ts - cached_q[0]) < 10.0:
+            return dict(cached_q[1])
+
+        rate_limit_until = getattr(self, "_kotak_rate_limited_until", 0.0)
+        if now_ts < rate_limit_until:
+            logger.debug(f"[Kotak Neo] Quotes in rate-limit cooldown ({int(rate_limit_until - now_ts)}s remaining)")
+            if cached_q:
+                return dict(cached_q[1])
+            return {}
+
         spot = self.get_live_price("NIFTY 50") or self.get_live_price("NIFTY") or self.get_live_price("^NSEI")
         if not spot or float(spot) <= 0:
             return {}
@@ -1822,6 +1834,10 @@ class KotakNeoEngine:
             chunk = tokens_to_fetch[i : i + chunk_size]
             try:
                 res = self._client.quotes(instrument_tokens=chunk, quote_type="all")
+                if isinstance(res, dict) and (res.get("code") == 429 or "rate limit" in str(res).lower() or "too many request" in str(res).lower()):
+                    self._kotak_rate_limited_until = time.time() + 30.0
+                    logger.warning("[Kotak Neo] Rate limit 429 encountered in quotes chunk. 30s cooldown activated.")
+                    break
                 if isinstance(res, list):
                     items.extend(res)
                 elif isinstance(res, dict) and "data" in res and isinstance(res["data"], list):
@@ -1831,6 +1847,10 @@ class KotakNeoEngine:
                 elif isinstance(res, dict) and any(k in res for k in ("ltp", "last_traded_price", "close")):
                     items.append(res)
             except Exception as e:
+                if "429" in str(e) or "too many request" in str(e).lower():
+                    self._kotak_rate_limited_until = time.time() + 30.0
+                    logger.warning("[Kotak Neo] Rate limit 429 exception in quotes chunk. 30s cooldown activated.")
+                    break
                 logger.debug(f"[Kotak Neo] Quotes chunk error: {e}")
 
         try:
@@ -1909,7 +1929,9 @@ class KotakNeoEngine:
                 with self._lock:
                     self._ticks_received_count += updated_count
                     self._last_tick_time_ist = now_str
-            return {f"{k[0]}_{k[1]}": dict(v) for k, v in self._option_ticks.items()}
+            res_dict = {f"{k[0]}_{k[1]}": dict(v) for k, v in self._option_ticks.items()}
+            self._option_quotes_cache = (time.time(), res_dict)
+            return res_dict
         except Exception as e:
             logger.debug(f"Kotak Neo FO quotes fetch notice: {e}")
             return {}
@@ -2258,11 +2280,24 @@ class KotakNeoEngine:
             self._cached_monthly_iso = monthly_iso
 
             # 2. Authentic Option Chain for Weekly and Monthly
-            try:
-                w_chain = self._client.option_chain(exchange="nse_fo", underlying=underlying, expiry=weekly_iso, count=count)
-            except Exception as w_err:
-                logger.warning(f"Kotak weekly option chain request notice: {w_err}")
+            rate_limit_until = getattr(self, "_kotak_rate_limited_until", 0.0)
+            if now_ts < rate_limit_until:
+                logger.debug(f"[Kotak Neo] Option chain in rate-limit cooldown ({int(rate_limit_until - now_ts)}s remaining)")
                 w_chain = None
+            else:
+                try:
+                    w_chain = self._client.option_chain(exchange="nse_fo", underlying=underlying, expiry=weekly_iso, count=count)
+                    if isinstance(w_chain, dict) and (w_chain.get("code") == 429 or "rate limit" in str(w_chain).lower() or "too many request" in str(w_chain).lower()):
+                        self._kotak_rate_limited_until = time.time() + 30.0
+                        logger.warning("[Kotak Neo] Rate limit 429 on weekly option chain. 30s cooldown activated.")
+                        w_chain = None
+                except Exception as w_err:
+                    if "429" in str(w_err) or "too many request" in str(w_err).lower():
+                        self._kotak_rate_limited_until = time.time() + 30.0
+                        logger.warning("[Kotak Neo] 429 exception on weekly option chain. 30s cooldown activated.")
+                    else:
+                        logger.warning(f"Kotak weekly option chain request notice: {w_err}")
+                    w_chain = None
 
             try:
                 m_chain = self._client.option_chain(exchange="nse_fo", underlying=underlying, expiry=monthly_iso, count=count) if (monthly_iso != weekly_iso and w_chain is not None) else w_chain
@@ -2773,12 +2808,12 @@ class KotakNeoEngine:
                     from engines.commodities_engine import commodities_engine
                     is_mcx_active, _ = commodities_engine.is_mcx_open()
 
-                    # When WS is offline, poll REST continuously during active equity hours
-                    if in_equity_hours:
+                    # When WS is offline, poll REST fallback during active equity hours
+                    if in_equity_hours and not self.is_streaming_active():
                         syms = self._gather_active_market_symbols()
                         if syms:
                             self.fetch_rest_quotes(syms)
-                        # Continuously poll near-ATM option contracts every loop
+                        # Poll near-ATM option contracts as fallback
                         try:
                             self.fetch_option_quotes(near_atm_only=True)
                         except Exception:
@@ -2791,9 +2826,9 @@ class KotakNeoEngine:
                         except Exception:
                             pass
 
-                    # Adaptive sleep: 2.5s during market hours, 10s during off-hours standby
-                    if in_equity_hours or is_mcx_active:
-                        time.sleep(2.5)
+                    # Adaptive sleep: 5.0s during market hours fallback, 10s during off-hours standby or when WS is nominal
+                    if (in_equity_hours or is_mcx_active) and not self.is_streaming_active():
+                        time.sleep(5.0)
                     else:
                         time.sleep(10.0)
                 else:
