@@ -1960,18 +1960,20 @@ class KotakNeoEngine:
         elif expiry and len(str(expiry)) == 10 and "-" in str(expiry):
             target_expiry_iso = str(expiry).strip()
 
-        # Check cache
+        # Check cache (8.0s TTL or rate-limit cooldown)
+        rate_limit_until = getattr(self, "_kotak_rate_limited_until", 0.0)
         with self._lock:
             cached_d = self._option_depth.get((strike, opt_type, target_expiry_iso)) or self._option_depth.get((strike, opt_type, None))
-            if not force_refresh and cached_d and (cached_d.get("bids") or cached_d.get("asks")):
+            if cached_d and (cached_d.get("bids") or cached_d.get("asks")):
                 cached_age = now_ts - float(cached_d.get("_cached_at_ts") or 0.0)
-                if cached_age < 2.0:
+                if (not force_refresh and cached_age < 8.0) or (now_ts < rate_limit_until):
                     res = dict(cached_d)
                     res["status"] = "OK"
                     res["strike"] = strike
                     res["type"] = opt_type
                     res["opt_type"] = opt_type
                     res["expiry"] = target_expiry_iso or expiry or "WEEKLY"
+                    res["source"] = "KOTAK_NEO_DEPTH_CACHE"
                     return res
 
         if not self._is_authenticated or not self._client:
@@ -2116,11 +2118,32 @@ class KotakNeoEngine:
             }
 
         # Query quote with quote_type="all" to get full 5-level depth
+        rate_limit_until = getattr(self, "_kotak_rate_limited_until", 0.0)
+        if now_ts < rate_limit_until:
+            with self._lock:
+                cached_d = self._option_depth.get((strike, opt_type, target_expiry_iso)) or self._option_depth.get((strike, opt_type, None))
+                if cached_d:
+                    res = dict(cached_d)
+                    res["status"] = "OK"
+                    res["source"] = "KOTAK_NEO_DEPTH_CACHE"
+                    return res
+            return {"status": "DATA_NOT_AVAILABLE", "message": f"Kotak depth in cooldown ({int(rate_limit_until - now_ts)}s remaining)", "strike": strike, "type": opt_type}
+
         try:
             q_res = self._client.quotes(
                 instrument_tokens=[{"exchange_segment": "nse_fo", "instrument_token": str(token)}],
                 quote_type="all"
             )
+            if isinstance(q_res, dict) and (q_res.get("code") == 429 or "rate limit" in str(q_res).lower() or "too many request" in str(q_res).lower()):
+                self._kotak_rate_limited_until = time.time() + 30.0
+                logger.warning(f"[Kotak Neo] Rate limit 429 on depth for {strike} {opt_type}. 30s cooldown activated.")
+                with self._lock:
+                    cached_d = self._option_depth.get((strike, opt_type, target_expiry_iso)) or self._option_depth.get((strike, opt_type, None))
+                    if cached_d:
+                        res = dict(cached_d)
+                        res["status"] = "OK"
+                        res["source"] = "KOTAK_NEO_DEPTH_CACHE"
+                        return res
             item = None
             if isinstance(q_res, list) and q_res:
                 item = q_res[0]

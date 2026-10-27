@@ -42,7 +42,7 @@ class OrderFlowStructureEngine:
     def get_full_order_flow_suite(self, force_refresh: bool = False) -> Dict[str, Any]:
         """Returns the complete order flow & market structure payload with 4s cache."""
         now_ts = time.time()
-        if not force_refresh and self._cached_payload and (now_ts - self._cache_ts) < 4.0:
+        if not force_refresh and self._cached_payload and (now_ts - self._cache_ts) < 6.0:
             return self._cached_payload
 
         vol_profile = self.compute_volume_profile()
