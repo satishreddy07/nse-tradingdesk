@@ -1309,6 +1309,20 @@ class IntradayOptionsStrategyEngine:
         """
         from engines.nifty_analytics_engine import nifty_analytics_engine
 
+        # Master Auto Options Trading toggle check (fail-closed)
+        if not state_engine.is_auto_options_trading_enabled():
+            logger.info("⏸️ Auto Options Trading is disabled via master toggle. Auto trade execution halted.")
+            return {
+                "status": "DISABLED_BY_USER",
+                "message": "Auto options trading is toggled OFF by user. Automated entry halted.",
+                "decision_source": "INTRADAY_ANALYSIS",
+                "intraday_analysis": {},
+                "intraday_confidence_pct": 0.0,
+                "expiry_cycle": "INTRADAY",
+                "executed": False,
+                "orders": []
+            }
+
         # Derive regime strictly from pure INTRADAY analysis
         intraday_regime_info = self.get_intraday_market_regime(force_refresh=force_refresh)
         composite_score = float(intraday_regime_info["intraday_composite_score"])
@@ -1367,6 +1381,25 @@ class IntradayOptionsStrategyEngine:
             }
 
         deployed_strategies = []
+
+        # Master Auto Options Trading toggle check (fail-closed)
+        if not state_engine.is_auto_options_trading_enabled():
+            logger.info("⏸️ Auto Options Trading toggle is OFF. Automated order placement halted.")
+            return {
+                "status": "DISABLED_BY_USER",
+                "message": "Auto options trading is toggled OFF by user. No automated orders placed.",
+                "regime": regime,
+                "intraday_confidence_pct": confidence_pct,
+                "required_confidence_pct": req_threshold,
+                "is_zero_dte": is_zero_dte,
+                "expiry_cycle": expiry_cycle,
+                "confidence_details": daytime_conf,
+                "decision_source": "INTRADAY_ANALYSIS",
+                "intraday_analysis": intraday_regime_info,
+                "timestamp_ist": now_str,
+                "executed": False,
+                "orders": []
+            }
 
         # STRICT HARD GATE 1: Max 1 active Intraday strategy in options_strategies
         today_iso = now_ist().strftime("%Y-%m-%d")
@@ -1833,7 +1866,7 @@ class IntradayOptionsStrategyEngine:
     # =========================================================================
     # 6. MACHINE LEARNING FEEDBACK & EFFICIENCY TRAINING
     # =========================================================================
-    def train_options_ml_model(self) -> Dict[str, Any]:
+    def train_options_ml_model(self, force: bool = False) -> Dict[str, Any]:
         """
         Trains the Intraday Options ML Meta-Model:
         - Ingests all completed trades from intraday_options_trade_log & intraday_options_ml_dataset.
@@ -1841,6 +1874,16 @@ class IntradayOptionsStrategyEngine:
           [Regime Code, Composite Score, IV, Expected Move, Sigma Level, SL Threshold Pct].
         - Persists trained metrics and coefficients to state_engine for transparency.
         """
+        # Master Auto Options Trading toggle check (fail-closed)
+        if not state_engine.is_auto_options_trading_enabled():
+            logger.info("⏸️ Options ML Model Training is paused because Auto Options Trades is toggled OFF.")
+            return {
+                "status": "PAUSED_BY_USER",
+                "message": "Options ML model training is paused because Auto Options Trades is toggled OFF.",
+                "sample_count": 0,
+                "trained": False
+            }
+
         with state_engine._lock:
             with state_engine._get_connection() as conn:
                 rows = conn.execute("""

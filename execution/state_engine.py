@@ -547,6 +547,17 @@ class StateEngine:
         self.set_kv("swing_universe_source", src)
         return src
 
+    def is_auto_options_trading_enabled(self) -> bool:
+        """Returns whether Automated Options Trading is enabled. Defaults to False (fail-closed)."""
+        val = self.get_kv("auto_options_trading_enabled", False)
+        return bool(val)
+
+    def set_auto_options_trading_enabled(self, enabled: bool) -> bool:
+        """Persists whether Automated Options Trading is enabled in SQLite system_kv_store."""
+        val = bool(enabled)
+        self.set_kv("auto_options_trading_enabled", val)
+        return val
+
     def get_all_nse_symbols(self, series: str = "EQ") -> List[str]:
         """Returns all official active NSE listed equity symbols (e.g. 2,351 'EQ' series symbols)."""
         with self._lock:

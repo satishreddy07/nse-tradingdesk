@@ -280,36 +280,19 @@
         </a>
       </div>
 
-      <!-- Desktop Primary Module Switcher (Streamlined Compact Segmented Control) -->
-      <div class="hidden lg:flex items-center bg-slate-900/95 p-0.5 rounded-lg border border-slate-800/80 gap-0.5 shrink-0 shadow-inner">
-        <button onclick="switchModule('module-swing')" id="desk-mod-swing" class="mod-btn px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-all bg-cyan-500 text-black shadow-sm whitespace-nowrap">
-          <i data-lucide="trending-up" class="w-3.5 h-3.5 stroke-[2.5]"></i>
-          <span>Swing</span>
-        </button>
-        <button onclick="switchModule('module-intraday')" id="desk-mod-intraday" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
-          <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
-          <span>Intraday</span>
-          <span class="hidden 2xl:inline-flex text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">LIVE</span>
-        </button>
-        <button onclick="switchModule('module-predictions')" id="desk-mod-predictions" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
-          <i data-lucide="brain-circuit" class="w-3.5 h-3.5 text-purple-400"></i>
-          <span class="hidden xl:inline">Predictions</span>
-          <span class="xl:hidden">Preds</span>
-          <span class="hidden 2xl:inline-flex text-[9px] font-mono px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">ML</span>
-        </button>
-        <button onclick="switchModule('module-options')" id="desk-mod-options" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
-          <i data-lucide="flame" class="w-3.5 h-3.5 text-emerald-400"></i>
-          <span>Options<span class="hidden 2xl:inline"> Desk</span></span>
-          <span class="hidden 2xl:inline-flex text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">VTX</span>
-        </button>
-        <button onclick="switchModule('module-ml-performance')" id="desk-mod-ml-performance" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
-          <i data-lucide="gauge" class="w-3.5 h-3.5 text-rose-400"></i>
-          <span class="hidden xl:inline">ML Performance</span>
-          <span class="xl:hidden">ML Perf</span>
-        </button>
-        <button onclick="switchModule('module-commodities')" id="desk-mod-commodities" class="mod-btn px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all text-slate-400 hover:text-white hover:bg-slate-800/70 whitespace-nowrap">
-          <i data-lucide="droplet" class="w-3.5 h-3.5 text-amber-400"></i>
-          <span>MCX</span>
+      <!-- Desktop Navigation Hub: Active Desk Badge & Hamburger Menu Trigger -->
+      <div class="flex items-center gap-2 shrink-0">
+        <!-- Active Desk Indicator Badge -->
+        <div id="hdr-active-desk-indicator" class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-slate-300 font-mono text-xs shadow-sm">
+          <span id="hdr-active-desk-dot" class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+          <span id="hdr-active-desk-name" class="font-bold text-white">Swing Trading Desk</span>
+        </div>
+
+        <!-- Primary Hamburger Menu Button (Accessible on both Desktop & Mobile) -->
+        <button id="btn-main-hamburger" onclick="toggleMainMenu(true)" class="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-cyan-500/50 hover:border-cyan-400 text-cyan-300 hover:text-white font-mono text-xs font-bold transition shadow-sm active:scale-95 cursor-pointer" title="Open Navigation Menu">
+          <i data-lucide="menu" class="w-4 h-4 text-cyan-400"></i>
+          <span>Desks Menu</span>
+          <span class="hidden sm:inline-flex text-[9px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">7 DESKS</span>
         </button>
       </div>
 
@@ -395,7 +378,7 @@
         </button>
 
         <!-- Hamburger Menu Button (Mobile & Tablet) -->
-        <button id="btn-hamburger" onclick="toggleMobileDrawer()" class="xl:hidden flex items-center justify-center w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-cyan-500/50 transition active:scale-95 shadow-sm shrink-0" aria-label="Open Navigation Menu" title="Menu">
+        <button id="btn-hamburger" onclick="toggleMainMenu(true)" class="xl:hidden flex items-center justify-center w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-cyan-500/50 transition active:scale-95 shadow-sm shrink-0" aria-label="Open Navigation Menu" title="Menu">
           <i data-lucide="menu" id="hamburger-icon" class="w-4 h-4 text-cyan-400"></i>
         </button>
       </div>
@@ -5911,7 +5894,22 @@
               Live NSE Option Chain analysis for Nifty 50: Overall PCR, Near-ATM PCR (±5 strikes), Exact ATM PCR (±1 strike), Fresh ΔOI PCR, Max Pain, Primary & Secondary Call/Put Walls, 25-Delta IV Skew, Dealer GEX Regime, and 4-Quadrant Strike Buildup.
             </p>
           </div>
-          <div class="flex flex-wrap items-center gap-2 shrink-0">
+          <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+            <!-- Auto Options Trading Master Toggle -->
+            <div class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-emerald-500/40 shadow-inner">
+              <div class="flex flex-col">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-[11px] font-mono font-bold text-white uppercase tracking-wider">Auto Options Trades</span>
+                  <span id="badge-auto-options-toggle" class="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">OFF (HALTED)</span>
+                </div>
+                <span id="text-auto-options-sub" class="text-[9px] text-slate-400 font-mono">Auto entries & ML models deactivated</span>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer ml-1">
+                <input type="checkbox" id="chk-auto-options-trades" onchange="toggleAutoOptionsTrades(this.checked)" class="sr-only peer">
+                <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 border border-slate-700 shadow-sm"></div>
+              </label>
+            </div>
+
             <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800">
               <button onclick="switchOptionsExpiryView('weekly')" id="btn-opt-weekly" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-black transition">
                 Weekly (<span id="opt-lbl-weekly-exp">--</span>)
@@ -5934,10 +5932,10 @@
               <i data-lucide="layers" class="w-3.5 h-3.5"></i>
               <span>Option Chain & OI</span>
             </button>
-            <button onclick="switchOptionsSubTab('builder')" id="opt-tab-btn-builder" class="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800/70 flex items-center justify-center gap-1.5 transition whitespace-nowrap">
-              <i data-lucide="activity" class="w-3.5 h-3.5"></i>
-              <span>Strategy Builder & Payoff</span>
-              <span id="opt-subtab-builder-badge" class="px-1.5 py-0.2 rounded text-[10px] bg-cyan-500/20 text-cyan-300 font-bold">0</span>
+            <button onclick="switchModule('module-builder')" id="opt-tab-btn-builder" class="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-blue-300 hover:text-white hover:bg-blue-500/15 border border-blue-500/30 flex items-center justify-center gap-1.5 transition whitespace-nowrap shadow-sm">
+              <i data-lucide="wrench" class="w-3.5 h-3.5 text-blue-400"></i>
+              <span>Strategy Builder Studio ↗</span>
+              <span id="opt-subtab-builder-badge" class="px-1.5 py-0.2 rounded text-[10px] bg-blue-500/20 text-blue-300 font-bold">0</span>
             </button>
             <button onclick="switchOptionsSubTab('portfolio')" id="opt-tab-btn-portfolio" class="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white hover:bg-slate-800/70 flex items-center justify-center gap-1.5 transition whitespace-nowrap">
               <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
@@ -6208,323 +6206,24 @@
       <!-- SUB-TAB 2: STRATEGY BUILDER & DUAL-CURVE PAYOFF GRAPH (OPSTRA/SENSIBULL) -->
       <!-- =================================================================== -->
       <div id="opt-sub-builder" class="space-y-4 hidden">
-      <!-- StockMojo Dual-Pane Strategy Builder Studio -->
-      <div class="bg-slate-900/85 border border-slate-800 rounded-2xl p-3 sm:p-5 shadow-2xl space-y-4">
-        
-        <!-- Header & Strategy Name Ribbon -->
-        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+        <div class="bg-slate-900/85 border border-blue-500/40 rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-2xl">
+          <div class="inline-flex p-3 rounded-2xl bg-blue-500/15 border border-blue-500/30 text-blue-400">
+            <i data-lucide="wrench" class="w-8 h-8"></i>
+          </div>
           <div>
-            <div class="flex items-center gap-2">
-              <span class="px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-blue-600/20 text-blue-400 border border-blue-500/40">STOCKMOJO &amp; OPSTRA SUITE</span>
-              <span class="text-xs font-mono text-emerald-400">⚡ Live Black-Scholes Greeks &amp; Dual-Curve Payoff Engine</span>
-            </div>
-            <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Multi-Leg Strategy Builder &amp; Interactive Payoff Graph</h3>
-            <p class="text-xs text-slate-400">Pick 1-click visual strategies from the ready-made grid on the right, or click <span class="text-emerald-400 font-bold font-mono">+B</span> / <span class="text-rose-400 font-bold font-mono">+S</span> in the option chain below.</p>
+            <h3 class="text-base sm:text-lg font-extrabold text-white">Strategy Builder Studio has moved to a dedicated section!</h3>
+            <p class="text-xs text-slate-400 max-w-md mx-auto mt-1">
+              Enjoy a dedicated workspace with full-screen interactive dual-curve payoff graph, Black-Scholes Greeks, multi-leg adjustor, and 1-click execution.
+            </p>
           </div>
-
-          <!-- Strategy Name & Expiry Selection Bar -->
-          <div class="flex flex-wrap items-center gap-2">
-            <div class="flex items-center gap-1.5 bg-slate-950/90 border border-slate-800 rounded-xl px-2.5 py-1.5">
-              <span class="text-[10px] text-slate-400 uppercase font-mono">Strategy:</span>
-              <input type="text" id="strat-name-input" value="" oninput="this.dataset.userEdited = this.value.trim() ? 'true' : ''" placeholder="Strategy Name (e.g. Short Straddle)" class="bg-transparent text-xs font-bold text-white font-mono focus:outline-none w-36 sm:w-48 border-b border-blue-500/40 pb-0.5">
-            </div>
-
-            <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800">
-              <button onclick="switchOptionsExpiryView('weekly')" id="btn-strat-exp-weekly" class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-black transition">Weekly</button>
-              <button onclick="switchOptionsExpiryView('monthly')" id="btn-strat-exp-monthly" class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition">Monthly</button>
-            </div>
+          <div>
+            <button onclick="switchModule('module-builder')" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-400 hover:to-cyan-400 text-black font-extrabold text-xs font-mono shadow-lg transition active:scale-95 inline-flex items-center gap-2 cursor-pointer">
+              <i data-lucide="external-link" class="w-4 h-4"></i>
+              <span>Launch Strategy Builder Studio</span>
+            </button>
           </div>
         </div>
-
-        <!-- DUAL-PANE RESPONSIVE DESKTOP LAYOUT (STOCKMOJO STYLE) -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-
-          <!-- ============================================================== -->
-          <!-- LEFT PANE: STRATEGY LEGS + INLINE CHAIN (42% / 5 COLS)         -->
-          <!-- ============================================================== -->
-          <div class="lg:col-span-5 space-y-4">
-            
-            <!-- Strategy Legs Card -->
-            <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                  <div class="flex items-center gap-1.5">
-                    <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-400"></i>
-                    <span class="text-xs font-bold text-white uppercase">Strategy Legs (<span id="strat-legs-count">0</span>)</span>
-                  </div>
-                  <div class="flex items-center gap-1">
-                    <button onclick="toggleAllStrategyLegs()" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-blue-300 text-[10px] font-mono font-bold transition" title="Toggle All Legs Active/Inactive">
-                      <span>☑ All</span>
-                    </button>
-                    <button onclick="flipAllStrategyLegs()" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 text-[10px] font-mono font-bold transition" title="Flip Buy ↔ Sell on all legs">
-                      <span>⇄ Flip</span>
-                    </button>
-                    <button onclick="addCustomStrategyLeg()" class="px-2 py-0.5 rounded bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 text-[10px] font-bold flex items-center gap-1 transition">
-                      <i data-lucide="plus" class="w-3 h-3"></i>
-                      <span>Add Leg</span>
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Strategy Adjustment Mode Alert Banner -->
-                <div id="builder-adjustment-banner" class="hidden mb-2.5 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between text-xs font-mono">
-                  <div class="flex items-center gap-1.5 min-w-0">
-                    <span class="text-amber-400 font-bold text-[10px] sm:text-[11px] whitespace-nowrap">🛠️ ADJUSTING STRATEGY:</span>
-                    <span id="builder-adjustment-target-text" class="text-white font-bold truncate text-[10px] sm:text-[11px]">--</span>
-                  </div>
-                  <button onclick="cancelStrategyAdjustment()" class="ml-2 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold border border-slate-700 text-[10px] transition">Cancel</button>
-                </div>
-
-                <!-- Active Legs Container -->
-                <div id="strat-legs-list" class="space-y-2 max-h-[460px] overflow-y-auto custom-scroll pr-1 text-xs font-mono">
-                  <div class="text-slate-500 py-8 text-center font-sans">
-                    No legs added yet. Click <b>+B / +S</b> on any strike in the Option Chain table below.
-                  </div>
-                </div>
-
-                <!-- Smart Micro-Price Execution Router Card -->
-                <div id="builder-smart-exec-card" class="mt-2.5 mb-1 p-2.5 rounded-xl bg-slate-900/90 border border-emerald-500/30 text-xs font-mono space-y-1.5">
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-1.5">
-                      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <span class="text-[10px] font-bold text-emerald-400 uppercase">⚡ Smart Micro-Price Execution</span>
-                    </div>
-                    <span id="builder-slippage-savings-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">Saves: ₹0.00</span>
-                  </div>
-                  <div class="flex items-center justify-between text-[11px] text-slate-300">
-                    <span>Market Order Est: <b id="builder-market-cost" class="text-rose-400">₹0.00</b></span>
-                    <span>Smart Limit Est: <b id="builder-smart-cost" class="text-emerald-400">₹0.00</b></span>
-                  </div>
-                  <button onclick="applySmartMicroPriceLimits()" id="btn-apply-smart-limits" class="w-full py-1.5 px-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer">
-                    <i data-lucide="zap" class="w-3 h-3"></i>
-                    <span>Snap Legs to Inside-Spread Micro-Prices (Eliminate Slippage)</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Footer: Lot Size Note & Deploy Strategy Button -->
-              <div class="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 mt-2">
-                <div class="text-[10px] font-mono text-slate-400">
-                  <span>Lot: <b id="builder-lot-size-val" class="text-white">65</b></span>
-                  <span id="builder-1-lot-lbl" class="text-slate-500">(Nifty 1x)</span>
-                </div>
-                <div class="flex items-center gap-2">
-                  <button onclick="clearAllStrategyLegs()" class="px-2.5 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition">Clear</button>
-                  <button onclick="deployCurrentStrategy()" id="btn-deploy-strategy" class="px-4 py-1.5 rounded-lg text-xs font-bold font-mono bg-gradient-to-r from-emerald-500 to-teal-600 text-black hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/20 transition flex items-center gap-1.5 active:scale-95 cursor-pointer">
-                    <i data-lucide="send" class="w-3.5 h-3.5"></i>
-                    <span id="btn-deploy-strat-text">Deploy Strategy</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Embedded Compact Option Chain Quick Strike Picker -->
-            <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4">
-              <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-800/80">
-                <div class="flex items-center gap-2">
-                  <span class="w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse"></span>
-                  <span class="text-xs font-extrabold text-white font-mono uppercase tracking-wider">⚡ Quick Strike Picker</span>
-                  <span id="builder-compact-chain-exp-lbl" class="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30">Weekly Expiry</span>
-                  <span id="builder-chain-count-lbl" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">-- Strikes</span>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                  <!-- Strike Range Selector for Builder Quick Picker -->
-                  <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[11px] font-mono">
-                    <span class="text-slate-500 px-1.5 py-0.5">Strikes:</span>
-                    <button onclick="setBuilderChainStrikeRange(10)" id="btn-bld-range-10" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±10 Strikes (±500 pts)">±10</button>
-                    <button onclick="setBuilderChainStrikeRange(15)" id="btn-bld-range-15" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±15 Strikes (±750 pts)">±15</button>
-                    <button onclick="setBuilderChainStrikeRange(20)" id="btn-bld-range-20" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±20 Strikes (±1000 pts)">±20</button>
-                    <button onclick="setBuilderChainStrikeRange(24)" id="btn-bld-range-24" class="bld-range-btn px-2.5 py-0.5 rounded-md font-bold bg-blue-600 text-white transition cursor-pointer" title="±24 Strikes (±1200 pts)">±24 (1200 pts)</button>
-                    <button onclick="setBuilderChainStrikeRange(30)" id="btn-bld-range-30" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±30 Strikes (±1500 pts)">±30</button>
-                    <button onclick="setBuilderChainStrikeRange('all')" id="btn-bld-range-all" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="All Available Strikes">Full</button>
-                  </div>
-                  <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
-                    <button onclick="switchBuilderCompactChainExpiry('weekly')" id="btn-builder-compact-w" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-blue-600 text-white transition cursor-pointer">Weekly</button>
-                    <button onclick="switchBuilderCompactChainExpiry('monthly')" id="btn-builder-compact-m" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold text-slate-400 hover:text-white transition cursor-pointer">Monthly</button>
-                  </div>
-                  <button onclick="scrollBuilderChainToAtm()" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition flex items-center gap-1 shadow-sm cursor-pointer" title="Center on ATM Strike">🎯 ATM</button>
-                  <span id="builder-compact-spot-lbl" class="text-xs font-mono font-bold text-amber-400">Spot: ₹--</span>
-                </div>
-              </div>
-              <div class="text-[11px] text-slate-400 font-sans mb-2 flex items-center justify-between">
-                <span>Click <span class="text-emerald-400 font-bold font-mono">+B</span> (Buy) or <span class="text-rose-400 font-bold font-mono">+S</span> (Sell) on Call or Put to add directly to builder legs.</span>
-              </div>
-
-              <!-- Scrollable Table Box -->
-              <div id="builder-chain-scroll-container" class="max-h-[380px] overflow-y-auto custom-scroll border border-slate-800/80 rounded-xl overflow-x-auto">
-                <table class="table-fixed w-full text-center text-xs font-mono border-collapse min-w-[650px] tabular-nums">
-                  <colgroup>
-                    <col class="w-[85px]">
-                    <col class="w-[95px]">
-                    <col class="w-[100px]">
-                    <col class="w-[100px]">
-                    <col class="w-[100px]">
-                    <col class="w-[95px]">
-                    <col class="w-[85px]">
-                  </colgroup>
-                  <thead class="sticky top-0 bg-slate-900 text-[10px] uppercase border-b border-slate-800 z-10 text-slate-400">
-                    <tr>
-                      <th colspan="3" class="py-1.5 px-2 text-emerald-400 bg-emerald-950/20 border-r border-slate-800">CALLS (CE)</th>
-                      <th class="py-1.5 px-2 text-white bg-slate-950">STRIKE</th>
-                      <th colspan="3" class="py-1.5 px-2 text-rose-400 bg-rose-950/20 border-l border-slate-800">PUTS (PE)</th>
-                    </tr>
-                    <tr class="text-[10px] text-slate-500 border-b border-slate-800/80">
-                      <th class="py-1">Action</th>
-                      <th class="py-1">LTP</th>
-                      <th class="py-1 border-r border-slate-800">OI (L)</th>
-                      <th class="py-1 text-amber-300 font-bold">Strike</th>
-                      <th class="py-1 border-l border-slate-800">OI (L)</th>
-                      <th class="py-1">LTP</th>
-                      <th class="py-1">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody id="builder-compact-chain-tbody" class="divide-y divide-slate-800/40 text-xs">
-                    <!-- Injected dynamically by renderBuilderCompactChain() -->
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-          </div>
-
-          <!-- ============================================================== -->
-          <!-- RIGHT PANE: READY-MADE CARDS + PAYOFF CANVA & METRICS (7 COLS) -->
-          <!-- ============================================================== -->
-          <div class="lg:col-span-7 space-y-4">
-
-            <!-- StockMojo Ready-Made Strategy Visualizer Deck -->
-            <!-- Key Metric Cards Ribbon (StockMojo / Opstra Metrics) -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
-                <span class="text-[10px] text-slate-400 uppercase font-mono block">Max Profit</span>
-                <span id="strat-metric-maxprofit" class="text-sm font-bold font-mono text-emerald-400">₹0.00</span>
-                <span id="strat-metric-maxprofit-sub" class="text-[10px] text-slate-500 font-mono block">--</span>
-              </div>
-              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
-                <span class="text-[10px] text-slate-400 uppercase font-mono block">Max Loss</span>
-                <span id="strat-metric-maxloss" class="text-sm font-bold font-mono text-rose-400">₹0.00</span>
-                <span id="strat-metric-maxloss-sub" class="text-[10px] text-slate-500 font-mono block">--</span>
-              </div>
-              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
-                <span class="text-[10px] text-slate-400 uppercase font-mono block">Risk / Reward</span>
-                <span id="strat-metric-rr" class="text-sm font-bold font-mono text-amber-300">--</span>
-              </div>
-              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
-                <span class="text-[10px] text-slate-400 uppercase font-mono block">POP (Win Prob)</span>
-                <span id="strat-metric-pop" class="text-sm font-bold font-mono text-cyan-300">--%</span>
-              </div>
-              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
-                <span class="text-[10px] text-slate-400 uppercase font-mono block">Breakevens</span>
-                <span id="strat-metric-breakevens" class="text-xs font-bold font-mono text-white truncate block">--</span>
-              </div>
-              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
-                <span class="text-[10px] text-slate-400 uppercase font-mono block">Net Premium</span>
-                <span id="strat-metric-netprem" class="text-sm font-bold font-mono text-white">₹0.00</span>
-                <span id="strat-metric-netprem-sub" class="text-[10px] text-slate-500 font-mono block">Credit</span>
-              </div>
-              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
-                <span class="text-[10px] text-slate-400 uppercase font-mono block">Margin Req.</span>
-                <span id="strat-metric-margin" class="text-sm font-bold font-mono text-purple-300">₹0</span>
-              </div>
-            </div>
-
-            <!-- Greeks KPI Sub-Strip -->
-            <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between text-xs font-mono">
-              <span class="text-[10px] text-slate-400 uppercase">Portfolio Greeks:</span>
-              <span id="strat-metric-greeks" class="text-cyan-300 font-bold">Δ 0.00 | θ ₹0 | ν ₹0 | γ 0.000</span>
-              <span id="strat-metric-greeks-sub" class="text-slate-500 text-[10px]">Black-Scholes Live</span>
-            </div>
-
-            <!-- Interactive Payoff Graph Canvas Card -->
-            <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4">
-              <!-- Canvas Header with Span Zoom & Crosshair -->
-              <div class="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-800/80">
-                <div class="flex items-center gap-2">
-                  <span class="text-xs font-bold text-white uppercase font-mono">⚡ Interactive Payoff Curve</span>
-                  <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[10px] font-mono">
-                    <span class="text-slate-500 px-1 py-0.5">Span:</span>
-                    <button onclick="setPayoffGraphSpan(600)" id="btn-payoff-span-600" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±600 pts from Spot">±600</button>
-                    <button onclick="setPayoffGraphSpan(1000)" id="btn-payoff-span-1000" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±1000 pts from Spot">±1000</button>
-                    <button onclick="setPayoffGraphSpan(1200)" id="btn-payoff-span-1200" class="payoff-span-btn px-1.5 py-0.5 rounded font-bold bg-blue-600 text-white transition cursor-pointer" title="±1200 pts from Spot">±1200</button>
-                    <button onclick="setPayoffGraphSpan(1600)" id="btn-payoff-span-1600" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±1600 pts from Spot">±1600</button>
-                    <button onclick="setPayoffGraphSpan('auto')" id="btn-payoff-span-auto" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="Auto Scale to Legs">Auto</button>
-                  </div>
-                </div>
-                <!-- Crosshair Live Value -->
-                <div id="payoff-crosshair-hud" class="text-[11px] font-mono text-blue-300">Hover graph to inspect P&amp;L</div>
-              </div>
-
-              <!-- Canvas Container -->
-              <div class="relative w-full h-64 sm:h-72 bg-[#050811] rounded-lg border border-slate-800/80 overflow-hidden">
-                <canvas id="opt-payoff-canvas" class="w-full h-full block cursor-crosshair"></canvas>
-              </div>
-
-              <!-- Interactive Sliders: Target Date, IV Shift & Target Spot (Opstra Simulator) -->
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
-                <div>
-                  <div class="flex justify-between text-[11px] text-slate-300 mb-1">
-                    <span>📅 Target Date: <b id="slider-target-days-lbl" class="text-blue-300">Today (T+Now)</b></span>
-                    <span id="slider-target-dte-lbl" class="text-slate-500">0 days elapsed</span>
-                  </div>
-                  <input type="range" id="slider-target-date" min="0" max="7" value="0" step="1" oninput="onPayoffTargetDateSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
-                </div>
-
-                <div>
-                  <div class="flex justify-between text-[11px] text-slate-300 mb-1">
-                    <span>⚡ IV Shift: <b id="slider-iv-shift-lbl" class="text-purple-300">0.0%</b></span>
-                    <span class="text-slate-500">Vega Impact</span>
-                  </div>
-                  <input type="range" id="slider-iv-shift" min="-20" max="20" value="0" step="1" oninput="onPayoffIvShiftSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-400">
-                </div>
-
-                <div>
-                  <div class="flex justify-between text-[11px] text-slate-300 mb-1">
-                    <span class="flex items-center gap-1">
-                      <span>🎯 Target Spot:</span>
-                      <b id="slider-spot-shift-lbl" class="text-amber-300">0 pts (0.0%)</b>
-                    </span>
-                    <button onclick="resetPayoffSpotShift()" class="text-[10px] text-slate-400 hover:text-white px-1 py-0.5 rounded bg-slate-800 transition cursor-pointer" title="Reset Target Spot">↺</button>
-                  </div>
-                  <input type="range" id="slider-spot-shift" min="-1000" max="1000" value="0" step="25" oninput="onPayoffSpotShiftSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400">
-                </div>
-              </div>
-
-              <!-- Opstra-Style Spot vs PnL & Delta Matrix Table (Collapsible) -->
-              <div class="mt-3 pt-2 border-t border-slate-800/80">
-                <button onclick="togglePayoffMatrixTable()" class="w-full flex items-center justify-between text-[11px] font-mono font-bold text-slate-300 hover:text-white py-1 px-1 rounded hover:bg-slate-900 transition cursor-pointer">
-                  <div class="flex items-center gap-1.5">
-                    <i data-lucide="table" class="w-3.5 h-3.5 text-blue-400"></i>
-                    <span>Spot vs P&amp;L Matrix (Opstra Table)</span>
-                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 font-normal">±100 pt intervals</span>
-                  </div>
-                  <span id="payoff-matrix-toggle-icon" class="text-xs text-blue-400">▼ View Matrix</span>
-                </button>
-                <div id="payoff-matrix-container" class="hidden mt-2 max-h-56 overflow-y-auto custom-scroll border border-slate-800 rounded-lg">
-                  <table class="w-full text-left border-collapse text-[11px] font-mono">
-                    <thead class="sticky top-0 bg-slate-900 text-slate-400 text-[10px] uppercase border-b border-slate-800 z-10">
-                      <tr>
-                        <th class="py-1.5 px-2">Spot Price</th>
-                        <th class="py-1.5 px-2 text-right">% Change</th>
-                        <th class="py-1.5 px-2 text-right">Expiry P&amp;L</th>
-                        <th class="py-1.5 px-2 text-right">T+Now P&amp;L</th>
-                        <th class="py-1.5 px-2 text-right">Net Delta</th>
-                        <th class="py-1.5 px-2 text-center">Probability Zone</th>
-                      </tr>
-                    </thead>
-                    <tbody id="payoff-matrix-tbody" class="divide-y divide-slate-800/50">
-                      <!-- Populated dynamically -->
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-          </div>
-
-        </div>
-
-      </div> <!-- Close Builder inner card -->
-    </div> <!-- Close Sub-Tab 2: opt-sub-builder -->
+      </div>
 
     <!-- =================================================================== -->
     <!-- SUB-TAB 3: OPTIONS TRADING PORTFOLIO & EQUITY CURVE DESK            -->
@@ -7495,7 +7194,356 @@
       </div>
   </section>
 
-  
+
+    <!-- =================================================================== -->
+    <!-- MODULE: STRATEGY BUILDER STUDIO (STANDALONE DEDICATED SECTION)      -->
+    <!-- =================================================================== -->
+    <section id="module-builder" class="module-section hidden space-y-4 sm:space-y-6">
+      <!-- Section Header -->
+      <div class="bg-slate-900/80 border border-blue-500/35 rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <div class="flex flex-wrap items-center gap-2 max-w-full">
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40 shrink-0">OPTIONS DESK • MODULE STUDIO</span>
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 max-w-full overflow-hidden shrink-0">
+                <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0"></span>
+                <span>StockMojo & Opstra Analytical Engine</span>
+              </span>
+              <span class="text-[10px] sm:text-[11px] font-mono text-cyan-400 truncate max-w-full">⚡ Live Greeks & Dual-Curve Payoff</span>
+            </div>
+            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-1">Multi-Leg Strategy Builder & Interactive Payoff Graph</h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Construct complex multi-leg options structures with real-time Black-Scholes Greeks (Delta, Gamma, Theta, Vega), dual T+0 and Expiry payoff curves, multi-leg adjustor, and 1-click execution into the Options Portfolio.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <button onclick="switchModule('module-options')" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer">
+              <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+              <span>Back to Options Desk</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Strategy Builder Studio Card -->
+      <!-- StockMojo Dual-Pane Strategy Builder Studio -->
+      <div class="bg-slate-900/85 border border-slate-800 rounded-2xl p-3 sm:p-5 shadow-2xl space-y-4">
+        
+        <!-- Header & Strategy Name Ribbon -->
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-blue-600/20 text-blue-400 border border-blue-500/40">STOCKMOJO &amp; OPSTRA SUITE</span>
+              <span class="text-xs font-mono text-emerald-400">⚡ Live Black-Scholes Greeks &amp; Dual-Curve Payoff Engine</span>
+            </div>
+            <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Multi-Leg Strategy Builder &amp; Interactive Payoff Graph</h3>
+            <p class="text-xs text-slate-400">Pick 1-click visual strategies from the ready-made grid on the right, or click <span class="text-emerald-400 font-bold font-mono">+B</span> / <span class="text-rose-400 font-bold font-mono">+S</span> in the option chain below.</p>
+          </div>
+
+          <!-- Strategy Name & Expiry Selection Bar -->
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-1.5 bg-slate-950/90 border border-slate-800 rounded-xl px-2.5 py-1.5">
+              <span class="text-[10px] text-slate-400 uppercase font-mono">Strategy:</span>
+              <input type="text" id="strat-name-input" value="" oninput="this.dataset.userEdited = this.value.trim() ? 'true' : ''" placeholder="Strategy Name (e.g. Short Straddle)" class="bg-transparent text-xs font-bold text-white font-mono focus:outline-none w-36 sm:w-48 border-b border-blue-500/40 pb-0.5">
+            </div>
+
+            <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+              <button onclick="switchOptionsExpiryView('weekly')" id="btn-strat-exp-weekly" class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-black transition">Weekly</button>
+              <button onclick="switchOptionsExpiryView('monthly')" id="btn-strat-exp-monthly" class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white transition">Monthly</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- DUAL-PANE RESPONSIVE DESKTOP LAYOUT (STOCKMOJO STYLE) -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+
+          <!-- ============================================================== -->
+          <!-- LEFT PANE: STRATEGY LEGS + INLINE CHAIN (42% / 5 COLS)         -->
+          <!-- ============================================================== -->
+          <div class="lg:col-span-5 space-y-4">
+            
+            <!-- Strategy Legs Card -->
+            <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                  <div class="flex items-center gap-1.5">
+                    <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-400"></i>
+                    <span class="text-xs font-bold text-white uppercase">Strategy Legs (<span id="strat-legs-count">0</span>)</span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <button onclick="toggleAllStrategyLegs()" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-blue-300 text-[10px] font-mono font-bold transition" title="Toggle All Legs Active/Inactive">
+                      <span>☑ All</span>
+                    </button>
+                    <button onclick="flipAllStrategyLegs()" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 text-[10px] font-mono font-bold transition" title="Flip Buy ↔ Sell on all legs">
+                      <span>⇄ Flip</span>
+                    </button>
+                    <button onclick="addCustomStrategyLeg()" class="px-2 py-0.5 rounded bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 text-[10px] font-bold flex items-center gap-1 transition">
+                      <i data-lucide="plus" class="w-3 h-3"></i>
+                      <span>Add Leg</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Strategy Adjustment Mode Alert Banner -->
+                <div id="builder-adjustment-banner" class="hidden mb-2.5 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between text-xs font-mono">
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <span class="text-amber-400 font-bold text-[10px] sm:text-[11px] whitespace-nowrap">🛠️ ADJUSTING STRATEGY:</span>
+                    <span id="builder-adjustment-target-text" class="text-white font-bold truncate text-[10px] sm:text-[11px]">--</span>
+                  </div>
+                  <button onclick="cancelStrategyAdjustment()" class="ml-2 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold border border-slate-700 text-[10px] transition">Cancel</button>
+                </div>
+
+                <!-- Active Legs Container -->
+                <div id="strat-legs-list" class="space-y-2 max-h-[460px] overflow-y-auto custom-scroll pr-1 text-xs font-mono">
+                  <div class="text-slate-500 py-8 text-center font-sans">
+                    No legs added yet. Click <b>+B / +S</b> on any strike in the Option Chain table below.
+                  </div>
+                </div>
+
+                <!-- Smart Micro-Price Execution Router Card -->
+                <div id="builder-smart-exec-card" class="mt-2.5 mb-1 p-2.5 rounded-xl bg-slate-900/90 border border-emerald-500/30 text-xs font-mono space-y-1.5">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-1.5">
+                      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span class="text-[10px] font-bold text-emerald-400 uppercase">⚡ Smart Micro-Price Execution</span>
+                    </div>
+                    <span id="builder-slippage-savings-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">Saves: ₹0.00</span>
+                  </div>
+                  <div class="flex items-center justify-between text-[11px] text-slate-300">
+                    <span>Market Order Est: <b id="builder-market-cost" class="text-rose-400">₹0.00</b></span>
+                    <span>Smart Limit Est: <b id="builder-smart-cost" class="text-emerald-400">₹0.00</b></span>
+                  </div>
+                  <button onclick="applySmartMicroPriceLimits()" id="btn-apply-smart-limits" class="w-full py-1.5 px-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer">
+                    <i data-lucide="zap" class="w-3 h-3"></i>
+                    <span>Snap Legs to Inside-Spread Micro-Prices (Eliminate Slippage)</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Footer: Lot Size Note & Deploy Strategy Button -->
+              <div class="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 mt-2">
+                <div class="text-[10px] font-mono text-slate-400">
+                  <span>Lot: <b id="builder-lot-size-val" class="text-white">65</b></span>
+                  <span id="builder-1-lot-lbl" class="text-slate-500">(Nifty 1x)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button onclick="clearAllStrategyLegs()" class="px-2.5 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition">Clear</button>
+                  <button onclick="deployCurrentStrategy()" id="btn-deploy-strategy" class="px-4 py-1.5 rounded-lg text-xs font-bold font-mono bg-gradient-to-r from-emerald-500 to-teal-600 text-black hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/20 transition flex items-center gap-1.5 active:scale-95 cursor-pointer">
+                    <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                    <span id="btn-deploy-strat-text">Deploy Strategy</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Embedded Compact Option Chain Quick Strike Picker -->
+            <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4">
+              <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-800/80">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse"></span>
+                  <span class="text-xs font-extrabold text-white font-mono uppercase tracking-wider">⚡ Quick Strike Picker</span>
+                  <span id="builder-compact-chain-exp-lbl" class="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30">Weekly Expiry</span>
+                  <span id="builder-chain-count-lbl" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">-- Strikes</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <!-- Strike Range Selector for Builder Quick Picker -->
+                  <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[11px] font-mono">
+                    <span class="text-slate-500 px-1.5 py-0.5">Strikes:</span>
+                    <button onclick="setBuilderChainStrikeRange(10)" id="btn-bld-range-10" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±10 Strikes (±500 pts)">±10</button>
+                    <button onclick="setBuilderChainStrikeRange(15)" id="btn-bld-range-15" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±15 Strikes (±750 pts)">±15</button>
+                    <button onclick="setBuilderChainStrikeRange(20)" id="btn-bld-range-20" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±20 Strikes (±1000 pts)">±20</button>
+                    <button onclick="setBuilderChainStrikeRange(24)" id="btn-bld-range-24" class="bld-range-btn px-2.5 py-0.5 rounded-md font-bold bg-blue-600 text-white transition cursor-pointer" title="±24 Strikes (±1200 pts)">±24 (1200 pts)</button>
+                    <button onclick="setBuilderChainStrikeRange(30)" id="btn-bld-range-30" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="±30 Strikes (±1500 pts)">±30</button>
+                    <button onclick="setBuilderChainStrikeRange('all')" id="btn-bld-range-all" class="bld-range-btn px-2 py-0.5 rounded-md text-slate-400 hover:text-white transition cursor-pointer" title="All Available Strikes">Full</button>
+                  </div>
+                  <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
+                    <button onclick="switchBuilderCompactChainExpiry('weekly')" id="btn-builder-compact-w" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-blue-600 text-white transition cursor-pointer">Weekly</button>
+                    <button onclick="switchBuilderCompactChainExpiry('monthly')" id="btn-builder-compact-m" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold text-slate-400 hover:text-white transition cursor-pointer">Monthly</button>
+                  </div>
+                  <button onclick="scrollBuilderChainToAtm()" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition flex items-center gap-1 shadow-sm cursor-pointer" title="Center on ATM Strike">🎯 ATM</button>
+                  <span id="builder-compact-spot-lbl" class="text-xs font-mono font-bold text-amber-400">Spot: ₹--</span>
+                </div>
+              </div>
+              <div class="text-[11px] text-slate-400 font-sans mb-2 flex items-center justify-between">
+                <span>Click <span class="text-emerald-400 font-bold font-mono">+B</span> (Buy) or <span class="text-rose-400 font-bold font-mono">+S</span> (Sell) on Call or Put to add directly to builder legs.</span>
+              </div>
+
+              <!-- Scrollable Table Box -->
+              <div id="builder-chain-scroll-container" class="max-h-[380px] overflow-y-auto custom-scroll border border-slate-800/80 rounded-xl overflow-x-auto">
+                <table class="table-fixed w-full text-center text-xs font-mono border-collapse min-w-[650px] tabular-nums">
+                  <colgroup>
+                    <col class="w-[85px]">
+                    <col class="w-[95px]">
+                    <col class="w-[100px]">
+                    <col class="w-[100px]">
+                    <col class="w-[100px]">
+                    <col class="w-[95px]">
+                    <col class="w-[85px]">
+                  </colgroup>
+                  <thead class="sticky top-0 bg-slate-900 text-[10px] uppercase border-b border-slate-800 z-10 text-slate-400">
+                    <tr>
+                      <th colspan="3" class="py-1.5 px-2 text-emerald-400 bg-emerald-950/20 border-r border-slate-800">CALLS (CE)</th>
+                      <th class="py-1.5 px-2 text-white bg-slate-950">STRIKE</th>
+                      <th colspan="3" class="py-1.5 px-2 text-rose-400 bg-rose-950/20 border-l border-slate-800">PUTS (PE)</th>
+                    </tr>
+                    <tr class="text-[10px] text-slate-500 border-b border-slate-800/80">
+                      <th class="py-1">Action</th>
+                      <th class="py-1">LTP</th>
+                      <th class="py-1 border-r border-slate-800">OI (L)</th>
+                      <th class="py-1 text-amber-300 font-bold">Strike</th>
+                      <th class="py-1 border-l border-slate-800">OI (L)</th>
+                      <th class="py-1">LTP</th>
+                      <th class="py-1">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="builder-compact-chain-tbody" class="divide-y divide-slate-800/40 text-xs">
+                    <!-- Injected dynamically by renderBuilderCompactChain() -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ============================================================== -->
+          <!-- RIGHT PANE: READY-MADE CARDS + PAYOFF CANVA & METRICS (7 COLS) -->
+          <!-- ============================================================== -->
+          <div class="lg:col-span-7 space-y-4">
+
+            <!-- StockMojo Ready-Made Strategy Visualizer Deck -->
+            <!-- Key Metric Cards Ribbon (StockMojo / Opstra Metrics) -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+                <span class="text-[10px] text-slate-400 uppercase font-mono block">Max Profit</span>
+                <span id="strat-metric-maxprofit" class="text-sm font-bold font-mono text-emerald-400">₹0.00</span>
+                <span id="strat-metric-maxprofit-sub" class="text-[10px] text-slate-500 font-mono block">--</span>
+              </div>
+              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+                <span class="text-[10px] text-slate-400 uppercase font-mono block">Max Loss</span>
+                <span id="strat-metric-maxloss" class="text-sm font-bold font-mono text-rose-400">₹0.00</span>
+                <span id="strat-metric-maxloss-sub" class="text-[10px] text-slate-500 font-mono block">--</span>
+              </div>
+              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+                <span class="text-[10px] text-slate-400 uppercase font-mono block">Risk / Reward</span>
+                <span id="strat-metric-rr" class="text-sm font-bold font-mono text-amber-300">--</span>
+              </div>
+              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+                <span class="text-[10px] text-slate-400 uppercase font-mono block">POP (Win Prob)</span>
+                <span id="strat-metric-pop" class="text-sm font-bold font-mono text-cyan-300">--%</span>
+              </div>
+              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+                <span class="text-[10px] text-slate-400 uppercase font-mono block">Breakevens</span>
+                <span id="strat-metric-breakevens" class="text-xs font-bold font-mono text-white truncate block">--</span>
+              </div>
+              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+                <span class="text-[10px] text-slate-400 uppercase font-mono block">Net Premium</span>
+                <span id="strat-metric-netprem" class="text-sm font-bold font-mono text-white">₹0.00</span>
+                <span id="strat-metric-netprem-sub" class="text-[10px] text-slate-500 font-mono block">Credit</span>
+              </div>
+              <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+                <span class="text-[10px] text-slate-400 uppercase font-mono block">Margin Req.</span>
+                <span id="strat-metric-margin" class="text-sm font-bold font-mono text-purple-300">₹0</span>
+              </div>
+            </div>
+
+            <!-- Greeks KPI Sub-Strip -->
+            <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between text-xs font-mono">
+              <span class="text-[10px] text-slate-400 uppercase">Portfolio Greeks:</span>
+              <span id="strat-metric-greeks" class="text-cyan-300 font-bold">Δ 0.00 | θ ₹0 | ν ₹0 | γ 0.000</span>
+              <span id="strat-metric-greeks-sub" class="text-slate-500 text-[10px]">Black-Scholes Live</span>
+            </div>
+
+            <!-- Interactive Payoff Graph Canvas Card -->
+            <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 sm:p-4">
+              <!-- Canvas Header with Span Zoom & Crosshair -->
+              <div class="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-800/80">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-bold text-white uppercase font-mono">⚡ Interactive Payoff Curve</span>
+                  <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[10px] font-mono">
+                    <span class="text-slate-500 px-1 py-0.5">Span:</span>
+                    <button onclick="setPayoffGraphSpan(600)" id="btn-payoff-span-600" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±600 pts from Spot">±600</button>
+                    <button onclick="setPayoffGraphSpan(1000)" id="btn-payoff-span-1000" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±1000 pts from Spot">±1000</button>
+                    <button onclick="setPayoffGraphSpan(1200)" id="btn-payoff-span-1200" class="payoff-span-btn px-1.5 py-0.5 rounded font-bold bg-blue-600 text-white transition cursor-pointer" title="±1200 pts from Spot">±1200</button>
+                    <button onclick="setPayoffGraphSpan(1600)" id="btn-payoff-span-1600" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±1600 pts from Spot">±1600</button>
+                    <button onclick="setPayoffGraphSpan('auto')" id="btn-payoff-span-auto" class="payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="Auto Scale to Legs">Auto</button>
+                  </div>
+                </div>
+                <!-- Crosshair Live Value -->
+                <div id="payoff-crosshair-hud" class="text-[11px] font-mono text-blue-300">Hover graph to inspect P&amp;L</div>
+              </div>
+
+              <!-- Canvas Container -->
+              <div class="relative w-full h-64 sm:h-72 bg-[#050811] rounded-lg border border-slate-800/80 overflow-hidden">
+                <canvas id="opt-payoff-canvas" class="w-full h-full block cursor-crosshair"></canvas>
+              </div>
+
+              <!-- Interactive Sliders: Target Date, IV Shift & Target Spot (Opstra Simulator) -->
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
+                <div>
+                  <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+                    <span>📅 Target Date: <b id="slider-target-days-lbl" class="text-blue-300">Today (T+Now)</b></span>
+                    <span id="slider-target-dte-lbl" class="text-slate-500">0 days elapsed</span>
+                  </div>
+                  <input type="range" id="slider-target-date" min="0" max="7" value="0" step="1" oninput="onPayoffTargetDateSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                </div>
+
+                <div>
+                  <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+                    <span>⚡ IV Shift: <b id="slider-iv-shift-lbl" class="text-purple-300">0.0%</b></span>
+                    <span class="text-slate-500">Vega Impact</span>
+                  </div>
+                  <input type="range" id="slider-iv-shift" min="-20" max="20" value="0" step="1" oninput="onPayoffIvShiftSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-400">
+                </div>
+
+                <div>
+                  <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+                    <span class="flex items-center gap-1">
+                      <span>🎯 Target Spot:</span>
+                      <b id="slider-spot-shift-lbl" class="text-amber-300">0 pts (0.0%)</b>
+                    </span>
+                    <button onclick="resetPayoffSpotShift()" class="text-[10px] text-slate-400 hover:text-white px-1 py-0.5 rounded bg-slate-800 transition cursor-pointer" title="Reset Target Spot">↺</button>
+                  </div>
+                  <input type="range" id="slider-spot-shift" min="-1000" max="1000" value="0" step="25" oninput="onPayoffSpotShiftSlider(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400">
+                </div>
+              </div>
+
+              <!-- Opstra-Style Spot vs PnL & Delta Matrix Table (Collapsible) -->
+              <div class="mt-3 pt-2 border-t border-slate-800/80">
+                <button onclick="togglePayoffMatrixTable()" class="w-full flex items-center justify-between text-[11px] font-mono font-bold text-slate-300 hover:text-white py-1 px-1 rounded hover:bg-slate-900 transition cursor-pointer">
+                  <div class="flex items-center gap-1.5">
+                    <i data-lucide="table" class="w-3.5 h-3.5 text-blue-400"></i>
+                    <span>Spot vs P&amp;L Matrix (Opstra Table)</span>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 font-normal">±100 pt intervals</span>
+                  </div>
+                  <span id="payoff-matrix-toggle-icon" class="text-xs text-blue-400">▼ View Matrix</span>
+                </button>
+                <div id="payoff-matrix-container" class="hidden mt-2 max-h-56 overflow-y-auto custom-scroll border border-slate-800 rounded-lg">
+                  <table class="w-full text-left border-collapse text-[11px] font-mono">
+                    <thead class="sticky top-0 bg-slate-900 text-slate-400 text-[10px] uppercase border-b border-slate-800 z-10">
+                      <tr>
+                        <th class="py-1.5 px-2">Spot Price</th>
+                        <th class="py-1.5 px-2 text-right">% Change</th>
+                        <th class="py-1.5 px-2 text-right">Expiry P&amp;L</th>
+                        <th class="py-1.5 px-2 text-right">T+Now P&amp;L</th>
+                        <th class="py-1.5 px-2 text-right">Net Delta</th>
+                        <th class="py-1.5 px-2 text-center">Probability Zone</th>
+                      </tr>
+                    </thead>
+                    <tbody id="payoff-matrix-tbody" class="divide-y divide-slate-800/50">
+                      <!-- Populated dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div> <!-- Close Builder inner card -->
+    </section>
+
     <!-- =================================================================== -->
     <!-- MODULE 5: ML PERFORMANCE & MODEL INTELLIGENCE DASHBOARD             -->
     <!-- =================================================================== -->
@@ -10191,33 +10239,25 @@
     </div>
   </div>
 
-  <!-- MOBILE & TABLET PRIMARY MODULE BOTTOM NAVIGATION BAR (Zero Duplication with Swing Sub-Tabs) -->
+  <!-- MOBILE & TABLET PRIMARY MODULE BOTTOM NAVIGATION BAR (Streamlined 5-Button Touch Ergonomics) -->
   <nav class="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0b0f19]/95 backdrop-blur-md border-t border-slate-800/90 z-40 px-2 py-1.5 flex items-center justify-around text-[10px] pb-safe font-semibold shadow-2xl">
-    <button onclick="switchModule('module-swing')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-cyan-400 bg-cyan-500/10" id="mob-mod-swing">
+    <button onclick="switchModule('module-swing')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl text-cyan-400 bg-cyan-500/10" id="mob-mod-swing">
       <i data-lucide="trending-up" class="w-4 h-4"></i>
-      <span>Swing Desk</span>
+      <span>Swing</span>
     </button>
-    <button onclick="switchModule('module-intraday')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-400" id="mob-mod-intraday">
+    <button onclick="switchModule('module-intraday')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl text-slate-400" id="mob-mod-intraday">
       <i data-lucide="zap" class="w-4 h-4"></i>
       <span>Intraday</span>
-    </button>
-    <button onclick="switchModule('module-predictions')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-400" id="mob-mod-predictions">
-      <i data-lucide="brain-circuit" class="w-4 h-4"></i>
-      <span>Predictions</span>
     </button>
     <button onclick="switchModule('module-options')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl text-slate-400" id="mob-mod-options">
       <i data-lucide="flame" class="w-4 h-4"></i>
       <span>Options</span>
     </button>
-    <button onclick="switchModule('module-ml-performance')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl text-slate-400" id="mob-mod-ml-perf">
-      <i data-lucide="gauge" class="w-4 h-4"></i>
-      <span>ML Perf</span>
+    <button onclick="switchModule('module-builder')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl text-slate-400" id="mob-mod-builder">
+      <i data-lucide="wrench" class="w-4 h-4"></i>
+      <span>Builder</span>
     </button>
-    <button onclick="switchModule('module-commodities')" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl text-slate-400" id="mob-mod-commodities">
-      <i data-lucide="droplet" class="w-4 h-4"></i>
-      <span>MCX</span>
-    </button>
-    <button onclick="toggleMobileDrawer()" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl text-slate-400 hover:text-cyan-300" id="mob-mod-menu" title="Full Navigation Menu">
+    <button onclick="toggleMainMenu(true)" class="mobile-mod-btn flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl text-slate-400 hover:text-cyan-300" id="mob-mod-menu" title="Full Navigation Menu">
       <i data-lucide="menu" class="w-4 h-4 text-cyan-400"></i>
       <span>Menu</span>
     </button>
@@ -10227,20 +10267,21 @@
   <div id="mobile-nav-backdrop" onclick="toggleMobileDrawer(false)" style="display: none;" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[90] transition-opacity pointer-events-none"></div>
 
   <div id="mobile-nav-drawer" style="display: none;" class="fixed top-0 right-0 bottom-0 w-[88vw] max-w-sm bg-[#0b0f19] border-l border-cyan-500/30 z-[100] shadow-2xl flex flex-col justify-between overflow-hidden pointer-events-none">
-    <!-- Drawer Header -->
-    <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+    <!-- Drawer Header with Top Close Menu Button -->
+    <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/90 sticky top-0 z-10 backdrop-blur-md">
       <div class="flex items-center gap-2.5">
         <img src="/static/bull-logo.jpg" alt="QuantDesk Bull" width="32" height="32" class="brand-logo-img w-8 h-8 rounded-xl object-cover border border-cyan-500/50 shadow-md shrink-0" style="width: 32px; height: 32px; min-width: 32px; min-height: 32px; max-width: 32px; max-height: 32px; object-fit: cover;">
         <div>
           <div class="font-extrabold text-white text-sm tracking-tight flex items-center gap-1.5">
             <span>QUANT<span class="text-cyan-400">DESK</span></span>
-            <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-bold">v3.0</span>
+            <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-bold">v3.0</span>
           </div>
-          <div class="text-[10px] text-slate-400">Multi-Asset Trading Intelligence</div>
+          <div class="text-[10px] text-slate-400 font-mono">Multi-Asset Trading Intelligence</div>
         </div>
       </div>
-      <button onclick="toggleMobileDrawer(false)" class="w-8 h-8 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition active:scale-95" aria-label="Close Menu">
-        <i data-lucide="x" class="w-4 h-4"></i>
+      <button onclick="toggleMainMenu(false)" id="btn-close-main-menu" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-rose-500/20 border border-slate-700 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 text-xs font-mono font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm" aria-label="Close Navigation Menu" title="Close Menu (Esc)">
+        <i data-lucide="x" class="w-4 h-4 stroke-[2.5]"></i>
+        <span>Close Menu</span>
       </button>
     </div>
 
@@ -10292,10 +10333,21 @@
               <i data-lucide="flame" class="w-4 h-4 text-emerald-400 shrink-0"></i>
               <div>
                 <div class="text-xs font-semibold">Options Desk & Greeks</div>
-                <div class="text-[10px] text-slate-400 font-normal">Option Chain, VIX & Strategy Builder</div>
+                <div class="text-[10px] text-slate-400 font-normal">Option Chain, VIX & Portfolio</div>
               </div>
             </div>
-            <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">VIX</span>
+            <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">VTX</span>
+          </button>
+
+          <button onclick="switchModuleAndClose('module-builder')" id="drawer-mod-builder" class="w-full text-left p-2.5 rounded-xl flex items-center justify-between border border-slate-800 hover:border-slate-700 hover:bg-slate-900/70 text-slate-300 transition">
+            <div class="flex items-center gap-2.5">
+              <i data-lucide="wrench" class="w-4 h-4 text-blue-400 shrink-0"></i>
+              <div>
+                <div class="text-xs font-semibold">Strategy Builder Studio</div>
+                <div class="text-[10px] text-slate-400 font-normal">Dual-Curve Payoff, Greeks & Multi-Leg Studio</div>
+              </div>
+            </div>
+            <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">STUDIO</span>
           </button>
 
           <button onclick="switchModuleAndClose('module-ml-performance')" id="drawer-mod-ml-performance" class="w-full text-left p-2.5 rounded-xl flex items-center justify-between border border-slate-800 hover:border-slate-700 hover:bg-slate-900/70 text-slate-300 transition">
@@ -10569,6 +10621,11 @@
             drawPayoffGraph();
           });
         }
+      } catch (e) {}
+
+      // Fetch Auto Options Trades toggle status on load
+      try {
+        fetchAutoOptionsTradeToggle();
       } catch (e) {}
 
       // Smart Bandwidth-Optimized Polling
@@ -10997,6 +11054,67 @@
       }, 4000);
     }
 
+    function toggleMainMenu(forceState = null) {
+      toggleMobileDrawer(forceState);
+    }
+
+    async function fetchAutoOptionsTradeToggle() {
+      try {
+        const res = await fetch('/api/options/auto-trade-toggle');
+        if (!res.ok) return;
+        const data = await res.json();
+        renderAutoOptionsToggleUI(data.enabled);
+      } catch (err) {
+        console.warn("Failed to fetch auto options toggle state:", err);
+      }
+    }
+
+    function renderAutoOptionsToggleUI(enabled) {
+      const chk = document.getElementById('chk-auto-options-trades');
+      const badge = document.getElementById('badge-auto-options-toggle');
+      const sub = document.getElementById('text-auto-options-sub');
+      if (chk) chk.checked = !!enabled;
+      if (badge) {
+        if (enabled) {
+          badge.className = 'px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+          badge.innerText = 'ON (ACTIVE)';
+        } else {
+          badge.className = 'px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40';
+          badge.innerText = 'OFF (HALTED)';
+        }
+      }
+      if (sub) {
+        sub.innerText = enabled ? 'Auto trades & ML models ACTIVE' : 'Auto trades & ML models HALTED';
+      }
+    }
+
+    async function toggleAutoOptionsTrades(enabled) {
+      try {
+        const res = await fetch('/api/options/auto-trade-toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: !!enabled })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          renderAutoOptionsToggleUI(data.enabled);
+          if (typeof showToast === 'function') {
+            showToast(data.message, data.enabled ? 'success' : 'warning');
+          }
+        } else {
+          if (typeof showToast === 'function') {
+            showToast('Failed to update Auto Options Trades toggle', 'error');
+          }
+          fetchAutoOptionsTradeToggle();
+        }
+      } catch (err) {
+        if (typeof showToast === 'function') {
+          showToast(`Toggle error: ${err.message}`, 'error');
+        }
+        fetchAutoOptionsTradeToggle();
+      }
+    }
+
     function toggleMobileDrawer(forceState = null) {
       const drawer = document.getElementById('mobile-nav-drawer');
       const backdrop = document.getElementById('mobile-nav-backdrop');
@@ -11016,6 +11134,7 @@
         if (botNav) botNav.classList.add('pointer-events-none');
         updateDrawerContent();
         if (icon) icon.setAttribute('data-lucide', 'x');
+        if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
       } else {
         drawer.classList.remove('open');
         backdrop.classList.remove('open');
@@ -11041,6 +11160,7 @@
         'module-intraday': { id: 'drawer-mod-intraday', name: 'Intraday & 0-DTE Desk', color: 'amber' },
         'module-predictions': { id: 'drawer-mod-predictions', name: 'AI & ML Predictions', color: 'purple' },
         'module-options': { id: 'drawer-mod-options', name: 'Options Desk & Greeks', color: 'emerald' },
+        'module-builder': { id: 'drawer-mod-builder', name: 'Strategy Builder Studio', color: 'blue' },
         'module-ml-performance': { id: 'drawer-mod-ml-performance', name: 'ML Performance & Audit', color: 'rose' },
         'module-commodities': { id: 'drawer-mod-commodities', name: 'MCX Commodities Desk', color: 'amber' }
       };
@@ -11155,6 +11275,13 @@
             <button onclick="selectedOptionsExpiryType='monthly'; loadOptionsDesk(); toggleMobileDrawer(false);" class="p-2 rounded-lg border border-slate-800 bg-slate-900 text-slate-300 text-xs text-left">Monthly Expiry</button>
             <button onclick="openOptionChainModal(); toggleMobileDrawer(false);" class="col-span-2 p-2 rounded-lg border border-cyan-500/40 bg-slate-900 text-cyan-300 text-xs text-left">⚡ Interactive Option Chain</button>
           `;
+        } else if (currentModule === 'module-builder') {
+          html = `
+            <button onclick="switchOptionsExpiryView('weekly'); toggleMobileDrawer(false);" class="p-2 rounded-lg border border-emerald-500/40 bg-emerald-500/20 text-emerald-300 text-xs font-bold text-left">Weekly Expiry</button>
+            <button onclick="switchOptionsExpiryView('monthly'); toggleMobileDrawer(false);" class="p-2 rounded-lg border border-slate-800 bg-slate-900 text-slate-300 text-xs text-left">Monthly Expiry</button>
+            <button onclick="clearStrategyBuilderLegs(); toggleMobileDrawer(false);" class="p-2 rounded-lg border border-rose-500/40 bg-slate-900 text-rose-300 text-xs text-left">🗑️ Reset Legs</button>
+            <button onclick="switchModuleAndClose('module-options');" class="p-2 rounded-lg border border-cyan-500/40 bg-slate-900 text-cyan-300 text-xs text-left">⚡ Options Chain</button>
+          `;
         } else if (currentModule === 'module-commodities') {
           html = `
             <button onclick="filterCommoditySector('ALL'); toggleMobileDrawer(false);" class="p-2 rounded-lg border border-amber-500/40 bg-amber-500/20 text-amber-300 text-xs font-bold text-left">All Sectors (6)</button>
@@ -11183,6 +11310,29 @@
       document.querySelectorAll('.module-section').forEach(el => el.classList.add('hidden'));
       const target = document.getElementById(moduleId);
       if (target) target.classList.remove('hidden');
+
+      // Update Header Active Desk Badge
+      const deskHeaderNames = {
+        'module-swing': { name: 'Swing Trading Desk', dot: 'bg-cyan-400', text: 'text-cyan-300' },
+        'module-intraday': { name: 'Intraday & 0-DTE Desk', dot: 'bg-amber-400', text: 'text-amber-300' },
+        'module-predictions': { name: 'AI & ML Predictions', dot: 'bg-purple-400', text: 'text-purple-300' },
+        'module-options': { name: 'Options Desk & Greeks', dot: 'bg-emerald-400', text: 'text-emerald-300' },
+        'module-builder': { name: 'Strategy Builder Studio', dot: 'bg-blue-400', text: 'text-blue-300' },
+        'module-ml-performance': { name: 'ML Performance & Audit', dot: 'bg-rose-400', text: 'text-rose-300' },
+        'module-commodities': { name: 'MCX Commodities Desk', dot: 'bg-amber-400', text: 'text-amber-300' }
+      };
+      const dhn = deskHeaderNames[moduleId];
+      if (dhn) {
+        const tEl = document.getElementById('hdr-active-desk-name');
+        const dEl = document.getElementById('hdr-active-desk-dot');
+        if (tEl) {
+          tEl.innerText = dhn.name;
+          tEl.className = `font-bold ${dhn.text}`;
+        }
+        if (dEl) {
+          dEl.className = `w-2 h-2 rounded-full ${dhn.dot} animate-pulse`;
+        }
+      }
 
       // Update Desktop Module Switcher
       const deskMap = {
@@ -11220,6 +11370,7 @@
         'module-intraday': { name: 'Intraday', dot: 'bg-amber-400', text: 'text-amber-300' },
         'module-predictions': { name: 'Predictions', dot: 'bg-purple-400', text: 'text-purple-300' },
         'module-options': { name: 'Options', dot: 'bg-emerald-400', text: 'text-emerald-300' },
+        'module-builder': { name: 'Builder', dot: 'bg-blue-400', text: 'text-blue-300' },
         'module-ml-performance': { name: 'ML Perf', dot: 'bg-rose-400', text: 'text-rose-300' },
         'module-commodities': { name: 'MCX', dot: 'bg-amber-400', text: 'text-amber-300' }
       };
@@ -11245,6 +11396,7 @@
         'module-intraday': { id: 'mob-mod-intraday', cls: ['text-amber-400', 'bg-amber-500/10'] },
         'module-predictions': { id: 'mob-mod-predictions', cls: ['text-purple-400', 'bg-purple-500/10'] },
         'module-options': { id: 'mob-mod-options', cls: ['text-emerald-400', 'bg-emerald-500/10'] },
+        'module-builder': { id: 'mob-mod-builder', cls: ['text-blue-400', 'bg-blue-500/10'] },
         'module-ml-performance': { id: 'mob-mod-ml-perf', cls: ['text-rose-400', 'bg-rose-500/10'] },
         'module-commodities': { id: 'mob-mod-commodities', cls: ['text-amber-400', 'bg-amber-500/10'] }
       };
@@ -11259,7 +11411,14 @@
 
       updateDrawerContent();
       lucide.createIcons();
-      if (moduleId === 'module-swing') {
+      if (moduleId === 'module-builder') {
+        if (typeof loadOptionsDesk === 'function') loadOptionsDesk();
+        if (typeof renderBuilderCompactChain === 'function') renderBuilderCompactChain();
+        if (typeof updatePayoffGraph === 'function') updatePayoffGraph();
+      } else if (moduleId === 'module-options') {
+        fetchAutoOptionsTradeToggle();
+        loadAllEquityCurves();
+      } else if (moduleId === 'module-swing') {
         loadAllEquityCurves();
       } else if (moduleId === 'module-ml-performance') {
         loadMLPerformanceData();
@@ -13997,6 +14156,10 @@
     let currentOptionsSubTab = 'chain';
 
     function switchOptionsSubTab(tab) {
+      if (tab === 'builder') {
+        switchModule('module-builder');
+        return;
+      }
       currentOptionsSubTab = tab;
       const tabConfigs = [
         { id: 'chain', panel: 'opt-sub-chain', btn: 'opt-tab-btn-chain' },

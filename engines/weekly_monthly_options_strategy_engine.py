@@ -1725,6 +1725,20 @@ class WeeklyMonthlyOptionsStrategyEngine:
         now_dt = now_ist()
         now_str = format_ist()
 
+        # Master Auto Options Trading toggle check (fail-closed)
+        if not state_engine.is_auto_options_trading_enabled():
+            logger.info(f"⏸️ Positional {horizon} Auto Options Trading is disabled (toggle OFF). Positional trade execution halted.")
+            return {
+                "status": "DISABLED_BY_USER",
+                "message": "Auto options trading is toggled OFF by user. Automated positional entry halted.",
+                "decision_source": "WEEKLY_PREDICTION_MODEL_T5",
+                "weekly_prediction_model": {},
+                "strategy_tournament": {},
+                "win_probability_pct": 0.0,
+                "executed": False,
+                "orders": []
+            }
+
         # Retrieve prediction strictly from the Weekly Prediction Model
         weekly_model_info = self.get_weekly_prediction_model_regime(force_refresh=force_refresh)
         composite_score = float(weekly_model_info["weekly_composite_score"])
@@ -2208,7 +2222,7 @@ class WeeklyMonthlyOptionsStrategyEngine:
     # =========================================================================
     # 6. DEDICATED MACHINE LEARNING ONLINE TRAINING (NO DATA MIXING)
     # =========================================================================
-    def train_positional_options_ml_model(self, horizon: str = "WEEKLY") -> Dict[str, Any]:
+    def train_positional_options_ml_model(self, horizon: str = "WEEKLY", force: bool = False) -> Dict[str, Any]:
         """
         Trains dedicated Machine Learning models for Weekly or Monthly options:
         - NEVER mixes with Intraday trade data!
@@ -2222,6 +2236,17 @@ class WeeklyMonthlyOptionsStrategyEngine:
         table_name = "weekly_options_trade_log" if horizon == "WEEKLY" else "monthly_options_trade_log"
         dataset_table = "weekly_options_ml_dataset" if horizon == "WEEKLY" else "monthly_options_ml_dataset"
         kv_key = "weekly_options_ml_metadata" if horizon == "WEEKLY" else "monthly_options_ml_metadata"
+
+        # Master Auto Options Trading toggle check (fail-closed)
+        if not force and not state_engine.is_auto_options_trading_enabled():
+            logger.info(f"⏸️ Positional {horizon} Options ML Model Training is paused because Auto Options Trades is toggled OFF.")
+            return {
+                "status": "PAUSED_BY_USER",
+                "message": f"Positional {horizon} options ML model training is paused because Auto Options Trades is toggled OFF.",
+                "horizon": horizon,
+                "sample_count": 0,
+                "trained": False
+            }
 
         with state_engine._lock:
             with state_engine._get_connection() as conn:

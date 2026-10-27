@@ -1614,9 +1614,51 @@ def exit_options_strategy_endpoint(req: ExitStrategyRequest):
     return nifty_analytics_engine.exit_options_strategy(req.strategy_id, req.exit_reason)
 
 
+class AutoOptionsTradeToggleRequest(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/options/auto-trade-toggle")
+def get_auto_options_trade_toggle_endpoint():
+    """Returns whether automated options trading and related ML models are enabled."""
+    from execution.state_engine import state_engine
+    enabled = state_engine.is_auto_options_trading_enabled()
+    return {
+        "status": "OK",
+        "enabled": enabled,
+        "toggle_state": "ON" if enabled else "OFF",
+        "message": "Auto options trading and related ML models are ACTIVE." if enabled else "Auto options trading and related ML models are DISABLED/PAUSED.",
+        "updated_at": format_ist()
+    }
+
+
+@app.post("/api/options/auto-trade-toggle", dependencies=[Depends(verify_admin_key)])
+def post_auto_options_trade_toggle_endpoint(req: AutoOptionsTradeToggleRequest):
+    """Updates whether automated options trading and related ML models are enabled."""
+    from execution.state_engine import state_engine
+    state_engine.set_auto_options_trading_enabled(req.enabled)
+    enabled = state_engine.is_auto_options_trading_enabled()
+    action_text = "ENABLED" if enabled else "DISABLED"
+    logger.info(f"⚙️ Auto Options Trading master toggle updated to: {action_text}")
+    return {
+        "status": "OK",
+        "enabled": enabled,
+        "toggle_state": "ON" if enabled else "OFF",
+        "message": f"Auto options trading and related ML models successfully {action_text.lower()}."
+    }
+
+
 @app.post("/api/options/auto-deploy", dependencies=[Depends(verify_admin_key)])
 def auto_deploy_options_endpoint(req: Optional[AutoDeployOptionsRequest] = None):
     """Regenerates complete analysis (fresh live option chain, 6-pillar ML predictions & AI interpretation) then evaluates and auto-deploys strategies."""
+    from execution.state_engine import state_engine
+    if not state_engine.is_auto_options_trading_enabled():
+        return {
+            "status": "DISABLED_BY_USER",
+            "message": "Auto options trading is toggled OFF. Automated entry halted.",
+            "executed": False,
+            "deployed": []
+        }
     from engines.nifty_analytics_engine import nifty_analytics_engine
     modes = req.modes if req and req.modes else ["WEEKLY", "MONTHLY", "INTRADAY"]
     force_refresh = req.force_refresh if (req and req.force_refresh is not None) else True

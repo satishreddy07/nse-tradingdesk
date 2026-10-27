@@ -1,9 +1,9 @@
 /**
- * NSE Trading Desk — Progressive Web App Service Worker (v3.0)
+ * NSE Trading Desk — Progressive Web App Service Worker (v3.1)
  * Real-time financial analytics: Network-first with fresh HTML & API bypass.
  */
 
-const CACHE_NAME = 'nse-tradingdesk-v3';
+const CACHE_NAME = 'nse-tradingdesk-v3.1';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/static/manifest.json',

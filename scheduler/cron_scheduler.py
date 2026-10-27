@@ -389,17 +389,21 @@ def scheduled_premarket_nifty_prediction_job():
 
         # STRICT HARD GATE PIPELINE: Trigger options strategy evaluation only after prediction lock
         if preds and preds.get("status") in ("OK", "LOCKED"):
-            try:
-                from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
-                logger.info("🎯 [08:45 AM Hard Gate Pipeline] Evaluating Weekly & Monthly Options Strategies from locked prediction...")
-                w_res = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades("WEEKLY", force_refresh=False)
-                m_res = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades("MONTHLY", force_refresh=False)
-                logger.info(
-                    f"🎯 [08:45 AM Strategy Hard Gate] Weekly: {w_res.get('status')} ({w_res.get('reason') or w_res.get('regime')}) | "
-                    f"Monthly: {m_res.get('status')} ({m_res.get('reason') or m_res.get('regime')})"
-                )
-            except Exception as e_opt:
-                logger.warning(f"08:45 AM Options Strategy Deployment notice: {e_opt}")
+            from execution.state_engine import state_engine
+            if not state_engine.is_auto_options_trading_enabled():
+                logger.info("⏸️ [08:45 AM Hard Gate Pipeline] Auto Options Trading is disabled (toggle OFF). Positional options skipped.")
+            else:
+                try:
+                    from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+                    logger.info("🎯 [08:45 AM Hard Gate Pipeline] Evaluating Weekly & Monthly Options Strategies from locked prediction...")
+                    w_res = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades("WEEKLY", force_refresh=False)
+                    m_res = weekly_monthly_options_strategy_engine.evaluate_and_execute_positional_trades("MONTHLY", force_refresh=False)
+                    logger.info(
+                        f"🎯 [08:45 AM Strategy Hard Gate] Weekly: {w_res.get('status')} ({w_res.get('reason') or w_res.get('regime')}) | "
+                        f"Monthly: {m_res.get('status')} ({m_res.get('reason') or m_res.get('regime')})"
+                    )
+                except Exception as e_opt:
+                    logger.warning(f"08:45 AM Options Strategy Deployment notice: {e_opt}")
 
         # Ingest Portfolio 3 Pre-Breakout Coils at 08:45 AM Pre-Market
         try:
@@ -435,6 +439,10 @@ def scheduled_intraday_options_entry_job():
     if not NSEMarketCalendar.is_trading_day(current_dt.date()):
         return
     try:
+        from execution.state_engine import state_engine
+        if not state_engine.is_auto_options_trading_enabled():
+            logger.info("⏸️ [09:20 AM Intraday Options Pipeline] Auto Options Trading is disabled (toggle OFF). Skipped.")
+            return
         from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
         logger.info("⚡ [09:20 AM Intraday Options Pipeline] Evaluating Intraday 5-Regime strategy...")
         res = intraday_options_strategy_engine.evaluate_and_execute_intraday_trades(force_refresh=False)
@@ -849,27 +857,31 @@ def scheduled_daily_prediction_training_job():
         logger.warning(f"03:40 PM Nifty Forecast Learning Job warning: {e_fc}")
 
 
-    try:
-        from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
-        opt_ml = intraday_options_strategy_engine.train_options_ml_model()
-        logger.info(
-            f"🎯 [03:40 PM Intraday Options ML Training] Samples: {opt_ml.get('total_samples', 0)}, "
-            f"Win Rate Accuracy: {opt_ml.get('win_rate_accuracy_pct', 0)}%, R²: {opt_ml.get('expectancy_r2', 0)}."
-        )
-    except Exception as e:
-        logger.warning(f"03:40 PM Intraday Options ML Training Job error: {e}")
+    from execution.state_engine import state_engine
+    if not state_engine.is_auto_options_trading_enabled():
+        logger.info("⏸️ [03:40 PM Options ML Training Job] Auto Options Trades is toggled OFF. Options ML training skipped.")
+    else:
+        try:
+            from engines.intraday_options_strategy_engine import intraday_options_strategy_engine
+            opt_ml = intraday_options_strategy_engine.train_options_ml_model()
+            logger.info(
+                f"🎯 [03:40 PM Intraday Options ML Training] Samples: {opt_ml.get('total_samples', 0)}, "
+                f"Win Rate Accuracy: {opt_ml.get('win_rate_accuracy_pct', 0)}%, R²: {opt_ml.get('expectancy_r2', 0)}."
+            )
+        except Exception as e:
+            logger.warning(f"03:40 PM Intraday Options ML Training Job error: {e}")
 
-    try:
-        from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
-        w_ml = weekly_monthly_options_strategy_engine.train_positional_options_ml_model("WEEKLY")
-        m_ml = weekly_monthly_options_strategy_engine.train_positional_options_ml_model("MONTHLY")
-        logger.info(
-            f"🎯 [03:40 PM Positional Options ML Training] "
-            f"Weekly Win Acc: {w_ml.get('win_rate_accuracy_pct', 0)}%, R²: {w_ml.get('expectancy_r2', 0)} | "
-            f"Monthly Win Acc: {m_ml.get('win_rate_accuracy_pct', 0)}%, R²: {m_ml.get('expectancy_r2', 0)}."
-        )
-    except Exception as e:
-        logger.warning(f"03:40 PM Positional Options ML Training Job error: {e}")
+        try:
+            from engines.weekly_monthly_options_strategy_engine import weekly_monthly_options_strategy_engine
+            w_ml = weekly_monthly_options_strategy_engine.train_positional_options_ml_model("WEEKLY")
+            m_ml = weekly_monthly_options_strategy_engine.train_positional_options_ml_model("MONTHLY")
+            logger.info(
+                f"🎯 [03:40 PM Positional Options ML Training] "
+                f"Weekly Win Acc: {w_ml.get('win_rate_accuracy_pct', 0)}%, R²: {w_ml.get('expectancy_r2', 0)} | "
+                f"Monthly Win Acc: {m_ml.get('win_rate_accuracy_pct', 0)}%, R²: {m_ml.get('expectancy_r2', 0)}."
+            )
+        except Exception as e:
+            logger.warning(f"03:40 PM Positional Options ML Training Job error: {e}")
 
 
 def scheduled_daily_moc_backup_job():
