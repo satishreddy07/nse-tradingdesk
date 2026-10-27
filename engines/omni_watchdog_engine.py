@@ -464,6 +464,19 @@ class OmniWatchdogEngine:
                 active_intraday_trades = 0
             conn.close()
 
+            # Dynamic Intraday Snapshot Gap Sentinel
+            if is_market_open and last_snap_time:
+                try:
+                    clean_ts = str(last_snap_time).replace(" IST", "").strip()
+                    last_dt = datetime.strptime(clean_ts[:19], "%Y-%m-%d %H:%M:%S")
+                    snap_age_sec = (now_dt.replace(tzinfo=None) - last_dt).total_seconds()
+                    if snap_age_sec > 1200: # > 20 mins gap during live market
+                        issues.append(f"Intraday snapshot gap detected: last capture was {int(snap_age_sec//60)}m ago at {last_snap_time}")
+                        if status == "HEALTHY":
+                            status = "DEGRADED"
+                except Exception:
+                    pass
+
             # 2. Check Market Breadth & Sector Divergence
             from execution.state_engine import state_engine
             sec_data = state_engine.get_kv("latest_sectoral_divergence") or {}
@@ -571,7 +584,11 @@ class OmniWatchdogEngine:
                 "active_intraday_trades": active_intraday_trades,
                 "moc_squareoff_enforced": active_intraday_trades == 0 if curr_time_str > "15:15" else True,
                 "tactical_walls": f"{put_wall} PE / {call_wall} CE (Gap: {wall_gap} pts)",
-                "delta_oi_flow": f"+{(net_pe_oi - net_ce_oi)/100000:.2f}L Net PE" if (net_pe_oi or net_ce_oi) else "0.00L",
+                "delta_oi_flow": (
+                    f"{'+' if (live_an.get('net_active_oi_diff_contracts') or (net_pe_oi - net_ce_oi)) >= 0 else ''}"
+                    f"{abs(live_an.get('net_active_oi_diff_contracts') or round((net_pe_oi - net_ce_oi)/(live_an.get('lot_size') or 65))) / 100000.0:.2f}L Cts "
+                    f"({'Net PE' if (live_an.get('net_active_oi_diff_contracts') or (net_pe_oi - net_ce_oi)) >= 0 else 'Net CE'})"
+                ) if (net_pe_oi or net_ce_oi) else "0.00L Cts",
                 "sector_breadth_pct": f"{sec_data.get('breadth_pct_green', 0)}% Green ({sec_source})",
                 "market_breadth_n500": f"{mkt_breadth.get('nifty500_advances', '--')} Adv / {mkt_breadth.get('nifty500_declines', '--')} Dec ({mkt_breadth.get('market_sentiment', 'NORMAL')})",
                 "intraday_ml_regime": intraday_regime_str,

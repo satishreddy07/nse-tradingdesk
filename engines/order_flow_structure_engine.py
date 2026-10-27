@@ -36,6 +36,8 @@ class OrderFlowStructureEngine:
         self._last_session_date: Optional[str] = None
         self._cache_ts = 0.0
         self._cached_payload: Optional[Dict[str, Any]] = None
+        self._last_hw_volumes: Dict[str, int] = {}
+        self._last_fut_vol: Optional[int] = None
 
     def get_full_order_flow_suite(self, force_refresh: bool = False) -> Dict[str, Any]:
         """Returns the complete order flow & market structure payload with 4s cache."""
@@ -256,6 +258,8 @@ class OrderFlowStructureEngine:
             if is_market_open:
                 self._last_cvd_value = 0.0
                 self._session_closed_cvd = None
+                self._last_hw_volumes = {}
+                self._last_fut_vol = None
             self._last_session_date = today_date_str
 
         atm_price = 0.0
@@ -346,7 +350,14 @@ class OrderFlowStructureEngine:
                         chg_pts = float(t.get("change_pts") or (ltp - float(t.get("prev_close") or ltp)))
                         sign = 1 if chg_pts > 0 else (-1 if chg_pts < 0 else 0)
                         hw_total_vol += vol
-                        hw_weighted_delta += (vol * sign * wt)
+                        prev_vol = self._last_hw_volumes.get(sym)
+                        if prev_vol is None:
+                            self._last_hw_volumes[sym] = vol
+                            delta_vol = 0
+                        else:
+                            delta_vol = max(0, vol - prev_vol)
+                            self._last_hw_volumes[sym] = vol
+                        hw_weighted_delta += (delta_vol * sign * wt)
                         hw_tracked_count += 1
                 except Exception:
                     pass
@@ -363,7 +374,14 @@ class OrderFlowStructureEngine:
                     f_ltp = float(f_tick.get("ltp") or 0.0)
                     f_chg = float(f_tick.get("change_pts") or 0.0)
                     f_sign = 1 if f_chg > 0 else (-1 if f_chg < 0 else 0)
-                    fut_delta = int(fut_vol * f_sign)
+                    prev_f_vol = self._last_fut_vol
+                    if prev_f_vol is None:
+                        self._last_fut_vol = fut_vol
+                        delta_f_vol = 0
+                    else:
+                        delta_f_vol = max(0, fut_vol - prev_f_vol)
+                        self._last_fut_vol = fut_vol
+                    fut_delta = int(delta_f_vol * f_sign)
             except Exception:
                 pass
 
@@ -372,13 +390,13 @@ class OrderFlowStructureEngine:
         if is_market_open:
             if not hasattr(self, "_last_traded_vol") or self._last_traded_vol == 0:
                 self._last_traded_vol = traded_vol_now
-            traded_delta = traded_vol_now - self._last_traded_vol
-            if traded_delta > 0 and (now_ts - self._last_accumulation_ts) >= 3.0:
+            traded_delta = max(0, traded_vol_now - self._last_traded_vol)
+            if (now_ts - self._last_accumulation_ts) >= 3.0:
                 # Flow sign determined by whether aggressive buys hit ask or sells hit bid
-                flow_sign = 1 if delta_now >= 0 else -1
+                flow_sign = 1 if delta_now >= 0 else (-1 if delta_now < 0 else 0)
                 options_component = traded_delta * flow_sign
-                # Normalized composite delta: combine ATM options flow + heavyweight delta
-                composite_step = options_component + (round(hw_weighted_delta / 1000.0) if hw_weighted_delta != 0 else 0)
+                # Normalized composite delta: combine ATM options flow + Nifty futures delta + heavyweight delta
+                composite_step = options_component + fut_delta + int(round(hw_weighted_delta))
                 self._last_cvd_value += composite_step
                 self._last_traded_vol = traded_vol_now
                 self._last_accumulation_ts = now_ts

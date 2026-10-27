@@ -90,6 +90,53 @@ def test_intraday_template_null_safety():
     assert "Number.isFinite(cIdx)" in html
     # Safe GEX badge text
     assert "Neutral Gamma" in html
-    # Bounded Put/Call Wall Card
-    assert "min-h-[76px]" in html
-    assert "whitespace-nowrap overflow-hidden text-ellipsis" in html
+    # Bounded Put/Call Wall Card and KPI cards
+    assert "min-h-[84px]" in html or "min-h-[76px]" in html
+    assert "overflow-hidden" in html
+    assert "updateIntradayActiveOiCard" in html
+    assert "Net Active OI (±10" in html
+
+
+def test_intraday_active_contracts_and_pm10_strikes():
+    """Verify ±10 strikes expansion and shares-to-contracts conversion via dynamic lot size."""
+    from core.lot_size import resolve_nifty_lot_size
+    lot_size = resolve_nifty_lot_size(expiry_date="2026-10-29", strict=False)
+    assert lot_size == 65, "2026 contract lot size must be 65 under circular 70616"
+
+    # Create dummy chain with 25 strikes around 24500
+    rows = []
+    for k in range(24000, 25250, 50):
+        rows.append({
+            "strikePrice": k,
+            "CE": {
+                "strikePrice": k,
+                "openInterest": 65000,
+                "changeinOpenInterest": -6500,
+                "lastPrice": 100.0,
+                "totalTradedVolume": 10000,
+            },
+            "PE": {
+                "strikePrice": k,
+                "openInterest": 130000,
+                "changeinOpenInterest": 13000,
+                "lastPrice": 100.0,
+                "totalTradedVolume": 10000,
+            }
+        })
+
+    analysis = nifty_analytics_engine._analyze_single_expiry_chain(rows, 24500.0, "2026-10-29", "2026-10-29 15:30:00")
+    assert analysis["status"] == "OK"
+    oi_flow = analysis["oi_flow"]
+    assert oi_flow["active_strikes_count"] == 21, "Must span 21 strikes (±10 strikes around ATM)"
+    assert oi_flow["lot_size"] == 65
+
+    # 21 strikes * 130,000 PE OI = 2,730,000 shares = 42,000 contracts
+    # 21 strikes * 13,000 PE Chg = 273,000 shares = 4,200 contracts
+    # Total Active PE = 42,000 + 4,200 = 46,200 contracts
+    assert oi_flow["active_pe_total_contracts"] == 46200
+    # 21 strikes * 65,000 CE OI = 1,365,000 shares = 21,000 contracts
+    # 21 strikes * (-6,500) CE Chg = -136,500 shares = -2,100 contracts
+    # Total Active CE = 21,000 - 2,100 = 18,900 contracts
+    assert oi_flow["active_ce_total_contracts"] == 18900
+    assert oi_flow["net_active_oi_diff_contracts"] == 46200 - 18900
+

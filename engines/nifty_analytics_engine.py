@@ -1053,6 +1053,7 @@ class NiftyAnalyticsEngine:
             ce_vol = int(ce.get("totalTradedVolume") or 0)
             if ce_vol < 0 or ce_vol > 500_000_000:
                 ce_vol = 0
+            ce_ltp = float(ce.get("lastPrice") or 0.0)
             ce_iv = float(ce.get("impliedVolatility") or 0.0)
             if ce_iv <= 0.0 and ce_ltp > 0 and spot_price > 0:
                 try:
@@ -1062,7 +1063,6 @@ class NiftyAnalyticsEngine:
                     ce_iv = kotak_neo_engine._calc_implied_vol(ce_ltp, spot_price, k, dte, is_call=True)
                 except Exception:
                     pass
-            ce_ltp = float(ce.get("lastPrice") or 0.0)
             ce_chg = float(ce.get("change") or 0.0)
             ce_pchg = float(ce.get("pChange") or 0.0)
             ce_buy_q = int(ce.get("totalBuyQuantity") or 0)
@@ -1080,6 +1080,7 @@ class NiftyAnalyticsEngine:
             pe_vol = int(pe.get("totalTradedVolume") or 0)
             if pe_vol < 0 or pe_vol > 500_000_000:
                 pe_vol = 0
+            pe_ltp = float(pe.get("lastPrice") or 0.0)
             pe_iv = float(pe.get("impliedVolatility") or 0.0)
             if pe_iv <= 0.0 and pe_ltp > 0 and spot_price > 0:
                 try:
@@ -1089,7 +1090,6 @@ class NiftyAnalyticsEngine:
                     pe_iv = kotak_neo_engine._calc_implied_vol(pe_ltp, spot_price, k, dte, is_call=False)
                 except Exception:
                     pass
-            pe_ltp = float(pe.get("lastPrice") or 0.0)
             pe_chg = float(pe.get("change") or 0.0)
             pe_pchg = float(pe.get("pChange") or 0.0)
             pe_buy_q = int(pe.get("totalBuyQuantity") or 0)
@@ -1158,10 +1158,10 @@ class NiftyAnalyticsEngine:
         overall_pcr = round(min(10.0, total_pe_oi / max(1, total_ce_oi)), 3)
         volume_pcr = round(min(10.0, total_pe_vol / max(1, total_ce_vol)), 3)
 
-        # 2. Near-ATM (±5 strikes) & Exact ATM (±1 strike) & Active Window (±8 strikes)
+        # 2. Near-ATM (±5 strikes), Exact ATM (±1 strike), and Active Window (±10 strikes / ±500 pts)
         near_slice = strikes_data[max(0, atm_idx - 5): min(len(strikes_data), atm_idx + 6)]
         atm_slice = strikes_data[max(0, atm_idx - 1): min(len(strikes_data), atm_idx + 2)]
-        active_slice = strikes_data[max(0, atm_idx - 8): min(len(strikes_data), atm_idx + 9)]
+        active_slice = strikes_data[max(0, atm_idx - 10): min(len(strikes_data), atm_idx + 11)]
 
         near_ce_oi = sum(s["ce_oi"] for s in near_slice)
         near_pe_oi = sum(s["pe_oi"] for s in near_slice)
@@ -1176,6 +1176,31 @@ class NiftyAnalyticsEngine:
         pos_ce_chg = sum(max(0, s["ce_chg_oi"]) for s in active_slice)
         pos_pe_chg = sum(max(0, s["pe_chg_oi"]) for s in active_slice)
         chg_oi_pcr = round(min(10.0, pos_pe_chg / max(1, pos_ce_chg)), 3)
+
+        # Active Window (±10 strikes) Totals: Shares & Exchange Contract equivalents
+        active_ce_oi = sum(s["ce_oi"] for s in active_slice)
+        active_pe_oi = sum(s["pe_oi"] for s in active_slice)
+
+        # Regulatory Dynamic Lot Size Resolution (core/lot_size.py)
+        chain_lot_size = resolve_nifty_lot_size(expiry_date=expiry_label, strict=False) or 65
+
+        # Authoritative Active Positioning: (OI + ΔOI) across ±10 strikes
+        active_pe_total_shares = active_pe_oi + near_pe_chg
+        active_ce_total_shares = active_ce_oi + near_ce_chg
+        active_total_diff_shares = active_pe_total_shares - active_ce_total_shares
+
+        # Authoritative Active Contracts (shares divided by dynamic lot size)
+        active_pe_total_contracts = round(active_pe_total_shares / chain_lot_size)
+        active_ce_total_contracts = round(active_ce_total_shares / chain_lot_size)
+        active_total_diff_contracts = active_pe_total_contracts - active_ce_total_contracts
+
+        # Fresh ΔOI in Contracts
+        active_pe_chg_contracts = round(near_pe_chg / chain_lot_size)
+        active_ce_chg_contracts = round(near_ce_chg / chain_lot_size)
+        active_chg_diff_contracts = active_pe_chg_contracts - active_ce_chg_contracts
+
+        active_pe_oi_contracts = round(active_pe_oi / chain_lot_size)
+        active_ce_oi_contracts = round(active_ce_oi / chain_lot_size)
 
         # 3. ATM Straddle & Implied Range
         atm_row = strikes_data[atm_idx]
@@ -1351,14 +1376,31 @@ class NiftyAnalyticsEngine:
                 "net_near_chg_oi_diff": near_pe_chg - near_ce_chg,
                 "near_ce_chg_total": near_ce_chg,
                 "near_pe_chg_total": near_pe_chg,
+                "lot_size": chain_lot_size,
+                "net_active_oi_diff_contracts": active_total_diff_contracts,
+                "net_oi_chg_diff_contracts": active_chg_diff_contracts,
+                "active_pe_total_contracts": active_pe_total_contracts,
+                "active_ce_total_contracts": active_ce_total_contracts,
             },
             "oi_flow": {
+                "lot_size": chain_lot_size,
                 "net_pe_oi_chg": near_pe_chg,
                 "net_ce_oi_chg": near_ce_chg,
                 "pos_pe_chg": pos_pe_chg,
                 "pos_ce_chg": pos_ce_chg,
                 "chg_oi_pcr": chg_oi_pcr,
                 "active_strikes_count": len(active_slice),
+                "active_pe_oi_contracts": active_pe_oi_contracts,
+                "active_ce_oi_contracts": active_ce_oi_contracts,
+                "net_pe_oi_chg_contracts": active_pe_chg_contracts,
+                "net_ce_oi_chg_contracts": active_ce_chg_contracts,
+                "net_oi_chg_diff_contracts": active_chg_diff_contracts,
+                "active_pe_total_contracts": active_pe_total_contracts,
+                "active_ce_total_contracts": active_ce_total_contracts,
+                "net_active_oi_diff_contracts": active_total_diff_contracts,
+                "active_pe_total_shares": active_pe_total_shares,
+                "active_ce_total_shares": active_ce_total_shares,
+                "net_active_oi_diff_shares": active_total_diff_shares,
             },
             "totals": {
                 "total_ce_oi": total_ce_oi,
@@ -2162,6 +2204,14 @@ class NiftyAnalyticsEngine:
         snap_meta["source"] = source
         snap_meta["data_source"] = "LIVE"
         snap_meta["is_simulated"] = False
+        snap_lot = resolve_nifty_lot_size(expiry_date=w.get("expiry"), strict=False) or 65
+        snap_meta["lot_size"] = snap_lot
+        snap_meta["net_pe_oi_chg_contracts"] = round(net_pe_chg / snap_lot)
+        snap_meta["net_ce_oi_chg_contracts"] = round(net_ce_chg / snap_lot)
+        snap_meta["net_oi_chg_diff_contracts"] = round((net_pe_chg - net_ce_chg) / snap_lot)
+        snap_meta["net_active_oi_diff_contracts"] = round(vol_info.get("net_active_oi_diff_contracts", round((net_pe_chg - net_ce_chg) / snap_lot)))
+        snap_meta["active_pe_total_contracts"] = vol_info.get("active_pe_total_contracts", round(net_pe_chg / snap_lot))
+        snap_meta["active_ce_total_contracts"] = vol_info.get("active_ce_total_contracts", round(net_ce_chg / snap_lot))
         oi_diff_lakhs = snap_meta.get("oi_diff_lakhs", round((net_pe_chg - net_ce_chg) / 100000.0, 2))
 
         with state_engine._lock:
@@ -2746,19 +2796,38 @@ class NiftyAnalyticsEngine:
         put_wall = walls_and_pain.get("put_wall_1") or latest.get("put_wall")
         max_pain = walls_and_pain.get("max_pain") or latest.get("max_pain")
 
-        # Extract live active window ±8 strikes fresh ΔOI directly from strikes or oi_flow / volatility_and_gex
+        # Extract live active window ±10 strikes (±500 pts) fresh ΔOI & Total Active Contracts
+        weekly_exp = w_chain.get("expiry") or (latest.get("expiry_date") if latest else None)
+        contract_lot_size = resolve_nifty_lot_size(expiry_date=weekly_exp, strict=False) or 65
         if strikes:
             cur_atm = int(round(spot_p / 50.0) * 50) if spot_p > 0 else 0
-            act_strikes = [s for s in strikes if abs(int(s.get("strike", 0)) - cur_atm) <= 400]
+            act_strikes = [s for s in strikes if abs(int(s.get("strike", 0)) - cur_atm) <= 500]
             if act_strikes:
+                act_pe_oi = sum(int(s.get("pe_oi") or 0) for s in act_strikes)
+                act_ce_oi = sum(int(s.get("ce_oi") or 0) for s in act_strikes)
                 net_pe_oi_chg = sum(int(s.get("pe_chg_oi") or 0) for s in act_strikes)
                 net_ce_oi_chg = sum(int(s.get("ce_chg_oi") or 0) for s in act_strikes)
             else:
+                act_pe_oi = int(w_chain.get("totals", {}).get("total_pe_oi") or 0)
+                act_ce_oi = int(w_chain.get("totals", {}).get("total_ce_oi") or 0)
                 net_pe_oi_chg = int(w_chain.get("oi_flow", {}).get("net_pe_oi_chg") or w_chain.get("volatility_and_gex", {}).get("near_pe_chg_total") or latest.get("net_pe_oi_chg") or 0)
                 net_ce_oi_chg = int(w_chain.get("oi_flow", {}).get("net_ce_oi_chg") or w_chain.get("volatility_and_gex", {}).get("near_ce_chg_total") or latest.get("net_ce_oi_chg") or 0)
         else:
+            act_pe_oi = int(w_chain.get("totals", {}).get("total_pe_oi") or 0)
+            act_ce_oi = int(w_chain.get("totals", {}).get("total_ce_oi") or 0)
             net_pe_oi_chg = int(w_chain.get("oi_flow", {}).get("net_pe_oi_chg") or w_chain.get("volatility_and_gex", {}).get("near_pe_chg_total") or latest.get("net_pe_oi_chg") or 0)
             net_ce_oi_chg = int(w_chain.get("oi_flow", {}).get("net_ce_oi_chg") or w_chain.get("volatility_and_gex", {}).get("near_ce_chg_total") or latest.get("net_ce_oi_chg") or 0)
+
+        # Authoritative Active Positioning: (OI + ΔOI) across ±10 strikes
+        act_pe_total_shares = act_pe_oi + net_pe_oi_chg
+        act_ce_total_shares = act_ce_oi + net_ce_oi_chg
+        act_pe_total_contracts = round(act_pe_total_shares / contract_lot_size)
+        act_ce_total_contracts = round(act_ce_total_shares / contract_lot_size)
+        net_active_oi_diff_contracts = act_pe_total_contracts - act_ce_total_contracts
+
+        net_pe_oi_chg_contracts = round(net_pe_oi_chg / contract_lot_size)
+        net_ce_oi_chg_contracts = round(net_ce_oi_chg / contract_lot_size)
+        net_oi_chg_diff_contracts = net_pe_oi_chg_contracts - net_ce_oi_chg_contracts
 
         atm_iv = float(
             w_chain.get("volatility_and_gex", {}).get("atm_iv")
@@ -2788,8 +2857,13 @@ class NiftyAnalyticsEngine:
             "max_pain": max_pain,
             "net_pe_oi_chg": net_pe_oi_chg,
             "net_ce_oi_chg": net_ce_oi_chg,
-            "atm_iv": atm_iv,
-            "iv_skew": iv_skew,
+            "lot_size": contract_lot_size,
+            "net_pe_oi_chg_contracts": net_pe_oi_chg_contracts,
+            "net_ce_oi_chg_contracts": net_ce_oi_chg_contracts,
+            "net_oi_chg_diff_contracts": net_oi_chg_diff_contracts,
+            "active_pe_total_contracts": act_pe_total_contracts,
+            "active_ce_total_contracts": act_ce_total_contracts,
+            "net_active_oi_diff_contracts": net_active_oi_diff_contracts,
             "atm_iv": atm_iv,
             "iv_skew": iv_skew,
             "synced_at_ist": format_ist(),
@@ -2878,6 +2952,13 @@ class NiftyAnalyticsEngine:
             "max_pain": max_pain,
             "net_pe_oi_chg": net_pe_oi_chg,
             "net_ce_oi_chg": net_ce_oi_chg,
+            "lot_size": contract_lot_size,
+            "net_pe_oi_chg_contracts": net_pe_oi_chg_contracts,
+            "net_ce_oi_chg_contracts": net_ce_oi_chg_contracts,
+            "net_oi_chg_diff_contracts": net_oi_chg_diff_contracts,
+            "active_pe_total_contracts": act_pe_total_contracts,
+            "active_ce_total_contracts": act_ce_total_contracts,
+            "net_active_oi_diff_contracts": net_active_oi_diff_contracts,
             "atm_iv": atm_iv,
             "iv_skew": iv_skew,
             "spot_from_open": spot_from_open,

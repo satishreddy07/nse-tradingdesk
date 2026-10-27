@@ -4261,10 +4261,10 @@
           </div>
           <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
             <div>
-              <div class="text-[10px] font-mono uppercase text-blue-400" title="Net Option Writing Delta across ±8 active strikes from ATM = PE Change in OI minus CE Change in OI">Fresh Intraday ΔOI (±8)</div>
+              <div class="text-[10px] font-mono uppercase text-blue-400" title="Net Option Writing Delta across ±8 active strikes from ATM = PE Change in OI minus CE Change in OI">Net Active OI (±10 Strikes)</div>
               <div id="intra-kpi-oiflow" class="text-base sm:text-lg font-mono font-bold text-white mt-0.5 truncate">--</div>
             </div>
-            <div id="intra-kpi-oiflow-sub" class="text-[10px] text-slate-400 font-mono mt-0.5 truncate" title="PE ΔOI minus CE ΔOI">PE ΔOI vs CE ΔOI</div>
+            <div id="intra-kpi-oiflow-sub" class="text-[10px] text-slate-400 font-mono mt-0.5 truncate" title="PE ΔOI minus CE ΔOI">PE vs CE Active Contracts (±10)</div>
           </div>
           <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
             <div>
@@ -4738,7 +4738,7 @@
                 <th class="p-3 w-[95px] overflow-hidden whitespace-nowrap">Fresh ΔOI PCR</th>
                 <th class="p-3 w-[110px] overflow-hidden whitespace-nowrap">Put / Call Wall</th>
                 <th class="p-3 w-[80px] overflow-hidden whitespace-nowrap">Max Pain</th>
-                <th class="p-3 w-[110px] overflow-hidden whitespace-nowrap">Net PE vs CE ΔOI</th>
+                <th class="p-3 w-[110px] overflow-hidden whitespace-nowrap" title="Authoritative Net Active Contracts across active window">Net Active Cts</th>
                 <th class="p-3 w-[95px] overflow-hidden whitespace-nowrap">IV / Skew</th>
                 <th class="p-3 text-right w-[175px] overflow-hidden whitespace-nowrap">Intraday Regime</th>
               </tr>
@@ -10610,6 +10610,35 @@
       }
     };
 
+    // Unified Intraday Active Contracts State Tracker (Guarantees zero flicker, zero race conditions)
+    window._latestIntradayOiState = { peTotal: 0, ceTotal: 0, netDiff: 0, lotSize: 65 };
+    window.updateIntradayActiveOiCard = function(peTotalCts, ceTotalCts, netDiffCts, lotSize) {
+      const s = window._latestIntradayOiState;
+      if (lotSize) s.lotSize = Number(lotSize);
+      if (peTotalCts !== undefined && peTotalCts !== null) s.peTotal = Number(peTotalCts);
+      if (ceTotalCts !== undefined && ceTotalCts !== null) s.ceTotal = Number(ceTotalCts);
+      if (netDiffCts !== undefined && netDiffCts !== null) s.netDiff = Number(netDiffCts);
+      else s.netDiff = s.peTotal - s.ceTotal;
+
+      const oiFlowEl = document.getElementById('intra-kpi-oiflow');
+      const oiFlowSub = document.getElementById('intra-kpi-oiflow-sub');
+      if (oiFlowEl) {
+        const absDiffLakhs = Math.abs(s.netDiff) / 100000.0;
+        const flowLabel = s.netDiff >= 0
+          ? `+${absDiffLakhs.toFixed(2)}L Contracts Net PE`
+          : `+${absDiffLakhs.toFixed(2)}L Contracts Net CE`;
+        if (oiFlowEl.innerText !== flowLabel) oiFlowEl.innerText = flowLabel;
+        const targetCls = `text-base sm:text-lg font-mono font-bold mt-0.5 truncate ${s.netDiff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+        if (oiFlowEl.className !== targetCls) oiFlowEl.className = targetCls;
+        oiFlowEl.title = `Net Active: ${s.netDiff >= 0 ? '+' : ''}${s.netDiff.toLocaleString('en-IN')} Contracts (Lot Size: ${s.lotSize})`;
+      }
+      if (oiFlowSub) {
+        const subTxt = `PE: ${(s.peTotal / 100000.0).toFixed(2)}L vs CE: ${(s.ceTotal / 100000.0).toFixed(2)}L Contracts (±10)`;
+        if (oiFlowSub.innerText !== subTxt) oiFlowSub.innerText = subTxt;
+        oiFlowSub.title = `PE Active: ${s.peTotal.toLocaleString('en-IN')} | CE Active: ${s.ceTotal.toLocaleString('en-IN')} Contracts (±10 strikes)`;
+      }
+    };
+
     async function pollLiveSpotTick() {
       if (document.hidden) return;
       try {
@@ -11159,21 +11188,19 @@
       const maxPain = synced.max_pain || liveAn.max_pain || latest.max_pain || '--';
       updateIntradayWallsCard(putWall, callWall, maxPain);
 
-      const peChg = Number(synced.net_pe_oi_chg !== undefined ? synced.net_pe_oi_chg : (liveAn.net_pe_oi_chg !== undefined ? liveAn.net_pe_oi_chg : (latest.net_pe_oi_chg || 0)));
-      const ceChg = Number(synced.net_ce_oi_chg !== undefined ? synced.net_ce_oi_chg : (liveAn.net_ce_oi_chg !== undefined ? liveAn.net_ce_oi_chg : (latest.net_ce_oi_chg || 0)));
-      const netFlowLakhs = (peChg - ceChg) / 100000.0;
-      const oiFlowEl = document.getElementById('intra-kpi-oiflow');
-      const oiFlowSub = document.getElementById('intra-kpi-oiflow-sub');
-      if (oiFlowEl) {
-        const absFlow = Math.abs(netFlowLakhs);
-        const flowLabel = netFlowLakhs >= 0 ? `+${absFlow.toFixed(2)}L Net PE` : `+${absFlow.toFixed(2)}L Net CE`;
-        if (oiFlowEl.innerText !== flowLabel) oiFlowEl.innerText = flowLabel;
-        oiFlowEl.className = `text-base sm:text-lg font-mono font-bold mt-1 truncate ${netFlowLakhs >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      const lotSize = Number(synced.lot_size || (data.oi_flow && data.oi_flow.lot_size) || 65);
+      let peActiveContracts = synced.active_pe_total_contracts;
+      let ceActiveContracts = synced.active_ce_total_contracts;
+      let netActiveContracts = synced.net_active_oi_diff_contracts;
+
+      if (peActiveContracts === undefined || netActiveContracts === undefined) {
+        const peChg = Number(synced.net_pe_oi_chg !== undefined ? synced.net_pe_oi_chg : (liveAn.net_pe_oi_chg !== undefined ? liveAn.net_pe_oi_chg : (latest.net_pe_oi_chg || 0)));
+        const ceChg = Number(synced.net_ce_oi_chg !== undefined ? synced.net_ce_oi_chg : (liveAn.net_ce_oi_chg !== undefined ? liveAn.net_ce_oi_chg : (latest.net_ce_oi_chg || 0)));
+        peActiveContracts = Math.round(peChg / lotSize);
+        ceActiveContracts = Math.round(ceChg / lotSize);
+        netActiveContracts = peActiveContracts - ceActiveContracts;
       }
-      if (oiFlowSub) {
-        const subTxt = `PE: ${(peChg / 100000).toFixed(1)}L vs CE: ${(ceChg / 100000).toFixed(1)}L (Writing Δ)`;
-        if (oiFlowSub.innerText !== subTxt) oiFlowSub.innerText = subTxt;
-      }
+      updateIntradayActiveOiCard(peActiveContracts, ceActiveContracts, netActiveContracts, lotSize);
 
       const regEl = document.getElementById('intra-kpi-regime');
       const ivEl = document.getElementById('intra-kpi-iv');
@@ -11550,7 +11577,9 @@
             const decay = Number(sm.straddle_decay_pct !== undefined ? sm.straddle_decay_pct : (s.straddle_decay_pct || 0));
             const npcr = Number(s.near_atm_pcr || 0);
             const pcrCol = npcr >= 1.1 ? 'text-emerald-400' : (npcr <= 0.9 ? 'text-rose-400' : 'text-amber-300');
-            const netLakhs = ((Number(s.net_pe_oi_chg || 0) - Number(s.net_ce_oi_chg || 0)) / 100000.0);
+            const snapLot = Number(sm.lot_size || 65);
+            const netCts = sm.net_active_oi_diff_contracts !== undefined ? Number(sm.net_active_oi_diff_contracts) : Math.round((Number(s.net_pe_oi_chg || 0) - Number(s.net_ce_oi_chg || 0)) / snapLot);
+            const netCtsLakhs = netCts / 100000.0;
 
             // Dynamic 15m Velocity & Volatility-Normalized Z-Score
             const deltaSpot = sm.delta_spot_15m !== undefined ? Number(sm.delta_spot_15m) : (s.delta_spot_15m !== undefined ? Number(s.delta_spot_15m) : 0);
@@ -11606,7 +11635,7 @@
                 <td class="p-3 font-bold ${Number(s.chg_oi_pcr || 1) >= 1.05 ? 'text-emerald-400' : 'text-rose-400'} w-[95px] overflow-hidden whitespace-nowrap">${Number(s.chg_oi_pcr || 0).toFixed(2)}</td>
                 <td class="p-3 w-[110px] overflow-hidden whitespace-nowrap"><span class="text-emerald-400 font-bold">${s.put_wall}P</span> / <span class="text-rose-400 font-bold">${s.call_wall}C</span></td>
                 <td class="p-3 text-purple-300 font-bold w-[80px] overflow-hidden whitespace-nowrap">${s.max_pain}</td>
-                <td class="p-3 font-bold ${netLakhs >= 0 ? 'text-emerald-400' : 'text-rose-400'} w-[110px] overflow-hidden whitespace-nowrap">${netLakhs >= 0 ? '+' : ''}${netLakhs.toFixed(2)}L</td>
+                <td class="p-3 font-bold ${netCts >= 0 ? \'text-emerald-400\' : \'text-rose-400\'} w-[110px] overflow-hidden whitespace-nowrap" title="Net Active Contracts: ${netCts >= 0 ? \'+\' : \'\'}${netCts.toLocaleString(\'en-IN\')}">${netCts >= 0 ? \'+\' : \'\'}${netCtsLakhs.toFixed(2)}L Cts</td>
                 <td class="p-3 text-slate-300 w-[95px] overflow-hidden whitespace-nowrap">${Number(s.atm_iv || 0).toFixed(1)}% (${Number(s.iv_skew || 0) >= 0 ? '+' : ''}${Number(s.iv_skew || 0).toFixed(2)})</td>
                 <td class="p-3 text-right w-[175px] overflow-hidden whitespace-nowrap"><span class="quant-badge px-2.5 py-1 rounded text-[10px] border whitespace-nowrap font-bold ${badgeCls}">${badgeLabel}</span></td>
               </tr>
@@ -27527,6 +27556,10 @@
 
               if (intra.put_wall || intra.call_wall || intra.max_pain) {
                 updateIntradayWallsCard(intra.put_wall, intra.call_wall, intra.max_pain);
+              }
+
+              if (intra.active_pe_total_contracts !== undefined || intra.net_active_oi_diff_contracts !== undefined) {
+                updateIntradayActiveOiCard(intra.active_pe_total_contracts, intra.active_ce_total_contracts, intra.net_active_oi_diff_contracts, intra.lot_size);
               }
 
               if (intra.market_state) {
