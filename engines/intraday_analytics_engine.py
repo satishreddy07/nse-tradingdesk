@@ -104,12 +104,34 @@ class IntradayAnalyticsEngine:
                 time.sleep(0.3)
         return ticker, None, None
 
+    @staticmethod
+    def _calc_bs_gamma(spot: float, strike: float, T: float, iv: float) -> float:
+        """
+        Analytical Black-Scholes Gamma d2C/dS2 = phi(d1) / (S * sigma * sqrt(T)).
+        Returns 0.0 for invalid boundary conditions.
+        """
+        if spot <= 0 or strike <= 0 or T <= 0 or iv <= 0:
+            return 0.0
+        try:
+            d1 = (math.log(spot / strike) + 0.5 * (iv ** 2) * T) / (iv * math.sqrt(T))
+            pdf_d1 = (1.0 / math.sqrt(2.0 * math.pi)) * math.exp(-0.5 * (d1 ** 2))
+            return pdf_d1 / (spot * iv * math.sqrt(T))
+        except (ValueError, OverflowError, ZeroDivisionError):
+            return 0.0
+
     def compute_vwap_and_orb(self) -> Dict[str, Any]:
         """
-        Computes real-time Intraday VWAP (with empirical standard deviation dispersion bands),
-        15m & 30m Opening Range Breakout (ORB) levels, and 14-period Choppiness Index (CHOP)
-        dynamically derived from authentic live intraday price bars.
-        Strictly zero synthetic constants or hardcoded fallbacks.
+        Computes real-time Intraday VWAP, spot distance, percentage distance,
+        and opening-range boundaries (15m & 30m ORB) from authentic live intraday price bars.
+
+        Mathematical Specifications:
+        - VWAP Distance = Underlying Price - VWAP
+        - VWAP Distance Percentage = (Underlying Price - VWAP) / VWAP * 100
+        - ORB Width = ORB High - ORB Low
+        - 15-minute ORB Window: 09:15 to 09:30 IST (candle timestamps: 09:15 <= t < 09:30 IST)
+        - 30-minute ORB Window: 09:15 to 09:45 IST (candle timestamps: 09:15 <= t < 09:45 IST)
+        - Inside/Outside Status: Evaluated strictly against boundaries without synthetic threshold offsets.
+        - Synchronized Price: Single synchronized underlying spot price and timestamp across all metrics.
         """
         today_str = now_ist().strftime("%Y-%m-%d")
         kotak_spot = None
@@ -142,27 +164,29 @@ class IntradayAnalyticsEngine:
         if active_candles:
             current_spot = float(kotak_spot) if (kotak_spot and float(kotak_spot) > 0) else float(active_candles[-1]["close"])
             source = "KOTAK_NEO_STREAM" if kotak_spot else ("LIVE_INTRADAY_CANDLES" if today_candles else "MASTER_DB_PERSISTED_SNAPSHOT")
+            candle_ts = active_candles[-1].get("date") or format_ist()
 
             # Dynamic Intraday VWAP from latest candle
             vwap = float(active_candles[-1].get("vwap") or current_spot)
             diff_pts = round(current_spot - vwap, 2)
-            diff_pct = round((diff_pts / max(1.0, vwap)) * 100.0, 2)
+            diff_pct = round((diff_pts / max(1.0, vwap)) * 100.0, 4)
 
             # Dynamic Empirical Standard Deviation Bands around VWAP
             close_diffs = [float(c["close"]) - float(c.get("vwap") or vwap) for c in active_candles]
             std_dev = float(np.std(close_diffs)) if len(close_diffs) >= 3 else max(15.0, vwap * 0.003)
             std_dev = max(10.0, std_dev)
 
-            # Dynamic 15m ORB [09:15 - 09:30 IST]
-            orb_15_candles = [c for c in active_candles if "09:15" <= str(c.get("display_time", ""))[:5] <= "09:30"]
+            # Dynamic 15m ORB [09:15 - 09:30 IST)
+            # Candle timestamps represent bar start: 09:15, 09:20, 09:25 (strictly < 09:30)
+            orb_15_candles = [c for c in active_candles if "09:15" <= str(c.get("display_time", ""))[:5] < "09:30"]
             if orb_15_candles:
                 orb_15_hi = round(float(max(c["high"] for c in orb_15_candles)), 2)
                 orb_15_lo = round(float(min(c["low"] for c in orb_15_candles)), 2)
                 orb_15_rng = round(orb_15_hi - orb_15_lo, 2)
-                if current_spot > orb_15_hi + 5.0:
-                    orb_15_stat = "BULLISH_EXPANSION_ABOVE_ORB_HIGH"
-                elif current_spot < orb_15_lo - 5.0:
-                    orb_15_stat = "BEARISH_BREAKDOWN_BELOW_ORB_LOW"
+                if current_spot > orb_15_hi:
+                    orb_15_stat = "EXPANSION_ABOVE_ORB_HIGH"
+                elif current_spot < orb_15_lo:
+                    orb_15_stat = "BREAKDOWN_BELOW_ORB_LOW"
                 else:
                     orb_15_stat = "INSIDE_OPENING_RANGE (Consolidation)"
             else:
@@ -171,16 +195,17 @@ class IntradayAnalyticsEngine:
                 orb_15_rng = round(orb_15_hi - orb_15_lo, 2)
                 orb_15_stat = "FORMING_OPENING_RANGE"
 
-            # Dynamic 30m ORB [09:15 - 09:45 IST]
-            orb_30_candles = [c for c in active_candles if "09:15" <= str(c.get("display_time", ""))[:5] <= "09:45"]
+            # Dynamic 30m ORB [09:15 - 09:45 IST)
+            # Candle timestamps represent bar start: 09:15 through 09:40 (strictly < 09:45)
+            orb_30_candles = [c for c in active_candles if "09:15" <= str(c.get("display_time", ""))[:5] < "09:45"]
             if orb_30_candles:
                 orb_30_hi = round(float(max(c["high"] for c in orb_30_candles)), 2)
                 orb_30_lo = round(float(min(c["low"] for c in orb_30_candles)), 2)
                 orb_30_rng = round(orb_30_hi - orb_30_lo, 2)
-                if current_spot > orb_30_hi + 5.0:
-                    orb_30_stat = "BULLISH_EXPANSION_ABOVE_ORB_HIGH"
-                elif current_spot < orb_30_lo - 5.0:
-                    orb_30_stat = "BEARISH_BREAKDOWN_BELOW_ORB_LOW"
+                if current_spot > orb_30_hi:
+                    orb_30_stat = "EXPANSION_ABOVE_ORB_HIGH"
+                elif current_spot < orb_30_lo:
+                    orb_30_stat = "BREAKDOWN_BELOW_ORB_LOW"
                 else:
                     orb_30_stat = "INSIDE_OPENING_RANGE (Consolidation)"
             else:
@@ -227,6 +252,7 @@ class IntradayAnalyticsEngine:
             res = {
                 "status": "OK",
                 "timestamp_ist": format_ist(),
+                "exchange_timestamp": candle_ts,
                 "source": source,
                 "session_date": today_str,
                 "spot_price": round(current_spot, 2),
@@ -258,7 +284,7 @@ class IntradayAnalyticsEngine:
                 res["source"] = "KOTAK_NEO_STREAM"
                 vwap = float(res.get("vwap") or current_spot)
                 diff_pts = round(current_spot - vwap, 2)
-                diff_pct = round((diff_pts / max(1.0, vwap)) * 100.0, 2)
+                diff_pct = round((diff_pts / max(1.0, vwap)) * 100.0, 4)
                 res["vwap_distance_pts"] = diff_pts
                 res["vwap_distance_pct"] = diff_pct
             else:
@@ -294,8 +320,26 @@ class IntradayAnalyticsEngine:
 
     def compute_gamma_exposure_and_flip(self, weekly_chain_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Computes Black-Scholes strike-by-strike Gamma Exposure (GEX), Total Market Net GEX,
+        Computes Black-Scholes strike-by-strike Gamma Exposure (GEX), Aggregate Net GEX,
         and the Zero-Gamma Flip Level from live option chain strikes.
+
+        Mathematical Specifications:
+        - Gamma Formula: Black-Scholes Gamma d2C/dS2 = phi(d1) / (S * sigma * sqrt(T))
+        - Sign Convention: Market makers assumed long calls (+), short puts (-)
+        - Dimensional Scaling:
+            GEX_Cr = (0.01 * S^2 * Gamma * OI_shares) / 10^7 = (S^2 * Gamma * OI_shares) / 10^9
+            Call GEX Cr = +(S^2 * Gamma_call * CE_OI) / 10^9
+            Put GEX Cr = -(S^2 * Gamma_put * PE_OI) / 10^9
+            Net GEX Cr = Call GEX Cr + Put GEX Cr
+        - Zero-Gamma Flip Level S*:
+            The candidate spot price S* where Aggregate Net GEX(S*) = 0.
+            Solved via candidate price grid search over [min_strike - 300, max_strike + 300]
+            with linear interpolation on zero-crossings.
+            Selection Rule: If multiple roots exist, choose the root closest to current spot S.
+            If no root exists, return None (Zero-gamma level unavailable). Never invent a root.
+        - Attribution Cautious Language:
+            Calculates an empirical model estimate of aggregate option gamma inferred from open interest.
+            Open interest reflects market-wide contracts and does not identify actual dealer positions.
         """
         spot = float(weekly_chain_data.get("spot_price") or 0.0)
         if spot <= 0:
@@ -308,22 +352,41 @@ class IntradayAnalyticsEngine:
             return {
                 "status": "DATA_NOT_AVAILABLE",
                 "message": "Live spot price unavailable for gamma exposure computation",
-                "spot_price": None
+                "spot_price": None,
+                "zero_gamma_flip_level": None,
+                "spot_vs_flip_pts": None,
+                "market_gex_regime": "NEUTRAL_GAMMA",
+                "inferred_volatility_regime": "MODEL_INFERRED_NEUTRAL",
+                "estimated_net_gex_sign": "NEUTRAL",
+                "total_call_gex_cr": 0.0,
+                "total_put_gex_cr": 0.0,
+                "total_net_gex_cr": 0.0,
+                "max_gamma_strike": None,
+                "zero_gamma_selection_rule": "NO_DATA",
+                "active_strikes_gex": []
             }
-        strikes = weekly_chain_data.get("strikes", [])
-        if not strikes:
+
+        raw_strikes = weekly_chain_data.get("strikes", [])
+        if not raw_strikes:
             return {
                 "status": "UNAVAILABLE",
                 "spot_price": spot,
-                "zero_gamma_flip_level": spot,
+                "zero_gamma_flip_level": None,
+                "spot_vs_flip_pts": None,
                 "market_gex_regime": "NEUTRAL_GAMMA",
+                "inferred_volatility_regime": "MODEL_INFERRED_NEUTRAL",
+                "estimated_net_gex_sign": "NEUTRAL",
+                "total_call_gex_cr": 0.0,
+                "total_put_gex_cr": 0.0,
                 "total_net_gex_cr": 0.0,
                 "max_gamma_strike": int(round(spot / 50.0) * 50),
+                "zero_gamma_selection_rule": "NO_STRIKES_DATA",
+                "market_gex_note": "Option chain strikes data unavailable. Zero-gamma level unavailable.",
+                "active_strikes_gex": []
             }
 
-        # Estimate days to expiry T in years
-        # If expiry string is available (e.g., '16-Oct-2026') calculate days, default 3 days
-        expiry_str = str(weekly_chain_data.get("expiry", "") or "").strip()
+        # Estimate time to expiry T in years (until 15:30 IST on expiry date)
+        expiry_str = str(weekly_chain_data.get("expiry", "") or weekly_chain_data.get("expiry_date", "") or "").strip()
         days_to_exp = 3.0
         try:
             if expiry_str:
@@ -335,87 +398,157 @@ class IntradayAnalyticsEngine:
                     except ValueError:
                         pass
                 if exp_dt:
-                    curr_dt = now_ist().date()
-                    diff_d = (exp_dt - curr_dt).days
-                    if diff_d > 0:
-                        days_to_exp = float(diff_d)
+                    now_t = now_ist()
+                    exp_target = datetime.datetime.combine(exp_dt, datetime.time(15, 30, 0), tzinfo=IST)
+                    diff_seconds = (exp_target - now_t).total_seconds()
+                    if diff_seconds > 0:
+                        days_to_exp = max(0.01, diff_seconds / 86400.0)
                     else:
-                        # Expiry day: compute exact fraction of trading hours remaining
-                        now_t = now_ist()
-                        mkt_close = now_t.replace(hour=15, minute=30, second=0, microsecond=0)
-                        rem_seconds = max(300, (mkt_close - now_t).total_seconds())
-                        days_to_exp = max(0.02, rem_seconds / (6.25 * 3600.0))
+                        # Expiry passed or final trading minutes
+                        days_to_exp = 0.005
         except Exception:
             days_to_exp = 3.0
 
-        T = days_to_exp / 365.0
-        lot_size = NIFTY_LOT_SIZE
+        T = max(0.00003, days_to_exp / 365.25)
+
+        valid_strikes = []
+        for s in raw_strikes:
+            k = float(s.get("strike", 0.0))
+            if k <= 0:
+                continue
+            ce_oi = float(s.get("ce_oi") or 0.0)
+            pe_oi = float(s.get("pe_oi") or 0.0)
+            ce_iv = max(0.06, min(0.85, float(s.get("ce_iv") or s.get("iv") or 14.0) / 100.0))
+            pe_iv = max(0.06, min(0.85, float(s.get("pe_iv") or s.get("iv") or 14.0) / 100.0))
+            valid_strikes.append({
+                "strike": k,
+                "ce_oi": ce_oi,
+                "pe_oi": pe_oi,
+                "ce_iv": ce_iv,
+                "pe_iv": pe_iv
+            })
+
+        if not valid_strikes:
+            return {
+                "status": "UNAVAILABLE",
+                "spot_price": spot,
+                "zero_gamma_flip_level": None,
+                "spot_vs_flip_pts": None,
+                "market_gex_regime": "NEUTRAL_GAMMA",
+                "inferred_volatility_regime": "MODEL_INFERRED_NEUTRAL",
+                "estimated_net_gex_sign": "NEUTRAL",
+                "total_call_gex_cr": 0.0,
+                "total_put_gex_cr": 0.0,
+                "total_net_gex_cr": 0.0,
+                "max_gamma_strike": int(round(spot / 50.0) * 50),
+                "zero_gamma_selection_rule": "NO_VALID_STRIKES",
+                "market_gex_note": "No valid strikes found with open interest data.",
+                "active_strikes_gex": []
+            }
+
         strike_gex_list = []
         total_call_gex_cr = 0.0
         total_put_gex_cr = 0.0
 
-        for s in strikes:
-            k = float(s["strike"])
-            ce_oi = float(s.get("ce_oi") or 0.0)
-            pe_oi = float(s.get("pe_oi") or 0.0)
-            iv = float(s.get("ce_iv") or s.get("pe_iv") or 14.0) / 100.0
-            iv = max(0.06, min(0.85, iv))
+        for it in valid_strikes:
+            k = it["strike"]
+            c_oi = it["ce_oi"]
+            p_oi = it["pe_oi"]
+            g_c = self._calc_bs_gamma(spot, k, T, it["ce_iv"])
+            g_p = self._calc_bs_gamma(spot, k, T, it["pe_iv"])
 
-            d1 = (math.log(spot / k) + 0.5 * (iv ** 2) * T) / (iv * math.sqrt(T))
-            pdf_d1 = (1.0 / math.sqrt(2.0 * math.pi)) * math.exp(-0.5 * (d1 ** 2))
-            gamma = pdf_d1 / (spot * iv * math.sqrt(T))
+            # Dimensional Formula: GEX_Cr = (0.01 * S^2 * Gamma * OI_shares) / 10^7 = (S^2 * Gamma * OI_shares) / 10^9
+            call_cr = (spot ** 2) * g_c * c_oi / 1e9
+            put_cr = -(spot ** 2) * g_p * p_oi / 1e9
+            net_cr = call_cr + put_cr
 
-            # Standard dealer GEX convention (in Crores INR = 1e7):
-            # Dealers short calls -> + Call GEX (dealers buy as spot drops, sell as spot rises: stabilizing)
-            # Dealers short puts  -> - Put GEX (dealers sell as spot drops, buy as spot rises: destabilizing)
-            call_gex_cr = round((0.5 * (spot ** 2) * gamma * ce_oi * lot_size) / 1e7, 2)
-            put_gex_cr = round((-0.5 * (spot ** 2) * gamma * pe_oi * lot_size) / 1e7, 2)
-            net_gex_cr = round(call_gex_cr + put_gex_cr, 2)
-
-            total_call_gex_cr += call_gex_cr
-            total_put_gex_cr += put_gex_cr
+            total_call_gex_cr += call_cr
+            total_put_gex_cr += put_cr
             strike_gex_list.append({
                 "strike": int(k),
-                "call_gex_cr": call_gex_cr,
-                "put_gex_cr": put_gex_cr,
-                "net_gex_cr": net_gex_cr,
-                "abs_gamma": round(gamma, 6),
+                "call_gex_cr": round(call_cr, 2),
+                "put_gex_cr": round(put_cr, 2),
+                "net_gex_cr": round(net_cr, 2),
+                "abs_gamma": round(g_c, 6),
             })
 
         total_net_gex_cr = round(total_call_gex_cr + total_put_gex_cr, 2)
 
-        # Zero-Gamma Flip Level: Identify strike where Net GEX crosses from negative to positive
+        # Solve for Zero-Gamma Flip Level S* where Aggregate Net GEX(S*) = 0
+        def _aggregate_net_gex_at(s_cand: float) -> float:
+            tot = 0.0
+            for it in valid_strikes:
+                k_val = it["strike"]
+                c_oi = it["ce_oi"]
+                p_oi = it["pe_oi"]
+                g_c_cand = self._calc_bs_gamma(s_cand, k_val, T, it["ce_iv"])
+                g_p_cand = self._calc_bs_gamma(s_cand, k_val, T, it["pe_iv"])
+                tot += (s_cand ** 2) * (g_c_cand * c_oi - g_p_cand * p_oi) / 1e9
+            return tot
+
+        strikes_k = [it["strike"] for it in valid_strikes]
+        grid_start = max(50.0, min(strikes_k) - 300.0)
+        grid_end = max(strikes_k) + 300.0
+        step = 5.0
+
+        roots = []
+        curr_s = grid_start
+        prev_s = curr_s
+        prev_val = _aggregate_net_gex_at(curr_s)
+
+        curr_s += step
+        while curr_s <= grid_end:
+            curr_val = _aggregate_net_gex_at(curr_s)
+            if prev_val * curr_val <= 0.0 and prev_val != curr_val:
+                denom = curr_val - prev_val
+                root_s = prev_s - prev_val * (curr_s - prev_s) / denom
+                roots.append(round(root_s, 1))
+            prev_s = curr_s
+            prev_val = curr_val
+            curr_s += step
+
         flip_level = None
-        sorted_by_k = sorted(strike_gex_list, key=lambda x: x["strike"])
-        for i in range(len(sorted_by_k) - 1):
-            k1 = sorted_by_k[i]["strike"]
-            g1 = sorted_by_k[i]["net_gex_cr"]
-            k2 = sorted_by_k[i + 1]["strike"]
-            g2 = sorted_by_k[i + 1]["net_gex_cr"]
-            if (g1 <= 0 and g2 > 0) or (g1 < 0 and g2 >= 0):
-                flip_level = round(k1 + (0.0 - g1) / max(1e-5, (g2 - g1)) * (k2 - k1), 1)
-                break
+        flip_rule = "NO_ZERO_CROSSING"
+        if roots:
+            flip_level = min(roots, key=lambda r: abs(r - spot))
+            flip_rule = f"CLOSEST_TO_SPOT_OF_{len(roots)}_ROOTS" if len(roots) > 1 else "UNIQUE_ROOT"
 
-        if flip_level is None:
-            # If no zero-crossing inside table, default to nearest ATM
-            flip_level = float(round(spot / 50.0) * 50)
+        spot_vs_flip = round(spot - flip_level, 1) if flip_level is not None else None
 
-        # Identify Max Gamma Strike (highest positive net GEX)
-        max_gamma_strike = max(sorted_by_k, key=lambda x: x["net_gex_cr"])["strike"] if sorted_by_k else int(spot)
-
-        # Market GEX Regime
-        if spot >= flip_level:
-            gex_regime = "LONG_GAMMA_STABILIZING"
-            gex_note = (
-                f"Spot (₹{spot:,.1f}) is ABOVE Zero-Gamma Flip (₹{flip_level:,.1f}). Market makers are net LONG gamma: "
-                f"they buy into dips and sell into rallies, dampening volatility and supporting mean-reversion."
+        # Separate: Estimated net GEX sign, Distance to flip, Inferred volatility regime
+        if total_net_gex_cr > 0:
+            estimated_sign = "POSITIVE"
+            regime = "LONG_GAMMA_STABILIZING"
+            inferred_regime = "MODEL_INFERRED_STABILIZING"
+            note = (
+                f"Model-estimated aggregate option gamma is POSITIVE (+{total_net_gex_cr:,.1f} Cr). "
+                f"Under market-maker hedging models, positive gamma is associated with volatility dampening "
+                f"and mean-reverting price action. This is an inferred statistical model based on open interest, "
+                f"not verified counterparty inventory."
+            )
+        elif total_net_gex_cr < 0:
+            estimated_sign = "NEGATIVE"
+            regime = "SHORT_GAMMA_VOLATILITY_EXPANSION"
+            inferred_regime = "MODEL_INFERRED_EXPANDING"
+            note = (
+                f"Model-estimated aggregate option gamma is NEGATIVE ({total_net_gex_cr:,.1f} Cr). "
+                f"Under market-maker hedging models, negative gamma is associated with volatility expansion "
+                f"and directional momentum continuation. This is an inferred statistical model based on open interest, "
+                f"not verified counterparty inventory."
             )
         else:
-            gex_regime = "SHORT_GAMMA_VOLATILITY_EXPANSION"
-            gex_note = (
-                f"Spot (₹{spot:,.1f}) is BELOW Zero-Gamma Flip (₹{flip_level:,.1f}). Market makers are net SHORT gamma: "
-                f"they must sell when the market falls and buy when it rises, accelerating directional trend momentum."
-            )
+            estimated_sign = "NEUTRAL"
+            regime = "NEUTRAL_GAMMA"
+            inferred_regime = "MODEL_INFERRED_NEUTRAL"
+            note = "Model-estimated aggregate option gamma is balanced."
+
+        if flip_level is not None:
+            note += f" Estimated Zero-Gamma Flip: ₹{flip_level:,.1f} (Spot distance: {spot_vs_flip:+.1f} pts)."
+        else:
+            note += " Zero-gamma flip level unavailable (no zero-crossing in strike range)."
+
+        sorted_by_k = sorted(strike_gex_list, key=lambda x: x["strike"])
+        max_gamma_strike = max(sorted_by_k, key=lambda x: x["net_gex_cr"])["strike"] if sorted_by_k else int(spot)
 
         return {
             "status": "OK",
@@ -424,20 +557,32 @@ class IntradayAnalyticsEngine:
             "expiry_date": weekly_chain_data.get("expiry") or weekly_chain_data.get("expiry_date") or "--",
             "spot_price": spot,
             "zero_gamma_flip_level": flip_level,
-            "spot_vs_flip_pts": round(spot - flip_level, 1),
-            "market_gex_regime": gex_regime,
-            "market_gex_note": gex_note,
+            "spot_vs_flip_pts": spot_vs_flip,
+            "estimated_net_gex_sign": estimated_sign,
+            "inferred_volatility_regime": inferred_regime,
+            "market_gex_regime": regime,
+            "market_gex_note": note,
             "total_call_gex_cr": round(total_call_gex_cr, 1),
             "total_put_gex_cr": round(total_put_gex_cr, 1),
             "total_net_gex_cr": total_net_gex_cr,
             "max_gamma_strike": max_gamma_strike,
+            "zero_gamma_selection_rule": flip_rule,
+            "active_strikes_count": len(valid_strikes),
             "active_strikes_gex": sorted(sorted_by_k, key=lambda x: abs(x["strike"] - spot))[:10],
         }
 
     def compute_sectoral_divergence(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
-        Computes real-time sectoral breadth, inter-sectoral drag, and broad market advances/declines.
-        Prioritizes live NSE India allIndices API directly from exchange, with Kotak Neo / Yahoo / DB fallback.
+        Computes real-time sectoral breadth, sector dispersion spread (best vs worst in percentage points),
+        and weighted index drag/lift contributions across the defined sector universe.
+
+        Mathematical Specifications:
+        - Breadth Percentage = (Number of Valid Positive Sectors) / (Number of Valid Sectors) * 100
+          Numerator and denominator strictly use the identical set of valid sectors.
+        - Sector Spread = max(Valid Sector Returns) - min(Valid Sector Returns)
+          Expressed in percentage points (pp).
+        - Weighted Index Drag / Contribution = sum(weight_i * Return_i)
+          Explicitly distinguishes sector dispersion spread from index-weighted drag.
         """
         now_ts = time.time()
         is_market_open, _ = NSEMarketCalendar.can_execute_trades(now_ist())
@@ -450,6 +595,7 @@ class IntradayAnalyticsEngine:
         nse_indices: Dict[str, Dict[str, Any]] = {}
         market_breadth: Dict[str, Any] = {}
         source = "MASTER_DB_PERSISTED_SNAPSHOT"
+        ref_timestamp = format_ist()
 
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
@@ -462,7 +608,6 @@ class IntradayAnalyticsEngine:
                     if idx_name:
                         nse_indices[idx_name] = item
 
-                # Extract Market-wide Breadth Metrics
                 n50 = nse_indices.get("NIFTY 50", {})
                 n500 = nse_indices.get("NIFTY 500", {})
 
@@ -514,7 +659,7 @@ class IntradayAnalyticsEngine:
             persisted_copy["source"] = "MASTER_DB_PERSISTED_SNAPSHOT"
             return persisted_copy
 
-        # Build sector rows
+        # Build sector telemetry records
         results: List[Dict[str, Any]] = []
         for tk, name, cat, w in NSE_SECTORS:
             idx_upper = name.upper()
@@ -524,10 +669,14 @@ class IntradayAnalyticsEngine:
                 p = float(nse_item.get("last") or 0.0)
                 chg_pct = float(nse_item.get("percentChange") or 0.0)
                 prev_close = float(nse_item.get("previousClose") or p)
+                chg_pts = round(p - prev_close, 2)
+                item_ts = nse_item.get("lastUpdateTime") or ref_timestamp
             else:
                 p = float(kotak_quotes.get(tk, 0.0))
                 chg_pct = 0.0
                 prev_close = p
+                chg_pts = 0.0
+                item_ts = ref_timestamp
                 if persisted and "sectors" in persisted:
                     old_sec = next((s for s in persisted["sectors"] if s.get("ticker") == tk), None)
                     if old_sec:
@@ -535,8 +684,14 @@ class IntradayAnalyticsEngine:
                             p = float(old_sec.get("price") or 0.0)
                         chg_pct = float(old_sec.get("change_pct") or 0.0)
                         prev_close = float(old_sec.get("prev_close") or p)
+                        chg_pts = round(p - prev_close, 2)
+                        item_ts = old_sec.get("reference_timestamp") or ref_timestamp
                 if p > 0 and prev_close > 0 and p != prev_close:
                     chg_pct = round(((p - prev_close) / prev_close) * 100.0, 2)
+                    chg_pts = round(p - prev_close, 2)
+
+            is_valid = (p > 0)
+            weighted_drag = round(w * chg_pct, 4)
 
             results.append({
                 "ticker": tk,
@@ -545,21 +700,32 @@ class IntradayAnalyticsEngine:
                 "weight": w,
                 "price": round(p, 2),
                 "change_pct": round(chg_pct, 2),
-                "prev_close": round(prev_close, 2) if 'prev_close' in locals() else p,
-                "status": "GREEN" if chg_pct > 0.05 else ("RED" if chg_pct < -0.05 else "FLAT"),
+                "change_pts": chg_pts,
+                "prev_close": round(prev_close, 2),
+                "weighted_drag_contribution_pts": weighted_drag,
+                "reference_timestamp": str(item_ts),
+                "is_valid": is_valid,
+                "status": "GREEN" if chg_pct > 0 else ("RED" if chg_pct < 0 else "FLAT"),
             })
 
-        results.sort(key=lambda x: x["change_pct"], reverse=True)
-        green_count = sum(1 for r in results if r["change_pct"] > 0)
-        total_count = max(1, len(results))
-        breadth_pct = round((green_count / total_count) * 100.0, 1)
+        valid_sectors = [s for s in results if s["is_valid"]]
+        valid_total = max(1, len(valid_sectors))
+        green_count = sum(1 for r in valid_sectors if r["change_pct"] > 0)
+        breadth_pct = round((green_count / valid_total) * 100.0, 2)
 
-        best_sec = results[0] if results else {}
-        worst_sec = results[-1] if results else {}
-        spread_pct = round(best_sec.get("change_pct", 0.0) - worst_sec.get("change_pct", 0.0), 2)
+        # Sort valid sectors by return for dispersion spread calculation
+        valid_sorted = sorted(valid_sectors, key=lambda x: x["change_pct"], reverse=True)
+        best_sec = valid_sorted[0] if valid_sorted else {}
+        worst_sec = valid_sorted[-1] if valid_sorted else {}
+        spread_pp = round(best_sec.get("change_pct", 0.0) - worst_sec.get("change_pct", 0.0), 2)
 
-        bank_item = next((r for r in results if r["ticker"] == "^NSEBANK"), {})
-        it_item = next((r for r in results if r["ticker"] == "^CNXIT"), {})
+        # Weighted index drag (total contribution in percentage points)
+        total_weighted_drag_pp = round(sum(s["weighted_drag_contribution_pts"] for s in valid_sectors), 2)
+        top_drag_sector = min(valid_sectors, key=lambda s: s["weighted_drag_contribution_pts"]) if valid_sectors else {}
+        top_lift_sector = max(valid_sectors, key=lambda s: s["weighted_drag_contribution_pts"]) if valid_sectors else {}
+
+        bank_item = next((r for r in valid_sectors if r["ticker"] == "^NSEBANK"), {})
+        it_item = next((r for r in valid_sectors if r["ticker"] == "^CNXIT"), {})
         b_chg = bank_item.get("change_pct", 0.0)
         it_chg = it_item.get("change_pct", 0.0)
 
@@ -590,16 +756,21 @@ class IntradayAnalyticsEngine:
             "source": source,
             "breadth_pct_green": breadth_pct,
             "green_sectors": green_count,
-            "total_sectors": total_count,
+            "total_sectors": len(results),
+            "valid_sectors_count": len(valid_sectors),
             "best_sector": f"{best_sec.get('name')} ({best_sec.get('change_pct', 0.0):+.2f}%)",
             "worst_sector": f"{worst_sec.get('name')} ({worst_sec.get('change_pct', 0.0):+.2f}%)",
-            "sector_spread_pct": spread_pct,
+            "sector_spread_pp": spread_pp,
+            "sector_spread_pct": spread_pp,
+            "weighted_index_drag_pp": total_weighted_drag_pp,
+            "top_drag_sector": f"{top_drag_sector.get('name')} ({top_drag_sector.get('weighted_drag_contribution_pts', 0.0):+.2f} pp)",
+            "top_lift_sector": f"{top_lift_sector.get('name')} ({top_lift_sector.get('weighted_drag_contribution_pts', 0.0):+.2f} pp)",
             "bank_vs_it_alignment": bank_it_align,
             "bank_change_pct": b_chg,
             "it_change_pct": it_chg,
             "sector_verdict": sector_verdict,
             "alignment_score": alignment_score,
-            "sectors": results,
+            "sectors": valid_sorted,
             "market_breadth": market_breadth,
             "fetched_at_ist": format_ist(),
         }

@@ -11251,7 +11251,7 @@
       const orbBadge = document.getElementById('intra-orb-status-badge');
       if (vwapEl) vwapEl.innerText = vwapVal > 0 ? `₹${vwapVal.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}` : '--';
       if (vwapDistEl) {
-        vwapDistEl.innerText = `${vwapDist >= 0 ? '+' : ''}${vwapDist.toFixed(1)} pts (${vwapDistPct >= 0 ? '+' : ''}${vwapDistPct.toFixed(2)}%)`;
+        vwapDistEl.innerText = `${vwapDist >= 0 ? '+' : ''}${vwapDist.toFixed(1)} pts (${vwapDistPct >= 0 ? '+' : ''}${vwapDistPct.toFixed(3)}%)`;
         vwapDistEl.className = `text-xs sm:text-sm font-mono font-bold mt-0.5 ${vwapDist >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
       }
       if (orbBadge) {
@@ -11266,11 +11266,25 @@
       const orb30El = document.getElementById('intra-orb-30m');
       if (orb15El) {
         const o15 = vwapData.orb_15m || {};
-        orb15El.innerText = o15.high ? `₹${Number(o15.low).toFixed(0)} – ₹${Number(o15.high).toFixed(0)} (${Number(o15.range_pts).toFixed(0)}p)` : '--';
+        if (o15.high != null && o15.low != null) {
+          const hi = Math.round(Number(o15.high));
+          const lo = Math.round(Number(o15.low));
+          const rng = (hi - lo);
+          orb15El.innerText = `₹${lo.toLocaleString('en-IN')} – ₹${hi.toLocaleString('en-IN')} (${rng}p)`;
+        } else {
+          orb15El.innerText = '--';
+        }
       }
       if (orb30El) {
         const o30 = vwapData.orb_30m || {};
-        orb30El.innerText = o30.high ? `₹${Number(o30.low).toFixed(0)} – ₹${Number(o30.high).toFixed(0)} (${Number(o30.range_pts).toFixed(0)}p)` : '--';
+        if (o30.high != null && o30.low != null) {
+          const hi = Math.round(Number(o30.high));
+          const lo = Math.round(Number(o30.low));
+          const rng = (hi - lo);
+          orb30El.innerText = `₹${lo.toLocaleString('en-IN')} – ₹${hi.toLocaleString('en-IN')} (${rng}p)`;
+        } else {
+          orb30El.innerText = '--';
+        }
       }
 
       const chopValEl = document.getElementById('intra-chop-val');
@@ -11281,8 +11295,8 @@
 
       // 2. GEX & Zero-Gamma Flip
       try {
-        const flipLevel = Number(gexData.zero_gamma_flip_level || 0);
-        const flipPts = Number(gexData.spot_vs_flip_pts || 0);
+        const flipLevel = (gexData.zero_gamma_flip_level != null) ? Number(gexData.zero_gamma_flip_level) : null;
+        const flipPts = (gexData.spot_vs_flip_pts != null) ? Number(gexData.spot_vs_flip_pts) : null;
         const flipEl = document.getElementById('intra-gex-flip');
         const gexRegBadge = document.getElementById('intra-gex-regime-badge');
         const gexNetEl = document.getElementById('intra-gex-net');
@@ -11290,22 +11304,28 @@
         const maxGammaEl = document.getElementById('intra-max-gamma-strike');
         const gexFlowEl = document.getElementById('intra-gex-call-put-flow');
 
-        if (flipEl) flipEl.innerText = flipLevel > 0 ? `₹${flipLevel.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} (${flipPts >= 0 ? '+' : ''}${flipPts.toFixed(1)}p)` : '--';
+        if (flipEl) {
+          if (flipLevel !== null && flipLevel > 0) {
+            flipEl.innerText = `₹${flipLevel.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} (${flipPts >= 0 ? '+' : ''}${flipPts.toFixed(1)}p)`;
+          } else {
+            flipEl.innerText = 'Zero-gamma level unavailable';
+          }
+        }
         if (gexRegBadge) {
-          const regStr = String(gexData.market_gex_regime || '');
-          const isLongG = regStr.includes('LONG_GAMMA');
-          const isShortG = regStr.includes('SHORT_GAMMA');
+          const regStr = String(gexData.market_gex_regime || gexData.inferred_volatility_regime || '');
+          const isLongG = regStr.includes('LONG_GAMMA') || regStr.includes('STABILIZING');
+          const isShortG = regStr.includes('SHORT_GAMMA') || regStr.includes('EXPANDING');
           gexRegBadge.innerText = isLongG ? 'Long Gamma (Stabilizing)' : (isShortG ? 'Short Gamma (Expanding)' : 'Neutral Gamma');
           gexRegBadge.className = `px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${isLongG ? 'bg-purple-500/20 text-purple-300 border-purple-500/40' : (isShortG ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-slate-500/20 text-slate-300 border-slate-500/40')}`;
         }
         if (gexNetEl) {
           const netGex = Number(gexData.total_net_gex_cr || 0);
-          gexNetEl.innerText = `${netGex >= 0 ? '+' : ''}${netGex.toLocaleString('en-IN', { maximumFractionDigits: 0 })} Cr`;
+          gexNetEl.innerText = `${netGex >= 0 ? '+' : ''}${netGex.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} Cr`;
           gexNetEl.className = `text-xs sm:text-sm font-mono font-bold mt-0.5 ${netGex >= 0 ? 'text-purple-300' : 'text-amber-300'}`;
         }
-        if (gexNoteEl) gexNoteEl.innerText = gexData.market_gex_note || 'Dealer gamma profiles calculated.';
-        if (maxGammaEl) maxGammaEl.innerText = `${gexData.max_gamma_strike || '--'}`;
-        if (gexFlowEl) gexFlowEl.innerText = `Call: +${Number(gexData.total_call_gex_cr || 0).toFixed(0)}Cr | Put: ${Number(gexData.total_put_gex_cr || 0).toFixed(0)}Cr`;
+        if (gexNoteEl) gexNoteEl.innerText = gexData.market_gex_note || 'Model-estimated gamma profile calculated.';
+        if (maxGammaEl) maxGammaEl.innerText = gexData.max_gamma_strike ? `${gexData.max_gamma_strike} (Max Γ)` : '--';
+        if (gexFlowEl) gexFlowEl.innerText = `Call: +${Number(gexData.total_call_gex_cr || 0).toFixed(1)} Cr | Put: ${Number(gexData.total_put_gex_cr || 0).toFixed(1)} Cr`;
       } catch (gexErr) {
         console.debug("GEX render notice:", gexErr);
       }
@@ -11318,11 +11338,20 @@
         const secListEl = document.getElementById('intra-sectors-mini-list');
         const secVerdictEl = document.getElementById('intra-sec-verdict');
 
-        if (secBreadthBadge) secBreadthBadge.innerText = `${secData.breadth_pct_green || 0}% Green (${secData.green_sectors || 0}/${secData.total_sectors || 0})`;
+        const bPct = Number(secData.breadth_pct_green || 0);
+        const gSec = secData.green_sectors != null ? secData.green_sectors : 0;
+        const tSec = secData.total_sectors != null ? secData.total_sectors : (Array.isArray(secData.sectors) ? secData.sectors.length : 0);
+        if (secBreadthBadge) secBreadthBadge.innerText = `${bPct.toFixed(1)}% Green (${gSec}/${tSec})`;
         if (secBankItEl) secBankItEl.innerText = secData.bank_vs_it_alignment || '--';
-        const sSpread = Number(secData.sector_spread_pct);
-        if (secSpreadEl) secSpreadEl.innerText = Number.isFinite(sSpread) ? `${sSpread.toFixed(2)}% spread` : '--';
-        if (secVerdictEl) secVerdictEl.innerText = secData.sector_verdict || '--';
+        const sSpread = Number(secData.sector_spread_pp != null ? secData.sector_spread_pp : secData.sector_spread_pct);
+        if (secSpreadEl) {
+          secSpreadEl.innerText = Number.isFinite(sSpread) ? `${sSpread.toFixed(2)} pp spread` : '--';
+          secSpreadEl.title = `Inter-sector dispersion spread: ${sSpread.toFixed(2)} percentage points between best and worst sectors`;
+        }
+        if (secVerdictEl) {
+          secVerdictEl.innerText = secData.top_drag_sector ? `Drag: ${secData.top_drag_sector}` : (secData.sector_verdict || '--');
+          secVerdictEl.title = secData.sector_verdict || '';
+        }
         const mktB = secData.market_breadth || {};
         const mktEl = document.getElementById('intra-mkt-breadth-n500');
         if (mktEl && mktB.nifty500_advances !== undefined) {
@@ -11330,11 +11359,13 @@
         }
 
         if (secListEl && Array.isArray(secData.sectors)) {
-          secListEl.innerHTML = secData.sectors.slice(0, 6).map(s => {
-            const isG = s.change_pct >= 0;
+          secListEl.innerHTML = secData.sectors.map(s => {
+            const isG = Number(s.change_pct) > 0;
+            const isR = Number(s.change_pct) < 0;
+            const colClass = isG ? 'text-emerald-400' : (isR ? 'text-rose-400' : 'text-slate-300');
             return `<div class="flex items-center justify-between p-1 rounded bg-slate-950/50 border border-slate-800/80">
-              <span class="text-slate-300">${s.name.replace('Nifty ', '')}</span>
-              <span class="${isG ? 'text-emerald-400' : 'text-rose-400'} font-bold">${isG ? '+' : ''}${Number(s.change_pct).toFixed(2)}%</span>
+              <span class="text-slate-300 truncate max-w-[85px]">${String(s.name || '').replace('Nifty ', '')}</span>
+              <span class="${colClass} font-bold">${Number(s.change_pct) >= 0 ? '+' : ''}${Number(s.change_pct).toFixed(2)}%</span>
             </div>`;
           }).join('');
         }
