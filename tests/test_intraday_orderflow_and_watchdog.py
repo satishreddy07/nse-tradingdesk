@@ -91,7 +91,7 @@ def test_intraday_template_null_safety():
     # Safe GEX badge text
     assert "Neutral Gamma" in html
     # Bounded Put/Call Wall Card and KPI cards
-    assert "min-h-[84px]" in html or "min-h-[76px]" in html
+    assert "min-h-[96px]" in html or "min-h-[84px]" in html
     assert "overflow-hidden" in html
     assert "updateIntradayActiveOiCard" in html
     assert "Net Active OI (±10" in html

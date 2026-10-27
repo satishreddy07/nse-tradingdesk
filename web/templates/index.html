@@ -4231,42 +4231,42 @@
 
         <!-- 6 Live Intraday Weekly Expiry KPI Cards -->
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-4 items-stretch">
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-2.5 flex flex-col justify-between h-[96px] min-h-[96px] max-h-[96px] overflow-hidden">
             <div>
               <div class="text-[10px] font-mono uppercase text-amber-400">Nifty Spot & ATM</div>
               <div id="intra-kpi-spot" class="text-base sm:text-lg font-mono font-bold text-white mt-0.5 flex items-center justify-between gap-1.5 truncate">--</div>
             </div>
             <div id="intra-kpi-spot-sub" class="text-[10px] text-slate-400 font-mono mt-0.5 truncate">ATM: -- | Exp: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-2.5 flex flex-col justify-between h-[96px] min-h-[96px] max-h-[96px] overflow-hidden">
             <div>
               <div class="text-[10px] font-mono uppercase text-cyan-400">ATM Straddle Premium</div>
               <div id="intra-kpi-straddle" class="text-base sm:text-lg font-mono font-bold text-cyan-300 mt-0.5 truncate">--</div>
             </div>
             <div id="intra-kpi-straddle-sub" class="text-[10px] text-slate-400 font-mono mt-0.5 truncate">CE: -- | PE: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-2.5 flex flex-col justify-between h-[96px] min-h-[96px] max-h-[96px] overflow-hidden">
             <div>
               <div class="text-[10px] font-mono uppercase text-emerald-400">Near-ATM / Overall PCR</div>
               <div id="intra-kpi-pcr" class="text-base sm:text-lg font-mono font-bold text-emerald-400 mt-0.5 truncate">--</div>
             </div>
             <div id="intra-kpi-pcr-sub" class="text-[10px] text-slate-400 font-mono mt-0.5 truncate">ATM PCR: -- | ΔOI PCR: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-2.5 flex flex-col justify-between h-[96px] min-h-[96px] max-h-[96px] overflow-hidden">
             <div>
               <div class="text-[10px] font-mono uppercase text-violet-400">Put Wall / Call Wall</div>
               <div id="intra-kpi-walls" class="text-xs sm:text-sm font-mono font-bold text-violet-300 mt-0.5 whitespace-nowrap truncate">-- / --</div>
             </div>
             <div id="intra-kpi-maxpain" class="text-[10px] text-slate-400 font-mono mt-0.5 whitespace-nowrap truncate">Max Pain: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-2.5 flex flex-col justify-between h-[96px] min-h-[96px] max-h-[96px] overflow-hidden">
             <div>
               <div class="text-[10px] font-mono uppercase text-blue-400" title="Net Option Writing Delta across ±8 active strikes from ATM = PE Change in OI minus CE Change in OI">Net Active OI (±10 Strikes)</div>
               <div id="intra-kpi-oiflow" class="text-base sm:text-lg font-mono font-bold text-white mt-0.5 truncate">--</div>
             </div>
             <div id="intra-kpi-oiflow-sub" class="text-[10px] text-slate-400 font-mono mt-0.5 truncate" title="PE ΔOI minus CE ΔOI">PE vs CE Active Contracts (±10)</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-2.5 flex flex-col justify-between h-[96px] min-h-[96px] max-h-[96px] overflow-hidden">
             <div>
               <div class="text-[10px] font-mono uppercase text-rose-400">Regime & ATM IV / Skew</div>
               <div id="intra-kpi-regime" class="text-xs sm:text-sm font-mono font-bold text-amber-300 mt-0.5 truncate">--</div>
@@ -10543,8 +10543,8 @@
       const spotEl = document.getElementById('intra-kpi-spot');
       if (spotEl && s.spot > 0) {
         const badge = s.isLive
-          ? `<span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse align-middle whitespace-nowrap shrink-0">LIVE TICK</span>`
-          : `<span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 align-middle whitespace-nowrap shrink-0">MARKET CLOSED</span>`;
+          ? `<span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse align-middle whitespace-nowrap shrink-0">LIVE</span>`
+          : `<span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 align-middle whitespace-nowrap shrink-0">CLOSED</span>`;
         const formatted = '₹' + s.spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const newHtml = `<span class="truncate">${formatted}</span> ${badge}`;
         if (spotEl.innerHTML !== newHtml) {
@@ -10556,11 +10556,11 @@
       if (spotSub) {
         const curAtm = s.atm || Math.round((s.spot || 0) / 50) * 50;
         const diff = s.diffStr ? ` | ${s.diffStr}` : '';
-        const slot = s.slotNote ? ` | ${s.slotNote}` : '';
-        const newHtml = `ATM ${curAtm}${diff}${slot}`;
+        const newHtml = `ATM ${curAtm}${diff}`;
         if (spotSub.innerHTML !== newHtml) {
           spotSub.innerHTML = newHtml;
         }
+        if (s.slotNote) spotSub.title = `${newHtml} (${s.slotNote})`;
       }
     };
 
@@ -10625,15 +10625,15 @@
       if (oiFlowEl) {
         const absDiffLakhs = Math.abs(s.netDiff) / 100000.0;
         const flowLabel = s.netDiff >= 0
-          ? `+${absDiffLakhs.toFixed(2)}L Contracts Net PE`
-          : `+${absDiffLakhs.toFixed(2)}L Contracts Net CE`;
+          ? `+${absDiffLakhs.toFixed(2)}L Net PE`
+          : `+${absDiffLakhs.toFixed(2)}L Net CE`;
         if (oiFlowEl.innerText !== flowLabel) oiFlowEl.innerText = flowLabel;
         const targetCls = `text-base sm:text-lg font-mono font-bold mt-0.5 truncate ${s.netDiff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
         if (oiFlowEl.className !== targetCls) oiFlowEl.className = targetCls;
-        oiFlowEl.title = `Net Active: ${s.netDiff >= 0 ? '+' : ''}${s.netDiff.toLocaleString('en-IN')} Contracts (Lot Size: ${s.lotSize})`;
+        oiFlowEl.title = `Net Active: ${s.netDiff >= 0 ? '+' : ''}${s.netDiff.toLocaleString('en-IN')} Contracts across ±10 strikes (Lot Size: ${s.lotSize})`;
       }
       if (oiFlowSub) {
-        const subTxt = `PE: ${(s.peTotal / 100000.0).toFixed(2)}L vs CE: ${(s.ceTotal / 100000.0).toFixed(2)}L Contracts (±10)`;
+        const subTxt = `PE: ${(s.peTotal / 100000.0).toFixed(2)}L vs CE: ${(s.ceTotal / 100000.0).toFixed(2)}L (±10)`;
         if (oiFlowSub.innerText !== subTxt) oiFlowSub.innerText = subTxt;
         oiFlowSub.title = `PE Active: ${s.peTotal.toLocaleString('en-IN')} | CE Active: ${s.ceTotal.toLocaleString('en-IN')} Contracts (±10 strikes)`;
       }
@@ -11205,12 +11205,19 @@
       const regEl = document.getElementById('intra-kpi-regime');
       const ivEl = document.getElementById('intra-kpi-iv');
       const activeState = liveAn.market_state || latest.market_state || 'BALANCED';
-      const stateText = activeState.replace(/_/g, ' ');
+      const stateText = activeState
+        .replace(/SHORT_COVERING_SQUEEZE/g, 'SHORT COVER SQUEEZE')
+        .replace(/LONG_UNWINDING_BREAKDOWN/g, 'LONG UNWINDING')
+        .replace(/CONSOLIDATION_WITH_BULLISH_BIAS/g, 'CONSOLIDATION (BULLISH)')
+        .replace(/CONSOLIDATION_WITH_BEARISH_BIAS/g, 'CONSOLIDATION (BEARISH)')
+        .replace(/BALANCED_TWO_WAY_STRADDLE/g, 'BALANCED STRADDLE')
+        .replace(/_/g, ' ');
       if (regEl) {
         regEl.innerText = stateText;
+        regEl.title = activeState.replace(/_/g, ' ');
         const isBullish = /BULLISH|SQUEEZE|ACCUMULATION/.test(activeState);
         const isBearish = /BEARISH|SUPPLY|UNWINDING/.test(activeState);
-        regEl.className = `text-xs sm:text-sm font-mono font-bold mt-1 leading-snug break-words ${isBullish ? 'text-emerald-400' : (isBearish ? 'text-rose-400' : 'text-amber-300')}`;
+        regEl.className = `text-xs sm:text-sm font-mono font-bold mt-0.5 truncate whitespace-nowrap ${isBullish ? 'text-emerald-400' : (isBearish ? 'text-rose-400' : 'text-amber-300')}`;
       }
       const liveAtmIv = Number(synced.atm_iv !== undefined && synced.atm_iv > 0 ? synced.atm_iv : (liveAn.atm_iv || latest.atm_iv || (data.volatility_and_gex?.atm_iv) || 0));
       const liveIvSkew = Number(synced.iv_skew !== undefined ? synced.iv_skew : (liveAn.iv_skew || latest.iv_skew || (data.volatility_and_gex?.iv_skew) || 0));
@@ -27565,10 +27572,18 @@
               if (intra.market_state) {
                 const regEl = document.getElementById('intra-kpi-regime');
                 if (regEl) {
-                  regEl.innerText = intra.market_state.replace(/_/g, ' ');
+                  const cleanMkt = intra.market_state
+                    .replace(/SHORT_COVERING_SQUEEZE/g, 'SHORT COVER SQUEEZE')
+                    .replace(/LONG_UNWINDING_BREAKDOWN/g, 'LONG UNWINDING')
+                    .replace(/CONSOLIDATION_WITH_BULLISH_BIAS/g, 'CONSOLIDATION (BULLISH)')
+                    .replace(/CONSOLIDATION_WITH_BEARISH_BIAS/g, 'CONSOLIDATION (BEARISH)')
+                    .replace(/BALANCED_TWO_WAY_STRADDLE/g, 'BALANCED STRADDLE')
+                    .replace(/_/g, ' ');
+                  regEl.innerText = cleanMkt;
+                  regEl.title = intra.market_state.replace(/_/g, ' ');
                   const isBullish = /BULLISH|SQUEEZE|ACCUMULATION/.test(intra.market_state);
                   const isBearish = /BEARISH|SUPPLY|UNWINDING/.test(intra.market_state);
-                  regEl.className = `text-xs sm:text-sm font-mono font-bold mt-1 leading-snug break-words ${isBullish ? 'text-emerald-400' : (isBearish ? 'text-rose-400' : 'text-amber-300')}`;
+                  regEl.className = `text-xs sm:text-sm font-mono font-bold mt-0.5 truncate whitespace-nowrap ${isBullish ? 'text-emerald-400' : (isBearish ? 'text-rose-400' : 'text-amber-300')}`;
                 }
               }
 
