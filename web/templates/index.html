@@ -11635,7 +11635,7 @@
                 <td class="p-3 font-bold ${Number(s.chg_oi_pcr || 1) >= 1.05 ? 'text-emerald-400' : 'text-rose-400'} w-[95px] overflow-hidden whitespace-nowrap">${Number(s.chg_oi_pcr || 0).toFixed(2)}</td>
                 <td class="p-3 w-[110px] overflow-hidden whitespace-nowrap"><span class="text-emerald-400 font-bold">${s.put_wall}P</span> / <span class="text-rose-400 font-bold">${s.call_wall}C</span></td>
                 <td class="p-3 text-purple-300 font-bold w-[80px] overflow-hidden whitespace-nowrap">${s.max_pain}</td>
-                <td class="p-3 font-bold ${netCts >= 0 ? \'text-emerald-400\' : \'text-rose-400\'} w-[110px] overflow-hidden whitespace-nowrap" title="Net Active Contracts: ${netCts >= 0 ? \'+\' : \'\'}${netCts.toLocaleString(\'en-IN\')}">${netCts >= 0 ? \'+\' : \'\'}${netCtsLakhs.toFixed(2)}L Cts</td>
+                <td class="p-3 font-bold ${netCts >= 0 ? 'text-emerald-400' : 'text-rose-400'} w-[110px] overflow-hidden whitespace-nowrap" title="Net Active Contracts: ${netCts >= 0 ? '+' : ''}${netCts.toLocaleString('en-IN')}">${netCts >= 0 ? '+' : ''}${netCtsLakhs.toFixed(2)}L Cts</td>
                 <td class="p-3 text-slate-300 w-[95px] overflow-hidden whitespace-nowrap">${Number(s.atm_iv || 0).toFixed(1)}% (${Number(s.iv_skew || 0) >= 0 ? '+' : ''}${Number(s.iv_skew || 0).toFixed(2)})</td>
                 <td class="p-3 text-right w-[175px] overflow-hidden whitespace-nowrap"><span class="quant-badge px-2.5 py-1 rounded text-[10px] border whitespace-nowrap font-bold ${badgeCls}">${badgeLabel}</span></td>
               </tr>
