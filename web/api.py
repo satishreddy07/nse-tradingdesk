@@ -146,8 +146,27 @@ async def lifespan(app: FastAPI):
     except Exception as de:
         logger.warning(f"Startup Autonomous Execution Daemon notice: {de}")
 
+    # Start Historical Market Data Capture Engine (Reuses existing Kotak Neo stream)
+    try:
+        from engines.historical_capture_engine import historical_capture_engine
+        from engines.kotak_neo_engine import kotak_neo_engine
+        kotak_neo_engine.register_tick_listener(historical_capture_engine.on_broker_tick)
+        historical_capture_engine.start()
+        logger.info("📡 Historical Market Data Capture Engine registered and started.")
+    except Exception as he:
+        logger.warning(f"Startup Historical Market Data Capture Engine notice: {he}")
+
+
     yield
     logger.info("Shutting down Quant Trading Desk services...")
+    try:
+        from engines.historical_capture_engine import historical_capture_engine
+        from engines.kotak_neo_engine import kotak_neo_engine
+        kotak_neo_engine.unregister_tick_listener(historical_capture_engine.on_broker_tick)
+        historical_capture_engine.stop()
+    except Exception:
+        pass
+
     try:
         from engines.autonomous_execution_daemon import autonomous_execution_daemon
         autonomous_execution_daemon.stop_daemon()
@@ -3689,3 +3708,117 @@ def evaluate_intraday_pending_predictions():
     res = intraday_prediction_validation_engine.evaluate_pending_predictions()
     return _sanitize_for_json(res)
 
+# =========================================================================
+# HISTORICAL MARKET DATA CAPTURE, QUALITY & REPLAY ENGINE ENDPOINTS
+# =========================================================================
+
+@app.get("/api/market-data/health")
+def get_market_data_capture_health():
+    """Returns capture engine health, queue depth, backpressure status, and storage metrics."""
+    from engines.historical_capture_engine import historical_capture_engine
+    return _sanitize_for_json(historical_capture_engine.get_health_telemetry())
+
+
+@app.get("/api/market-data/sessions")
+def get_market_data_sessions():
+    """Returns all captured historical trading sessions."""
+    from engines.historical_capture_engine import historical_capture_engine
+    return _sanitize_for_json({"status": "OK", "sessions": historical_capture_engine.get_sessions()})
+
+
+@app.get("/api/market-data/history/snapshots-10s")
+def get_historical_analytical_snapshots(
+    session_date: Optional[str] = None,
+    limit: int = 500
+):
+    """Returns historical 10-second analytical snapshots for a given trading session."""
+    from engines.historical_capture_engine import historical_capture_engine
+    if not session_date:
+        import datetime, zoneinfo
+        session_date = datetime.datetime.now(zoneinfo.ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d")
+    snapshots = historical_capture_engine.get_analytical_snapshots_10s(session_date=session_date, limit=limit)
+    return _sanitize_for_json({"status": "OK", "session_date": session_date, "count": len(snapshots), "snapshots": snapshots})
+
+
+@app.get("/api/market-data/history/snapshots-10m")
+def get_historical_consolidated_snapshots(
+    session_date: Optional[str] = None
+):
+    """Returns historical 10-minute consolidated snapshots for macro trend analysis."""
+    from engines.historical_capture_engine import historical_capture_engine
+    if not session_date:
+        import datetime, zoneinfo
+        session_date = datetime.datetime.now(zoneinfo.ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d")
+    snapshots = historical_capture_engine.get_consolidated_snapshots_10m(session_date=session_date)
+    return _sanitize_for_json({"status": "OK", "session_date": session_date, "count": len(snapshots), "snapshots": snapshots})
+
+
+@app.get("/api/market-data/history/quality-events")
+def get_historical_data_quality_events(
+    session_date: Optional[str] = None,
+    limit: int = 50
+):
+    """Returns recorded market data quality anomalies and warnings."""
+    from engines.historical_capture_engine import historical_capture_engine
+    events = historical_capture_engine.get_data_quality_events(session_date=session_date, limit=limit)
+    return _sanitize_for_json({"status": "OK", "count": len(events), "events": events})
+
+
+@app.post("/api/market-data/replay/start")
+def start_historical_replay(
+    session_date: str,
+    speed: float = 1.0,
+    start_time: str = "09:15:00",
+    end_time: str = "15:30:00"
+):
+    """Starts historical playback of a captured trading session."""
+    from engines.historical_replay_engine import historical_replay_engine
+    res = historical_replay_engine.start_replay(
+        session_date=session_date,
+        start_time_ist=start_time,
+        end_time_ist=end_time,
+        speed=speed
+    )
+    return _sanitize_for_json(res)
+
+
+@app.post("/api/market-data/replay/control")
+def control_historical_replay(
+    action: str,
+    value: Optional[float] = None,
+    timestamp: Optional[str] = None
+):
+    """Controls historical playback: pause, resume, step, seek, speed, reset."""
+    from engines.historical_replay_engine import historical_replay_engine
+    act = action.strip().lower()
+    if act == "pause":
+        res = historical_replay_engine.pause()
+    elif act == "resume":
+        res = historical_replay_engine.resume()
+    elif act == "step":
+        res = historical_replay_engine.step(forward_seconds=value if value is not None else 10.0)
+    elif act == "seek":
+        res = historical_replay_engine.seek(target_time_str=timestamp or "")
+    elif act == "speed":
+        res = historical_replay_engine.set_speed(speed=value if value is not None else 1.0)
+    elif act in ("reset", "stop"):
+        historical_replay_engine.reset()
+        res = {"status": "STANDBY", "message": "Replay reset to standby."}
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported replay control action: '{action}'")
+    return _sanitize_for_json(res)
+
+
+@app.get("/api/market-data/replay/state")
+def get_historical_replay_state():
+    """Returns current reconstructed market state during virtual replay."""
+    from engines.historical_replay_engine import historical_replay_engine
+    return _sanitize_for_json(historical_replay_engine.get_replay_state())
+
+
+@app.post("/api/market-data/replay/stop")
+def stop_historical_replay():
+    """Stops active historical playback and resets virtual state to live stream."""
+    from engines.historical_replay_engine import historical_replay_engine
+    historical_replay_engine.reset()
+    return _sanitize_for_json({"status": "STOPPED", "message": "Historical replay stopped."})

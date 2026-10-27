@@ -4222,10 +4222,77 @@
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
               <span>Refresh</span>
             </button>
+            <button onclick="openMarketDataHealthModal()" class="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-emerald-500/40 text-emerald-400 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap" title="Capture Engine & Data Health Telemetry">
+              <span id="health-pulse-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Data Health</span>
+            </button>
+            <button onclick="openHistoricalReplayModal()" class="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-indigo-500/40 text-indigo-300 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap" title="Replay Historical Trading Sessions Deterministically">
+              <i data-lucide="play-circle" class="w-3.5 h-3.5 text-indigo-400"></i>
+              <span>Replay Session</span>
+            </button>
             <button onclick="openStockChartModal('^NSEI')" class="w-full sm:w-auto justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
               <i data-lucide="candlestick-chart" class="w-3.5 h-3.5 shrink-0"></i>
               <span>Nifty Chart</span>
             </button>
+          </div>
+        </div>
+
+        <!-- ===================================================================== -->
+        <!-- HISTORICAL SESSION REPLAY CONTROL BAR                                  -->
+        <!-- ===================================================================== -->
+        <div id="replay-control-bar" class="hidden bg-indigo-950/80 border border-indigo-500/60 rounded-2xl p-4 shadow-2xl text-white mt-4">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <span class="px-2.5 py-1 rounded bg-indigo-500 text-black font-extrabold text-xs font-mono animate-pulse">REPLAY MODE</span>
+              <div>
+                <div class="text-sm font-bold flex flex-wrap items-center gap-2">
+                  <span>Session: <span id="replay-session-label" class="text-amber-400 font-mono">--</span></span>
+                  <span class="text-slate-500">•</span>
+                  <span>Virtual IST: <span id="replay-virtual-clock" class="text-emerald-400 font-mono font-bold">--</span></span>
+                  <span class="text-slate-500">•</span>
+                  <span>Spot: <span id="replay-virtual-spot" class="text-cyan-300 font-mono font-bold">--</span></span>
+                </div>
+                <div class="text-[11px] text-slate-300">
+                  Snapshot <span id="replay-progress-label" class="font-mono text-white font-semibold">0/0</span> 
+                  (<span id="replay-progress-pct" class="font-mono text-cyan-400 font-semibold">0%</span>) • 
+                  Deterministic walk-forward without lookahead bias
+                </div>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <!-- Play/Pause -->
+              <button onclick="toggleReplayPlayPause()" id="btn-replay-play-pause" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-bold text-xs flex items-center gap-1.5 transition">
+                <i data-lucide="pause" id="icon-replay-play-pause" class="w-3.5 h-3.5"></i>
+                <span id="text-replay-play-pause">Pause</span>
+              </button>
+              <!-- Step +10s -->
+              <button onclick="stepReplay(10)" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-mono font-semibold transition" title="Step forward 10 seconds">
+                Step (+10s)
+              </button>
+              <!-- Speed selector -->
+              <div class="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1">
+                <span class="text-[10px] text-slate-400 font-mono">Speed:</span>
+                <select id="select-replay-speed" onchange="setReplaySpeed(this.value)" class="bg-transparent text-xs font-mono text-slate-200 outline-none cursor-pointer">
+                  <option value="0.5">0.5x</option>
+                  <option value="1" selected>1x</option>
+                  <option value="2">2x</option>
+                  <option value="5">5x</option>
+                  <option value="10">10x</option>
+                  <option value="30">30x</option>
+                </select>
+              </div>
+              <!-- Exit Replay -->
+              <button onclick="stopReplay()" class="px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 text-red-400 text-xs font-bold flex items-center gap-1 transition">
+                <i data-lucide="square" class="w-3.5 h-3.5"></i>
+                <span>Exit Replay</span>
+              </button>
+            </div>
+          </div>
+          <!-- Scrubber -->
+          <div class="mt-3 flex items-center gap-3">
+            <span class="text-[10px] font-mono text-slate-400">09:15</span>
+            <input type="range" id="replay-scrubber" min="0" max="100" value="0" oninput="onReplayScrubberInput(this.value)" onchange="onReplayScrubberChange(this.value)" class="w-full accent-indigo-500 cursor-pointer h-2 bg-slate-800 rounded-lg">
+            <span class="text-[10px] font-mono text-slate-400">15:30</span>
           </div>
         </div>
 
@@ -4784,6 +4851,14 @@
             <button onclick="loadIntradayValidationDesk(true)" class="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap">
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-cyan-400 shrink-0"></i>
               <span>Refresh</span>
+            </button>
+            <button onclick="openMarketDataHealthModal()" class="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-emerald-500/40 text-emerald-400 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap" title="Capture Engine & Data Health Telemetry">
+              <span id="health-pulse-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Data Health</span>
+            </button>
+            <button onclick="openHistoricalReplayModal()" class="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-indigo-500/40 text-indigo-300 font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap" title="Replay Historical Trading Sessions Deterministically">
+              <i data-lucide="play-circle" class="w-3.5 h-3.5 text-indigo-400"></i>
+              <span>Replay Session</span>
             </button>
           </div>
         </div>
@@ -9867,6 +9942,165 @@
       </div>
     </div>
   </div>
+
+
+  <!-- ===================================================================== -->
+  <!-- MARKET DATA HEALTH & CAPTURE PROVENANCE MODAL                         -->
+  <!-- ===================================================================== -->
+  <div id="market-data-health-modal" onclick="if(event.target === this) closeMarketDataHealthModal()" style="display: none;" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5">
+    <div class="bg-[#0b0f19] border border-emerald-500/40 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">MARKET DATA PROVENANCE</span>
+            <span class="text-xs font-mono text-cyan-400">Kotak Neo Stream & WAL Storage</span>
+          </div>
+          <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Market Data Capture Health & Quality Telemetry</h3>
+        </div>
+        <button onclick="closeMarketDataHealthModal()" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition">✕</button>
+      </div>
+
+      <div class="p-4 sm:p-5 overflow-y-auto space-y-4 custom-scroll">
+        <!-- Top Metrics Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="p-3 rounded-xl bg-slate-900 border border-slate-800">
+            <div class="text-[10px] font-mono text-slate-400 uppercase">Capture Engine</div>
+            <div id="md-health-engine-status" class="text-sm font-mono font-bold text-emerald-400 mt-1">ACTIVE</div>
+            <div id="md-health-sub-count" class="text-[10px] text-slate-500 mt-0.5">-- scrips subscribed</div>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-900 border border-slate-800">
+            <div class="text-[10px] font-mono text-slate-400 uppercase">Queue & Loss Rate</div>
+            <div id="md-health-queue-depth" class="text-sm font-mono font-bold text-cyan-300 mt-1">0 / 20000</div>
+            <div id="md-health-dropped-count" class="text-[10px] text-emerald-400 mt-0.5">0 drops (100% loss-free)</div>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-900 border border-slate-800">
+            <div class="text-[10px] font-mono text-slate-400 uppercase">Events Processed</div>
+            <div id="md-health-events-total" class="text-sm font-mono font-bold text-amber-300 mt-1">--</div>
+            <div id="md-health-last-tick" class="text-[10px] text-slate-500 mt-0.5">Last tick: --</div>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-900 border border-slate-800">
+            <div class="text-[10px] font-mono text-slate-400 uppercase">History Database</div>
+            <div id="md-health-db-size" class="text-sm font-mono font-bold text-purple-300 mt-1">-- MB</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">data/market_history.db (WAL)</div>
+          </div>
+        </div>
+
+        <!-- Table Counts Breakdown -->
+        <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+          <div class="text-xs font-mono font-bold text-white mb-2">Immutable Historical Table Storage</div>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs font-mono">
+            <div class="p-2 rounded bg-slate-950/70 border border-slate-800/80 flex justify-between">
+              <span class="text-slate-400">Raw Broker Ticks:</span>
+              <span id="md-tbl-raw" class="font-bold text-white">0</span>
+            </div>
+            <div class="p-2 rounded bg-slate-950/70 border border-slate-800/80 flex justify-between">
+              <span class="text-slate-400">Normalized Quotes:</span>
+              <span id="md-tbl-quotes" class="font-bold text-white">0</span>
+            </div>
+            <div class="p-2 rounded bg-slate-950/70 border border-slate-800/80 flex justify-between">
+              <span class="text-slate-400">L2 Depth Snapshots:</span>
+              <span id="md-tbl-depth" class="font-bold text-white">0</span>
+            </div>
+            <div class="p-2 rounded bg-slate-950/70 border border-slate-800/80 flex justify-between">
+              <span class="text-slate-400">Option Chains:</span>
+              <span id="md-tbl-chain" class="font-bold text-white">0</span>
+            </div>
+            <div class="p-2 rounded bg-slate-950/70 border border-slate-800/80 flex justify-between">
+              <span class="text-slate-400">10s Analytical Snapshots:</span>
+              <span id="md-tbl-10s" class="font-bold text-white">0</span>
+            </div>
+            <div class="p-2 rounded bg-slate-950/70 border border-slate-800/80 flex justify-between">
+              <span class="text-slate-400">10m Consolidated Bars:</span>
+              <span id="md-tbl-10m" class="font-bold text-white">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Data Quality & Gaps Log -->
+        <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-mono font-bold text-white">Data Quality & Latency Anomaly Trail</span>
+            <span id="md-quality-count-badge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">0 anomalies</span>
+          </div>
+          <div class="overflow-x-auto max-h-48 custom-scroll border border-slate-800/80 rounded-lg">
+            <table class="w-full text-left text-xs font-mono">
+              <thead class="bg-slate-950 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2">Time (IST)</th>
+                  <th class="p-2">Type</th>
+                  <th class="p-2">Severity</th>
+                  <th class="p-2">Symbol</th>
+                  <th class="p-2">Message</th>
+                </tr>
+              </thead>
+              <tbody id="md-quality-events-tbody" class="divide-y divide-slate-800/60 text-slate-300">
+                <tr><td colspan="5" class="p-3 text-center text-slate-500">No anomalies detected. Feed integrity 100%.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between">
+        <span class="text-[11px] font-mono text-slate-400">All data captured with dual timestamping (UTC/IST) and cryptographic UUIDs.</span>
+        <button onclick="refreshMarketDataHealth()" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono font-semibold text-white transition flex items-center gap-1.5">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Refresh
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- HISTORICAL SESSION REPLAY & AUDIT MODAL                                -->
+  <!-- ===================================================================== -->
+  <div id="historical-replay-modal" onclick="if(event.target === this) closeHistoricalReplayModal()" style="display: none;" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5">
+    <div class="bg-[#0b0f19] border border-indigo-500/40 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">DETERMINISTIC SIMULATION</span>
+            <span class="text-xs font-mono text-cyan-400">Zero-Lookahead Replay Engine</span>
+          </div>
+          <h3 class="text-base sm:text-lg font-extrabold text-white mt-1">Replay Captured Historical Trading Sessions</h3>
+        </div>
+        <button onclick="closeHistoricalReplayModal()" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition">✕</button>
+      </div>
+
+      <div class="p-4 sm:p-5 overflow-y-auto space-y-4 custom-scroll">
+        <p class="text-xs text-slate-400">
+          Select a captured trading session to replay. The replay engine steps through 10-second analytical snapshots deterministically without future information, recalculating VWAP, ORB, GEX, and OBI at each historical second for strategy verification.
+        </p>
+
+        <!-- Sessions Table -->
+        <div class="border border-slate-800 rounded-xl overflow-hidden overflow-x-auto">
+          <table class="w-full text-left text-xs font-mono border-collapse min-w-[650px]">
+            <thead class="bg-slate-900 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="p-2.5">Date</th>
+                <th class="p-2.5">Start (IST)</th>
+                <th class="p-2.5">End (IST)</th>
+                <th class="p-2.5">10s Snapshots</th>
+                <th class="p-2.5">10m Intervals</th>
+                <th class="p-2.5">Status</th>
+                <th class="p-2.5 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="replay-sessions-tbody" class="divide-y divide-slate-800/60 text-slate-300">
+              <tr><td colspan="7" class="p-4 text-center text-slate-500">Loading captured market sessions...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between">
+        <span class="text-[11px] font-mono text-slate-400">Replay executes in isolated virtual time and never submits live orders.</span>
+        <button onclick="refreshReplaySessions()" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono font-semibold text-white transition flex items-center gap-1.5">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Refresh Sessions
+        </button>
+      </div>
+    </div>
+  </div>
+
 
   <!-- ===================================================================== -->
   <!-- AI MODEL BENCHMARK MODAL (Groq & OpenRouter Free Tier Comparison)     -->
@@ -30248,6 +30482,328 @@
       if (window.lucide) lucide.createIcons();
     }
 
-</script>
+
+    // =========================================================================
+    // MARKET DATA HEALTH & HISTORICAL REPLAY JAVASCRIPT CONTROLLERS
+    // =========================================================================
+    let replayPollInterval = null;
+    let isReplayActive = false;
+
+    async function openMarketDataHealthModal() {
+      const modal = document.getElementById('market-data-health-modal');
+      if (modal) modal.style.display = 'flex';
+      if (window.lucide) lucide.createIcons();
+      await refreshMarketDataHealth();
+    }
+
+    function closeMarketDataHealthModal() {
+      const modal = document.getElementById('market-data-health-modal');
+      if (modal) modal.style.display = 'none';
+    }
+
+    async function refreshMarketDataHealth() {
+      try {
+        const res = await fetch('/api/market-data/health');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Update gauges
+        const engStatus = document.getElementById('md-health-engine-status');
+        if (engStatus) {
+          engStatus.innerText = data.capture_engine_active ? 'ACTIVE' : 'STANDBY';
+          engStatus.className = `text-sm font-mono font-bold mt-1 ${data.capture_engine_active ? 'text-emerald-400' : 'text-slate-400'}`;
+        }
+        const subCount = document.getElementById('md-health-sub-count');
+        if (subCount) {
+          subCount.innerText = `${data.subscribed_instruments_count || 0} scrips subscribed (WebSocket ${data.websocket_connected ? 'Connected' : 'Disconnected'})`;
+        }
+        const qDepth = document.getElementById('md-health-queue-depth');
+        if (qDepth) {
+          qDepth.innerText = `${data.queue_depth || 0} / 20000`;
+        }
+        const dropCount = document.getElementById('md-health-dropped-count');
+        if (dropCount) {
+          dropCount.innerText = `${data.dropped_events_count || 0} drops (${data.dropped_events_count === 0 ? '100% loss-free' : 'Losses detected'})`;
+          dropCount.className = `text-[10px] mt-0.5 ${data.dropped_events_count === 0 ? 'text-emerald-400' : 'text-rose-400 font-bold'}`;
+        }
+        const eventsTotal = document.getElementById('md-health-events-total');
+        if (eventsTotal) {
+          eventsTotal.innerText = Number(data.events_persisted_total || 0).toLocaleString();
+        }
+        const lastTick = document.getElementById('md-health-last-tick');
+        if (lastTick) {
+          lastTick.innerText = data.last_event_time_ist ? `Last: ${data.last_event_time_ist.split(' ')[1]}` : 'Waiting for ticks...';
+        }
+        const dbSize = document.getElementById('md-health-db-size');
+        if (dbSize) {
+          dbSize.innerText = `${data.db_size_mb || 0} MB`;
+        }
+
+        // Table counts
+        const tbl = data.table_record_counts || {};
+        if (document.getElementById('md-tbl-raw')) document.getElementById('md-tbl-raw').innerText = Number(tbl.raw_market_events || 0).toLocaleString();
+        if (document.getElementById('md-tbl-quotes')) document.getElementById('md-tbl-quotes').innerText = Number(tbl.normalized_quotes || 0).toLocaleString();
+        if (document.getElementById('md-tbl-depth')) document.getElementById('md-tbl-depth').innerText = Number(tbl.market_depth_snapshots || 0).toLocaleString();
+        if (document.getElementById('md-tbl-chain')) document.getElementById('md-tbl-chain').innerText = Number(tbl.option_chain_snapshots || 0).toLocaleString();
+        if (document.getElementById('md-tbl-10s')) document.getElementById('md-tbl-10s').innerText = Number(tbl.analytical_snapshots_10s || 0).toLocaleString();
+        if (document.getElementById('md-tbl-10m')) document.getElementById('md-tbl-10m').innerText = Number(tbl.consolidated_snapshots_10m || 0).toLocaleString();
+
+        // Load data quality events
+        const qRes = await fetch('/api/market-data/history/quality-events?limit=25');
+        if (qRes.ok) {
+          const qData = await qRes.json();
+          const tbody = document.getElementById('md-quality-events-tbody');
+          const badge = document.getElementById('md-quality-count-badge');
+          if (badge) badge.innerText = `${(qData.events || []).length} anomalies`;
+          if (tbody) {
+            if (!qData.events || qData.events.length === 0) {
+              tbody.innerHTML = '<tr><td colspan="5" class="p-3 text-center text-slate-500">No anomalies detected. Feed integrity 100%.</td></tr>';
+            } else {
+              tbody.innerHTML = qData.events.map(ev => `
+                <tr class="hover:bg-slate-900/50">
+                  <td class="p-2 text-slate-400">${(ev.timestamp_ist || '').split(' ')[1] || ev.timestamp_ist}</td>
+                  <td class="p-2 text-cyan-300">${ev.event_type}</td>
+                  <td class="p-2"><span class="px-1.5 py-0.5 rounded text-[9px] ${ev.severity === 'ERROR' ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'}">${ev.severity}</span></td>
+                  <td class="p-2 text-white">${ev.instrument_symbol || '--'}</td>
+                  <td class="p-2 text-slate-300">${ev.message || '--'}</td>
+                </tr>
+              `).join('');
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed refreshing market data health:", err);
+      }
+    }
+
+    async function openHistoricalReplayModal() {
+      const modal = document.getElementById('historical-replay-modal');
+      if (modal) modal.style.display = 'flex';
+      if (window.lucide) lucide.createIcons();
+      await refreshReplaySessions();
+    }
+
+    function closeHistoricalReplayModal() {
+      const modal = document.getElementById('historical-replay-modal');
+      if (modal) modal.style.display = 'none';
+    }
+
+    async function refreshReplaySessions() {
+      try {
+        const res = await fetch('/api/market-data/sessions');
+        if (!res.ok) return;
+        const data = await res.json();
+        const tbody = document.getElementById('replay-sessions-tbody');
+        if (!tbody) return;
+
+        if (!data.sessions || data.sessions.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No captured sessions found. Start capturing live market hours to record sessions.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.sessions.map(s => `
+          <tr class="hover:bg-slate-900/50">
+            <td class="p-2.5 font-bold text-white">${s.session_date}</td>
+            <td class="p-2.5 text-slate-400">${s.capture_start_ist ? s.capture_start_ist.split(' ')[1] : (s.schedule_start_ist || '09:15')}</td>
+            <td class="p-2.5 text-slate-400">${s.capture_stop_ist ? s.capture_stop_ist.split(' ')[1] : (s.schedule_end_ist || '15:30')}</td>
+            <td class="p-2.5 text-cyan-400 font-bold">${Number(s.snapshot_10s_count || 0).toLocaleString()}</td>
+            <td class="p-2.5 text-purple-400 font-bold">${Number(s.snapshot_10m_count || 0).toLocaleString()}</td>
+            <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] ${s.session_status === 'COMPLETED' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-cyan-500/20 text-cyan-300'}">${s.session_status}</span></td>
+            <td class="p-2.5 text-right">
+              <button onclick="startReplayFromSession('${s.session_date}')" class="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition">
+                Replay ▶
+              </button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        console.error("Failed refreshing replay sessions:", err);
+      }
+    }
+
+    async function startReplayFromSession(sessionDate) {
+      try {
+        closeHistoricalReplayModal();
+        if (typeof showToast === 'function') showToast(`🎬 Initializing historical replay for session ${sessionDate}...`, "info");
+        const res = await fetch(`/api/market-data/replay/start?session_date=${sessionDate}&speed=1.0`, { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'ERROR') {
+          if (typeof showToast === 'function') showToast(`❌ ${data.message}`, "error");
+          return;
+        }
+
+        isReplayActive = true;
+        const bar = document.getElementById('replay-control-bar');
+        if (bar) bar.classList.remove('hidden');
+
+        const sessLbl = document.getElementById('replay-session-label');
+        if (sessLbl) sessLbl.innerText = sessionDate;
+
+        if (window.lucide) lucide.createIcons();
+
+        if (replayPollInterval) clearInterval(replayPollInterval);
+        replayPollInterval = setInterval(pollReplayState, 600);
+        if (typeof showToast === 'function') showToast(`▶ Replay running for ${sessionDate}`, "success");
+      } catch (err) {
+        if (typeof showToast === 'function') showToast(`Failed to start replay: ${err}`, "error");
+      }
+    }
+
+    async function pollReplayState() {
+      if (!isReplayActive) return;
+      try {
+        const res = await fetch('/api/market-data/replay/state');
+        if (!res.ok) return;
+        const state = await res.json();
+        if (state.status === 'STANDBY' || state.status === 'STOPPED') {
+          stopReplay(false);
+          return;
+        }
+
+        // Update Replay Bar elements
+        const clock = document.getElementById('replay-virtual-clock');
+        if (clock && state.virtual_timestamp_ist) clock.innerText = state.virtual_timestamp_ist.split(' ')[1] || state.virtual_timestamp_ist;
+
+        const spotLbl = document.getElementById('replay-virtual-spot');
+        if (spotLbl && state.spot_price) spotLbl.innerText = `₹${Number(state.spot_price).toFixed(2)}`;
+
+        const progLbl = document.getElementById('replay-progress-label');
+        if (progLbl && state.snapshot_progress) progLbl.innerText = state.snapshot_progress;
+
+        const progPct = document.getElementById('replay-progress-pct');
+        if (progPct && state.progress_pct !== undefined) progPct.innerText = `${state.progress_pct}%`;
+
+        const scrubber = document.getElementById('replay-scrubber');
+        if (scrubber && !scrubber._userDragging && state.progress_pct !== undefined) {
+          scrubber.value = state.progress_pct;
+        }
+
+        const playBtnText = document.getElementById('text-replay-play-pause');
+        if (playBtnText) playBtnText.innerText = state.is_paused ? 'Resume' : 'Pause';
+
+        // Apply state directly into Intraday Desk cards
+        applyReplayStateToIntradayCards(state);
+
+      } catch (err) {
+        console.warn("Replay state poll notice:", err);
+      }
+    }
+
+    function applyReplayStateToIntradayCards(state) {
+      if (!state || !state.spot_price) return;
+      
+      // Update Spot & ATM
+      if (typeof updateIntradaySpotAtmCard === 'function') {
+        const spot = Number(state.spot_price);
+        const atm = Math.round(spot / 50) * 50;
+        updateIntradaySpotAtmCard(spot, atm, true, `<span class="text-indigo-400 font-mono font-bold">[REPLAY]</span>`, `Virtual: ${state.virtual_timestamp_ist || ''}`);
+      }
+
+      // Update VWAP & ORB card elements if present
+      const vwapPtsEl = document.getElementById('intra-vwap-dist-pts');
+      if (vwapPtsEl && state.vwap_distance_pts !== undefined) {
+        vwapPtsEl.innerText = `${state.vwap_distance_pts >= 0 ? '+' : ''}${Number(state.vwap_distance_pts).toFixed(1)} pts`;
+      }
+      const vwapPctEl = document.getElementById('intra-vwap-dist-pct');
+      if (vwapPctEl && state.vwap_distance_pct !== undefined) {
+        vwapPctEl.innerText = `(${state.vwap_distance_pct >= 0 ? '+' : ''}${Number(state.vwap_distance_pct).toFixed(3)}%)`;
+      }
+
+      // Update GEX card elements
+      const gexNetEl = document.getElementById('intra-gex-net-val');
+      if (gexNetEl && state.total_net_gex_cr !== undefined) {
+        gexNetEl.innerText = `₹${Number(state.total_net_gex_cr).toFixed(1)} Cr`;
+      }
+      const gexFlipEl = document.getElementById('intra-gex-flip-val');
+      if (gexFlipEl && state.zero_gamma_flip !== undefined) {
+        gexFlipEl.innerText = state.zero_gamma_flip ? `₹${Number(state.zero_gamma_flip).toFixed(1)}` : 'None in Scan Range';
+      }
+
+      // Update Sector Drag & Dispersion
+      const secDispEl = document.getElementById('intra-sector-dispersion');
+      if (secDispEl && state.sector_spread_pp !== undefined) {
+        secDispEl.innerText = `${Number(state.sector_spread_pp).toFixed(2)} pp`;
+      }
+      const secDragEl = document.getElementById('intra-weighted-drag');
+      if (secDragEl && state.weighted_index_drag_pp !== undefined) {
+        secDragEl.innerText = `${Number(state.weighted_index_drag_pp).toFixed(2)} pp`;
+      }
+    }
+
+    async function toggleReplayPlayPause() {
+      const btn = document.getElementById('text-replay-play-pause');
+      const isCurrentlyPaused = btn && btn.innerText === 'Resume';
+      const action = isCurrentlyPaused ? 'resume' : 'pause';
+      try {
+        await fetch(`/api/market-data/replay/control?action=${action}`, { method: 'POST' });
+        if (btn) btn.innerText = isCurrentlyPaused ? 'Pause' : 'Resume';
+      } catch (err) {
+        console.error("Replay control error:", err);
+      }
+    }
+
+    async function stepReplay(seconds = 10) {
+      try {
+        await fetch(`/api/market-data/replay/control?action=step&value=${seconds}`, { method: 'POST' });
+        await pollReplayState();
+      } catch (err) {
+        console.error("Replay step error:", err);
+      }
+    }
+
+    async function setReplaySpeed(val) {
+      try {
+        await fetch(`/api/market-data/replay/control?action=speed&value=${val}`, { method: 'POST' });
+      } catch (err) {
+        console.error("Replay speed error:", err);
+      }
+    }
+
+    function onReplayScrubberInput(val) {
+      const scrubber = document.getElementById('replay-scrubber');
+      if (scrubber) scrubber._userDragging = true;
+    }
+
+    async function onReplayScrubberChange(val) {
+      const scrubber = document.getElementById('replay-scrubber');
+      if (scrubber) scrubber._userDragging = false;
+      // Seek by approximate time of day
+      const pct = parseFloat(val);
+      // 09:15 to 15:30 is 375 minutes = 22,500 seconds
+      const totalSec = 375 * 60;
+      const targetSec = (pct / 100.0) * totalSec;
+      const startSec = 9 * 3600 + 15 * 60;
+      const destSec = startSec + targetSec;
+      const h = Math.floor(destSec / 3600);
+      const m = Math.floor((destSec % 3600) / 60);
+      const s = Math.floor(destSec % 60);
+      const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      try {
+        await fetch(`/api/market-data/replay/control?action=seek&timestamp=${encodeURIComponent(timeStr)}`, { method: 'POST' });
+        await pollReplayState();
+      } catch (err) {
+        console.error("Replay seek error:", err);
+      }
+    }
+
+    async function stopReplay(notifyBackend = true) {
+      isReplayActive = false;
+      if (replayPollInterval) {
+        clearInterval(replayPollInterval);
+        replayPollInterval = null;
+      }
+      const bar = document.getElementById('replay-control-bar');
+      if (bar) bar.classList.add('hidden');
+
+      if (notifyBackend) {
+        try {
+          await fetch('/api/market-data/replay/stop', { method: 'POST' });
+        } catch (e) {}
+      }
+      if (typeof showToast === 'function') showToast("Live market stream resumed.", "info");
+      loadIntradayExpiryDesk(true);
+    }
+
+  </script>
 </body>
 </html>

@@ -1,11 +1,10 @@
 /**
- * NSE Trading Desk — Progressive Web App Service Worker (v1.0)
- * Provides offline shell caching, instant load times, and network-first live data.
+ * NSE Trading Desk — Progressive Web App Service Worker (v2.0)
+ * Real-time financial analytics: Network-first with fresh HTML bypass.
  */
 
-const CACHE_NAME = 'nse-tradingdesk-v1';
+const CACHE_NAME = 'nse-tradingdesk-v2';
 const STATIC_ASSETS = [
-  '/',
   '/manifest.json',
   '/static/manifest.json',
   '/static/icon-192.png',
@@ -15,24 +14,26 @@ const STATIC_ASSETS = [
   'https://unpkg.com/lucide@latest'
 ];
 
-// Install: Cache critical app shell
+// Install: Cache critical static shell (NEVER cache dynamic '/' HTML)
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS).catch((err) => {
         console.warn('PWA Asset precaching warning (non-fatal):', err);
       });
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
-// Activate: Clean up older cache versions
+// Activate: Evict all previous cache versions immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
+            console.log('Clearing old PWA cache version:', key);
             return caches.delete(key);
           }
         })
@@ -41,16 +42,20 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch: Network-First for real-time market data & APIs; Cache-First for static assets
+// Fetch: Strictly Network-Only / Network-First for real-time market data & HTML navigations
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // Strictly Network-First for dynamic API calls & SSE streams
+  // Dynamic API calls, SSE streams, WebSockets, or mutations: Network only
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/health') || request.method !== 'GET') {
     event.respondWith(
       fetch(request).catch(() => {
-        return new Response(JSON.stringify({ status: 'OFFLINE', data_unavailable: true, message: 'You are currently offline. Market data unavailable.' }), {
+        return new Response(JSON.stringify({ 
+          status: 'OFFLINE', 
+          data_unavailable: true, 
+          message: 'Network offline. Live market data stream unavailable.' 
+        }), {
           status: 503,
           headers: { 'Content-Type': 'application/json' }
         });
@@ -59,27 +64,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-First with Cache Fallback for HTML page navigation
-  if (request.mode === 'navigate') {
+  // HTML page navigation: Always Network First, do NOT store HTML in persistent cache
+  if (request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html')) {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          return response;
-        })
-        .catch(() => {
-          return caches.match('/') || caches.match(request);
-        })
+      fetch(request).catch(() => {
+        return caches.match('/manifest.json') || new Response(
+          '<!DOCTYPE html><html><body style="background:#0b0e14;color:#f87171;font-family:sans-serif;padding:2rem;text-align:center;"><h2>Offline</h2><p>Market data system is offline. Please check your internet connection.</p></body></html>',
+          { headers: { 'Content-Type': 'text/html' } }
+        );
+      })
     );
     return;
   }
 
-  // Cache-First for static files (icons, fonts, scripts)
+  // Static assets (images, icons, fonts): Cache-first with background revalidation
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) {
-        // Background revalidation
         fetch(request).then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             caches.open(CACHE_NAME).then((cache) => cache.put(request, networkResponse));

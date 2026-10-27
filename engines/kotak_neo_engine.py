@@ -141,6 +141,7 @@ class KotakNeoEngine:
         self._last_login_time_ist: Optional[str] = None
         self._ticks_received_count: int = 0
         self._last_tick_time_ist: Optional[str] = None
+        self._tick_listeners: List[Any] = []
 
         # Bidirectional Scrip Master Maps
         self._symbol_to_token: Dict[str, str] = dict(SEED_SYMBOL_TO_TOKEN)
@@ -1113,6 +1114,18 @@ class KotakNeoEngine:
             "updated_at": format_ist()
         }
 
+    def register_tick_listener(self, listener: Any) -> None:
+        """Registers a non-blocking callback to receive authentic raw market data ticks."""
+        with self._lock:
+            if listener not in self._tick_listeners:
+                self._tick_listeners.append(listener)
+
+    def unregister_tick_listener(self, listener: Any) -> None:
+        """Unregisters a previously registered tick listener."""
+        with self._lock:
+            if listener in self._tick_listeners:
+                self._tick_listeners.remove(listener)
+
     def _process_sfeed_message(self, message: Any):
         """
         Processes incoming real-time market data ticks from SFeedWebSocket or callbacks.
@@ -1120,6 +1133,14 @@ class KotakNeoEngine:
         """
         if not message:
             return
+
+        # Dispatch to registered tick listeners (e.g. Historical Capture Engine)
+        if self._tick_listeners:
+            for listener in list(self._tick_listeners):
+                try:
+                    listener(message)
+                except Exception as l_err:
+                    logger.debug(f"Tick listener dispatch notice: {l_err}")
 
         now_str = format_ist()
         dt_now = now_ist()
