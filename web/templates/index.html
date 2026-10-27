@@ -4231,47 +4231,47 @@
 
         <!-- 6 Live Intraday Weekly Expiry KPI Cards -->
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-4 items-stretch">
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
             <div>
               <div class="text-[10px] font-mono uppercase text-amber-400">Nifty Spot & ATM</div>
-              <div id="intra-kpi-spot" class="text-base sm:text-xl font-mono font-bold text-white mt-1 flex items-center justify-between gap-1.5">--</div>
+              <div id="intra-kpi-spot" class="text-base sm:text-lg font-mono font-bold text-white mt-0.5 flex items-center justify-between gap-1.5 truncate">--</div>
             </div>
-            <div id="intra-kpi-spot-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">ATM: -- | Exp: --</div>
+            <div id="intra-kpi-spot-sub" class="text-[10px] text-slate-400 font-mono mt-0.5 truncate">ATM: -- | Exp: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
             <div>
               <div class="text-[10px] font-mono uppercase text-cyan-400">ATM Straddle Premium</div>
-              <div id="intra-kpi-straddle" class="text-base sm:text-xl font-mono font-bold text-cyan-300 mt-1">--</div>
+              <div id="intra-kpi-straddle" class="text-base sm:text-lg font-mono font-bold text-cyan-300 mt-0.5 truncate">--</div>
             </div>
-            <div id="intra-kpi-straddle-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">CE: -- | PE: --</div>
+            <div id="intra-kpi-straddle-sub" class="text-[10px] text-slate-400 font-mono mt-0.5 truncate">CE: -- | PE: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
             <div>
               <div class="text-[10px] font-mono uppercase text-emerald-400">Near-ATM / Overall PCR</div>
-              <div id="intra-kpi-pcr" class="text-base sm:text-xl font-mono font-bold text-emerald-400 mt-1">--</div>
+              <div id="intra-kpi-pcr" class="text-base sm:text-lg font-mono font-bold text-emerald-400 mt-0.5 truncate">--</div>
             </div>
-            <div id="intra-kpi-pcr-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">ATM PCR: -- | ΔOI PCR: --</div>
+            <div id="intra-kpi-pcr-sub" class="text-[10px] text-slate-400 font-mono mt-0.5 truncate">ATM PCR: -- | ΔOI PCR: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between min-h-[76px] overflow-hidden">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
             <div>
               <div class="text-[10px] font-mono uppercase text-violet-400">Put Wall / Call Wall</div>
-              <div id="intra-kpi-walls" class="text-xs sm:text-sm lg:text-base font-mono font-bold text-violet-300 mt-1 whitespace-nowrap overflow-hidden text-ellipsis">-- / --</div>
+              <div id="intra-kpi-walls" class="text-xs sm:text-sm font-mono font-bold text-violet-300 mt-0.5 whitespace-nowrap truncate">-- / --</div>
             </div>
-            <div id="intra-kpi-maxpain" class="text-[10px] text-slate-400 font-mono mt-0.5 whitespace-nowrap">Max Pain: --</div>
+            <div id="intra-kpi-maxpain" class="text-[10px] text-slate-400 font-mono mt-0.5 whitespace-nowrap truncate">Max Pain: --</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
             <div>
-              <div class="text-[10px] font-mono uppercase text-blue-400">Fresh Intraday ΔOI (±8)</div>
-              <div id="intra-kpi-oiflow" class="text-base sm:text-xl font-mono font-bold text-white mt-1">--</div>
+              <div class="text-[10px] font-mono uppercase text-blue-400" title="Net Option Writing Delta across ±8 active strikes from ATM = PE Change in OI minus CE Change in OI">Fresh Intraday ΔOI (±8)</div>
+              <div id="intra-kpi-oiflow" class="text-base sm:text-lg font-mono font-bold text-white mt-0.5 truncate">--</div>
             </div>
-            <div id="intra-kpi-oiflow-sub" class="text-[10px] text-slate-400 font-mono mt-0.5">PE ΔOI vs CE ΔOI</div>
+            <div id="intra-kpi-oiflow-sub" class="text-[10px] text-slate-400 font-mono mt-0.5 truncate" title="PE ΔOI minus CE ΔOI">PE ΔOI vs CE ΔOI</div>
           </div>
-          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+          <div class="bg-slate-950/85 border border-slate-800 rounded-xl p-3 flex flex-col justify-between h-[84px] min-h-[84px] max-h-[84px] overflow-hidden">
             <div>
               <div class="text-[10px] font-mono uppercase text-rose-400">Regime & ATM IV / Skew</div>
-              <div id="intra-kpi-regime" class="text-xs sm:text-sm font-mono font-bold text-amber-300 mt-1 leading-snug break-words">--</div>
+              <div id="intra-kpi-regime" class="text-xs sm:text-sm font-mono font-bold text-amber-300 mt-0.5 truncate">--</div>
             </div>
-            <div id="intra-kpi-iv" class="text-[10px] text-slate-400 font-mono mt-0.5">ATM IV: -- | Skew: --</div>
+            <div id="intra-kpi-iv" class="text-[10px] text-slate-400 font-mono mt-0.5 truncate">ATM IV: -- | Skew: --</div>
           </div>
         </div>
       </div>
@@ -10589,6 +10589,27 @@
       }
     };
 
+    // Unified Intraday Put/Call Wall & Max Pain State Tracker (Guarantees zero flicker, zero race conditions)
+    window._latestIntradayWallsState = { putWall: '', callWall: '', maxPain: '' };
+    window.updateIntradayWallsCard = function(pw, cw, mp) {
+      const s = window._latestIntradayWallsState;
+      if (pw && pw !== '--') s.putWall = String(pw);
+      if (cw && cw !== '--') s.callWall = String(cw);
+      if (mp && mp !== '--') s.maxPain = String(mp);
+
+      const wallsEl = document.getElementById('intra-kpi-walls');
+      if (wallsEl && s.putWall && s.callWall) {
+        const wallTxt = `${s.putWall} PE / ${s.callWall} CE`;
+        if (wallsEl.innerText !== wallTxt) wallsEl.innerText = wallTxt;
+      }
+
+      const mpEl = document.getElementById('intra-kpi-maxpain');
+      if (mpEl && s.maxPain) {
+        const mpTxt = `Max Pain: ${s.maxPain}`;
+        if (mpEl.innerText !== mpTxt) mpEl.innerText = mpTxt;
+      }
+    };
+
     async function pollLiveSpotTick() {
       if (document.hidden) return;
       try {
@@ -11133,13 +11154,10 @@
       }
 
       const liveAn = data.live_analysis || {};
-      const wallsEl = document.getElementById('intra-kpi-walls');
-      const mpEl = document.getElementById('intra-kpi-maxpain');
       const putWall = synced.put_wall || liveAn.put_wall || latest.put_wall || '--';
       const callWall = synced.call_wall || liveAn.call_wall || latest.call_wall || '--';
       const maxPain = synced.max_pain || liveAn.max_pain || latest.max_pain || '--';
-      if (wallsEl) wallsEl.innerText = `${putWall} PE / ${callWall} CE`;
-      if (mpEl) mpEl.innerText = isMarketOpen ? `Max Pain: ${maxPain} (Live)` : `Max Pain: ${maxPain}`;
+      updateIntradayWallsCard(putWall, callWall, maxPain);
 
       const peChg = Number(synced.net_pe_oi_chg !== undefined ? synced.net_pe_oi_chg : (liveAn.net_pe_oi_chg !== undefined ? liveAn.net_pe_oi_chg : (latest.net_pe_oi_chg || 0)));
       const ceChg = Number(synced.net_ce_oi_chg !== undefined ? synced.net_ce_oi_chg : (liveAn.net_ce_oi_chg !== undefined ? liveAn.net_ce_oi_chg : (latest.net_ce_oi_chg || 0)));
@@ -11147,11 +11165,14 @@
       const oiFlowEl = document.getElementById('intra-kpi-oiflow');
       const oiFlowSub = document.getElementById('intra-kpi-oiflow-sub');
       if (oiFlowEl) {
-        oiFlowEl.innerText = `${netFlowLakhs >= 0 ? '+' : ''}${netFlowLakhs.toFixed(2)}L Net PE`;
-        oiFlowEl.className = `text-base sm:text-xl font-mono font-bold mt-1 ${netFlowLakhs >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+        const absFlow = Math.abs(netFlowLakhs);
+        const flowLabel = netFlowLakhs >= 0 ? `+${absFlow.toFixed(2)}L Net PE` : `+${absFlow.toFixed(2)}L Net CE`;
+        if (oiFlowEl.innerText !== flowLabel) oiFlowEl.innerText = flowLabel;
+        oiFlowEl.className = `text-base sm:text-lg font-mono font-bold mt-1 truncate ${netFlowLakhs >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
       }
       if (oiFlowSub) {
-        oiFlowSub.innerText = `PE: ${(peChg / 100000).toFixed(1)}L vs CE: ${(ceChg / 100000).toFixed(1)}L`;
+        const subTxt = `PE: ${(peChg / 100000).toFixed(1)}L vs CE: ${(ceChg / 100000).toFixed(1)}L (Writing Δ)`;
+        if (oiFlowSub.innerText !== subTxt) oiFlowSub.innerText = subTxt;
       }
 
       const regEl = document.getElementById('intra-kpi-regime');
@@ -27504,15 +27525,8 @@
                 }
               }
 
-              if (intra.put_wall && intra.call_wall) {
-                const wallsEl = document.getElementById('intra-kpi-walls');
-                const nextWallText = `${intra.put_wall} PE / ${intra.call_wall} CE`;
-                if (wallsEl && wallsEl.innerText !== nextWallText) wallsEl.innerText = nextWallText;
-              }
-              if (intra.max_pain) {
-                const mpEl = document.getElementById('intra-kpi-maxpain');
-                const nextMpText = `Max Pain: ${intra.max_pain}`;
-                if (mpEl && mpEl.innerText !== nextMpText) mpEl.innerText = nextMpText;
+              if (intra.put_wall || intra.call_wall || intra.max_pain) {
+                updateIntradayWallsCard(intra.put_wall, intra.call_wall, intra.max_pain);
               }
 
               if (intra.market_state) {
