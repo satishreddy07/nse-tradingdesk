@@ -19,7 +19,9 @@ from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge, LogisticRegression
+from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 
 from core.market_calendar import IST, now_ist, format_ist
 from execution.state_engine import state_engine
@@ -32,6 +34,17 @@ class IntradayMLEngine:
     Online Intraday Machine Learning Regressor & Classifier.
     Trains dynamically on prior slots of today and recent trading sessions.
     """
+
+    FEATURE_NAMES = [
+        "spot_return_pct",
+        "straddle_decay_pct",
+        "near_atm_pcr_delta",
+        "atm_pcr_delta",
+        "oi_flow_ratio",
+        "wall_pressure",
+        "iv_skew_delta",
+        "session_time_fraction",
+    ]
 
     def __init__(self):
         self._cache: Dict[str, Any] = {}
@@ -85,6 +98,17 @@ class IntradayMLEngine:
                 prev = g_sorted.iloc[i - 1]
                 curr = g_sorted.iloc[i]
 
+                # Calculate interval between prev and curr; skip discontinuous gaps (> 45 min)
+                try:
+                    t_curr = datetime.datetime.strptime(f"{s_date} {curr['slot_time']}", "%Y-%m-%d %H:%M")
+                    t_prev = datetime.datetime.strptime(f"{s_date} {prev['slot_time']}", "%Y-%m-%d %H:%M")
+                    gap_min = (t_curr - t_prev).total_seconds() / 60.0
+                except Exception:
+                    gap_min = 15.0
+
+                if gap_min <= 0 or gap_min > 45.0:
+                    continue
+
                 # Features at curr relative to prev
                 feat = self._extract_features(prev, curr)
                 if feat is None:
@@ -93,108 +117,123 @@ class IntradayMLEngine:
                 # Target: Next spot change if next row exists in the same session
                 if i + 1 < len(g_sorted):
                     nxt = g_sorted.iloc[i + 1]
+                    try:
+                        t_nxt = datetime.datetime.strptime(f"{s_date} {nxt['slot_time']}", "%Y-%m-%d %H:%M")
+                        gap_fwd_min = (t_nxt - t_curr).total_seconds() / 60.0
+                    except Exception:
+                        gap_fwd_min = 15.0
+
+                    if gap_fwd_min <= 0 or gap_fwd_min > 45.0:
+                        # Skip target if forward interval is discontinuous
+                        continue
+
                     next_spot_ret = ((float(nxt["spot_price"]) - float(curr["spot_price"])) / max(1.0, float(curr["spot_price"]))) * 100.0
                     feature_rows.append(feat)
                     target_delta.append(next_spot_ret)
 
-                    # Classify regime: > +0.08% = Bullish, < -0.08% = Bearish, else Flat
-                    if next_spot_ret >= 0.08:
+                    # Dynamic regime threshold normalized by horizon duration: ~0.05% per 15 min
+                    horizon_thresh = max(0.04, min(0.12, 0.05 * math.sqrt(gap_fwd_min / 15.0)))
+                    if next_spot_ret >= horizon_thresh:
                         reg_val = 1
-                    elif next_spot_ret <= -0.08:
+                    elif next_spot_ret <= -horizon_thresh:
                         reg_val = -1
                     else:
                         reg_val = 0
                     target_regime.append(reg_val)
 
-        # 3. Fit Online ML Models (Ridge Regressor + Multi-class Logistic Classifier)
+        # 3. Fit Online ML Models (Pipeline Isolated Ridge Regressor + Logistic Calibrator)
         X = np.array(feature_rows, dtype=np.float64) if feature_rows else np.empty((0, 8))
         y_d = np.array(target_delta, dtype=np.float64) if target_delta else np.empty((0,))
         y_r = np.array(target_regime, dtype=np.int64) if target_regime else np.empty((0,))
 
-        scaler = StandardScaler()
-        r2_score = 0.0
-        acc_score = 0.0
+        r2_score: Optional[float] = None
+        acc_score: Optional[float] = None
+        baseline_acc: Optional[float] = None
 
-        ridge_model = Ridge(alpha=1.0)
-        clf_model = LogisticRegression(max_iter=300)
+        pipe_reg = make_pipeline(StandardScaler(), Ridge(alpha=1.0))
+        pipe_clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=300))
 
         # Build feature vector for the latest recorded slot of today
         today_snaps = df[df["session_date"] == today_str].sort_values(by="slot_time").reset_index(drop=True)
         if len(today_snaps) >= 2:
-            latest_prev = today_snaps.iloc[-2]
-            latest_curr = today_snaps.iloc[-1]
-            x_live = self._extract_features(latest_prev, latest_curr)
+            latest_prev = today_snaps.iloc[-2].copy()
+            latest_curr = today_snaps.iloc[-1].copy()
         elif not today_snaps.empty:
-            # Only 1 slot today: compare against the opening snapshot or previous available session slot
-            latest_curr = today_snaps.iloc[-1]
-            prev_cand = df.iloc[-2] if len(df) >= 2 else latest_curr
-            x_live = self._extract_features(prev_cand, latest_curr)
+            latest_curr = today_snaps.iloc[-1].copy()
+            latest_prev = df.iloc[-2].copy() if len(df) >= 2 else latest_curr
         else:
-            latest_curr = df.iloc[-1]
-            latest_prev = df.iloc[-2] if len(df) >= 2 else latest_curr
-            x_live = self._extract_features(latest_prev, latest_curr)
+            latest_curr = df.iloc[-1].copy()
+            latest_prev = df.iloc[-2].copy() if len(df) >= 2 else latest_curr
 
-        # Check if live tick is available to refine the current feature vector
+        # Synchronize live spot price onto latest_curr to maintain 100% training/live feature parity
         try:
             from engines.nifty_analytics_engine import nifty_analytics_engine
-            live_spot = nifty_analytics_engine.get_live_nifty_spot(force_refresh=False)
-            current_spot = float(live_spot.get("price") or latest_curr["spot_price"])
-            # Update live spot return in feature vector if live spot differs from slot spot
-            slot_spot = float(latest_curr["spot_price"])
-            if current_spot > 0 and slot_spot > 0 and x_live and len(x_live) >= 8:
-                x_live[0] = ((current_spot - slot_spot) / slot_spot) * 100.0
+            live_spot_dict = nifty_analytics_engine.get_live_nifty_spot(force_refresh=False)
+            current_spot = float(live_spot_dict.get("price") or latest_curr["spot_price"])
         except Exception:
             current_spot = float(latest_curr["spot_price"])
 
-        # Train models if sufficient samples exist
-        if len(X) >= 6:
+        if current_spot > 0:
+            latest_curr["spot_price"] = current_spot
+
+        x_live = self._extract_features(latest_prev, latest_curr)
+
+        # Minimum sample gate: require N >= 15 transitions and >= 2 distinct classes
+        has_sufficient_data = len(X) >= 15 and len(np.unique(y_r)) >= 2
+        if has_sufficient_data:
             try:
-                X_scaled = scaler.fit_transform(X)
+                # Walk-Forward TimeSeriesSplit cross validation (Zero Lookahead Leakage)
+                n_splits = min(3, max(2, len(X) // 10))
+                tscv = TimeSeriesSplit(n_splits=n_splits)
 
-                # Cross-validated out-of-sample metrics (Finding 6.5)
-                from sklearn.model_selection import cross_val_score
-                cv_k = min(3, len(X))
-                if cv_k >= 2 and len(np.unique(y_r)) > 1:
-                    try:
-                        r2_cv = cross_val_score(ridge_model, X_scaled, y_d, cv=cv_k, scoring="r2")
-                        r2_score = round(float(np.mean(r2_cv)), 3)
-                    except Exception:
-                        r2_score = 0.0
-                    try:
-                        acc_cv = cross_val_score(clf_model, X_scaled, y_r, cv=cv_k)
-                        acc_score = round(float(np.mean(acc_cv)), 3)
-                    except Exception:
-                        acc_score = 0.50
-                else:
-                    r2_score = 0.0
-                    acc_score = 0.50
+                try:
+                    r2_cv = cross_val_score(pipe_reg, X, y_d, cv=tscv, scoring="r2")
+                    r2_score = round(float(np.mean(r2_cv)), 3)
+                except Exception:
+                    r2_score = None
 
-                ridge_model.fit(X_scaled, y_d)
-                clf_model.fit(X_scaled, y_r)
+                try:
+                    acc_cv = cross_val_score(pipe_clf, X, y_r, cv=tscv)
+                    acc_score = round(float(np.mean(acc_cv)), 3)
+                except Exception:
+                    acc_score = None
 
-                x_live_scaled = scaler.transform([x_live])
-                pred_ret_pct = float(ridge_model.predict(x_live_scaled)[0])
+                # Compute baseline majority-class accuracy
+                _, counts = np.unique(y_r, return_counts=True)
+                baseline_acc = round(float(np.max(counts) / len(y_r)), 3)
 
-                # Get class probabilities: classes might be [-1, 0, 1]
-                classes = list(clf_model.classes_)
-                probs = clf_model.predict_proba(x_live_scaled)[0]
-                prob_map = {c: p for c, p in zip(classes, probs)}
-                raw_down = float(prob_map.get(-1, 0.0))
-                raw_flat = float(prob_map.get(0, 0.0))
-                raw_up = float(prob_map.get(1, 0.0))
-                tot = raw_down + raw_flat + raw_up
+                pipe_reg.fit(X, y_d)
+                pipe_clf.fit(X, y_r)
+
+                pred_ret_pct = float(pipe_reg.predict([x_live])[0])
+
+                # Probability calibration from multi-class logistic regression
+                clf_classes = list(pipe_clf.named_steps["logisticregression"].classes_)
+                probs = pipe_clf.predict_proba([x_live])[0]
+                prob_map = {c: p for c, p in zip(clf_classes, probs)}
+                p_down = round(float(prob_map.get(-1, 0.0)), 3)
+                p_flat = round(float(prob_map.get(0, 0.0)), 3)
+                p_up = round(float(prob_map.get(1, 0.0)), 3)
+                tot = p_down + p_flat + p_up
                 if tot > 0:
-                    p_down = round(raw_down / tot, 3)
-                    p_flat = round(raw_flat / tot, 3)
-                    p_up = round(raw_up / tot, 3)
+                    p_down, p_flat, p_up = round(p_down / tot, 3), round(p_flat / tot, 3), round(p_up / tot, 3)
                 else:
                     p_down, p_flat, p_up = 0.33, 0.34, 0.33
+
+                model_type = "Pipeline Ridge Regressor + Logistic Calibrator (TimeSeriesSplit Validated)"
+                calibration_status = "CROSS_VALIDATED_TS_SPLIT"
+                conf_note = "Model trained on chronological prior transitions with walk-forward time-series validation."
             except Exception as me:
                 logger.debug(f"Intraday ML fitting notice: {me}")
                 pred_ret_pct, p_up, p_flat, p_down = self._analytical_bayesian_fallback(x_live)
+                model_type = "Analytical Bayesian Flow Prior"
+                calibration_status = "UNVERIFIED_PRIOR"
+                conf_note = "Heuristic flow prior active due to convergence exception."
         else:
-            # Analytical Bayesian Flow Prior (Derived mathematically from pure slot OI & Straddle Decay)
             pred_ret_pct, p_up, p_flat, p_down = self._analytical_bayesian_fallback(x_live)
+            model_type = "Analytical Bayesian Flow Prior"
+            calibration_status = "UNVERIFIED_PRIOR"
+            conf_note = f"Sample size ({len(X)} transitions) below minimum threshold (N >= 15). Uncalibrated baseline prior active."
 
         # Compute spot predictions
         pred_pts_delta = round((pred_ret_pct / 100.0) * current_spot, 1)
@@ -261,8 +300,12 @@ class IntradayMLEngine:
                 "total_transitions_trained": len(X),
                 "r2_score": r2_score,
                 "accuracy": acc_score,
+                "baseline_accuracy": baseline_acc,
                 "latency_ms": latency_ms,
-                "model_type": "Ridge Regressor + Multinomial Logistic Calibrator" if len(X) >= 6 else "Analytical Bayesian Flow Prior"
+                "model_type": model_type,
+                "calibration_status": calibration_status,
+                "confidence_note": conf_note,
+                "feature_names": self.FEATURE_NAMES,
             }
         }
 

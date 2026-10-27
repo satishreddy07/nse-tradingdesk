@@ -1302,8 +1302,9 @@ class NiftyAnalyticsEngine:
             k = float(s["strike"])
             d1 = (math.log(max(1e-4, spot_price) / max(1e-4, k)) + (RISK_FREE_RATE + 0.5 * sig_gex ** 2) * t_years_gex) / (sig_gex * sqrt_t_gex)
             gamma_k = (1.0 / (math.sqrt(2.0 * math.pi) * spot_price * sig_gex * sqrt_t_gex)) * math.exp(-0.5 * d1 * d1)
-            # Net dealer gamma: PE_OI generates positive dealer gamma, CE_OI generates negative dealer gamma
-            net_gex_cr += (spot_price ** 2) * gamma_k * (float(s["pe_oi"]) - float(s["ce_oi"])) * gex_lot_size / 1e7
+            # Canonical GEX (Cr INR per 1% spot move) = (S^2 * Gamma_k * (CE_OI - PE_OI)) / 10^9
+            # where OI is in underlying shares and dealer net gamma is assumed long calls (+), short puts (-)
+            net_gex_cr += (spot_price ** 2) * gamma_k * (float(s["ce_oi"]) - float(s["pe_oi"])) / 1e9
 
         net_gex_score = round(net_gex_cr, 2)
         if net_gex_score > 5.0:
@@ -1382,6 +1383,7 @@ class NiftyAnalyticsEngine:
                     "Downside Put Protection Demand (Positive Skew)" if iv_skew > 1.2
                     else ("Upside Call Chasing (Negative Skew)" if iv_skew < -1.2 else "Balanced Volatility Smile")
                 ),
+                "atm_iv_methodology": "COMPOSITE_ATM_IV_MEAN" if valid_ivs else "INDIA_VIX_FALLBACK",
                 "gex_regime": gex_regime,
                 "net_near_oi_diff": near_pe_oi - near_ce_oi,
                 "net_near_chg_oi_diff": near_pe_chg - near_ce_chg,

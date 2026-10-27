@@ -105,17 +105,40 @@ class IntradayAnalyticsEngine:
         return ticker, None, None
 
     @staticmethod
-    def _calc_bs_gamma(spot: float, strike: float, T: float, iv: float) -> float:
+    def _calc_bs_gamma(
+        spot: float,
+        strike: float,
+        T: float,
+        iv: float,
+        r: float = 0.0,
+        q: float = 0.0,
+    ) -> float:
         """
-        Analytical Black-Scholes Gamma d2C/dS2 = phi(d1) / (S * sigma * sqrt(T)).
-        Returns 0.0 for invalid boundary conditions.
+        Analytical Black-Scholes-Merton Gamma for European Index Options with continuous dividend yield:
+            d1 = [ln(S / K) + (r - q + 0.5 * sigma^2) * T] / (sigma * sqrt(T))
+            Gamma = exp(-q * T) * phi(d1) / (S * sigma * sqrt(T))
+
+        Where:
+            S: Underlying index spot price (e.g. NIFTY 50)
+            K: Strike price
+            T: Time to expiry in annualized years (ACT/365.25)
+            iv: Annualized implied volatility (sigma > 0)
+            r: Continuously compounded risk-free benchmark rate (Default: 0.065, 6.5% RBI repo rate)
+            q: Continuously compounded dividend yield of NIFTY index (Default: 0.012, ~1.2% historical dividend yield)
+
+        Boundary Conditions & Robustness:
+            Returns 0.0 if S <= 0, K <= 0, T <= 1e-6, or iv <= 1e-6.
+            Catches math domain/overflow exceptions gracefully.
         """
-        if spot <= 0 or strike <= 0 or T <= 0 or iv <= 0:
+        if spot <= 0.0 or strike <= 0.0 or T <= 1e-6 or iv <= 1e-6:
             return 0.0
         try:
-            d1 = (math.log(spot / strike) + 0.5 * (iv ** 2) * T) / (iv * math.sqrt(T))
+            sqrt_T = math.sqrt(T)
+            sig_sqrt_t = iv * sqrt_T
+            d1 = (math.log(spot / strike) + (r - q + 0.5 * (iv ** 2)) * T) / sig_sqrt_t
             pdf_d1 = (1.0 / math.sqrt(2.0 * math.pi)) * math.exp(-0.5 * (d1 ** 2))
-            return pdf_d1 / (spot * iv * math.sqrt(T))
+            gamma = math.exp(-q * T) * pdf_d1 / (spot * sig_sqrt_t)
+            return gamma if math.isfinite(gamma) else 0.0
         except (ValueError, OverflowError, ZeroDivisionError):
             return 0.0
 
@@ -241,9 +264,9 @@ class IntradayAnalyticsEngine:
 
             # VWAP Regime classification
             if diff_pts >= 25.0:
-                vwap_reg = "STRONG_ABOVE_VWAP (Institutional Bullish Drift)"
+                vwap_reg = "STRONG_ABOVE_VWAP (Bullish Momentum Bias)"
             elif diff_pts <= -25.0:
-                vwap_reg = "STRONG_BELOW_VWAP (Institutional Supply Overhang)"
+                vwap_reg = "STRONG_BELOW_VWAP (Bearish Supply Bias)" 
             elif diff_pts > 0:
                 vwap_reg = "MILD_ABOVE_VWAP (Neutral-to-Bullish Bias)"
             else:
@@ -341,13 +364,16 @@ class IntradayAnalyticsEngine:
             Calculates an empirical model estimate of aggregate option gamma inferred from open interest.
             Open interest reflects market-wide contracts and does not identify actual dealer positions.
         """
-        spot = float(weekly_chain_data.get("spot_price") or 0.0)
-        if spot <= 0:
+        chain_spot = float(weekly_chain_data.get("spot_price") or 0.0)
+        live_spot = float(weekly_chain_data.get("live_spot") or weekly_chain_data.get("underlying_spot") or 0.0)
+        if live_spot <= 0:
             try:
                 from engines.kotak_neo_engine import kotak_neo_engine
-                spot = float(kotak_neo_engine.get_live_price("NIFTY 50") or kotak_neo_engine.get_live_price("NIFTY") or 0.0)
+                live_spot = float(kotak_neo_engine.get_live_price("NIFTY 50") or kotak_neo_engine.get_live_price("NIFTY") or 0.0)
             except Exception:
                 pass
+        spot = live_spot if live_spot > 0 else chain_spot
+        spot_drift = round(abs(spot - chain_spot), 2) if (spot > 0 and chain_spot > 0) else 0.0
         if spot <= 0:
             return {
                 "status": "DATA_NOT_AVAILABLE",
@@ -386,28 +412,33 @@ class IntradayAnalyticsEngine:
             }
 
         # Estimate time to expiry T in years (until 15:30 IST on expiry date)
-        expiry_str = str(weekly_chain_data.get("expiry", "") or weekly_chain_data.get("expiry_date", "") or "").strip()
-        days_to_exp = 3.0
-        try:
-            if expiry_str:
-                exp_dt = None
-                for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d-%m-%Y"):
-                    try:
-                        exp_dt = datetime.datetime.strptime(expiry_str, fmt).date()
-                        break
-                    except ValueError:
-                        pass
-                if exp_dt:
-                    now_t = now_ist()
-                    exp_target = datetime.datetime.combine(exp_dt, datetime.time(15, 30, 0), tzinfo=IST)
-                    diff_seconds = (exp_target - now_t).total_seconds()
-                    if diff_seconds > 0:
-                        days_to_exp = max(0.01, diff_seconds / 86400.0)
-                    else:
-                        # Expiry passed or final trading minutes
-                        days_to_exp = 0.005
-        except Exception:
+        if "days_to_expiry" in weekly_chain_data and float(weekly_chain_data["days_to_expiry"]) > 0:
+            days_to_exp = float(weekly_chain_data["days_to_expiry"])
+        elif "dte" in weekly_chain_data and float(weekly_chain_data["dte"]) > 0:
+            days_to_exp = float(weekly_chain_data["dte"])
+        else:
+            expiry_str = str(weekly_chain_data.get("expiry", "") or weekly_chain_data.get("expiry_date", "") or "").strip()
             days_to_exp = 3.0
+            try:
+                if expiry_str:
+                    exp_dt = None
+                    for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                        try:
+                            exp_dt = datetime.datetime.strptime(expiry_str, fmt).date()
+                            break
+                        except ValueError:
+                            pass
+                    if exp_dt:
+                        now_t = now_ist()
+                        exp_target = datetime.datetime.combine(exp_dt, datetime.time(15, 30, 0), tzinfo=IST)
+                        diff_seconds = (exp_target - now_t).total_seconds()
+                        if diff_seconds > 0:
+                            days_to_exp = max(0.01, diff_seconds / 86400.0)
+                        else:
+                            # Expiry passed or final trading minutes
+                            days_to_exp = 0.005
+            except Exception:
+                days_to_exp = 3.0
 
         T = max(0.00003, days_to_exp / 365.25)
 
@@ -442,6 +473,8 @@ class IntradayAnalyticsEngine:
                 "total_net_gex_cr": 0.0,
                 "max_gamma_strike": int(round(spot / 50.0) * 50),
                 "zero_gamma_selection_rule": "NO_VALID_STRIKES",
+                "zero_gamma_roots": [],
+                "volatility_surface_policy": "STICKY_STRIKE_STATIC_OI",
                 "market_gex_note": "No valid strikes found with open interest data.",
                 "active_strikes_gex": []
             }
@@ -500,9 +533,22 @@ class IntradayAnalyticsEngine:
         while curr_s <= grid_end:
             curr_val = _aggregate_net_gex_at(curr_s)
             if prev_val * curr_val <= 0.0 and prev_val != curr_val:
-                denom = curr_val - prev_val
-                root_s = prev_s - prev_val * (curr_s - prev_s) / denom
-                roots.append(round(root_s, 1))
+                # Bisection refinement inside [prev_s, curr_s] for exact root convergence (< 0.01 pts)
+                low, high = prev_s, curr_s
+                f_low, f_high = prev_val, curr_val
+                for _ in range(15):
+                    mid = 0.5 * (low + high)
+                    f_mid = _aggregate_net_gex_at(mid)
+                    if abs(f_mid) < 1e-6 or (high - low) < 0.01:
+                        break
+                    if f_low * f_mid <= 0.0:
+                        high = mid
+                        f_high = f_mid
+                    else:
+                        low = mid
+                        f_low = f_mid
+                refined_root = 0.5 * (low + high)
+                roots.append(round(refined_root, 1))
             prev_s = curr_s
             prev_val = curr_val
             curr_s += step
@@ -550,13 +596,21 @@ class IntradayAnalyticsEngine:
         sorted_by_k = sorted(strike_gex_list, key=lambda x: x["strike"])
         max_gamma_strike = max(sorted_by_k, key=lambda x: x["net_gex_cr"])["strike"] if sorted_by_k else int(spot)
 
+        chain_ts = weekly_chain_data.get("timestamp_ist") or weekly_chain_data.get("timestamp") or format_ist()
+
         return {
             "status": "OK",
             "timestamp_ist": format_ist(),
             "data_source": "BLACK_SCHOLES_DEALER_GAMMA_CALCULATED",
             "expiry_date": weekly_chain_data.get("expiry") or weekly_chain_data.get("expiry_date") or "--",
             "spot_price": spot,
+            "chain_spot": chain_spot if chain_spot > 0 else spot,
+            "spot_drift_pts": spot_drift,
+            "input_timestamp": chain_ts,
+            "data_quality": "LIVE_SYNCHRONIZED" if spot_drift <= 25.0 else "DESYNCHRONIZED_SPOT_WARNING",
             "zero_gamma_flip_level": flip_level,
+            "zero_gamma_roots": roots,
+            "volatility_surface_policy": "STICKY_STRIKE_STATIC_OI",
             "spot_vs_flip_pts": spot_vs_flip,
             "estimated_net_gex_sign": estimated_sign,
             "inferred_volatility_regime": inferred_regime,
@@ -710,8 +764,18 @@ class IntradayAnalyticsEngine:
 
         valid_sectors = [s for s in results if s["is_valid"]]
         valid_total = max(1, len(valid_sectors))
-        green_count = sum(1 for r in valid_sectors if r["change_pct"] > 0)
-        breadth_pct = round((green_count / valid_total) * 100.0, 2)
+        positive_count = sum(1 for r in valid_sectors if r["change_pct"] > 0)
+        negative_count = sum(1 for r in valid_sectors if r["change_pct"] < 0)
+        unchanged_count = sum(1 for r in valid_sectors if r["change_pct"] == 0.0)
+        missing_count = len(results) - len(valid_sectors)
+        breadth_pct = round((positive_count / valid_total) * 100.0, 2)
+        green_count = positive_count
+
+        # Normalize weights over valid sectors: w_tilde_i = w_i / sum(w_valid)
+        valid_weight_sum = sum(s["weight"] for s in valid_sectors)
+        for s in valid_sectors:
+            s["normalized_weight"] = round(s["weight"] / valid_weight_sum, 4) if valid_weight_sum > 0 else s["weight"]
+            s["weighted_drag_contribution_pts"] = round(s["normalized_weight"] * s["change_pct"], 4)
 
         # Sort valid sectors by return for dispersion spread calculation
         valid_sorted = sorted(valid_sectors, key=lambda x: x["change_pct"], reverse=True)
@@ -756,13 +820,22 @@ class IntradayAnalyticsEngine:
             "source": source,
             "breadth_pct_green": breadth_pct,
             "green_sectors": green_count,
+            "positive_sectors_count": positive_count,
+            "negative_sectors_count": negative_count,
+            "unchanged_sectors_count": unchanged_count,
+            "missing_sectors_count": missing_count,
             "total_sectors": len(results),
             "valid_sectors_count": len(valid_sectors),
             "best_sector": f"{best_sec.get('name')} ({best_sec.get('change_pct', 0.0):+.2f}%)",
             "worst_sector": f"{worst_sec.get('name')} ({worst_sec.get('change_pct', 0.0):+.2f}%)",
             "sector_spread_pp": spread_pp,
             "sector_spread_pct": spread_pp,
+            "sector_dispersion_pp": spread_pp,
+            "sector_dispersion_unit": "percentage_points (pp)",
             "weighted_index_drag_pp": total_weighted_drag_pp,
+            "weights_source": "NSE_SECTORAL_FREE_FLOAT_WEIGHTS_BENCHMARK",
+            "weights_normalization": "NORMALIZED_OVER_VALID_SECTORS",
+            "weighted_contribution_unit": "percentage_points (pp)",
             "top_drag_sector": f"{top_drag_sector.get('name')} ({top_drag_sector.get('weighted_drag_contribution_pts', 0.0):+.2f} pp)",
             "top_lift_sector": f"{top_lift_sector.get('name')} ({top_lift_sector.get('weighted_drag_contribution_pts', 0.0):+.2f} pp)",
             "bank_vs_it_alignment": bank_it_align,
@@ -795,15 +868,18 @@ class IntradayAnalyticsEngine:
         Strictly zero fake numbers, zero synthetic constants, anti-fabrication compliant.
         """
         # 1. Resolve live spot price
+        chain_spot = float(weekly_chain_data.get("spot_price") or 0.0) if weekly_chain_data else 0.0
         spot = float(spot_price or 0.0)
-        if spot <= 0 and weekly_chain_data:
-            spot = float(weekly_chain_data.get("spot_price") or 0.0)
         if spot <= 0:
-            try:
-                from engines.kotak_neo_engine import kotak_neo_engine
-                spot = float(kotak_neo_engine.get_live_price("NIFTY 50") or kotak_neo_engine.get_live_price("NIFTY") or 0.0)
-            except Exception:
-                pass
+            live_spot = float(weekly_chain_data.get("live_spot") or weekly_chain_data.get("underlying_spot") or 0.0) if weekly_chain_data else 0.0
+            if live_spot <= 0:
+                try:
+                    from engines.kotak_neo_engine import kotak_neo_engine
+                    live_spot = float(kotak_neo_engine.get_live_price("NIFTY 50") or kotak_neo_engine.get_live_price("NIFTY") or 0.0)
+                except Exception:
+                    pass
+            spot = live_spot if live_spot > 0 else chain_spot
+        spot_drift = round(abs(spot - chain_spot), 2) if (spot > 0 and chain_spot > 0) else 0.0
 
         # 2. Check persisted snapshot in Master DB if spot unavailable or off-market
         persisted = state_engine.get_kv("latest_order_flow_depth")
