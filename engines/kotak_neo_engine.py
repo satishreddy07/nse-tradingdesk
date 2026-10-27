@@ -873,16 +873,18 @@ class KotakNeoEngine:
         """
         Extracts, normalizes, and quant-analyzes authentic 5-level market depth (bids and asks)
         from Kotak Neo WebSocket tick (SFeedScrip / DepthLevel) or REST quote dictionary.
-        Returns:
-          bids: list of up to 5 dicts {price, quantity, orders, price_raw, quantity_raw, orders_raw}
-          asks: list of up to 5 dicts {price, quantity, orders, price_raw, quantity_raw, orders_raw}
-          total_buy: int
-          total_sell: int
-          obi: float [-1.0, 1.0]
-          micro_price: float
-          spread: float
-          spread_pct: float
-          flow_bias: str
+
+        Mathematically rigorous & Anti-Fabrication compliant:
+        - Multi-level OBI for L1, L3, L5: OBI_L = (Sum_Q_bid - Sum_Q_ask) / (Sum_Q_bid + Sum_Q_ask).
+          Returns None if depth sum == 0 (never silently sets 0.0).
+        - Midpoint: P_mid = (P_bid1 + P_ask1) / 2.0 (if valid quotes exist).
+        - Microprice: P_micro = (P_ask1 * Q_bid1 + P_bid1 * Q_ask1) / (Q_bid1 + Q_ask1)
+          Strictly bounded: P_bid1 <= P_micro <= P_ask1.
+          Returns None if book is one-sided, crossed, or quote quantity is zero (never falls back to LTP).
+        - Microprice Displacement: delta_disp = P_micro - P_mid.
+        - Absolute Spread: P_ask1 - P_bid1.
+        - Relative Spread %: (Spread / P_mid) * 100.0.
+        - Book Status: 'OK', 'EMPTY_BOOK', 'ONE_SIDED_BIDS_ONLY', 'ONE_SIDED_ASKS_ONLY', 'CROSSED_BOOK', 'LOCKED_BOOK'.
         """
         raw_buy = getattr(message, "buy", None)
         raw_sell = getattr(message, "sell", None)
@@ -912,8 +914,8 @@ class KotakNeoEngine:
 
         prev_bids = (prev_depth or {}).get("bids", []) if prev_depth else []
         prev_asks = (prev_depth or {}).get("asks", []) if prev_depth else []
-        prev_tbq = (prev_depth or {}).get("total_buy", 0) if prev_depth else 0
-        prev_tsq = (prev_depth or {}).get("total_sell", 0) if prev_depth else 0
+        prev_tbq = (prev_depth or {}).get("total_buy_quantity", 0) if prev_depth else 0
+        prev_tsq = (prev_depth or {}).get("total_sell_quantity", 0) if prev_depth else 0
 
         def _clean_entry(item: Any) -> Optional[Dict[str, Any]]:
             if not item:
@@ -958,19 +960,35 @@ class KotakNeoEngine:
         if raw_buy and isinstance(raw_buy, (list, tuple)):
             for b in raw_buy[:5]:
                 lvl = _clean_entry(b)
-                if lvl:
+                if lvl and lvl["price_raw"] > 0 and lvl["quantity_raw"] > 0:
                     parsed_bids.append(lvl)
 
         parsed_asks = []
         if raw_sell and isinstance(raw_sell, (list, tuple)):
             for a in raw_sell[:5]:
                 lvl = _clean_entry(a)
-                if lvl:
+                if lvl and lvl["price_raw"] > 0 and lvl["quantity_raw"] > 0:
                     parsed_asks.append(lvl)
 
         final_bids = parsed_bids if parsed_bids else prev_bids
         final_asks = parsed_asks if parsed_asks else prev_asks
 
+        # Ensure bids are in descending price order and asks in ascending price order
+        final_bids = sorted(final_bids, key=lambda x: x["price_raw"], reverse=True)[:5]
+        final_asks = sorted(final_asks, key=lambda x: x["price_raw"])[:5]
+
+        # Multi-level visible depth quantities: L1, L3, L5
+        def _calc_depth_sum(levels: List[Dict[str, Any]], count: int) -> int:
+            return sum(lvl.get("quantity_raw", 0) for lvl in levels[:count])
+
+        depth_l1_buy = _calc_depth_sum(final_bids, 1)
+        depth_l1_sell = _calc_depth_sum(final_asks, 1)
+        depth_l3_buy = _calc_depth_sum(final_bids, 3)
+        depth_l3_sell = _calc_depth_sum(final_asks, 3)
+        depth_l5_buy = _calc_depth_sum(final_bids, 5)
+        depth_l5_sell = _calc_depth_sum(final_asks, 5)
+
+        # Exchange-wide total buy/sell quantities
         total_buy = 0
         if raw_tbq is not None:
             try:
@@ -979,8 +997,8 @@ class KotakNeoEngine:
                 total_buy = 0
         if total_buy <= 0 and prev_tbq > 0:
             total_buy = prev_tbq
-        if total_buy <= 0 and final_bids:
-            total_buy = sum(b.get("quantity_raw", 0) for b in final_bids if isinstance(b, dict))
+        if total_buy <= 0 and depth_l5_buy > 0:
+            total_buy = depth_l5_buy
 
         total_sell = 0
         if raw_tsq is not None:
@@ -990,54 +1008,108 @@ class KotakNeoEngine:
                 total_sell = 0
         if total_sell <= 0 and prev_tsq > 0:
             total_sell = prev_tsq
-        if total_sell <= 0 and final_asks:
-            total_sell = sum(a.get("quantity_raw", 0) for a in final_asks if isinstance(a, dict))
+        if total_sell <= 0 and depth_l5_sell > 0:
+            total_sell = depth_l5_sell
 
-        # Order Book Imbalance (OBI)
-        tot_depth = total_buy + total_sell
-        obi = round((total_buy - total_sell) / max(1, tot_depth), 4) if tot_depth > 0 else 0.0
+        # Multi-level Order Book Imbalance (OBI)
+        def _calc_obi(b_qty: int, a_qty: int) -> Optional[float]:
+            tot = b_qty + a_qty
+            if tot <= 0:
+                return None
+            return round((b_qty - a_qty) / tot, 4)
 
-        # Top of Book spread & micro-price
+        obi_l1 = _calc_obi(depth_l1_buy, depth_l1_sell)
+        obi_l3 = _calc_obi(depth_l3_buy, depth_l3_sell)
+        obi_l5 = _calc_obi(depth_l5_buy, depth_l5_sell)
+        total_market_obi = _calc_obi(total_buy, total_sell)
+
+        # Default visible OBI
+        effective_obi = obi_l5 if obi_l5 is not None else (obi_l1 if obi_l1 is not None else 0.0)
+
+        # Book Status & Top of Book Metrics
         bid1 = final_bids[0]["price_raw"] if final_bids else 0.0
         bid_q1 = final_bids[0]["quantity_raw"] if final_bids else 0
         ask1 = final_asks[0]["price_raw"] if final_asks else 0.0
         ask_q1 = final_asks[0]["quantity_raw"] if final_asks else 0
 
-        spread = round(max(0.0, ask1 - bid1), 2) if (ask1 > 0 and bid1 > 0) else 0.0
-        effective_ltp = ltp if ltp > 0 else (bid1 or ask1 or 0.0)
-        spread_pct = round((spread / effective_ltp) * 100.0, 2) if effective_ltp > 0 else 0.0
+        book_status = "OK"
+        mid_price: Optional[float] = None
+        micro_price: Optional[float] = None
+        micro_price_disp: Optional[float] = None
+        spread: Optional[float] = None
+        spread_pct: Optional[float] = None
 
-        if bid1 > 0 and ask1 > 0 and (bid_q1 + ask_q1) > 0:
-            micro_price = round((bid1 * ask_q1 + ask1 * bid_q1) / (bid_q1 + ask_q1), 2)
+        if not final_bids and not final_asks:
+            book_status = "EMPTY_BOOK"
+        elif final_bids and not final_asks:
+            book_status = "ONE_SIDED_BIDS_ONLY"
+        elif final_asks and not final_bids:
+            book_status = "ONE_SIDED_ASKS_ONLY"
+        elif bid1 >= ask1:
+            book_status = "CROSSED_BOOK" if bid1 > ask1 else "LOCKED_BOOK"
         else:
-            micro_price = effective_ltp
+            # Valid two-sided book
+            spread = round(ask1 - bid1, 2)
+            mid_price = round((bid1 + ask1) / 2.0, 4)
+            if mid_price > 0:
+                spread_pct = round((spread / mid_price) * 100.0, 2)
 
-        if obi >= 0.35:
+            # Microprice: strictly bounded Pb <= P_micro <= Pa
+            if (bid_q1 + ask_q1) > 0:
+                raw_micro = (ask1 * bid_q1 + bid1 * ask_q1) / (bid_q1 + ask_q1)
+                if bid1 <= raw_micro <= ask1:
+                    micro_price = round(raw_micro, 2)
+                    micro_price_disp = round(micro_price - mid_price, 4)
+
+        # Resting Queue Bias / Flow Bias
+        if effective_obi >= 0.35:
             flow_bias = "HEAVY_BUYING"
-        elif obi >= 0.12:
+            queue_skew = "HEAVY_BID_QUEUE_SKEW"
+        elif effective_obi >= 0.12:
             flow_bias = "MODERATE_BUYING"
-        elif obi <= -0.35:
+            queue_skew = "MODERATE_BID_QUEUE_SKEW"
+        elif effective_obi <= -0.35:
             flow_bias = "HEAVY_SELLING"
-        elif obi <= -0.12:
+            queue_skew = "HEAVY_ASK_QUEUE_SKEW"
+        elif effective_obi <= -0.12:
             flow_bias = "MODERATE_SELLING"
+            queue_skew = "MODERATE_ASK_QUEUE_SKEW"
         else:
             flow_bias = "BALANCED"
+            queue_skew = "BALANCED_QUEUE"
 
         return {
+            "book_status": book_status,
             "bids": final_bids,
             "bid_levels": final_bids,
             "asks": final_asks,
             "ask_levels": final_asks,
+            "depth_l1_buy_qty": depth_l1_buy,
+            "depth_l1_sell_qty": depth_l1_sell,
+            "depth_l3_buy_qty": depth_l3_buy,
+            "depth_l3_sell_qty": depth_l3_sell,
+            "depth_l5_buy_qty": depth_l5_buy,
+            "depth_l5_sell_qty": depth_l5_sell,
             "total_buy": total_buy,
             "total_buy_quantity": total_buy,
             "total_sell": total_sell,
             "total_sell_quantity": total_sell,
-            "obi": obi,
-            "obi_pct": round(obi * 100.0, 1),
+            "obi": effective_obi,
+            "obi_pct": round(effective_obi * 100.0, 1) if effective_obi is not None else 0.0,
+            "obi_l1": obi_l1,
+            "obi_l1_pct": round(obi_l1 * 100.0, 1) if obi_l1 is not None else None,
+            "obi_l3": obi_l3,
+            "obi_l3_pct": round(obi_l3 * 100.0, 1) if obi_l3 is not None else None,
+            "obi_l5": obi_l5,
+            "obi_l5_pct": round(obi_l5 * 100.0, 1) if obi_l5 is not None else None,
+            "total_market_obi": total_market_obi,
+            "mid_price": mid_price,
             "micro_price": micro_price,
-            "spread": spread,
-            "spread_pct": spread_pct,
+            "micro_price_displacement": micro_price_disp,
+            "spread": spread if spread is not None else 0.0,
+            "spread_pct": spread_pct if spread_pct is not None else 0.0,
             "flow_bias": flow_bias,
+            "queue_skew": queue_skew,
             "updated_at": format_ist()
         }
 

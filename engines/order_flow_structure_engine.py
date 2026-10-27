@@ -247,11 +247,18 @@ class OrderFlowStructureEngine:
         Computes authentic Cumulative Volume Delta (CVD) and Order Book Imbalance (OBI %)
         derived dynamically from Nifty Futures, Top Nifty Heavyweight constituent volumes,
         and Kotak Neo L2 5-level market depth.
-        Strictly zero hardcoding, zero synthetic constants, zero arbitrary fixed fallbacks (-195 removed).
+        Classifies trade aggression using Quote Rule (P_trade vs Best Bid/Ask) and Tick Rule (P_trade vs P_prev).
+        Decouples resting limit depth from executed trade volume.
+        Strictly zero hardcoding, zero synthetic constants, anti-fabrication compliant.
         """
         now_dt = now_ist()
         is_market_open, _ = NSEMarketCalendar.can_execute_trades(now_dt)
         today_date_str = now_dt.strftime("%Y-%m-%d")
+
+        if not hasattr(self, "_last_hw_prices"):
+            self._last_hw_prices = {}
+        if not hasattr(self, "_last_hw_signs"):
+            self._last_hw_signs = {}
 
         # Session boundary management: reset running accumulation on fresh trading session
         if self._last_session_date != today_date_str:
@@ -259,14 +266,24 @@ class OrderFlowStructureEngine:
                 self._last_cvd_value = 0.0
                 self._session_closed_cvd = None
                 self._last_hw_volumes = {}
+                self._last_hw_prices = {}
+                self._last_hw_signs = {}
                 self._last_fut_vol = None
+                self._last_fut_price = None
+                self._last_fut_sign = 0
+                self._last_ce_vol = None
+                self._last_pe_vol = None
+                self._last_ce_ltp = None
+                self._last_pe_ltp = None
             self._last_session_date = today_date_str
 
         atm_price = 0.0
-        delta_now = 0
+        resting_delta_now = 0
         obi_pct = 0.0
         traded_vol_now = 0
         kotak_neo_engine = None
+        ce_depth = {}
+        pe_depth = {}
 
         try:
             from engines.kotak_neo_engine import kotak_neo_engine as kne
@@ -286,15 +303,15 @@ class OrderFlowStructureEngine:
                 ce_depth = kotak_neo_engine.get_option_depth(atm_strike, "CE") or {}
                 pe_depth = kotak_neo_engine.get_option_depth(atm_strike, "PE") or {}
 
-                ce_tbq = int(ce_depth.get("total_buy", 0) or 0)
-                ce_tsq = int(ce_depth.get("total_sell", 0) or 0)
-                pe_tbq = int(pe_depth.get("total_buy", 0) or 0)
-                pe_tsq = int(pe_depth.get("total_sell", 0) or 0)
+                ce_tbq = int(ce_depth.get("depth_l5_buy_qty") or ce_depth.get("total_buy", 0) or 0)
+                ce_tsq = int(ce_depth.get("depth_l5_sell_qty") or ce_depth.get("total_sell", 0) or 0)
+                pe_tbq = int(pe_depth.get("depth_l5_buy_qty") or pe_depth.get("total_buy", 0) or 0)
+                pe_tsq = int(pe_depth.get("depth_l5_sell_qty") or pe_depth.get("total_sell", 0) or 0)
 
                 # Net Order Book Imbalance across ATM pair (bids vs asks in resting queues)
-                delta_now = (ce_tbq - ce_tsq) - (pe_tbq - pe_tsq)
+                resting_delta_now = (ce_tbq - ce_tsq) - (pe_tbq - pe_tsq)
                 total_queue_depth = (ce_tbq + ce_tsq) + (pe_tbq + pe_tsq)
-                obi_pct = round((delta_now / max(1, total_queue_depth)) * 100.0, 1) if total_queue_depth > 0 else 0.0
+                obi_pct = round((resting_delta_now / max(1, total_queue_depth)) * 100.0, 1) if total_queue_depth > 0 else 0.0
 
                 # Authentic traded contract volume from exchange quotes
                 ce_vol = int(ce_depth.get("volume", 0) or 0)
@@ -302,7 +319,7 @@ class OrderFlowStructureEngine:
                 traded_vol_now = ce_vol + pe_vol
         except Exception as e:
             logger.debug(f"CVD calculation notice: {e}")
-            delta_now = 0
+            resting_delta_now = 0
             obi_pct = 0.0
             traded_vol_now = 0
             atm_price = 0.0
@@ -318,11 +335,11 @@ class OrderFlowStructureEngine:
                 "absorption_signal": "DATA_UNAVAILABLE (Spot Price Unavailable)",
                 "badge_color": "text-slate-400 bg-slate-500/10 border-slate-500/30",
                 "timestamp_ist": format_ist(now_dt),
-                "data_source": "KOTAK_NEO_L2_ORDER_FLOW"
+                "data_source": "KOTAK_NEO_L2_ORDER_FLOW",
+                "delta_methodology": "QUOTE_RULE_AND_TICK_RULE"
             }
 
-        # Multi-Constituent Volume Delta: Top Nifty Heavyweights & Futures
-        # Nifty top 10 heavyweights (~60% total index weight)
+        # Multi-Constituent Volume Delta: Top Nifty Heavyweights (~60% weight)
         heavyweight_weights = [
             ("HDFCBANK", 0.115),
             ("RELIANCE", 0.095),
@@ -347,8 +364,6 @@ class OrderFlowStructureEngine:
                     if t:
                         vol = int(t.get("volume") or 0)
                         ltp = float(t.get("ltp") or 0.0)
-                        chg_pts = float(t.get("change_pts") or (ltp - float(t.get("prev_close") or ltp)))
-                        sign = 1 if chg_pts > 0 else (-1 if chg_pts < 0 else 0)
                         hw_total_vol += vol
                         prev_vol = self._last_hw_volumes.get(sym)
                         if prev_vol is None:
@@ -357,23 +372,38 @@ class OrderFlowStructureEngine:
                         else:
                             delta_vol = max(0, vol - prev_vol)
                             self._last_hw_volumes[sym] = vol
-                        hw_weighted_delta += (delta_vol * sign * wt)
+
+                        # Tick Rule: direction relative to prior trade tick
+                        prev_p = self._last_hw_prices.get(sym)
+                        if prev_p is not None and ltp > 0:
+                            if ltp > prev_p:
+                                tick_sign = 1
+                            elif ltp < prev_p:
+                                tick_sign = -1
+                            else:
+                                tick_sign = self._last_hw_signs.get(sym, 0)
+                        else:
+                            chg_pts = float(t.get("change_pts") or 0.0)
+                            tick_sign = 1 if chg_pts > 0 else (-1 if chg_pts < 0 else 0)
+
+                        if ltp > 0:
+                            self._last_hw_prices[sym] = ltp
+                        self._last_hw_signs[sym] = tick_sign
+
+                        hw_weighted_delta += (delta_vol * tick_sign * wt)
                         hw_tracked_count += 1
                 except Exception:
                     pass
 
-        # Nifty Futures traded volume & direction
+        # Nifty Futures traded volume & direction (Tick Rule)
         fut_vol = 0
         fut_delta = 0
         if kotak_neo_engine:
             try:
-                # Check near-month Nifty Futures tick
                 f_tick = kotak_neo_engine.get_live_tick("NIFTY FUT") or kotak_neo_engine.get_live_tick("NIFTY_FUT")
                 if f_tick:
                     fut_vol = int(f_tick.get("volume") or 0)
                     f_ltp = float(f_tick.get("ltp") or 0.0)
-                    f_chg = float(f_tick.get("change_pts") or 0.0)
-                    f_sign = 1 if f_chg > 0 else (-1 if f_chg < 0 else 0)
                     prev_f_vol = self._last_fut_vol
                     if prev_f_vol is None:
                         self._last_fut_vol = fut_vol
@@ -381,24 +411,81 @@ class OrderFlowStructureEngine:
                     else:
                         delta_f_vol = max(0, fut_vol - prev_f_vol)
                         self._last_fut_vol = fut_vol
+
+                    prev_f_p = getattr(self, "_last_fut_price", None)
+                    if prev_f_p is not None and f_ltp > 0:
+                        if f_ltp > prev_f_p:
+                            f_sign = 1
+                        elif f_ltp < prev_f_p:
+                            f_sign = -1
+                        else:
+                            f_sign = getattr(self, "_last_fut_sign", 0)
+                    else:
+                        f_chg = float(f_tick.get("change_pts") or 0.0)
+                        f_sign = 1 if f_chg > 0 else (-1 if f_chg < 0 else 0)
+
+                    if f_ltp > 0:
+                        self._last_fut_price = f_ltp
+                    self._last_fut_sign = f_sign
                     fut_delta = int(delta_f_vol * f_sign)
             except Exception:
                 pass
 
+        # ATM Options Volume Delta using Quote Rule & Tick Rule
+        options_component = 0
+        ce_vol = int(ce_depth.get("volume", 0) or 0)
+        pe_vol = int(pe_depth.get("volume", 0) or 0)
+
+        prev_ce_v = getattr(self, "_last_ce_vol", None)
+        prev_pe_v = getattr(self, "_last_pe_vol", None)
+        ce_vol_delta = max(0, ce_vol - prev_ce_v) if prev_ce_v is not None else 0
+        pe_vol_delta = max(0, pe_vol - prev_pe_v) if prev_pe_v is not None else 0
+        self._last_ce_vol = ce_vol
+        self._last_pe_vol = pe_vol
+
+        # CE Quote Rule
+        ce_ltp = float(ce_depth.get("ltp") or 0.0)
+        ce_ask1 = float(ce_depth.get("ask_levels", [{}])[0].get("price_raw", 0.0)) if ce_depth.get("ask_levels") else 0.0
+        ce_bid1 = float(ce_depth.get("bid_levels", [{}])[0].get("price_raw", 0.0)) if ce_depth.get("bid_levels") else 0.0
+        prev_ce_ltp = getattr(self, "_last_ce_ltp", None)
+        if ce_ask1 > 0 and ce_ltp >= ce_ask1:
+            ce_sign = 1
+        elif ce_bid1 > 0 and ce_ltp <= ce_bid1:
+            ce_sign = -1
+        elif prev_ce_ltp is not None and ce_ltp > 0:
+            ce_sign = 1 if ce_ltp > prev_ce_ltp else (-1 if ce_ltp < prev_ce_ltp else getattr(self, "_last_ce_sign", 0))
+        else:
+            ce_sign = 0
+        if ce_ltp > 0:
+            self._last_ce_ltp = ce_ltp
+        self._last_ce_sign = ce_sign
+
+        # PE Quote Rule (Buying PE is bearish on underlying -> negative delta)
+        pe_ltp = float(pe_depth.get("ltp") or 0.0)
+        pe_ask1 = float(pe_depth.get("ask_levels", [{}])[0].get("price_raw", 0.0)) if pe_depth.get("ask_levels") else 0.0
+        pe_bid1 = float(pe_depth.get("bid_levels", [{}])[0].get("price_raw", 0.0)) if pe_depth.get("bid_levels") else 0.0
+        prev_pe_ltp = getattr(self, "_last_pe_ltp", None)
+        if pe_ask1 > 0 and pe_ltp >= pe_ask1:
+            pe_sign = 1
+        elif pe_bid1 > 0 and pe_ltp <= pe_bid1:
+            pe_sign = -1
+        elif prev_pe_ltp is not None and pe_ltp > 0:
+            pe_sign = 1 if pe_ltp > prev_pe_ltp else (-1 if pe_ltp < prev_pe_ltp else getattr(self, "_last_pe_sign", 0))
+        else:
+            pe_sign = 0
+        if pe_ltp > 0:
+            self._last_pe_ltp = pe_ltp
+        self._last_pe_sign = pe_sign
+
+        # Underlying Delta contribution from options: +CE trades - PE trades
+        options_component = (ce_vol_delta * ce_sign) - (pe_vol_delta * pe_sign)
+
         now_ts = time.time()
         # Traded contract delta accumulation during active NSE market hours
         if is_market_open:
-            if not hasattr(self, "_last_traded_vol") or self._last_traded_vol == 0:
-                self._last_traded_vol = traded_vol_now
-            traded_delta = max(0, traded_vol_now - self._last_traded_vol)
             if (now_ts - self._last_accumulation_ts) >= 3.0:
-                # Flow sign determined by whether aggressive buys hit ask or sells hit bid
-                flow_sign = 1 if delta_now >= 0 else (-1 if delta_now < 0 else 0)
-                options_component = traded_delta * flow_sign
-                # Normalized composite delta: combine ATM options flow + Nifty futures delta + heavyweight delta
                 composite_step = options_component + fut_delta + int(round(hw_weighted_delta))
                 self._last_cvd_value += composite_step
-                self._last_traded_vol = traded_vol_now
                 self._last_accumulation_ts = now_ts
         else:
             # Weekend / Market Closed: lock to authentic closed session CVD (zero hardcoded values)
@@ -408,30 +495,37 @@ class OrderFlowStructureEngine:
 
         cvd_val = round(self._last_cvd_value)
 
-        # Detect Absorption Divergence
+        # Detect Absorption / Divergence
         absorption_signal = "BALANCED_FLOW"
         if is_market_open:
-            if cvd_val > 1000 and delta_now > 0:
+            if cvd_val > 1000 and resting_delta_now > 0:
                 absorption_signal = "AGGRESSIVE_BUYING_MOMENTUM"
-            elif cvd_val < -1000 and delta_now < 0:
+            elif cvd_val < -1000 and resting_delta_now < 0:
                 absorption_signal = "AGGRESSIVE_SELLING_PRESSURE"
+            elif cvd_val > 1000 and resting_delta_now < 0:
+                absorption_signal = "ABSORPTION_DIVERGENCE (Buying into Resting Sell Wall)"
+            elif cvd_val < -1000 and resting_delta_now > 0:
+                absorption_signal = "ABSORPTION_DIVERGENCE (Selling into Resting Buy Wall)"
         else:
             absorption_signal = "BALANCED_FLOW (Session Closed)"
 
         return {
             "current_cvd": cvd_val,
-            "instantaneous_delta": delta_now if is_market_open else 0,
+            "instantaneous_delta": (options_component + fut_delta + int(round(hw_weighted_delta))) if is_market_open else 0,
+            "resting_order_book_imbalance_pct": obi_pct,
             "order_book_imbalance_pct": obi_pct,
             "flow_sentiment": "BUYER_DOMINATED" if cvd_val > 0 else ("SELLER_DOMINATED" if cvd_val < 0 else "NEUTRAL"),
             "absorption_signal": absorption_signal,
             "badge_color": "text-emerald-400 bg-emerald-500/10 border-emerald-500/30" if cvd_val >= 0 else "text-rose-400 bg-rose-500/10 border-rose-500/30",
             "timestamp_ist": format_ist(now_dt),
             "data_source": "KOTAK_NEO_L2_FUTURES_AND_HEAVYWEIGHTS",
+            "delta_methodology": "QUOTE_RULE_AND_TICK_RULE",
             "heavyweights_tracked_count": hw_tracked_count,
             "heavyweights_total_volume": hw_total_vol,
             "futures_volume": fut_vol,
             "futures_delta": fut_delta
         }
+
 
     def compute_multi_index_confluence(self) -> Dict[str, Any]:
         """

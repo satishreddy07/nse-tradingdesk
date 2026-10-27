@@ -4576,7 +4576,7 @@
           <div class="lg:col-span-4 space-y-3">
             <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-mono uppercase text-slate-400">Net Order Flow Index</span>
+                <span class="text-[10px] font-mono uppercase text-slate-400">Resting Depth Imbalance (Calls vs Puts)</span>
                 <span id="intra-depth-net-flow-idx" class="text-sm font-mono font-bold text-white">0.00</span>
               </div>
               <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden mt-1.5 flex">
@@ -4584,20 +4584,20 @@
                 <div id="intra-depth-flow-bar-pos" class="bg-emerald-500 h-full transition-all duration-300" style="width: 50%;"></div>
               </div>
               <div class="flex justify-between text-[9px] font-mono text-slate-500 mt-1">
-                <span>-1.0 (Put Accumulation)</span>
-                <span>0.0 (Neutral)</span>
-                <span>+1.0 (Call Accumulation)</span>
+                <span>-1.0 (Put Limit Domination)</span>
+                <span>0.0 (Symmetric Depth)</span>
+                <span>+1.0 (Call Limit Domination)</span>
               </div>
             </div>
 
             <div class="grid grid-cols-2 gap-2 text-xs font-mono">
               <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
-                <span class="text-[10px] text-slate-400 block uppercase">Call Depth Vol</span>
+                <span class="text-[10px] text-slate-400 block uppercase">Call Depth Vol (L5)</span>
                 <span id="intra-depth-call-vol" class="text-base font-bold text-emerald-400 block mt-0.5">--</span>
                 <span id="intra-depth-call-obi" class="text-[10px] text-slate-400">OBI: --</span>
               </div>
               <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
-                <span class="text-[10px] text-slate-400 block uppercase">Put Depth Vol</span>
+                <span class="text-[10px] text-slate-400 block uppercase">Put Depth Vol (L5)</span>
                 <span id="intra-depth-put-vol" class="text-base font-bold text-rose-400 block mt-0.5">--</span>
                 <span id="intra-depth-put-obi" class="text-[10px] text-slate-400">OBI: --</span>
               </div>
@@ -4611,7 +4611,7 @@
                 <span id="intra-depth-vel-regime" class="text-[9px] text-slate-400 truncate block">STEADY FLOW</span>
               </div>
               <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
-                <span class="text-[10px] text-slate-400 block uppercase">Iceberg Absorption</span>
+                <span class="text-[10px] text-slate-400 block uppercase">Queue Skew & Absorption</span>
                 <span id="intra-depth-iceberg-status" class="text-xs font-bold text-cyan-300 block mt-1 truncate">NONE DETECTED</span>
                 <span id="intra-depth-accel" class="text-[9px] text-slate-400 truncate block">Accel: 0.00</span>
               </div>
@@ -4622,7 +4622,7 @@
               <div class="flex items-center justify-between">
                 <span class="text-purple-400 text-[10px] uppercase font-bold flex items-center gap-1">
                   <i data-lucide="hourglass" class="w-3 h-3"></i>
-                  <span>Intraday Theta Collapse Window</span>
+                  <span>Black-Scholes ATM Theta Decay</span>
                 </span>
                 <span id="intra-theta-phase-badge" class="px-2 py-0.5 rounded text-[9px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">STANDBY</span>
               </div>
@@ -11360,7 +11360,7 @@
 
       if (depthData && depthData.status === 'OK') {
         if (dRegBadge) {
-          const reg = (depthData.flow_regime || 'BALANCED').replace(/_/g, ' ');
+          const reg = (depthData.depth_skew_regime || depthData.flow_regime || 'BALANCED').replace(/_/g, ' ');
           dRegBadge.innerText = reg;
           if (reg.includes('BULLISH') || reg.includes('CALL')) {
             dRegBadge.className = "px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
@@ -11373,7 +11373,7 @@
         if (dSrcBadge) {
           dSrcBadge.innerText = `⚡ ${depthData.source || 'KOTAK_NEO_STREAM'} (${depthData.fetched_at_ist || ''})`;
         }
-        const netIdx = Number(depthData.net_flow_index || 0.0);
+        const netIdx = Number(depthData.resting_depth_skew !== undefined ? depthData.resting_depth_skew : (depthData.net_flow_index || 0.0));
         if (dNetIdx) {
           dNetIdx.innerText = `${netIdx >= 0 ? '+' : ''}${netIdx.toFixed(3)}`;
           dNetIdx.className = `text-sm font-mono font-bold ${netIdx >= 0.1 ? 'text-emerald-400' : (netIdx <= -0.1 ? 'text-rose-400' : 'text-slate-200')}`;
@@ -11389,11 +11389,15 @@
           }
         }
         if (dCallVol) dCallVol.innerText = Number(depthData.call_depth_total || 0).toLocaleString('en-IN');
-        if (dCallObi) dCallObi.innerText = `OBI: ${(Number(depthData.aggregate_call_obi || 0) >= 0 ? '+' : '')}${Number(depthData.aggregate_call_obi || 0).toFixed(2)}`;
+        if (dCallObi) dCallObi.innerText = `OBI (L5): ${(Number(depthData.aggregate_call_obi || 0) >= 0 ? '+' : '')}${Number(depthData.aggregate_call_obi || 0).toFixed(2)}`;
         if (dPutVol) dPutVol.innerText = Number(depthData.put_depth_total || 0).toLocaleString('en-IN');
-        if (dPutObi) dPutObi.innerText = `OBI: ${(Number(depthData.aggregate_put_obi || 0) >= 0 ? '+' : '')}${Number(depthData.aggregate_put_obi || 0).toFixed(2)}`;
+        if (dPutObi) dPutObi.innerText = `OBI (L5): ${(Number(depthData.aggregate_put_obi || 0) >= 0 ? '+' : '')}${Number(depthData.aggregate_put_obi || 0).toFixed(2)}`;
         if (dLiqStat) dLiqStat.innerText = depthData.liquidity_status || 'DEEP LIQUIDITY';
-        if (dAvgSpr) dAvgSpr.innerText = `${Number(depthData.avg_spread_pts || 0).toFixed(2)} pts`;
+        if (dAvgSpr) {
+          const pts = Number(depthData.avg_spread_pts || 0).toFixed(2);
+          const pct = depthData.avg_relative_spread_pct ? ` (${Number(depthData.avg_relative_spread_pct).toFixed(2)}%)` : '';
+          dAvgSpr.innerText = `${pts} pts${pct}`;
+        }
 
         const dVel1m = document.getElementById('intra-depth-obi-velocity');
         const dVelReg = document.getElementById('intra-depth-vel-regime');
@@ -11402,7 +11406,7 @@
         if (dVel1m) {
           const v1 = Number(depthData.velocity_1m || 0.0);
           dVel1m.innerText = `${v1 >= 0 ? '+' : ''}${v1.toFixed(2)}/min`;
-          dVel1m.className = `text-base font-bold block mt-0.5 ${v1 >= 0.15 ? 'text-emerald-400' : (v1 <= -0.15 ? 'text-rose-400' : 'text-white')}`;
+          dVel1m.className = `text-base font-bold block mt-0.5 ${v1 >= 0.10 ? 'text-emerald-400' : (v1 <= -0.10 ? 'text-rose-400' : 'text-white')}`;
         }
         if (dVelReg) dVelReg.innerText = depthData.velocity_regime || 'STEADY FLOW';
         if (dAccel) {
@@ -11412,10 +11416,11 @@
         if (dIceberg) {
           const icebergs = depthData.iceberg_alerts || [];
           if (icebergs.length > 0) {
-            dIceberg.innerText = `🚨 ${icebergs[0].action} @ ${icebergs[0].strike}`;
-            dIceberg.className = "text-xs font-bold text-amber-300 block mt-1 truncate animate-pulse";
+            const topAlert = icebergs[0];
+            dIceberg.innerText = `${topAlert.action.includes('CONFIRMED') ? '🚨' : '⚖️'} ${topAlert.action} @ ${topAlert.strike}`;
+            dIceberg.className = topAlert.action.includes('CONFIRMED') ? "text-xs font-bold text-amber-300 block mt-1 truncate animate-pulse" : "text-xs font-bold text-cyan-300 block mt-1 truncate";
           } else {
-            dIceberg.innerText = depthData.absorption_regime || 'NONE DETECTED';
+            dIceberg.innerText = depthData.absorption_regime || 'SYMMETRIC QUEUES';
             dIceberg.className = "text-xs font-bold text-slate-400 block mt-1 truncate";
           }
         }
@@ -11433,7 +11438,7 @@
           }
         }
         if (thRate && thetaData.decay_rate_inr_per_lot_hour !== undefined) {
-          thRate.innerText = `₹${Number(thetaData.decay_rate_inr_per_lot_hour).toFixed(0)} / lot-hr (×${Number(thetaData.decay_acceleration_factor || 1).toFixed(1)})`;
+          thRate.innerText = `₹${Number(thetaData.decay_rate_inr_per_lot_hour).toFixed(0)} / lot-hr (×${Number(thetaData.decay_acceleration_factor || 1).toFixed(2)})`;
         }
 
         if (dAlertBox) {
@@ -11447,31 +11452,47 @@
         }
 
         if (dLadderTbody && Array.isArray(depthData.near_atm_strikes) && depthData.near_atm_strikes.length > 0) {
-          const depthSig = depthData.near_atm_strikes.map(r => `${r.strike}-${r.ce?.ltp}-${r.pe?.ltp}-${r.ce?.total_buy}-${r.pe?.total_buy}`).join('|');
+          const depthSig = depthData.near_atm_strikes.map(r => `${r.strike}-${r.ce?.ltp}-${r.pe?.ltp}-${r.ce?.total_buy}-${r.pe?.total_buy}-${r.ce?.micro_price}-${r.pe?.micro_price}`).join('|');
           if (dLadderTbody.getAttribute('data-depth-sig') !== depthSig) {
             dLadderTbody.setAttribute('data-depth-sig', depthSig);
             dLadderTbody.innerHTML = depthData.near_atm_strikes.map(row => {
             const isAtm = row.is_atm;
             const ce = row.ce || {};
             const pe = row.pe || {};
-            const ceObi = Number(ce.obi || 0);
-            const peObi = Number(pe.obi || 0);
+            const ceObi = (ce.obi_l5 !== null && ce.obi_l5 !== undefined) ? Number(ce.obi_l5) : (ce.obi !== null && ce.obi !== undefined ? Number(ce.obi) : null);
+            const peObi = (pe.obi_l5 !== null && pe.obi_l5 !== undefined) ? Number(pe.obi_l5) : (pe.obi !== null && pe.obi !== undefined ? Number(pe.obi) : null);
             const rowBg = isAtm ? 'bg-amber-500/10 border-y border-amber-500/40' : 'hover:bg-slate-800/40';
+
+            const ceMicroStr = (ce.micro_price !== null && ce.micro_price !== undefined) ? `₹${Number(ce.micro_price).toFixed(2)}` : '--';
+            const ceDispStr = (ce.micro_price_displacement !== null && ce.micro_price_displacement !== undefined)
+              ? `<span class="text-[9px] ${ce.micro_price_displacement >= 0 ? 'text-emerald-400' : 'text-rose-400'} ml-0.5">(${ce.micro_price_displacement >= 0 ? '+' : ''}${Number(ce.micro_price_displacement).toFixed(2)})</span>`
+              : '';
+
+            const peMicroStr = (pe.micro_price !== null && pe.micro_price !== undefined) ? `₹${Number(pe.micro_price).toFixed(2)}` : '--';
+            const peDispStr = (pe.micro_price_displacement !== null && pe.micro_price_displacement !== undefined)
+              ? `<span class="text-[9px] ${pe.micro_price_displacement >= 0 ? 'text-emerald-400' : 'text-rose-400'} ml-0.5">(${pe.micro_price_displacement >= 0 ? '+' : ''}${Number(pe.micro_price_displacement).toFixed(2)})</span>`
+              : '';
+
+            const ceObiTxt = ceObi !== null ? `${ceObi >= 0 ? '+' : ''}${ceObi.toFixed(2)}` : '--';
+            const ceObiColor = ceObi !== null ? (ceObi >= 0.05 ? 'text-emerald-400' : (ceObi <= -0.05 ? 'text-rose-400' : 'text-slate-300')) : 'text-slate-500';
+
+            const peObiTxt = peObi !== null ? `${peObi >= 0 ? '+' : ''}${peObi.toFixed(2)}` : '--';
+            const peObiColor = peObi !== null ? (peObi >= 0.05 ? 'text-emerald-400' : (peObi <= -0.05 ? 'text-rose-400' : 'text-slate-300')) : 'text-slate-500';
 
             return `
               <tr class="${rowBg} transition">
                 <td class="p-2 text-emerald-300 w-[130px] overflow-hidden whitespace-nowrap">
-                  <span class="font-bold">${(ce.total_buy || 0).toLocaleString('en-IN')}</span> / <span class="text-slate-400">${(ce.total_sell || 0).toLocaleString('en-IN')}</span>
+                  <span class="font-bold">${(ce.depth_l5_buy || ce.total_buy || 0).toLocaleString('en-IN')}</span> / <span class="text-slate-400">${(ce.depth_l5_sell || ce.total_sell || 0).toLocaleString('en-IN')}</span>
                 </td>
-                <td class="p-2 font-bold ${ceObi >= 0 ? 'text-emerald-400' : 'text-rose-400'} w-[75px] overflow-hidden whitespace-nowrap">${ceObi >= 0 ? '+' : ''}${ceObi.toFixed(2)}</td>
-                <td class="p-2 font-bold text-white w-[85px] overflow-hidden whitespace-nowrap">₹${Number(ce.micro_price || ce.ltp || 0).toFixed(2)}</td>
+                <td class="p-2 font-bold ${ceObiColor} w-[75px] overflow-hidden whitespace-nowrap">${ceObiTxt}</td>
+                <td class="p-2 font-bold text-white w-[85px] overflow-hidden whitespace-nowrap">${ceMicroStr}${ceDispStr}</td>
                 <td class="p-2 text-center font-extrabold bg-slate-900 border-x border-slate-800 ${isAtm ? 'text-amber-300 text-sm' : 'text-white'} w-[85px] overflow-hidden whitespace-nowrap">
                   ${row.strike} ${isAtm ? '<span class="text-[8px] bg-amber-500 text-black px-1 rounded ml-1 font-bold">ATM</span>' : ''}
                 </td>
-                <td class="p-2 font-bold text-white w-[85px] overflow-hidden whitespace-nowrap">₹${Number(pe.micro_price || pe.ltp || 0).toFixed(2)}</td>
-                <td class="p-2 font-bold ${peObi >= 0 ? 'text-emerald-400' : 'text-rose-400'} w-[75px] overflow-hidden whitespace-nowrap">${peObi >= 0 ? '+' : ''}${peObi.toFixed(2)}</td>
+                <td class="p-2 font-bold text-white w-[85px] overflow-hidden whitespace-nowrap">${peMicroStr}${peDispStr}</td>
+                <td class="p-2 font-bold ${peObiColor} w-[75px] overflow-hidden whitespace-nowrap">${peObiTxt}</td>
                 <td class="p-2 text-rose-300 w-[130px] overflow-hidden whitespace-nowrap">
-                  <span class="font-bold">${(pe.total_buy || 0).toLocaleString('en-IN')}</span> / <span class="text-slate-400">${(pe.total_sell || 0).toLocaleString('en-IN')}</span>
+                  <span class="font-bold">${(pe.depth_l5_buy || pe.total_buy || 0).toLocaleString('en-IN')}</span> / <span class="text-slate-400">${(pe.depth_l5_sell || pe.total_sell || 0).toLocaleString('en-IN')}</span>
                 </td>
                 <td class="p-2 text-center w-[80px] overflow-hidden whitespace-nowrap">
                   <div class="flex items-center justify-center gap-1">
@@ -11488,10 +11509,9 @@
         if (dRegBadge) dRegBadge.innerText = 'DATA UNAVAILABLE';
         if (dSrcBadge) dSrcBadge.innerText = '⚠️ Kotak Stream Offline';
         if (dAlertBox) dAlertBox.innerText = depthData?.message || 'Kotak Neo Level-2 depth unavailable.';
-        if (dLadderTbody) {
-          dLadderTbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-amber-400 font-mono text-xs">⚠️ Kotak Neo Level-2 Market Depth Stream Unavailable — ${depthData?.message || 'Off-market'}</td></tr>`;
-        }
+        if (dLadderTbody) dLadderTbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-amber-400 font-mono text-xs">⚠️ Kotak Neo Level-2 Market Depth Stream Unavailable — ${depthData?.message || 'Off-market'}</td></tr>`;
       }
+
 
       // 4. Intraday ML Model Rendering (Prior-Slots Trained)
       const ml = data.intraday_ml || adv.intraday_ml || {};
@@ -30048,88 +30068,106 @@
         titleEl.innerText = `Nifty ${data.strike} ${data.opt_type} • ${data.expiry || ''} (${(data.expiry_type || 'weekly').toUpperCase()})`;
       }
       if (subEl) {
-        subEl.innerText = `Source: ${data.source || 'KOTAK_NEO_STREAM'} • Token: ${data.token || '--'} • Updated: ${data.timestamp_ist || 'Just now'}`;
+        subEl.innerText = `Source: ${data.source || 'KOTAK_NEO_STREAM'} • Book: ${data.book_status || 'OK'} • Updated: ${data.timestamp_ist || data.updated_at || 'Just now'}`;
       }
       if (flowBadge) {
-        const bias = data.flow_bias || 'BALANCED';
+        const bias = data.queue_skew || data.flow_bias || 'BALANCED';
         flowBadge.innerText = bias.replace(/_/g, ' ');
-        if (bias.includes('BUYING')) {
+        if (bias.includes('BUYING') || bias.includes('BID')) {
           flowBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
-        } else if (bias.includes('SELLING')) {
+        } else if (bias.includes('SELLING') || bias.includes('ASK')) {
           flowBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40";
         } else {
           flowBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40";
         }
       }
 
-      const bids = data.bid_levels || [];
-      const asks = data.ask_levels || [];
-      const totBuy = Number(data.total_buy_quantity || 0);
-      const totSell = Number(data.total_sell_quantity || 0);
-      const obi = Number(data.obi || 0.0);
-      const microPrice = Number(data.micro_price || 0.0);
-      const spread = Number(data.spread || 0.0);
-      const spreadPct = Number(data.spread_pct || 0.0);
+      const bids = data.bid_levels || data.bids || [];
+      const asks = data.ask_levels || data.asks || [];
+      const totBuy = Number(data.depth_l5_buy_qty || data.total_buy_quantity || 0);
+      const totSell = Number(data.depth_l5_sell_qty || data.total_sell_quantity || 0);
+      const obiL5 = (data.obi_l5 !== null && data.obi_l5 !== undefined) ? Number(data.obi_l5) : Number(data.obi || 0.0);
+      const obiL1 = (data.obi_l1 !== null && data.obi_l1 !== undefined) ? Number(data.obi_l1) : null;
+      const obiL3 = (data.obi_l3 !== null && data.obi_l3 !== undefined) ? Number(data.obi_l3) : null;
 
-      const maxBidQty = Math.max(1, ...bids.map(b => Number(b.quantity || 0)));
-      const maxAskQty = Math.max(1, ...asks.map(a => Number(a.quantity || 0)));
+      const microPrice = (data.micro_price !== null && data.micro_price !== undefined) ? Number(data.micro_price) : null;
+      const midPrice = (data.mid_price !== null && data.mid_price !== undefined) ? Number(data.mid_price) : null;
+      const microDisp = (data.micro_price_displacement !== null && data.micro_price_displacement !== undefined) ? Number(data.micro_price_displacement) : null;
+
+      const spread = (data.spread !== null && data.spread !== undefined) ? Number(data.spread) : 0.0;
+      const spreadPct = (data.spread_pct !== null && data.spread_pct !== undefined) ? Number(data.spread_pct) : 0.0;
+
+      const maxBidQty = Math.max(1, ...bids.map(b => Number(b.quantity_raw || b.quantity || 0)));
+      const maxAskQty = Math.max(1, ...asks.map(a => Number(a.quantity_raw || a.quantity || 0)));
       const maxQty = Math.max(maxBidQty, maxAskQty);
 
       const totVol = totBuy + totSell;
       const buyPct = totVol > 0 ? Math.round((totBuy / totVol) * 100) : 50;
       const sellPct = 100 - buyPct;
 
-      const obiDisplay = (obi >= 0 ? '+' : '') + obi.toFixed(3);
-      const obiColor = obi >= 0.15 ? 'text-emerald-400' : (obi <= -0.15 ? 'text-rose-400' : 'text-slate-300');
+      const obiDisplay = (obiL5 >= 0 ? '+' : '') + obiL5.toFixed(3);
+      const obiColor = obiL5 >= 0.12 ? 'text-emerald-400' : (obiL5 <= -0.12 ? 'text-rose-400' : 'text-slate-300');
 
       let rowsHtml = '';
       for (let i = 0; i < 5; i++) {
-        const b = bids[i] || { orders: '-', quantity: 0, price: 0.0 };
-        const a = asks[i] || { orders: '-', quantity: 0, price: 0.0 };
-        const bBarW = Math.min(100, Math.round((Number(b.quantity || 0) / maxQty) * 100));
-        const aBarW = Math.min(100, Math.round((Number(a.quantity || 0) / maxQty) * 100));
+        const b = bids[i] || { orders: '-', quantity: 0, price: 0.0, price_raw: 0.0, quantity_raw: 0 };
+        const a = asks[i] || { orders: '-', quantity: 0, price: 0.0, price_raw: 0.0, quantity_raw: 0 };
+        const bQty = Number(b.quantity_raw || b.quantity || 0);
+        const aQty = Number(a.quantity_raw || a.quantity || 0);
+        const bPrice = Number(b.price_raw || b.price || 0.0);
+        const aPrice = Number(a.price_raw || a.price || 0.0);
+        const bBarW = Math.min(100, Math.round((bQty / maxQty) * 100));
+        const aBarW = Math.min(100, Math.round((aQty / maxQty) * 100));
 
         rowsHtml += `
           <tr class="hover:bg-slate-800/40 transition">
             <td class="p-2 text-slate-500">${b.orders || '-'}</td>
             <td class="p-2 relative">
               <div class="absolute inset-y-0 right-0 bg-emerald-500/15 pointer-events-none rounded" style="width: ${bBarW}%;"></div>
-              <span class="relative font-bold text-emerald-300">${Number(b.quantity || 0).toLocaleString('en-IN')}</span>
+              <span class="relative font-bold text-emerald-300">${bQty > 0 ? bQty.toLocaleString('en-IN') : '-'}</span>
             </td>
-            <td class="p-2 font-mono font-bold text-white text-right">₹${Number(b.price || 0).toFixed(2)}</td>
-            <td class="p-2 font-mono font-bold text-white text-left pl-4 border-l border-slate-800">₹${Number(a.price || 0).toFixed(2)}</td>
+            <td class="p-2 font-mono font-bold text-white text-right">${bPrice > 0 ? '₹' + bPrice.toFixed(2) : '-'}</td>
+            <td class="p-2 font-mono font-bold text-white text-left pl-4 border-l border-slate-800">${aPrice > 0 ? '₹' + aPrice.toFixed(2) : '-'}</td>
             <td class="p-2 relative text-right">
               <div class="absolute inset-y-0 left-0 bg-rose-500/15 pointer-events-none rounded" style="width: ${aBarW}%;"></div>
-              <span class="relative font-bold text-rose-300">${Number(a.quantity || 0).toLocaleString('en-IN')}</span>
+              <span class="relative font-bold text-rose-300">${aQty > 0 ? aQty.toLocaleString('en-IN') : '-'}</span>
             </td>
             <td class="p-2 text-slate-500 text-right">${a.orders || '-'}</td>
           </tr>
         `;
       }
 
+      const l1Txt = obiL1 !== null ? `${obiL1 >= 0 ? '+' : ''}${obiL1.toFixed(2)}` : '--';
+      const l3Txt = obiL3 !== null ? `${obiL3 >= 0 ? '+' : ''}${obiL3.toFixed(2)}` : '--';
+
+      const microPriceHtml = microPrice !== null
+        ? `<span class="text-lg font-bold text-cyan-300 block mt-0.5">₹${microPrice.toFixed(2)}</span>
+           <span class="text-[10px] text-slate-500">Mid: ₹${(midPrice || 0).toFixed(2)} • Disp: ${microDisp !== null ? (microDisp >= 0 ? '+' : '') + microDisp.toFixed(2) : '--'}</span>`
+        : `<span class="text-sm font-bold text-amber-400 block mt-1.5">DATA UNAVAILABLE</span>
+           <span class="text-[10px] text-slate-500">${data.book_status || 'One-sided / Inverted'}</span>`;
+
       container.innerHTML = `
         <!-- Metrics Ribbon -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
           <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-            <span class="text-[10px] text-slate-400 block uppercase">Order Book Imbalance</span>
+            <span class="text-[10px] text-slate-400 block uppercase">Order Book Imbalance (L5)</span>
             <span class="text-lg font-bold ${obiColor} block mt-0.5">${obiDisplay}</span>
-            <span class="text-[10px] text-slate-500">${obi >= 0 ? 'Bid Depth Dominant' : 'Ask Depth Dominant'}</span>
+            <span class="text-[10px] text-slate-500">L1: ${l1Txt} • L3: ${l3Txt}</span>
           </div>
           <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-            <span class="text-[10px] text-slate-400 block uppercase">Micro-Price</span>
-            <span class="text-lg font-bold text-cyan-300 block mt-0.5">₹${microPrice.toFixed(2)}</span>
-            <span class="text-[10px] text-slate-500">Volume-Weighted Mid</span>
+            <span class="text-[10px] text-slate-400 block uppercase">Micro-Price & Displacement</span>
+            ${microPriceHtml}
           </div>
           <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
             <span class="text-[10px] text-slate-400 block uppercase">Bid-Ask Spread</span>
             <span class="text-lg font-bold text-white block mt-0.5">₹${spread.toFixed(2)}</span>
-            <span class="text-[10px] text-slate-500">${spreadPct.toFixed(2)}% of LTP</span>
+            <span class="text-[10px] text-slate-500">${spreadPct.toFixed(2)}% of Mid</span>
           </div>
           <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
             <span class="text-[10px] text-slate-400 block uppercase">Quick Builder Leg</span>
             <div class="flex items-center gap-1.5 mt-1">
-              <button onclick="addStrategyLegQuick(${data.strike}, '${data.opt_type}', 'BUY', ${microPrice || 0}, 14.0); closeOptionDepthModal();" class="flex-1 px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 font-bold border border-emerald-500/30 text-[11px] transition">+BUY</button>
-              <button onclick="addStrategyLegQuick(${data.strike}, '${data.opt_type}', 'SELL', ${microPrice || 0}, 14.0); closeOptionDepthModal();" class="flex-1 px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 font-bold border border-rose-500/30 text-[11px] transition">+SELL</button>
+              <button onclick="addStrategyLegQuick(${data.strike}, '${data.opt_type}', 'BUY', ${microPrice || data.ltp || 0}, 14.0); closeOptionDepthModal();" class="flex-1 px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 font-bold border border-emerald-500/30 text-[11px] transition">+BUY</button>
+              <button onclick="addStrategyLegQuick(${data.strike}, '${data.opt_type}', 'SELL', ${microPrice || data.ltp || 0}, 14.0); closeOptionDepthModal();" class="flex-1 px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 font-bold border border-rose-500/30 text-[11px] transition">+SELL</button>
             </div>
           </div>
         </div>
@@ -30137,8 +30175,8 @@
         <!-- Total Buy vs Sell Volume Bar -->
         <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
           <div class="flex items-center justify-between text-xs font-mono mb-1.5">
-            <span class="text-emerald-400 font-bold">Total Buy: ${totBuy.toLocaleString('en-IN')} (${buyPct}%)</span>
-            <span class="text-rose-400 font-bold">Total Sell: ${totSell.toLocaleString('en-IN')} (${sellPct}%)</span>
+            <span class="text-emerald-400 font-bold">5-Depth Buy: ${totBuy.toLocaleString('en-IN')} (${buyPct}%)</span>
+            <span class="text-rose-400 font-bold">5-Depth Sell: ${totSell.toLocaleString('en-IN')} (${sellPct}%)</span>
           </div>
           <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden flex">
             <div class="bg-emerald-500 h-full transition-all duration-300" style="width: ${buyPct}%;"></div>
