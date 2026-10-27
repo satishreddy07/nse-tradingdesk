@@ -662,7 +662,12 @@ class MLPerformanceEngine:
         h_norm = horizon.replace(" ", "+").upper() if horizon else None
         predictions = []
 
-        # 1. Fetch from Nifty Prediction Ledger
+        # 1. Auto-resolve any matured outcomes and fetch from Nifty Prediction Ledger
+        try:
+            nifty_prediction_ledger.resolve_matured_outcomes()
+        except Exception:
+            pass
+
         with nifty_prediction_ledger._get_connection() as conn:
             q = "SELECT * FROM nifty_forecast_lifecycle_ledger"
             params = []
@@ -795,6 +800,10 @@ class MLPerformanceEngine:
     # =========================================================================
     def get_t1_t5_performance(self, horizon: str = "T+1") -> Dict[str, Any]:
         """Returns dedicated telemetry and evaluation for NIFTY T+1 or T+5."""
+        try:
+            nifty_prediction_ledger.resolve_matured_outcomes()
+        except Exception:
+            pass
         h_norm = horizon.replace(" ", "+").upper()
         return nifty_forecast_learning_engine.generate_evaluation_report(horizon=h_norm)
 

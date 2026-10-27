@@ -27985,9 +27985,10 @@
     if ('serviceWorker' in navigator) {
 
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        navigator.serviceWorker.register('/sw.js?v=3.0', { scope: '/' })
           .then((reg) => {
             console.log('✅ PWA Service Worker registered with root scope:', reg.scope);
+            if (reg.update) reg.update();
           })
           .catch((err) => {
             console.warn('PWA Service Worker registration notice:', err);

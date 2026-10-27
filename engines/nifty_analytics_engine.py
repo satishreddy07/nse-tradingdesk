@@ -5943,12 +5943,20 @@ class NiftyAnalyticsEngine:
                 range_2sigma=(float(t1_low_2s), float(t1_high_2s)),
                 features=features_snapshot,
                 prediction_date=pred_date,
+                target_date=target_date,
                 model_name="NiftyTacticalEngine",
                 model_version="prod_t1_v1.0",
                 data_as_of_date=data_date,
                 basis_breakdown=t1_basis_breakdown,
                 predicted_direction=t1_direction
             )
+            # Derive T+5 target date: exactly 5 trading sessions inclusive of target session
+            try:
+                t_base = datetime.datetime.strptime(target_date, "%Y-%m-%d").date()
+                t5_target_date = nifty_prediction_ledger.get_nth_trading_day(t_base, 4).strftime("%Y-%m-%d")
+            except Exception:
+                t5_target_date = None
+
             # Log T+5
             nifty_prediction_ledger.log_forecast(
                 horizon="T+5",
@@ -5965,6 +5973,7 @@ class NiftyAnalyticsEngine:
                 range_2sigma=(float(t5_low_2s), float(t5_high_2s)),
                 features=features_snapshot,
                 prediction_date=pred_date,
+                target_date=t5_target_date,
                 model_name="NiftyStructuralEngine",
                 model_version="prod_t5_v1.0",
                 data_as_of_date=data_date,

@@ -180,7 +180,8 @@ class NiftyPredictionLedger:
         data_quality_status: str = "VERIFIED",
         model_confidence: str = "HIGH",
         basis_breakdown: Optional[Dict[str, Any]] = None,
-        predicted_direction: Optional[str] = None
+        predicted_direction: Optional[str] = None,
+        target_date: Optional[str] = None
     ) -> str:
         """
         Logs an immutable daily forecast for T+1 or T+5.
@@ -195,9 +196,12 @@ class NiftyPredictionLedger:
         pred_date = prediction_date or now_dt.strftime("%Y-%m-%d")
         ts_ist = prediction_timestamp or format_ist(now_dt)
 
-        pred_d = datetime.strptime(pred_date, "%Y-%m-%d").date()
-        target_d = self.get_nth_trading_day(pred_d, n=1 if horizon == "T+1" else 5)
-        target_date_str = target_d.strftime("%Y-%m-%d")
+        if target_date and str(target_date).strip():
+            target_date_str = str(target_date).strip()
+        else:
+            pred_d = datetime.strptime(pred_date, "%Y-%m-%d").date()
+            target_d = self.get_nth_trading_day(pred_d, n=1 if horizon == "T+1" else 5)
+            target_date_str = target_d.strftime("%Y-%m-%d")
 
         forecast_id = f"FC_{horizon.replace('+', '')}_{pred_date.replace('-', '')}"
 

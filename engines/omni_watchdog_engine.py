@@ -1165,8 +1165,19 @@ class OmniWatchdogEngine:
                 "failed_runs": run_status_counts.get("FAILED", 0),
             }
 
-            # 3. PREDICTION LEDGER RECONCILIATION
+            # 3. PREDICTION LEDGER RECONCILIATION & AUTO-RESOLUTION
+            overdue_pending = 0
+            overdue_ids = ""
             try:
+                # 3A. Auto-heal: Resolve any matured outcomes if target date has closed
+                try:
+                    from core.nifty_prediction_ledger import nifty_prediction_ledger
+                    auto_res = nifty_prediction_ledger.resolve_matured_outcomes()
+                    if (auto_res.get("resolved_t1", 0) + auto_res.get("resolved_t5", 0)) > 0:
+                        logger.info(f"🐕 [OmniWatchdog Auto-Heal] Resolved {auto_res.get('resolved_t1')} T+1 and {auto_res.get('resolved_t5')} T+5 overdue predictions.")
+                except Exception as ex_heal:
+                    logger.debug(f"OmniWatchdog prediction auto-heal notice: {ex_heal}")
+
                 cur.execute("SELECT count(*) FROM nifty_forecast_lifecycle_ledger")
                 total_forecasts = cur.fetchone()[0]
                 cur.execute(
@@ -1177,6 +1188,23 @@ class OmniWatchdogEngine:
                 hits = cur.fetchone()[0]
                 cur.execute("SELECT count(*) FROM nifty_forecast_lifecycle_ledger WHERE direction_correct = 0")
                 misses = cur.fetchone()[0]
+
+                # 3B. Check for overdue pending predictions that could not be resolved
+                now_ist_dt = now_ist()
+                is_post_close = (now_ist_dt.hour > 15) or (now_ist_dt.hour == 15 and now_ist_dt.minute >= 30)
+                today_iso = now_ist_dt.strftime("%Y-%m-%d")
+                if is_post_close:
+                    cur.execute("SELECT count(*), GROUP_CONCAT(forecast_id) FROM nifty_forecast_lifecycle_ledger WHERE status = 'PENDING' AND target_date <= ?", (today_iso,))
+                else:
+                    cur.execute("SELECT count(*), GROUP_CONCAT(forecast_id) FROM nifty_forecast_lifecycle_ledger WHERE status = 'PENDING' AND target_date < ?", (today_iso,))
+                overdue_row = cur.fetchone()
+                overdue_pending = overdue_row[0] if overdue_row else 0
+                overdue_ids = overdue_row[1] if overdue_row and overdue_row[1] else ""
+
+                if overdue_pending > 0:
+                    issues.append(f"Unreconciled overdue forecasts detected ({overdue_pending} pending beyond target close): {overdue_ids}")
+                    status = "DEGRADED"
+
             except sqlite3.OperationalError:
                 total_forecasts = 0
                 status_counts = {}
@@ -1193,6 +1221,8 @@ class OmniWatchdogEngine:
                 "misses": misses,
                 "empirical_hit_rate_pct": hit_rate_pct,
                 "pending_outcomes": status_counts.get("PENDING", 0),
+                "overdue_pending": overdue_pending,
+                "overdue_forecast_ids": overdue_ids,
             }
 
             conn.close()

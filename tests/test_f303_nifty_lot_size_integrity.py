@@ -419,7 +419,7 @@ class TestTradingSensitiveCallersFailClosed:
         deploy_payload = {
             "strategy_name": "Adjustment Safety Test",
             "symbol": "NIFTY",
-            "expiry_date": "27-Oct-2026",
+            "expiry_date": "05-Nov-2026",
             "expiry_type": "WEEKLY",
             "spot_at_entry": 22687.0,
             "net_premium": 2000.0,

@@ -1,9 +1,9 @@
 /**
- * NSE Trading Desk — Progressive Web App Service Worker (v2.0)
- * Real-time financial analytics: Network-first with fresh HTML bypass.
+ * NSE Trading Desk — Progressive Web App Service Worker (v3.0)
+ * Real-time financial analytics: Network-first with fresh HTML & API bypass.
  */
 
-const CACHE_NAME = 'nse-tradingdesk-v2';
+const CACHE_NAME = 'nse-tradingdesk-v3';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/static/manifest.json',
@@ -64,11 +64,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML page navigation: Always Network First, do NOT store HTML in persistent cache
-  if (request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html')) {
+  // HTML page navigation & pages like /ml-performance: Strictly Network-Only (NEVER serve stale HTML from cache)
+  if (url.pathname === '/' || url.pathname === '/ml-performance' || request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html')) {
     event.respondWith(
-      fetch(request).catch(() => {
-        return caches.match('/manifest.json') || new Response(
+      fetch(request, { cache: 'no-store' }).catch(() => {
+        return new Response(
           '<!DOCTYPE html><html><body style="background:#0b0e14;color:#f87171;font-family:sans-serif;padding:2rem;text-align:center;"><h2>Offline</h2><p>Market data system is offline. Please check your internet connection.</p></body></html>',
           { headers: { 'Content-Type': 'text/html' } }
         );

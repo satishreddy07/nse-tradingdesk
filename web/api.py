@@ -300,7 +300,12 @@ def get_service_worker():
         return FileResponse(
             sw_path,
             media_type="application/javascript",
-            headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"}
+            headers={
+                "Service-Worker-Allowed": "/",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
         )
     raise HTTPException(status_code=404, detail="Service worker not found")
 
@@ -2174,7 +2179,14 @@ def get_ml_performance_page_endpoint(request: Request):
         with open(index_file, "r", encoding="utf-8") as f:
             html = f.read()
             html = html.replace("let currentModule = 'module-swing';", "let currentModule = 'module-ml-performance';")
-            return HTMLResponse(content=html)
+            return HTMLResponse(
+                content=html,
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0"
+                }
+            )
     return HTMLResponse("<h1>Quant Trading Desk</h1><p>index.html not found</p>")
 
 
