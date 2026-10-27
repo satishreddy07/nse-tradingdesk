@@ -1503,6 +1503,7 @@ class DeployStrategyRequest(BaseModel):
     stoploss_pnl: Optional[float] = 0.0
     auto_trade_mode: Optional[str] = "MANUAL"
     market_condition: Optional[str] = ""
+    idempotency_key: Optional[str] = None
 
 
 class ExitStrategyRequest(BaseModel):

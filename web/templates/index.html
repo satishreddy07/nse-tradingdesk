@@ -16502,7 +16502,13 @@
     let optionsPortfolioCache = null;
     let equityCurvesCache = null;
 
+    let isDeployingOptionsStrategy = false;
     async function deployCurrentStrategy() {
+      if (isDeployingOptionsStrategy) {
+        showToast("Strategy deployment is already in progress. Please wait...", "warning");
+        return;
+      }
+      isDeployingOptionsStrategy = true;
       if (!strategyLegs || strategyLegs.length === 0) {
         showToast("Please add at least 1 leg to deploy strategy.", "warning");
         return;
@@ -16535,12 +16541,13 @@
         }
       }
       const deployController = new AbortController();
-      const deployTimeoutId = setTimeout(() => deployController.abort(), 15000);
+      const deployTimeoutId = setTimeout(() => deployController.abort(), 45000);
       const btn = document.getElementById('btn-deploy-strategy');
       const origHtml = btn ? btn.innerHTML : '';
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> ${isAdjustment ? 'Applying Adjustment...' : 'Deploying...'}`;
+        btn.classList.add('opacity-60', 'pointer-events-none');
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> ${isAdjustment ? 'Applying Adjustment...' : 'Deploying Strategy...'}`;
       }
 
       try {
@@ -16635,6 +16642,7 @@
 
         payload.legs = mappedLegs;
         payload.realized_pnl = Number(totalRealized.toFixed(2));
+        payload.idempotency_key = `DEP_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
         let res;
         if (isAdjustment) {
@@ -16658,7 +16666,11 @@
 
         const data = await res.json();
         if (res.ok && data.status === 'OK') {
-          if (isAdjustment) {
+          if (data.is_duplicate) {
+            showToast(`ℹ️ Strategy "${stratName}" is already active in your portfolio! Switching to Portfolio...`, "info");
+            clearStrategyBuilderLegs();
+            if (nameInput) nameInput.value = '';
+          } else if (isAdjustment) {
             const pnlStr = (totalRealized >= 0 ? '+' : '') + '₹' + Math.round(totalRealized).toLocaleString('en-IN');
             showToast(`🛠️ Strategy "${stratName}" adjusted successfully! Realized P&L: ${pnlStr} saved & synced to Telegram Cloud!`, "success");
             cancelStrategyAdjustment();
@@ -16675,15 +16687,37 @@
         }
       } catch (err) {
         if (err && err.name === 'AbortError') {
-          showToast("Deployment timed out after 15s. Please check Options Portfolio.", "error");
+          showToast("Deployment taking longer than expected. Checking portfolio...", "warning");
+          try {
+            const checkRes = await fetch('/api/options/portfolio');
+            if (checkRes.ok) {
+              const pData = await checkRes.json();
+              const active = pData.active_strategies || [];
+              const matched = active.find(s => s.strategy_name === stratName || s.symbol === 'NIFTY');
+              if (matched) {
+                showToast(`🚀 Strategy "${matched.strategy_name}" is active in Options Portfolio!`, "success");
+                clearStrategyBuilderLegs();
+                if (nameInput) nameInput.value = '';
+                switchOptionsSubTab('portfolio');
+                await loadOptionsPortfolioDesk();
+                await loadAllEquityCurves();
+                return;
+              }
+            }
+          } catch (e) {
+            console.warn("Portfolio fallback check error:", e);
+          }
+          showToast("Deployment timed out after 45s. Please check Options Portfolio.", "error");
         } else {
           console.error("Deploy Strategy Error:", err);
           showToast(`Deploy failed: ${err.message}`, "error");
         }
       } finally {
         clearTimeout(deployTimeoutId);
+        isDeployingOptionsStrategy = false;
         if (btn) {
           btn.disabled = false;
+          btn.classList.remove('opacity-60', 'pointer-events-none');
           btn.innerHTML = origHtml;
         }
       }

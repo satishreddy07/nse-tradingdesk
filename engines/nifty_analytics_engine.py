@@ -276,6 +276,8 @@ class NiftyAnalyticsEngine:
         self._equity_curves_cache_ts: float = 0.0
         self._intraday_expiry_cache: Dict[str, Any] = {}
         self._intraday_expiry_cache_ts: float = 0.0
+        self._deploy_strategy_lock = threading.Lock()
+        self._recent_deployments: Dict[str, Dict[str, Any]] = {}
         self._ensure_tables()
 
     def start_live_options_streamer(self) -> None:
@@ -6701,304 +6703,406 @@ class NiftyAnalyticsEngine:
     # ==========================================================================
     # 4. OPTIONS STRATEGY BUILDER, PORTFOLIO DESK & EQUITY CURVE TELEMETRY
     # ==========================================================================
+    @staticmethod
+    def compute_strategy_signature(legs: list, expiry_date: str = "", expiry_type: str = "") -> str:
+        """
+        Computes a deterministic canonical signature for an option strategy based on
+        expiry date, expiry type, and constituent legs (action, strike, type, qty).
+        """
+        parts = []
+        for l in sorted(legs, key=lambda x: (int(round(float(x.get("strike") or 0))), str(x.get("type", "")).upper(), str(x.get("action", "")).upper())):
+            stk = int(round(float(l.get("strike") or 0)))
+            typ = str(l.get("type") or "").upper()
+            act = str(l.get("action") or "").upper()
+            qty = int(l.get("qty") or 0)
+            parts.append(f"{act}_{stk}_{typ}_{qty}")
+        exp_d = str(expiry_date or "").strip().upper()
+        exp_t = str(expiry_type or "").strip().upper()
+        return f"{exp_d}:{exp_t}:" + ":".join(parts)
+
     def deploy_options_strategy(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Saves a user-configured multi-leg option strategy into the Options Trading Portfolio,
         sends an instant Telegram alert with formatted structure & Greek analytics,
         and triggers a master vault cloud sync.
+        Includes robust deduplication and idempotency guards to prevent duplicate strategy creation.
         """
-        strategy_name = data.get("strategy_name") or "Custom Options Strategy"
-        symbol = data.get("symbol") or "NIFTY"
-        expiry_date = data.get("expiry_date") or ""
-        expiry_type = data.get("expiry_type")
-        spot_at_entry = float(data.get("spot_at_entry") or 0.0)
-        net_premium = float(data.get("net_premium") or 0.0)
-        max_profit = data.get("max_profit")
-        max_loss = data.get("max_loss")
-        breakevens = json.dumps(data.get("breakevens") or []) if isinstance(data.get("breakevens"), list) else str(data.get("breakevens") or "[]")
-        risk_reward = str(data.get("risk_reward") or "--")
-        est_margin = float(data.get("est_margin") or 0.0)
-        pop_pct = float(data.get("pop_pct") or 0.0)
-        legs = data.get("legs") or []
+        with self._deploy_strategy_lock:
+            strategy_name = data.get("strategy_name") or "Custom Options Strategy"
+            symbol = data.get("symbol") or "NIFTY"
+            expiry_date = data.get("expiry_date") or ""
+            expiry_type = data.get("expiry_type") or "WEEKLY"
+            spot_at_entry = float(data.get("spot_at_entry") or 0.0)
+            net_premium = float(data.get("net_premium") or 0.0)
+            max_profit = data.get("max_profit")
+            max_loss = data.get("max_loss")
+            breakevens = json.dumps(data.get("breakevens") or []) if isinstance(data.get("breakevens"), list) else str(data.get("breakevens") or "[]")
+            risk_reward = str(data.get("risk_reward") or "--")
+            est_margin = float(data.get("est_margin") or 0.0)
+            pop_pct = float(data.get("pop_pct") or 0.0)
+            legs = data.get("legs") or []
+            idempotency_key = str(data.get("idempotency_key") or "").strip()
 
-        if not legs:
-            raise ValueError("Strategy must contain at least one leg.")
+            if not legs:
+                raise ValueError("Strategy must contain at least one leg.")
 
-        target_pnl = float(data.get("target_pnl") or 0.0)
-        stoploss_pnl = float(data.get("stoploss_pnl") or 0.0)
-        auto_trade_mode = str(data.get("auto_trade_mode") or "MANUAL").upper()
-        market_condition = str(data.get("market_condition") or "")
-        ai_rationale = str(data.get("ai_rationale") or "").strip()
+            target_pnl = float(data.get("target_pnl") or 0.0)
+            stoploss_pnl = float(data.get("stoploss_pnl") or 0.0)
+            auto_trade_mode = str(data.get("auto_trade_mode") or "MANUAL").upper()
+            market_condition = str(data.get("market_condition") or "")
+            ai_rationale = str(data.get("ai_rationale") or "").strip()
 
-        # Validate and synchronize leg strikes and entry prices with live Option Chain (F-22)
-        oc_lookup = None
-        for l in legs:
-            # Action and Type validation
-            act = str(l.get("action", "")).upper()
-            if act not in ("BUY", "SELL"):
-                raise ValueError(f"Invalid option action '{act}'. Must be BUY or SELL.")
-            l["action"] = act
+            # Deduplication Guard 1: Fast in-memory idempotency check (< 0.1ms)
+            strat_sig = self.compute_strategy_signature(legs, expiry_date, expiry_type)
+            now_epoch = time.time()
 
-            typ = str(l.get("type", "")).upper()
-            if typ not in ("CE", "PE"):
-                raise ValueError(f"Invalid option type '{typ}'. Must be CE or PE.")
-            l["type"] = typ
+            # Evict stale entries older than 600s
+            stale_keys = [k for k, v in self._recent_deployments.items() if (now_epoch - v.get("timestamp", 0)) > 600.0]
+            for sk in stale_keys:
+                self._recent_deployments.pop(sk, None)
 
-            try:
-                stk = int(round(float(l.get("strike", 0))))
-                if stk <= 0 or (stk % 50 != 0):
-                    raise ValueError(f"Invalid Nifty strike interval: {stk}. Must be positive multiple of 50.")
-                l["strike"] = stk
-            except (ValueError, TypeError) as ex:
-                raise ValueError(f"Invalid strike parameter: {l.get('strike')}: {ex}")
+            if idempotency_key and idempotency_key in self._recent_deployments:
+                cached = self._recent_deployments[idempotency_key]
+                logger.info(f"🛑 [IDEMPOTENCY HIT] Returning existing strategy '{cached['strategy_id']}' for key '{idempotency_key}'")
+                return {
+                    "status": "OK",
+                    "strategy_id": cached["strategy_id"],
+                    "strategy_name": cached["strategy_name"],
+                    "message": f"Strategy '{cached['strategy_name']}' was already deployed ({cached['strategy_id']}). Idempotent response returned.",
+                    "is_duplicate": True
+                }
 
-            # Quantity and Lot validation with authoritative contract lot-size resolution
-            leg_ls = l.get("lot_size")
-            if not leg_ls or int(leg_ls) <= 0:
+            if strat_sig in self._recent_deployments:
+                cached = self._recent_deployments[strat_sig]
+                if now_epoch - cached.get("timestamp", 0) < 120.0:
+                    logger.warning(f"🛑 [DEDUPLICATION GUARD] Blocked duplicate deployment for signature '{strat_sig}'. Existing strategy: {cached['strategy_id']}")
+                    return {
+                        "status": "OK",
+                        "strategy_id": cached["strategy_id"],
+                        "strategy_name": cached["strategy_name"],
+                        "message": f"Strategy '{cached['strategy_name']}' is already active in your portfolio ({cached['strategy_id']}). Duplicate deployment prevented.",
+                        "is_duplicate": True
+                    }
+
+            # Validate and synchronize leg strikes and entry prices with live Option Chain (F-22)
+            oc_lookup = None
+            for l in legs:
+                # Action and Type validation
+                act = str(l.get("action", "")).upper()
+                if act not in ("BUY", "SELL"):
+                    raise ValueError(f"Invalid option action '{act}'. Must be BUY or SELL.")
+                l["action"] = act
+
+                typ = str(l.get("type", "")).upper()
+                if typ not in ("CE", "PE"):
+                    raise ValueError(f"Invalid option type '{typ}'. Must be CE or PE.")
+                l["type"] = typ
+
                 try:
-                    leg_ls = resolve_nifty_lot_size(
-                        expiry_date=l.get("expiry_date") or expiry_date,
-                        contract_metadata=l,
-                        contract_type=l.get("contract_type") or l.get("expiry_type") or expiry_type,
-                        symbol=symbol,
-                        strict=True
-                    )
-                except Exception as ex:
-                    logger.error(f"🛑 [DEPLOY REJECTED] Cannot resolve authoritative lot size for leg {l}: {ex}")
-                    raise ValueError(f"Cannot deploy options strategy: unable to resolve authoritative lot size: {ex}")
-            l["lot_size"] = int(leg_ls)
+                    stk = int(round(float(l.get("strike", 0))))
+                    if stk <= 0 or (stk % 50 != 0):
+                        raise ValueError(f"Invalid Nifty strike interval: {stk}. Must be positive multiple of 50.")
+                    l["strike"] = stk
+                except (ValueError, TypeError) as ex:
+                    raise ValueError(f"Invalid strike parameter: {l.get('strike')}: {ex}")
 
-            try:
+                # Quantity and Lot validation with authoritative contract lot-size resolution
+                leg_ls = l.get("lot_size")
+                if not leg_ls or int(leg_ls) <= 0:
+                    try:
+                        leg_ls = resolve_nifty_lot_size(
+                            expiry_date=l.get("expiry_date") or expiry_date,
+                            contract_metadata=l,
+                            contract_type=l.get("contract_type") or l.get("expiry_type") or expiry_type,
+                            symbol=symbol,
+                            strict=True
+                        )
+                    except Exception as ex:
+                        logger.error(f"🛑 [DEPLOY REJECTED] Cannot resolve authoritative lot size for leg {l}: {ex}")
+                        raise ValueError(f"Cannot deploy options strategy: unable to resolve authoritative lot size: {ex}")
+                l["lot_size"] = int(leg_ls)
 
-                if l.get("qty") is not None:
-                    q = int(l["qty"])
-                    if q <= 0:
-                        raise ValueError(f"Invalid contract quantity {q}. Must be positive integer.")
-                    l["qty"] = q
-                    l["lots"] = max(1, round(q / l["lot_size"]))
-                elif l.get("lots") is not None:
-                    lots = int(l["lots"])
-                    if lots <= 0:
-                        raise ValueError(f"Invalid contract lots {lots}. Must be positive integer.")
-                    l["lots"] = lots
-                    l["qty"] = lots * l["lot_size"]
+                try:
+                    if l.get("qty") is not None:
+                        q = int(l["qty"])
+                        if q <= 0:
+                            raise ValueError(f"Invalid contract quantity {q}. Must be positive integer.")
+                        l["qty"] = q
+                        l["lots"] = max(1, round(q / l["lot_size"]))
+                    elif l.get("lots") is not None:
+                        lots = int(l["lots"])
+                        if lots <= 0:
+                            raise ValueError(f"Invalid contract lots {lots}. Must be positive integer.")
+                        l["lots"] = lots
+                        l["qty"] = lots * l["lot_size"]
+                    else:
+                        l["lots"] = 1
+                        l["qty"] = l["lot_size"]
+                except (ValueError, TypeError) as ex:
+                    raise ValueError(f"Invalid quantity parameter: {ex}")
+
+                px = float(l.get("entry_price") or l.get("price") or l.get("premium") or 0.0)
+                if px <= 0.0:
+                    # Fast in-memory tick cache check
+                    try:
+                        from engines.kotak_neo_engine import kotak_neo_engine
+                        near_ticks = kotak_neo_engine.get_near_atm_option_ticks()
+                        tick_key = f"{l['strike']}_{l['type']}"
+                        if tick_key in near_ticks and near_ticks[tick_key].get("ltp"):
+                            px = float(near_ticks[tick_key]["ltp"])
+                    except Exception:
+                        pass
+
+                if px <= 0.0:
+                    if oc_lookup is None:
+                        # Fast cache fallback first
+                        oc_lookup = getattr(self, "_option_chain_cache", None) or {}
+                        if not oc_lookup:
+                            try:
+                                oc_lookup = state_engine.get_kv("latest_nifty_option_chain_deep") or {}
+                            except Exception:
+                                oc_lookup = {}
+                        if not oc_lookup:
+                            try:
+                                oc_lookup = self.fetch_and_analyze_option_chain(force_refresh=False)
+                            except Exception:
+                                oc_lookup = {}
+                    exp_key = "monthly" if (expiry_type and str(expiry_type).upper() == "MONTHLY") else "weekly"
+                    all_s = oc_lookup.get(exp_key, {}).get("all_strikes") or oc_lookup.get(exp_key, {}).get("strikes", [])
+                    stk_row = next((s for s in all_s if int(round(float(s.get("strike", 0)))) == l["strike"]), None)
+                    if stk_row:
+                        ltp_key = "ce_ltp" if l["type"] == "CE" else "pe_ltp"
+                        alt_key = "call_ltp" if l["type"] == "CE" else "put_ltp"
+                        px = float(stk_row.get(ltp_key) or stk_row.get(alt_key) or 0.0)
+
+                if px <= 0.0:
+                    raise ValueError(f"DATA_UNAVAILABLE: Cannot deploy strategy. Strike {l['strike']} {l['type']} has zero or missing live price.")
+
+                l["entry_price"] = round(px, 2)
+                l["price"] = round(px, 2)
+
+                # Preserve & validate manual exit price, target, and stoploss per leg
+                if l.get("exit_price") is not None and str(l.get("exit_price")).strip() != "":
+                    try:
+                        l["exit_price"] = round(float(l["exit_price"]), 2)
+                    except (ValueError, TypeError):
+                        l["exit_price"] = None
                 else:
-                    l["lots"] = 1
-                    l["qty"] = l["lot_size"]
-            except (ValueError, TypeError) as ex:
-                raise ValueError(f"Invalid quantity parameter: {ex}")
+                    l["exit_price"] = None
 
-            px = float(l.get("entry_price") or l.get("price") or l.get("premium") or 0.0)
-            if px <= 0.0:
-                # Fast in-memory tick cache check
+                if l.get("target_price") is not None and str(l.get("target_price")).strip() != "":
+                    try:
+                        l["target_price"] = round(float(l["target_price"]), 2)
+                    except (ValueError, TypeError):
+                        l["target_price"] = None
+                else:
+                    l["target_price"] = None
+
+                if l.get("target_pct") is not None and str(l.get("target_pct")).strip() != "":
+                    try:
+                        l["target_pct"] = round(float(l["target_pct"]), 1)
+                    except (ValueError, TypeError):
+                        l["target_pct"] = None
+                else:
+                    l["target_pct"] = None
+
+                if l.get("stoploss_price") is not None and str(l.get("stoploss_price")).strip() != "":
+                    try:
+                        l["stoploss_price"] = round(float(l["stoploss_price"]), 2)
+                    except (ValueError, TypeError):
+                        l["stoploss_price"] = None
+                else:
+                    l["stoploss_price"] = None
+
+                if l.get("stoploss_pct") is not None and str(l.get("stoploss_pct")).strip() != "":
+                    try:
+                        l["stoploss_pct"] = round(float(l["stoploss_pct"]), 1)
+                    except (ValueError, TypeError):
+                        l["stoploss_pct"] = None
+                else:
+                    l["stoploss_pct"] = None
+
+            if spot_at_entry <= 0.0:
                 try:
-                    from engines.kotak_neo_engine import kotak_neo_engine
-                    near_ticks = kotak_neo_engine.get_near_atm_option_ticks()
-                    tick_key = f"{l['strike']}_{l['type']}"
-                    if tick_key in near_ticks and near_ticks[tick_key].get("ltp"):
-                        px = float(near_ticks[tick_key]["ltp"])
+                    live_spot_res = self.get_live_nifty_spot(force_refresh=False)
+                    spot_at_entry = float(live_spot_res.get("price") or 0.0)
                 except Exception:
                     pass
 
-            if px <= 0.0:
-                if oc_lookup is None:
+            # Strict Server-side Recalculation (F-22)
+            calc_premium = sum(((-1 if l["action"] == "BUY" else 1) * float(l["entry_price"])) * int(l["qty"]) for l in legs)
+            net_premium = round(calc_premium, 2)
+
+            target_pnl = abs(float(target_pnl or 0.0))
+            if target_pnl <= 0.0:
+                target_pnl = round(0.50 * (net_premium if net_premium > 0 else abs(net_premium)), 2)
+
+            raw_sl = float(stoploss_pnl or 0.0)
+            if raw_sl == 0.0:
+                stoploss_pnl = round(-1.0 * (net_premium if net_premium > 0 else 0.5 * abs(net_premium)), 2)
+            else:
+                stoploss_pnl = round(-abs(raw_sl), 2)
+
+            has_short = any(l["action"] == "SELL" for l in legs)
+            if has_short:
+                short_prem_sum = sum(l["entry_price"] for l in legs if l["action"] == "SELL")
+                strat_ls = next((int(l["lot_size"]) for l in legs if l.get("lot_size")), None)
+                if not strat_ls:
                     try:
-                        oc_lookup = self.fetch_and_analyze_option_chain(force_refresh=False)
-                    except Exception:
-                        oc_lookup = {}
-                exp_key = "monthly" if (expiry_type and str(expiry_type).upper() == "MONTHLY") else "weekly"
-                all_s = oc_lookup.get(exp_key, {}).get("all_strikes") or oc_lookup.get(exp_key, {}).get("strikes", [])
-                stk_row = next((s for s in all_s if int(round(float(s.get("strike", 0)))) == l["strike"]), None)
-                if stk_row:
-                    ltp_key = "ce_ltp" if l["type"] == "CE" else "pe_ltp"
-                    alt_key = "call_ltp" if l["type"] == "CE" else "put_ltp"
-                    px = float(stk_row.get(ltp_key) or stk_row.get(alt_key) or 0.0)
-
-            if px <= 0.0:
-                raise ValueError(f"DATA_UNAVAILABLE: Cannot deploy strategy. Strike {l['strike']} {l['type']} has zero or missing live price.")
-
-            l["entry_price"] = round(px, 2)
-            l["price"] = round(px, 2)
-
-            # Preserve & validate manual exit price, target, and stoploss per leg
-            if l.get("exit_price") is not None and str(l.get("exit_price")).strip() != "":
-                try:
-                    l["exit_price"] = round(float(l["exit_price"]), 2)
-                except (ValueError, TypeError):
-                    l["exit_price"] = None
+                        strat_ls = resolve_nifty_lot_size(expiry_date=expiry_date, contract_type=expiry_type, symbol=symbol, strict=True)
+                    except Exception as ex:
+                        raise ValueError(f"Cannot deploy options strategy: unable to resolve authoritative lot size: {ex}")
+                est_margin = round(max(45000.0, (0.15 * max(spot_at_entry, 20000.0) + short_prem_sum) * strat_ls), 2)
             else:
-                l["exit_price"] = None
+                est_margin = round(abs(net_premium), 2)
 
-            if l.get("target_price") is not None and str(l.get("target_price")).strip() != "":
-                try:
-                    l["target_price"] = round(float(l["target_price"]), 2)
-                except (ValueError, TypeError):
-                    l["target_price"] = None
-            else:
-                l["target_price"] = None
+            ts_now = format_ist()
+            strat_id = f"OPT-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100, 999)}"
 
-            if l.get("target_pct") is not None and str(l.get("target_pct")).strip() != "":
-                try:
-                    l["target_pct"] = round(float(l["target_pct"]), 1)
-                except (ValueError, TypeError):
-                    l["target_pct"] = None
-            else:
-                l["target_pct"] = None
+            today_iso = now_ist().strftime("%Y-%m-%d")
+            with state_engine._lock:
+                with state_engine._get_connection() as conn:
+                    # Deduplication Guard 2: Database Active Strategy Check
+                    recent_active = conn.execute("""
+                        SELECT strategy_id, strategy_name, created_at, legs_json, expiry_date, expiry_type
+                        FROM options_strategies
+                        WHERE status = 'ACTIVE'
+                        ORDER BY id DESC LIMIT 25
+                    """).fetchall()
+                    for r in recent_active:
+                        try:
+                            r_legs = json.loads(r["legs_json"] or "[]")
+                            r_sig = self.compute_strategy_signature(r_legs, r["expiry_date"], r["expiry_type"])
+                            if r_sig == strat_sig:
+                                logger.warning(
+                                    f"🛑 [DEDUPLICATION GUARD] Prevented duplicate strategy deployment. "
+                                    f"Active strategy '{r['strategy_name']}' ({r['strategy_id']}) is already running."
+                                )
+                                dup_res = {
+                                    "status": "OK",
+                                    "strategy_id": r["strategy_id"],
+                                    "strategy_name": r["strategy_name"],
+                                    "message": f"Strategy '{r['strategy_name']}' is already active in your portfolio ({r['strategy_id']}). Duplicate deployment prevented.",
+                                    "is_duplicate": True
+                                }
+                                self._recent_deployments[strat_sig] = {
+                                    "strategy_id": r["strategy_id"],
+                                    "strategy_name": r["strategy_name"],
+                                    "timestamp": now_epoch
+                                }
+                                if idempotency_key:
+                                    self._recent_deployments[idempotency_key] = self._recent_deployments[strat_sig]
+                                return dup_res
+                        except Exception as ex:
+                            logger.debug(f"Error checking strategy signature: {ex}")
 
-            if l.get("stoploss_price") is not None and str(l.get("stoploss_price")).strip() != "":
-                try:
-                    l["stoploss_price"] = round(float(l["stoploss_price"]), 2)
-                except (ValueError, TypeError):
-                    l["stoploss_price"] = None
-            else:
-                l["stoploss_price"] = None
+                    if auto_trade_mode != "MANUAL":
+                        # Hard Gate 1: Check if an active strategy for this expiry_type already exists
+                        existing_active = conn.execute("""
+                            SELECT strategy_id, strategy_name FROM options_strategies
+                            WHERE status = 'ACTIVE' AND expiry_type = ?
+                        """, (expiry_type,)).fetchall()
+                        if existing_active:
+                            logger.info(f"🛑 [HARD GATE] Blocked auto deployment: active {expiry_type} strategy already open ({existing_active[0]['strategy_id']})")
+                            return {
+                                "status": "BLOCKED_BY_HARD_GATE",
+                                "reason": f"Active {expiry_type} strategy already open ({existing_active[0]['strategy_id']}). Max 1 active strategy allowed.",
+                                "strategy_id": existing_active[0]["strategy_id"]
+                            }
 
-            if l.get("stoploss_pct") is not None and str(l.get("stoploss_pct")).strip() != "":
-                try:
-                    l["stoploss_pct"] = round(float(l["stoploss_pct"]), 1)
-                except (ValueError, TypeError):
-                    l["stoploss_pct"] = None
-            else:
-                l["stoploss_pct"] = None
+                        # Hard Gate 2: Check if strategy was already deployed today
+                        deployed_today = conn.execute("""
+                            SELECT strategy_id FROM options_strategies
+                            WHERE expiry_type = ? AND (created_at LIKE ? OR created_at LIKE ?)
+                        """, (expiry_type, f"{today_iso}%", f"{now_ist().strftime('%d-%b-%Y')}%")).fetchall()
+                        if deployed_today:
+                            logger.info(f"🛑 [HARD GATE] Blocked auto deployment: {expiry_type} strategy already deployed today ({deployed_today[0]['strategy_id']})")
+                            return {
+                                "status": "BLOCKED_BY_HARD_GATE",
+                                "reason": f"{expiry_type} strategy already deployed today. Daily idempotency enforced.",
+                                "strategy_id": deployed_today[0]["strategy_id"]
+                            }
 
-        if spot_at_entry <= 0.0:
+                    conn.execute("""
+                    INSERT INTO options_strategies (
+                        strategy_id, strategy_name, symbol, expiry_date, expiry_type,
+                        created_at, spot_at_entry, net_premium, max_profit, max_loss,
+                        breakevens, risk_reward, est_margin, pop_pct, legs_json, status, realized_pnl,
+                        target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
+                        trailing_stop_pnl, highest_pnl_reached, trailing_status, ai_rationale
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0.0, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        strat_id, strategy_name, symbol, expiry_date, expiry_type,
+                        ts_now, spot_at_entry, net_premium, max_profit, max_loss,
+                        breakevens, risk_reward, est_margin, pop_pct, json.dumps(legs),
+                        target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
+                        stoploss_pnl, 0.0, 'INACTIVE', ai_rationale
+                    ))
+                    conn.commit()
+
+            # Record deployment in cache to block rapid duplicate clicks
+            self._recent_deployments[strat_sig] = {
+                "strategy_id": strat_id,
+                "strategy_name": strategy_name,
+                "timestamp": now_epoch
+            }
+            if idempotency_key:
+                self._recent_deployments[idempotency_key] = self._recent_deployments[strat_sig]
+
+            # Format Telegram Alert
+            leg_bullets = []
+            for i, l in enumerate(legs, 1):
+                act = l.get("action", "BUY")
+                typ = l.get("type", "CE")
+                stk = l.get("strike", 0)
+                lots = l.get("lots", 1)
+                leg_ls = int(l.get("lot_size") or resolve_nifty_lot_size(expiry_date=expiry_date, strict=False))
+                qty = l.get("qty", lots * leg_ls)
+                px = l.get("entry_price", l.get("price", 0.0))
+                icon = "🟢" if act == "BUY" else "🔴"
+                leg_bullets.append(f"{icon} Leg {i}: {act} {stk} {typ} | {lots} Lots ({qty} Qty) @ ₹{px:.2f}")
+
+            prem_str = f"Net Credit +₹{abs(net_premium):,.2f}" if net_premium >= 0 else f"Net Debit -₹{abs(net_premium):,.2f}"
+            mp_str = f"₹{max_profit:,.2f}" if (max_profit is not None and max_profit != 999999) else "Unlimited"
+            ml_str = f"₹{abs(max_loss):,.2f}" if (max_loss is not None and max_loss != -999999) else "Unlimited"
+            ai_alert_block = f"\n🧠 <b>AI Synthesis:</b> {ai_rationale}\n" if ai_rationale else ""
+
+            telegram_msg = (
+                f"🎯 <b>NEW OPTIONS STRATEGY DEPLOYED</b>\n\n"
+                f"📊 <b>Strategy:</b> {strategy_name}\n"
+                f"🆔 <b>ID:</b> <code>{strat_id}</code>\n"
+                f"⏳ <b>Expiry:</b> {expiry_date} ({expiry_type})\n"
+                f"🤖 <b>Mode:</b> {auto_trade_mode} | <b>Condition:</b> {market_condition or 'Manual discretionary'}\n"
+                f"{ai_alert_block}"
+                f"📌 <b>Spot at Entry:</b> ₹{spot_at_entry:,.2f}\n"
+                f"💵 <b>Premium:</b> {prem_str}\n"
+                f"🛡 <b>Max Profit:</b> {mp_str} | <b>Max Loss:</b> {ml_str}\n"
+                f"🎯 <b>Target PnL:</b> +₹{target_pnl:,.2f} | 🛑 <b>Stop Loss:</b> -₹{abs(stoploss_pnl):,.2f}\n"
+                f"🎯 <b>R:R:</b> {risk_reward} | <b>PoP:</b> {pop_pct:.1f}%\n"
+                f"💼 <b>Est. Margin:</b> ₹{est_margin:,.0f}\n\n"
+                f"📋 <b>Legs Breakdown ({len(legs)}):</b>\n" + "\n".join(leg_bullets) + f"\n\n"
+                f"🕒 <b>Timestamp:</b> {ts_now}"
+            )
+
             try:
-                live_spot_res = self.get_live_nifty_spot()
-                spot_at_entry = float(live_spot_res.get("price") or 0.0)
-            except Exception:
-                pass
+                import threading
+                threading.Thread(
+                    target=telegram_vault.send_alert_and_sync,
+                    kwargs={"title": f"Options Strategy: {strategy_name}", "message": telegram_msg, "sync_db": True},
+                    daemon=True,
+                    name="TelegramDeployAlertSync"
+                ).start()
+            except Exception as e:
+                logger.warning(f"Telegram alert error on deploy options strategy: {e}")
 
-        # Strict Server-side Recalculation (F-22)
-        calc_premium = sum(((-1 if l["action"] == "BUY" else 1) * float(l["entry_price"])) * int(l["qty"]) for l in legs)
-        net_premium = round(calc_premium, 2)
+            self.invalidate_equity_curves_cache()
 
-        target_pnl = abs(float(target_pnl or 0.0))
-        if target_pnl <= 0.0:
-            target_pnl = round(0.50 * (net_premium if net_premium > 0 else abs(net_premium)), 2)
-
-        raw_sl = float(stoploss_pnl or 0.0)
-        if raw_sl == 0.0:
-            stoploss_pnl = round(-1.0 * (net_premium if net_premium > 0 else 0.5 * abs(net_premium)), 2)
-        else:
-            stoploss_pnl = round(-abs(raw_sl), 2)
-
-        has_short = any(l["action"] == "SELL" for l in legs)
-        if has_short:
-            short_prem_sum = sum(l["entry_price"] for l in legs if l["action"] == "SELL")
-            strat_ls = next((int(l["lot_size"]) for l in legs if l.get("lot_size")), None)
-            if not strat_ls:
-                try:
-                    strat_ls = resolve_nifty_lot_size(expiry_date=expiry_date, contract_type=expiry_type, symbol=symbol, strict=True)
-                except Exception as ex:
-                    raise ValueError(f"Cannot deploy options strategy: unable to resolve authoritative lot size: {ex}")
-            est_margin = round(max(45000.0, (0.15 * max(spot_at_entry, 20000.0) + short_prem_sum) * strat_ls), 2)
-        else:
-            est_margin = round(abs(net_premium), 2)
-
-        ts_now = format_ist()
-        strat_id = f"OPT-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100, 999)}"
-
-        today_iso = now_ist().strftime("%Y-%m-%d")
-        with state_engine._lock:
-            with state_engine._get_connection() as conn:
-                if auto_trade_mode != "MANUAL":
-                    # Hard Gate 1: Check if an active strategy for this expiry_type already exists
-                    existing_active = conn.execute("""
-                        SELECT strategy_id, strategy_name FROM options_strategies
-                        WHERE status = 'ACTIVE' AND expiry_type = ?
-                    """, (expiry_type,)).fetchall()
-                    if existing_active:
-                        logger.info(f"🛑 [HARD GATE] Blocked auto deployment: active {expiry_type} strategy already open ({existing_active[0]['strategy_id']})")
-                        return {
-                            "status": "BLOCKED_BY_HARD_GATE",
-                            "reason": f"Active {expiry_type} strategy already open ({existing_active[0]['strategy_id']}). Max 1 active strategy allowed.",
-                            "strategy_id": existing_active[0]["strategy_id"]
-                        }
-
-                    # Hard Gate 2: Check if strategy was already deployed today
-                    deployed_today = conn.execute("""
-                        SELECT strategy_id FROM options_strategies
-                        WHERE expiry_type = ? AND (created_at LIKE ? OR created_at LIKE ?)
-                    """, (expiry_type, f"{today_iso}%", f"{now_ist().strftime('%d-%b-%Y')}%")).fetchall()
-                    if deployed_today:
-                        logger.info(f"🛑 [HARD GATE] Blocked auto deployment: {expiry_type} strategy already deployed today ({deployed_today[0]['strategy_id']})")
-                        return {
-                            "status": "BLOCKED_BY_HARD_GATE",
-                            "reason": f"{expiry_type} strategy already deployed today. Daily idempotency enforced.",
-                            "strategy_id": deployed_today[0]["strategy_id"]
-                        }
-
-                conn.execute("""
-                INSERT INTO options_strategies (
-                    strategy_id, strategy_name, symbol, expiry_date, expiry_type,
-                    created_at, spot_at_entry, net_premium, max_profit, max_loss,
-                    breakevens, risk_reward, est_margin, pop_pct, legs_json, status, realized_pnl,
-                    target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
-                    trailing_stop_pnl, highest_pnl_reached, trailing_status, ai_rationale
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0.0, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    strat_id, strategy_name, symbol, expiry_date, expiry_type,
-                    ts_now, spot_at_entry, net_premium, max_profit, max_loss,
-                    breakevens, risk_reward, est_margin, pop_pct, json.dumps(legs),
-                    target_pnl, stoploss_pnl, auto_trade_mode, market_condition,
-                    stoploss_pnl, 0.0, 'INACTIVE', ai_rationale
-                ))
-                conn.commit()
-
-        # Format Telegram Alert
-        leg_bullets = []
-        for i, l in enumerate(legs, 1):
-            act = l.get("action", "BUY")
-            typ = l.get("type", "CE")
-            stk = l.get("strike", 0)
-            lots = l.get("lots", 1)
-            leg_ls = int(l.get("lot_size") or resolve_nifty_lot_size(expiry_date=expiry_date, strict=False))
-            qty = l.get("qty", lots * leg_ls)
-            px = l.get("entry_price", l.get("price", 0.0))
-            icon = "🟢" if act == "BUY" else "🔴"
-            leg_bullets.append(f"{icon} Leg {i}: {act} {stk} {typ} | {lots} Lots ({qty} Qty) @ ₹{px:.2f}")
-
-        prem_str = f"Net Credit +₹{abs(net_premium):,.2f}" if net_premium >= 0 else f"Net Debit -₹{abs(net_premium):,.2f}"
-        mp_str = f"₹{max_profit:,.2f}" if (max_profit is not None and max_profit != 999999) else "Unlimited"
-        ml_str = f"₹{abs(max_loss):,.2f}" if (max_loss is not None and max_loss != -999999) else "Unlimited"
-        ai_alert_block = f"\n🧠 <b>AI Synthesis:</b> {ai_rationale}\n" if ai_rationale else ""
-
-        telegram_msg = (
-            f"🎯 <b>NEW OPTIONS STRATEGY DEPLOYED</b>\n\n"
-            f"📊 <b>Strategy:</b> {strategy_name}\n"
-            f"🆔 <b>ID:</b> <code>{strat_id}</code>\n"
-            f"⏳ <b>Expiry:</b> {expiry_date} ({expiry_type})\n"
-            f"🤖 <b>Mode:</b> {auto_trade_mode} | <b>Condition:</b> {market_condition or 'Manual discretionary'}\n"
-            f"{ai_alert_block}"
-            f"📌 <b>Spot at Entry:</b> ₹{spot_at_entry:,.2f}\n"
-            f"💵 <b>Premium:</b> {prem_str}\n"
-            f"🛡 <b>Max Profit:</b> {mp_str} | <b>Max Loss:</b> {ml_str}\n"
-            f"🎯 <b>Target PnL:</b> +₹{target_pnl:,.2f} | 🛑 <b>Stop Loss:</b> -₹{abs(stoploss_pnl):,.2f}\n"
-            f"🎯 <b>R:R:</b> {risk_reward} | <b>PoP:</b> {pop_pct:.1f}%\n"
-            f"💼 <b>Est. Margin:</b> ₹{est_margin:,.0f}\n\n"
-            f"📋 <b>Legs Breakdown ({len(legs)}):</b>\n" + "\n".join(leg_bullets) + f"\n\n"
-            f"🕒 <b>Timestamp:</b> {ts_now}"
-        )
-
-        try:
-            import threading
-            threading.Thread(
-                target=telegram_vault.send_alert_and_sync,
-                kwargs={"title": f"Options Strategy: {strategy_name}", "message": telegram_msg, "sync_db": True},
-                daemon=True,
-                name="TelegramDeployAlertSync"
-            ).start()
-        except Exception as e:
-            logger.warning(f"Telegram alert error on deploy options strategy: {e}")
-
-        self.invalidate_equity_curves_cache()
-
-        return {
-            "status": "OK",
-            "strategy_id": strat_id,
-            "strategy_name": strategy_name,
-            "message": f"Strategy '{strategy_name}' deployed successfully to Options Trading Portfolio!"
-        }
+            return {
+                "status": "OK",
+                "strategy_id": strat_id,
+                "strategy_name": strategy_name,
+                "message": f"Strategy '{strategy_name}' deployed successfully to Options Trading Portfolio!"
+            }
 
     def adjust_options_strategy(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -7582,6 +7686,8 @@ class NiftyAnalyticsEngine:
 
         for r in rows:
             d = dict(r)
+            if d.get("status") in ("CANCELLED_DUPLICATE", "DELETED"):
+                continue
             legs = json.loads(d.get("legs_json") or "[]")
             is_active = (d.get("status") == "ACTIVE")
 
