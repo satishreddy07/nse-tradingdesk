@@ -8808,6 +8808,9 @@
                 <span class="w-2 h-0.5 border-t border-dashed border-cyan-300 inline-block"></span>
                 <span>Dashed: T+Now (Live Greeks)</span>
               </span>
+              <span id="modal-payoff-sigma-badge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 hidden">
+                1σ: --
+              </span>
               <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[10px] font-mono">
                 <span class="text-slate-500 px-1 py-0.5">Span:</span>
                 <button onclick="setModalPayoffGraphSpan(600)" id="btn-modal-payoff-span-600" class="modal-payoff-span-btn px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition cursor-pointer" title="±600 pts from Spot">±600</button>
@@ -16138,13 +16141,19 @@
         iv = 14.0;
       }
 
-      const t = Math.max(0.0001, dte / 365.0);
+      // 1-session trading volatility floor for standard deviation cone:
+      // When dte < 1.0 (e.g., 0-DTE intraday expiry), statistical 1σ session movement
+      // is based on a full trading session (effectiveDte >= 1.0) so the volatility cone
+      // reflects true market standard deviation (±120-160 pts) rather than collapsing to ~40 pts.
+      const effectiveDte = Math.max(1.0, Number(dte) || 1.0);
+      const t = effectiveDte / 365.0;
       const oneSigmaVal = spot * (iv / 100.0) * Math.sqrt(t);
       const twoSigmaVal = 2.0 * oneSigmaVal;
 
       return {
         spot: Math.round(spot),
         dte: Number(dte.toFixed(1)),
+        effectiveDte: Number(effectiveDte.toFixed(1)),
         iv: Number(iv.toFixed(1)),
         expiryType: isMonthly ? 'MONTHLY' : 'WEEKLY',
         oneSigmaVal: Math.round(oneSigmaVal),
@@ -16824,7 +16833,11 @@
                   }
                 } catch (err) {}
               }
-              legs.forEach(l => {
+              const activeLegs = legs.filter(l => !(
+                l.state === 'CLOSED' || l.status === 'CLOSED' || l.is_closed === true ||
+                (l.exit_price !== undefined && l.exit_price !== null && String(l.exit_price).trim() !== '' && Number(l.exit_price) > 0)
+              ));
+              activeLegs.forEach(l => {
                 const sign = l.action === 'BUY' ? 1 : -1;
                 const legIv = Number(l.iv || 12.0);
                 const bs = calculateBsOption(spotVal, Number(l.strike), dteDays, legIv, l.type);
@@ -17344,11 +17357,21 @@
         metaEl.innerText = `ID: ${s.strategy_id} • Expiry: ${s.expiry_date} (${s.expiry_type}) • ${takenStr}${exitStr} • Entry Spot: ${s.spot_at_entry || '--'} • Status: ${s.status}`;
       }
 
-      const pnl = s.status === 'ACTIVE' ? (s.unrealized_pnl || 0) : (s.realized_pnl || 0);
-      const isProfit = pnl >= 0;
+      const isClosed = s.status === 'CLOSED';
+      const realizedPnl = Number(s.realized_pnl || 0);
+      const unrealizedPnl = Number(s.unrealized_pnl || 0);
+      const netTotalPnl = isClosed ? realizedPnl : (realizedPnl + unrealizedPnl);
+      const isProfit = netTotalPnl >= 0;
       const pnlCls = isProfit ? 'text-emerald-400' : 'text-rose-400';
+
+      // Greeks calculation: strictly across ACTIVE legs only (closed legs have zero Greeks)
+      const activeLegsOnly = (s.legs || []).filter(l => !(
+        l.state === 'CLOSED' || l.status === 'CLOSED' || l.is_closed === true ||
+        (l.exit_price !== undefined && l.exit_price !== null && String(l.exit_price).trim() !== '' && Number(l.exit_price) > 0)
+      ));
+
       let g = s.greeks;
-      if (!g || (Number(g.delta || 0) === 0 && Number(g.theta || 0) === 0 && Number(g.gamma || 0) === 0 && Number(g.vega || 0) === 0 && (s.legs || []).length > 0)) {
+      if (!g || (Number(g.delta || 0) === 0 && Number(g.theta || 0) === 0 && Number(g.gamma || 0) === 0 && Number(g.vega || 0) === 0 && activeLegsOnly.length > 0)) {
         let netDelta = 0, netTheta = 0, netGamma = 0, netVega = 0;
         const spotVal = Number(optionsPortfolioCache?.spot_price || s.spot_at_entry || 0);
         const isMonthly = s.expiry_type === 'MONTHLY';
@@ -17363,7 +17386,7 @@
             }
           } catch (err) {}
         }
-        (s.legs || []).forEach(l => {
+        activeLegsOnly.forEach(l => {
           const sign = l.action === 'BUY' ? 1 : -1;
           const legIv = Number(l.iv || 12.0);
           const bs = calculateBsOption(spotVal, Number(l.strike), dteDays, legIv, l.type);
@@ -17375,8 +17398,8 @@
         });
         g = { delta: netDelta, theta: netTheta, gamma: netGamma, vega: netVega };
       }
+      if (!g) g = { delta: 0, theta: 0, gamma: 0, vega: 0 };
 
-      const isClosed = s.status === 'CLOSED';
       if (kpisEl) {
         const targetPnl = Number(s.target_pnl || 0);
         const stoplossPnl = Number(s.stoploss_pnl || 0);
@@ -17388,7 +17411,7 @@
           kpisEl.innerHTML = `
             <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
               <div class="text-[10px] text-slate-400 uppercase font-bold">Realized PnL</div>
-              <div class="text-base font-extrabold ${pnlCls}">${isProfit ? '+' : ''}₹${Number(pnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+              <div class="text-base font-extrabold ${pnlCls}">${netTotalPnl >= 0 ? '+' : ''}₹${Number(netTotalPnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
               <div class="text-[10px] text-slate-400">ROI: <b class="${pnlCls}">${(s.roi_pct || 0) >= 0 ? '+' : ''}${Number(s.roi_pct || 0).toFixed(2)}%</b></div>
             </div>
             <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
@@ -17410,22 +17433,25 @@
         } else {
           kpisEl.innerHTML = `
             <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-              <div class="text-[10px] text-slate-400 uppercase">Unrealized MTM</div>
-              <div class="text-base font-extrabold ${pnlCls}">${isProfit ? '+' : ''}₹${Number(pnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-              <div class="text-[10px] text-slate-400">ROI: <b class="${pnlCls}">${(s.roi_pct || 0) >= 0 ? '+' : ''}${Number(s.roi_pct || 0).toFixed(2)}%</b></div>
+              <div class="text-[10px] text-slate-400 uppercase font-bold">Net Strategy PnL</div>
+              <div class="text-base font-extrabold ${pnlCls}">${netTotalPnl >= 0 ? '+' : ''}₹${Number(netTotalPnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+              <div class="text-[10px] text-slate-400 flex items-center justify-between mt-0.5">
+                <span>Realized: <b class="${realizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${realizedPnl >= 0 ? '+' : ''}₹${Math.round(realizedPnl).toLocaleString('en-IN')}</b></span>
+                <span>MTM: <b class="${unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${unrealizedPnl >= 0 ? '+' : ''}₹${Math.round(unrealizedPnl).toLocaleString('en-IN')}</b></span>
+              </div>
             </div>
             <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-              <div class="text-[10px] text-slate-400 uppercase">Net Premium</div>
+              <div class="text-[10px] text-slate-400 uppercase font-bold">Net Premium</div>
               <div class="text-base font-extrabold text-white">₹${Math.round(s.net_premium || 0).toLocaleString('en-IN')}</div>
               <div class="text-[10px] text-slate-500">${(s.net_premium || 0) >= 0 ? 'Credit Received' : 'Debit Paid'}</div>
             </div>
             <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-              <div class="text-[10px] text-purple-400 uppercase">Delta & Theta</div>
+              <div class="text-[10px] text-purple-400 uppercase font-bold">Delta & Theta (Active)</div>
               <div class="text-xs font-bold text-purple-300 mt-1">Δ ${g.delta >= 0 ? '+' : ''}${Number(g.delta || 0).toFixed(2)} | Θ ${g.theta >= 0 ? '+' : ''}₹${Math.round(g.theta || 0)}/d</div>
               <div class="text-[10px] text-slate-500">Directional & Decay Risk</div>
             </div>
             <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-              <div class="text-[10px] text-cyan-400 uppercase">Gamma & Vega</div>
+              <div class="text-[10px] text-cyan-400 uppercase font-bold">Gamma & Vega (Active)</div>
               <div class="text-xs font-bold text-cyan-300 mt-1">Γ ${Number(g.gamma || 0).toFixed(4)} | V ${g.vega >= 0 ? '+' : ''}₹${Math.round(g.vega || 0)}/%</div>
               <div class="text-[10px] text-slate-500">Curvature & Vol Risk</div>
             </div>
@@ -17441,21 +17467,54 @@
         legsTbody.innerHTML = legs.map((lg, idx) => {
           const isBuy = lg.action === 'BUY';
           const enPx = Number(lg.entry_price || lg.price || 0);
-          const exPx = Number(lg.exit_price !== undefined && lg.exit_price !== null ? lg.exit_price : (lg.current_price || enPx));
+          const legExited = lg.state === 'CLOSED' || lg.status === 'CLOSED' || lg.is_closed === true ||
+            (lg.exit_price !== undefined && lg.exit_price !== null && String(lg.exit_price).trim() !== '' && Number(lg.exit_price) > 0);
+          const exPx = Number(lg.exit_price !== undefined && lg.exit_price !== null && String(lg.exit_price).trim() !== '' ? lg.exit_price : (lg.current_price || enPx));
           const qty = Number(lg.qty || (lg.lots ? lg.lots * NIFTY_LOT_SIZE : NIFTY_LOT_SIZE));
-          let lp = isClosed ? Number(lg.leg_pnl || 0) : Number(lg.unrealized_pnl || 0);
-          if (isClosed && lp === 0 && exPx > 0 && enPx > 0) {
-            lp = isBuy ? (exPx - enPx) * qty : (enPx - exPx) * qty;
+
+          let lp = 0;
+          if (legExited) {
+            lp = Number(lg.leg_pnl !== undefined && lg.leg_pnl !== null ? lg.leg_pnl : 0);
+            if (lp === 0 && exPx > 0 && enPx > 0) {
+              lp = isBuy ? (exPx - enPx) * qty : (enPx - exPx) * qty;
+            }
+          } else {
+            lp = Number(lg.unrealized_pnl !== undefined && lg.unrealized_pnl !== null ? lg.unrealized_pnl : (lg.pnl || 0));
+            if (lp === 0 && exPx > 0 && enPx > 0) {
+              lp = isBuy ? (exPx - enPx) * qty : (enPx - exPx) * qty;
+            }
           }
+
+          const isSl = legExited && (
+            (lg.exit_reason || '').toUpperCase().includes('STOPLOSS') ||
+            (lg.exit_reason || '').toUpperCase().includes('SL') ||
+            (lg.exit_reason || '').toUpperCase().includes('STOP_LOSS')
+          );
+
+          const statusBadge = legExited
+            ? (isSl
+                ? `<span class="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold border border-rose-500/40 text-[9px] inline-block mt-0.5">STOPLOSS EXITED</span>`
+                : `<span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40 text-[9px] inline-block mt-0.5">CLOSED</span>`
+              )
+            : `<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40 text-[9px] inline-block mt-0.5">ACTIVE</span>`;
+
+          const pnlSubText = legExited ? 'Realized PnL' : 'Unrealized MTM';
+
           return `
-            <tr class="hover:bg-slate-900/60 transition">
+            <tr class="hover:bg-slate-900/60 transition ${legExited ? 'bg-slate-950/40' : ''}">
               <td class="p-2 text-slate-500 font-bold">${idx + 1}</td>
               <td class="p-2 font-bold ${isBuy ? 'text-emerald-400' : 'text-rose-400'}">${lg.action}</td>
               <td class="p-2 font-bold text-white">${lg.strike} <span class="${lg.type === 'CE' ? 'text-cyan-400' : 'text-amber-400'}">${lg.type}</span></td>
               <td class="p-2 text-slate-300">${qty} <span class="text-slate-500">(${Math.round(qty / NIFTY_LOT_SIZE)}L)</span></td>
               <td class="p-2 text-slate-300">₹${enPx.toFixed(2)}</td>
-              <td class="p-2 ${isClosed ? 'text-amber-300' : 'text-white'} font-bold">₹${exPx.toFixed(2)}</td>
-              <td class="p-2 text-right font-bold ${lp >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${lp >= 0 ? '+' : ''}₹${Number(lp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              <td class="p-2">
+                <div class="font-bold ${legExited ? 'text-rose-300' : 'text-white'}">₹${exPx.toFixed(2)}</div>
+                ${statusBadge}
+              </td>
+              <td class="p-2 text-right">
+                <div class="font-bold ${lp >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${lp >= 0 ? '+' : ''}₹${Number(lp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                <div class="text-[9px] text-slate-500">${pnlSubText}</div>
+              </td>
             </tr>
           `;
         }).join('');
@@ -17612,8 +17671,6 @@
         if (currentModalLegs && currentModalLegs.length > 0) {
           drawMiniStrategyPayoff(currentModalLegs, currentModalSpot, null, currentModalExpiryType);
         }
-        const hud = document.getElementById('modal-payoff-hud');
-        if (hud) hud.innerText = 'Hover payoff curve to inspect P&L at spot';
       });
 
       canvas.addEventListener('touchmove', (e) => {
@@ -17687,15 +17744,27 @@
         let tPnl = 0;
 
         legs.forEach(leg => {
-          const sign = leg.action === 'BUY' ? 1 : -1;
-          const intrinsic = leg.type === 'CE' ? Math.max(0, s - leg.strike) : Math.max(0, leg.strike - s);
+          const legExited = leg.state === 'CLOSED' || leg.status === 'CLOSED' || leg.is_closed === true ||
+            (leg.exit_price !== undefined && leg.exit_price !== null && String(leg.exit_price).trim() !== '' && Number(leg.exit_price) > 0);
           const entryPx = Number(leg.entry_price || leg.price || 0);
           const qty = Number(leg.qty || (leg.lots ? leg.lots * NIFTY_LOT_SIZE : NIFTY_LOT_SIZE));
-          expPnl += sign * (intrinsic - entryPx) * qty;
 
-          const shiftedIv = Math.max(3, (Number(leg.iv) || sigmas.iv || 13.5) + modalPayoffIvShiftPct);
-          const bs = calculateBsOption(s, leg.strike, targetDte, shiftedIv, leg.type);
-          tPnl += sign * (bs.price - entryPx) * qty;
+          if (legExited) {
+            const exitPx = Number(leg.exit_price || leg.price || 0);
+            const closedPnl = (leg.leg_pnl !== undefined && leg.leg_pnl !== null && Number(leg.leg_pnl) !== 0)
+              ? Number(leg.leg_pnl)
+              : (leg.action === 'BUY' ? (exitPx - entryPx) * qty : (entryPx - exitPx) * qty);
+            expPnl += closedPnl;
+            tPnl += closedPnl;
+          } else {
+            const sign = leg.action === 'BUY' ? 1 : -1;
+            const intrinsic = leg.type === 'CE' ? Math.max(0, s - leg.strike) : Math.max(0, leg.strike - s);
+            expPnl += sign * (intrinsic - entryPx) * qty;
+
+            const shiftedIv = Math.max(3, (Number(leg.iv) || sigmas.iv || 13.5) + modalPayoffIvShiftPct);
+            const bs = calculateBsOption(s, leg.strike, targetDte, shiftedIv, leg.type);
+            tPnl += sign * (bs.price - entryPx) * qty;
+          }
         });
 
         expiryPnls.push(expPnl);
@@ -17744,18 +17813,25 @@
         rrText = `1 : ${ratio}`;
       }
 
-      // Net Premium
+      // Net Premium accounting for closed vs active legs
       let netPrem = 0;
       legs.forEach(l => {
-        const sign = l.action === 'SELL' ? 1 : -1;
+        const legExited = l.state === 'CLOSED' || l.status === 'CLOSED' || l.is_closed === true ||
+          (l.exit_price !== undefined && l.exit_price !== null && String(l.exit_price).trim() !== '' && Number(l.exit_price) > 0);
         const entryPx = Number(l.entry_price || l.price || 0);
         const qty = Number(l.qty || (l.lots ? l.lots * NIFTY_LOT_SIZE : NIFTY_LOT_SIZE));
-        netPrem += sign * entryPx * qty;
+        if (legExited) {
+          const exitPx = Number(l.exit_price || l.price || 0);
+          netPrem += (l.action === 'BUY' ? (exitPx - entryPx) : (entryPx - exitPx)) * qty;
+        } else {
+          const sign = l.action === 'SELL' ? 1 : -1;
+          netPrem += sign * entryPx * qty;
+        }
       });
 
-      // Est Margin
-      const totalShortLots = legs.filter(l => l.action === 'SELL').reduce((acc, l) => acc + (Number(l.qty || NIFTY_LOT_SIZE) / NIFTY_LOT_SIZE), 0);
-      const totalLongLots = legs.filter(l => l.action === 'BUY').reduce((acc, l) => acc + (Number(l.qty || NIFTY_LOT_SIZE) / NIFTY_LOT_SIZE), 0);
+      // Est Margin: active short legs only
+      const totalShortLots = legs.filter(l => l.action === 'SELL' && !(l.state === 'CLOSED' || l.status === 'CLOSED' || l.is_closed === true || (l.exit_price !== undefined && l.exit_price !== null && String(l.exit_price).trim() !== '' && Number(l.exit_price) > 0))).reduce((acc, l) => acc + (Number(l.qty || NIFTY_LOT_SIZE) / NIFTY_LOT_SIZE), 0);
+      const totalLongLots = legs.filter(l => l.action === 'BUY' && !(l.state === 'CLOSED' || l.status === 'CLOSED' || l.is_closed === true || (l.exit_price !== undefined && l.exit_price !== null && String(l.exit_price).trim() !== '' && Number(l.exit_price) > 0))).reduce((acc, l) => acc + (Number(l.qty || NIFTY_LOT_SIZE) / NIFTY_LOT_SIZE), 0);
       let estMargin = 0;
       if (totalShortLots > 0) {
         const unhedgedLots = Math.max(0, totalShortLots - totalLongLots);
@@ -17765,9 +17841,13 @@
         estMargin = Math.max(0, -netPrem);
       }
 
-      // Portfolio Greeks at Current Spot
+      // Portfolio Greeks at Current Spot (Only Active Legs!)
       let netDelta = 0, netTheta = 0, netGamma = 0, netVega = 0;
       legs.forEach(l => {
+        const legExited = l.state === 'CLOSED' || l.status === 'CLOSED' || l.is_closed === true ||
+          (l.exit_price !== undefined && l.exit_price !== null && String(l.exit_price).trim() !== '' && Number(l.exit_price) > 0);
+        if (legExited) return; // Closed legs have zero Greeks
+
         const sign = l.action === 'BUY' ? 1 : -1;
         const shiftedIv = Math.max(3, (Number(l.iv) || sigmas.iv || 13.5) + modalPayoffIvShiftPct);
         const bs = calculateBsOption(spot, l.strike, targetDte, shiftedIv, l.type);
@@ -17799,9 +17879,21 @@
           const midSpot = (b1 + b2) / 2;
           let midPnl = 0;
           legs.forEach(l => {
-            const sign = l.action === 'BUY' ? 1 : -1;
-            const intr = l.type === 'CE' ? Math.max(0, midSpot - l.strike) : Math.max(0, l.strike - midSpot);
-            midPnl += sign * (intr - (l.entry_price || 0)) * l.qty;
+            const legExited = l.state === 'CLOSED' || l.status === 'CLOSED' || l.is_closed === true ||
+              (l.exit_price !== undefined && l.exit_price !== null && String(l.exit_price).trim() !== '' && Number(l.exit_price) > 0);
+            const entryPx = Number(l.entry_price || l.price || 0);
+            const qty = Number(l.qty || (l.lots ? l.lots * NIFTY_LOT_SIZE : NIFTY_LOT_SIZE));
+            if (legExited) {
+              const exitPx = Number(l.exit_price || l.price || 0);
+              const closedPnl = (l.leg_pnl !== undefined && l.leg_pnl !== null && Number(l.leg_pnl) !== 0)
+                ? Number(l.leg_pnl)
+                : (l.action === 'BUY' ? (exitPx - entryPx) * qty : (entryPx - exitPx) * qty);
+              midPnl += closedPnl;
+            } else {
+              const sign = l.action === 'BUY' ? 1 : -1;
+              const intr = l.type === 'CE' ? Math.max(0, midSpot - l.strike) : Math.max(0, l.strike - midSpot);
+              midPnl += sign * (intr - entryPx) * qty;
+            }
           });
           pop = midPnl >= 0 ? pInRange : (100.0 - pInRange);
         } else if (bes.length === 1) {
@@ -17821,6 +17913,19 @@
           pop = profitableProb * 100.0;
         }
         pop = Math.min(99.0, Math.max(1.0, pop));
+      }
+
+      // Update Header Sigma Badge & HUD
+      const sigBadge = document.getElementById('modal-payoff-sigma-badge');
+      if (sigBadge) {
+        sigBadge.innerHTML = `1σ: <b class="text-purple-300">±${sigmas.oneSigmaVal}</b> (${sigmas.oneSigmaDown}-${sigmas.oneSigmaUp}) • 2σ: <b class="text-amber-300">±${sigmas.twoSigmaVal}</b> (${sigmas.twoSigmaDown}-${sigmas.twoSigmaUp})`;
+        sigBadge.classList.remove('hidden');
+      }
+
+      const defaultHud = `Hover curve to inspect P&L • 1σ (68%): <span class="text-purple-300 font-bold">±${sigmas.oneSigmaVal}</span> [${sigmas.oneSigmaDown} - ${sigmas.oneSigmaUp}] • 2σ (95%): <span class="text-amber-300 font-bold">±${sigmas.twoSigmaVal}</span> [${sigmas.twoSigmaDown} - ${sigmas.twoSigmaUp}]`;
+      const hud = document.getElementById('modal-payoff-hud');
+      if (hud && (hoverX === null || hoverX === undefined)) {
+        hud.innerHTML = defaultHud;
       }
 
       // Update All 8 Modal KPI Metric Cards

@@ -7550,7 +7550,12 @@ class NiftyAnalyticsEngine:
         for leg in legs:
             try:
                 exit_px = leg.get("exit_price")
-                if exit_px is not None and str(exit_px).strip() != "" and float(exit_px) > 0.0:
+                if (
+                    leg.get("state") in ("CLOSED", "EXITED")
+                    or leg.get("status") in ("CLOSED", "EXITED")
+                    or leg.get("is_closed") is True
+                    or (exit_px is not None and str(exit_px).strip() != "" and float(exit_px) > 0.0)
+                ):
                     continue  # Exited leg is closed, 0 live Greeks
 
                 stk = float(leg.get("strike", spot))
@@ -7749,10 +7754,15 @@ class NiftyAnalyticsEngine:
                     val = fallback_map.get(stk_int, {}).get(opt_type) or fallback_map.get(stk, {}).get(opt_type)
 
                 exit_px = leg.get("exit_price")
-                has_exited = exit_px is not None and str(exit_px).strip() != "" and float(exit_px) > 0.0
+                has_exited = (
+                    leg.get("state") in ("CLOSED", "EXITED")
+                    or leg.get("status") in ("CLOSED", "EXITED")
+                    or leg.get("is_closed") is True
+                    or (exit_px is not None and str(exit_px).strip() != "" and float(exit_px) > 0.0)
+                )
                 if has_exited:
-                    current_px = float(exit_px)
-                    leg_pnl = ((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty
+                    current_px = float(exit_px) if (exit_px is not None and str(exit_px).strip() != "" and float(exit_px) > 0.0) else entry_px
+                    leg_pnl = float(leg.get("leg_pnl") if leg.get("leg_pnl") is not None else (((current_px - entry_px) if action == "BUY" else (entry_px - current_px)) * qty))
                     strat_closed_legs_realized += leg_pnl
                     leg_unrealized = 0.0
                 else:
@@ -7779,10 +7789,14 @@ class NiftyAnalyticsEngine:
                     "price": round(entry_px, 2),
                     "premium": round(entry_px, 2),
                     "current_price": round(current_px, 2),
+                    "exit_price": round(current_px, 2) if has_exited else leg.get("exit_price"),
                     "iv": round(float(leg_iv), 2),
                     "leg_pnl": round(leg_pnl, 2),
                     "unrealized_pnl": round(leg_unrealized, 2),
-                    "pnl": round(leg_pnl, 2)
+                    "pnl": round(leg_pnl, 2),
+                    "state": "CLOSED" if has_exited else leg.get("state", "ACTIVE"),
+                    "status": "CLOSED" if has_exited else leg.get("status", "ACTIVE"),
+                    "is_closed": has_exited
                 })
 
             d["legs"] = updated_legs
@@ -7798,7 +7812,7 @@ class NiftyAnalyticsEngine:
             d["greeks"] = strat_greeks
 
             strat_realized = float(d.get("realized_pnl") or 0.0)
-            if strat_realized == 0.0 and strat_closed_legs_realized != 0.0:
+            if strat_closed_legs_realized != 0.0:
                 strat_realized = strat_closed_legs_realized
 
             if is_active:
