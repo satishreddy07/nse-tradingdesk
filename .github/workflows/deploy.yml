@@ -1,9 +1,9 @@
-name: CI & Deployment Pipeline
+name: CI & Deployment Pipeline (Retired - VPS Native Deployment Active)
 
 on:
-  push:
-    branches:
-      - main
+  # Routine automatic execution migrated to server-side autonomous updater timer on VPS.
+  # Pushing to main no longer triggers GitHub Actions runners.
+  # Manual workflow_dispatch is retained strictly for emergency administrative fallback.
   workflow_dispatch:
 
 concurrency:
@@ -11,45 +11,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test:
-    name: Run Test Suite Gate
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Set Timezone to Asia/Kolkata
-        run: sudo timedatectl set-timezone Asia/Kolkata || true
-
-      - name: Run Pytest
-        env:
-          PYTHONUTF8: "1"
-          PYTHONIOENCODING: "utf-8"
-        run: |
-          pytest tests/ -q --tb=short > pytest.log 2>&1 || {
-            grep -E "^(FAILED|ERROR) " pytest.log | while IFS= read -r line; do
-              echo "::error::$line"
-            done
-            tail -n 60 pytest.log | while IFS= read -r line; do
-              echo "::error::$line"
-            done
-            exit 1
-          }
-
   deploy:
-    name: Production Deployment
-    needs: test
+    name: Production Deployment (Emergency Fallback)
     runs-on: ubuntu-latest
     steps:
       - name: Trigger VPS Production Deployment
